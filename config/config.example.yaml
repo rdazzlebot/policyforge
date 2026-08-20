@@ -1,0 +1,35 @@
+# Copy this to config.yaml (already gitignored) and fill in your own values.
+# Never put an actual API key in this file — reference an environment
+# variable name instead, and set that variable in your shell / .env.
+
+llm:
+  provider: anthropic          # v1 supports: anthropic
+  model: claude-opus-4-6       # or claude-sonnet-4-6, etc. — check your provider's
+                                 # available models list; this is just an example
+  api_key_env: ANTHROPIC_API_KEY
+
+frameworks:
+  # Bundled, public-domain — safe to enable out of the box.
+  - id: nist-800-53-r5
+    source: bundled
+
+  - id: fedramp
+    source: bundled
+
+  - id: arc-ampe
+    source: bundled
+
+  # BYOC — point at your own licensed export. The path must live under
+  # local_content/ (gitignored) so it never ends up in the repo history.
+  - id: govramp
+    source: byoc
+    path: local_content/govramp/
+
+  - id: hitrust
+    source: byoc
+    path: local_content/hitrust/
+
+org:
+  name: "Example Org"
+  industry: ""
+  vendors: []          # used to fill [Square-Bracket Vendor] placeholders in generated procedures

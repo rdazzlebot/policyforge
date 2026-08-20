@@ -1,0 +1,30 @@
+# Secrets / local config
+.env
+.env.*
+config/config.yaml
+
+# Licensed / BYOC content — never redistribute this
+local_content/*
+!local_content/.gitkeep
+
+# Generated output (policies/standards/procedures drafted for a specific org)
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+.pytest_cache/

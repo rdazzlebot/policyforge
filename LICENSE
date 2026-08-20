@@ -1,0 +1,27 @@
+PolyForm Shield License 1.0.0
+==============================
+
+*** ACTION REQUIRED BEFORE PUBLISHING ***
+
+This file is a placeholder. Populate it with the official, verbatim license
+text before you push this repo publicly — do not hand-write or paraphrase a
+license; use the canonical source so the legal text is exact.
+
+Run this once, from the repo root:
+
+    curl -o LICENSE https://polyformproject.org/licenses/shield/1.0.0.txt
+
+That will overwrite this placeholder with the authoritative text and fill in
+the bracketed [name of licensor] field for you to complete.
+
+Why PolyForm Shield 1.0.0:
+  - Free to use, modify, and redistribute for any purpose — including
+    running it internally at a for-profit employer — EXCEPT to build a
+    competing product or service.
+  - Keeps the door open for you to commercialize this yourself later
+    (a dual-license / "open core" model) without another party legally
+    forking it into a competing hosted offering first.
+  - It's a standardized, lawyer-drafted license text (not a custom EULA),
+    which makes it easier for others to evaluate and trust.
+
+Reference: https://polyformproject.org/licenses/shield/1.0.0/

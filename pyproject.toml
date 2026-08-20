@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "policyforge"
+version = "0.1.0"
+description = "Cross-mapped compliance policy/standard/procedure generation from NIST 800-53, FedRAMP, ARC-AMPE, and (BYOC) HITRUST/GovRAMP."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+    "anthropic>=0.40",
+    "click>=8.1",
+    "pyyaml>=6.0",
+    "python-frontmatter>=1.1",
+    "mdformat>=0.7",
+    "mdformat-gfm>=0.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "bandit[toml]>=1.8",
+    "pip-audit>=2.7",
+    "pre-commit>=4.0",
+]
+
+[project.scripts]
+policyforge = "policyforge.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]

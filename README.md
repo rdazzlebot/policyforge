@@ -226,8 +226,6 @@ scripts/
    and the *name* of the environment variable holding your API key (not the key itself).
 1. `export ANTHROPIC_API_KEY=sk-...` (or whatever env var name you configured)
 1. `pre-commit install` — sets up the secrets/dependency scanner to run before every commit.
-1. `curl -o LICENSE https://polyformproject.org/licenses/shield/1.0.0.txt` — replace the
-   placeholder LICENSE with the real text before your first public push.
 1. `policyforge llm-check` — confirms your API key and model work.
 
 ## Repo hygiene / scanning

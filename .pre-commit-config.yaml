@@ -24,6 +24,21 @@ repos:
         args: ["-c", "pyproject.toml"]
         additional_dependencies: ["bandit[toml]"]
 
+  # Broader SAST — catches patterns bandit's Python-specific ruleset
+  # doesn't, e.g. GitHub Actions supply-chain hygiene (mutable action tags).
+  - repo: https://github.com/semgrep/semgrep
+    rev: v1.174.0
+    hooks:
+      - id: semgrep
+        args:
+          [
+            "scan",
+            "--config=p/python",
+            "--config=p/security-audit",
+            "--config=p/owasp-top-ten",
+            "--error",
+          ]
+
   # Markdown quality — enforces "Markdown is the primary deliverable" (see
   # README's "Output format priority"). Checks both repo docs and anything
   # committed under output/ during development. mdformat-frontmatter is

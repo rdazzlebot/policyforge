@@ -3,16 +3,18 @@
 
 Runs the same checks enforced in .pre-commit-config.yaml and
 .github/workflows/ci.yml: pytest, bandit (static security analysis),
-pip-audit (dependency CVEs), mdformat (markdown quality), and gitleaks
-(secrets scan, if installed). Each check is invoked directly rather than
-through `pre-commit run` so this has no dependency on pre-commit's
-hook-environment builds — notably, pre-commit's official gitleaks hook
-builds gitleaks from source via Go on first run, which requires outbound
-access to Go's module proxy (proxy.golang.org) and can fail on restrictive
-corporate networks even though nothing is actually wrong with your setup.
-GitHub Actions CI doesn't have this issue (see ci.yml, which uses the
-gitleaks-action directly) — this script's gitleaks check is a local
-convenience, not the only place it runs.
+semgrep (broader SAST — catches patterns bandit's Python-specific ruleset
+doesn't, e.g. GitHub Actions supply-chain hygiene), pip-audit (dependency
+CVEs), mdformat (markdown quality), and gitleaks (secrets scan, if
+installed). Each check is invoked directly rather than through
+`pre-commit run` so this has no dependency on pre-commit's hook-environment
+builds — notably, pre-commit's official gitleaks hook builds gitleaks from
+source via Go on first run, which requires outbound access to Go's module
+proxy (proxy.golang.org) and can fail on restrictive corporate networks
+even though nothing is actually wrong with your setup. GitHub Actions CI
+doesn't have this issue (see ci.yml, which uses the gitleaks-action
+directly) — this script's gitleaks check is a local convenience, not the
+only place it runs.
 
 Usage:
     python scripts/check.py
@@ -71,6 +73,18 @@ def main() -> int:
         "pytest (test suite)": run("pytest", ["pytest", "-q"]),
         "bandit (static security analysis)": run(
             "bandit", ["bandit", "-c", "pyproject.toml", "-r", "src"]
+        ),
+        "semgrep (broader SAST)": run(
+            "semgrep",
+            [
+                "semgrep",
+                "scan",
+                "--config=p/python",
+                "--config=p/security-audit",
+                "--config=p/owasp-top-ten",
+                "--error",
+                ".",
+            ],
         ),
         "pip-audit (dependency CVEs)": run("pip-audit", ["pip-audit"]),
         "mdformat (markdown quality)": run(

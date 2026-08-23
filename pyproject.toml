@@ -29,6 +29,7 @@ dev = [
     "bandit[toml]>=1.8",
     "pip-audit>=2.7",
     "pre-commit>=4.0",
+    "semgrep>=1.70",
 ]
 bedrock = [
     "boto3>=1.34",

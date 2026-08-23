@@ -236,6 +236,11 @@ Before every commit and on every push, this repo is designed to run:
   accidentally commit your Anthropic key or an employer-specific config.
 - **pip-audit** — checks dependencies for known CVEs.
 - **bandit** — static analysis for common Python security issues in this codebase.
+- **semgrep** — broader open-source SAST (`p/python`, `p/security-audit`,
+  `p/owasp-top-ten` community rulesets), catching patterns bandit's Python-specific
+  ruleset doesn't — e.g. it's what caught this repo's GitHub Actions using mutable
+  version tags (`@v4`) instead of pinned commit SHAs, a real supply-chain hardening
+  gap bandit has no rules for.
 - **mdformat** — checks that any markdown this project generates (or that lives in the
   repo itself) is well-formed CommonMark. This is the enforcement mechanism behind
   the "Markdown is the primary deliverable" requirement above, not just a style nit.
@@ -244,8 +249,8 @@ See `.pre-commit-config.yaml` and `.github/workflows/ci.yml`.
 
 ### Running the quality checks yourself
 
-`python scripts/check.py` runs all four checks in one command (pytest,
-bandit, pip-audit, mdformat, plus gitleaks if you have the binary
+`python scripts/check.py` runs all five checks in one command (pytest,
+bandit, semgrep, pip-audit, mdformat, plus gitleaks if you have the binary
 installed — see the script's docstring for why gitleaks is optional
 locally but always runs in CI). This is the same verification pass used
 while building this scaffold, just packaged as a script instead of typed

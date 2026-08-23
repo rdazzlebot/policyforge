@@ -6,15 +6,29 @@ handling shared by AnthropicProvider and VertexProvider (including the
 
 from __future__ import annotations
 
-import httpx
+
+class _FakeHttpRequest:
+    method = "POST"
+    url = "https://example.com"
+
+
+class _FakeHttpResponse:
+    """Duck-typed stand-in for an httpx(2).Response — anthropic.APIStatusError
+    only reads .status_code, .headers.get(...), and .request off it, so a
+    real httpx/httpx2 install isn't needed to construct one. That matters
+    because which HTTP client `anthropic` depends on internally isn't part
+    of its public API contract and has changed across versions."""
+
+    def __init__(self, status_code: int = 400):
+        self.status_code = status_code
+        self.headers: dict[str, str] = {}
+        self.request = _FakeHttpRequest()
 
 
 def _bad_request_error(message: str):
     import anthropic
 
-    request = httpx.Request("POST", "https://example.com")
-    response = httpx.Response(400, request=request)
-    return anthropic.BadRequestError(message, response=response, body=None)
+    return anthropic.BadRequestError(message, response=_FakeHttpResponse(), body=None)
 
 
 class FakeAnthropicSdkClient:

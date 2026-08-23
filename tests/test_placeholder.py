@@ -88,3 +88,185 @@ Account management covers the full lifecycle.
     assert control.source_crosswalk.get("fedramp") == "AC-2 (same ID)"
     # ...HITRUST is not, by default, even though it was present in the source table.
     assert "hitrust" not in control.source_crosswalk
+
+
+def test_build_crosswalk_from_nist_source_crosswalk():
+    from policyforge.ingest.schema import Control
+    from policyforge.mapping.crosswalk import build_crosswalk
+
+    controls = [
+        Control(
+            control_id="AC-2",
+            title="Account Management",
+            framework="NIST 800-53",
+            framework_version="Rev 5",
+            source_crosswalk={"fedramp": "AC-2 (same ID)"},
+        ),
+        Control(
+            control_id="IA-5",
+            title="Authenticator Management",
+            framework="NIST 800-53",
+            framework_version="Rev 5",
+            source_crosswalk={"fedramp": "IA-5, IA-5(1)"},
+        ),
+    ]
+
+    crosswalk = build_crosswalk(controls)
+
+    assert crosswalk == {
+        "AC-2": {"fedramp": ["AC-2"]},
+        "IA-5": {"fedramp": ["IA-5", "IA-5(1)"]},
+    }
+
+
+def test_build_crosswalk_folds_in_non_nist_controls_pointing_back():
+    from policyforge.ingest.schema import Control
+    from policyforge.mapping.crosswalk import build_crosswalk
+
+    controls = [
+        Control(
+            control_id="AC-2",
+            title="Account Management",
+            framework="NIST 800-53",
+            framework_version="Rev 5",
+        ),
+        Control(
+            control_id="ARC-AC-2",
+            title="Account Management",
+            framework="ARC-AMPE",
+            framework_version="v1",
+            source_crosswalk={"nist": "AC-2 (same ID)"},
+        ),
+    ]
+
+    crosswalk = build_crosswalk(controls)
+
+    assert crosswalk == {"AC-2": {"arc-ampe": ["ARC-AC-2"]}}
+
+
+def test_load_controls_round_trips_through_json(tmp_path):
+    import dataclasses
+    import json
+
+    from policyforge.ingest.schema import Control, ControlEnhancement, load_controls
+
+    original = Control(
+        control_id="AC-2",
+        title="Account Management",
+        framework="NIST 800-53",
+        framework_version="Rev 5",
+        enhancements=[
+            ControlEnhancement(
+                enhancement_id="AC-2(1)",
+                title="Automated System Account Management",
+                baseline="Moderate, High",
+                description="Support automated mechanisms.",
+            )
+        ],
+    )
+    path = tmp_path / "controls.json"
+    path.write_text(json.dumps([dataclasses.asdict(original)]), encoding="utf-8")
+
+    loaded = load_controls(path)
+
+    assert loaded == [original]
+
+
+def test_build_synthesis_topic_pulls_crosswalk_linked_controls():
+    from policyforge.ingest.schema import Control
+    from policyforge.mapping.crosswalk import build_crosswalk
+    from policyforge.synthesis.merge import build_synthesis_topic
+
+    nist = Control(
+        control_id="IA-5",
+        title="Authenticator Management",
+        framework="NIST 800-53",
+        framework_version="Rev 5",
+        source_crosswalk={"fedramp": "IA-5 (same ID)"},
+    )
+    fedramp = Control(
+        control_id="IA-5",
+        title="Authenticator Management",
+        framework="FedRAMP",
+        framework_version="Rev 5",
+    )
+    unrelated = Control(
+        control_id="AC-2",
+        title="Account Management",
+        framework="NIST 800-53",
+        framework_version="Rev 5",
+    )
+    controls = [nist, fedramp, unrelated]
+
+    topic = build_synthesis_topic("Auth", ["IA-5"], controls, build_crosswalk(controls))
+
+    assert topic.controls == [nist, fedramp]
+
+
+def test_synthesize_topic_grounds_prompt_in_source_controls():
+    from policyforge.ingest.schema import Control
+    from policyforge.llm.base import LLMResponse
+    from policyforge.synthesis.merge import SynthesisTopic, synthesize_topic
+
+    class FakeProvider:
+        def __init__(self):
+            self.calls = []
+
+        def generate(self, *, system, prompt, max_tokens=4096, temperature=0.2):
+            self.calls.append({"system": system, "prompt": prompt})
+            return LLMResponse(text="- merged requirement [NIST IA-5]\n", model="fake")
+
+        def check(self):
+            return True
+
+    control = Control(
+        control_id="IA-5",
+        title="Authenticator Management",
+        framework="NIST 800-53",
+        framework_version="Rev 5",
+        control_statement="Manage authenticators.",
+    )
+    provider = FakeProvider()
+
+    result = synthesize_topic(SynthesisTopic(name="Auth", controls=[control]), provider)
+
+    assert result == "- merged requirement [NIST IA-5]"
+    assert len(provider.calls) == 1
+    assert "Manage authenticators." in provider.calls[0]["prompt"]
+
+
+def test_synthesize_topic_rejects_empty_topic():
+    from policyforge.synthesis.merge import SynthesisTopic, synthesize_topic
+
+    try:
+        synthesize_topic(SynthesisTopic(name="Empty", controls=[]), provider=None)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError for an empty topic")
+
+
+def test_markdown_to_confluence_converts_without_network_or_llm():
+    from policyforge.export.confluence_exporter import markdown_to_confluence
+
+    storage_format = markdown_to_confluence(
+        "# Authenticator Management Policy\n\n"
+        "Acme Corp staff must manage authenticators. [NIST IA-5]\n"
+    )
+
+    assert "<h1>Authenticator Management Policy</h1>" in storage_format
+    assert "Acme Corp staff must manage authenticators." in storage_format
+
+
+def test_export_to_confluence_requires_api_token(monkeypatch):
+    from policyforge.export.confluence_exporter import export_to_confluence
+
+    monkeypatch.delenv("CONFLUENCE_API_TOKEN", raising=False)
+    try:
+        export_to_confluence(
+            "# Title\n", space="ENG", title="Test Page", host="https://example.atlassian.net/wiki"
+        )
+    except RuntimeError as exc:
+        assert "CONFLUENCE_API_TOKEN" in str(exc)
+    else:
+        raise AssertionError("expected RuntimeError when no API token is configured")

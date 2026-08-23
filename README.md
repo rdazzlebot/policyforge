@@ -14,9 +14,12 @@ add any framework content to this repo.
 
 ## Status
 
-Early scaffold. The CLI wiring, the NIST vault ETL loader, and the Anthropic
-provider are functional. The mapping/synthesis/generation pipeline is stubbed
-and is the next thing to build out.
+The full pipeline is functional end-to-end: `etl-vault` -> `map` -> `synthesize`
+-> `generate` -> `export-confluence` (optional). The Anthropic provider, NIST
+vault ETL loader, crosswalk builder, LLM-driven synthesis/generation stages,
+and Confluence export are all wired up and tested. HITRUST/GovRAMP BYOC
+loaders remain stubs pending a sample export to parse against — see
+`ingest/byoc_loader.py`.
 
 ## Zero Obsidian dependency
 
@@ -55,6 +58,42 @@ needs something markdown can't express well (e.g. Confluence-native macros),
 that's a transform-time enrichment on top of the canonical markdown, not a
 fork of the generation logic.
 
+## Document hierarchy: Policy > Standard > Procedure
+
+Every topic's synthesis output (see `synthesis/merge.py`) can be drafted
+into more than one document tier, each with a different audience and level
+of detail — `policyforge generate --tier <tier>`:
+
+- **Standard** (`--tier standard`, the default) — the detailed, technical
+  document: every synthesized requirement, source-tagged back to the
+  frameworks it came from (`[NIST IA-5 | FedRAMP IA-5]`), vendor-specific
+  where `org.vendors` allows it. Audience: security/IT staff who implement
+  and audit against it.
+- **Policy** (`--tier policy`, requires `--standard <path>`) — a short,
+  principle-level document read by the whole organization, not just
+  practitioners. It compresses the same synthesized requirements into a
+  small number of plain-language commitments and drops framework/control
+  citations entirely — that traceability lives in the Standard, which the
+  Policy references by name in its "Related Standards" section (extracted
+  automatically from the Standard document's title, via
+  `generate/policy_writer.py`'s `extract_title`).
+- **Procedure** (`--tier procedure`, requires `--standard <path>`) — one
+  level *more* granular than the Standard: each requirement becomes the
+  literal ordered steps a practitioner performs to satisfy it, still
+  source-tagged for traceability and referencing the Standard by name the
+  same way the Policy does.
+
+Generate a topic's Standard first, then its Policy and/or Procedure from
+that Standard:
+
+```
+policyforge generate --tier standard --synthesis output/synthesis/auth-mgmt.md
+policyforge generate --tier policy --synthesis output/synthesis/auth-mgmt.md \
+  --standard output/standards/auth-mgmt.md
+policyforge generate --tier procedure --synthesis output/synthesis/auth-mgmt.md \
+  --standard output/standards/auth-mgmt.md
+```
+
 ## Licensing model (per framework)
 
 Not all four frameworks this project targets are safe to bundle and
@@ -78,9 +117,10 @@ config/                  Your local config (model, API key env var name, chosen 
 data/frameworks/         Bundled, redistributable framework data (NIST, FedRAMP, ARC-AMPE)
 local_content/           Gitignored. Drop your own HITRUST/GovRAMP exports here.
 src/policyforge/
-  llm/                    Provider abstraction. v1 ships Anthropic only; interface is
-                          designed so Vertex AI / Bedrock providers can be added later
-                          without touching calling code.
+  llm/                    Provider abstraction. Ships Anthropic and Amazon Bedrock
+                          (`pip install "policyforge[bedrock]"`); interface is designed
+                          so a Vertex AI provider can be added later without touching
+                          calling code.
   ingest/                 Parses framework sources (bundled markdown, BYOC exports) into
                           a common Control/Element schema.
   mapping/                Cross-framework control crosswalk logic.
@@ -97,6 +137,9 @@ scripts/
 ## Setup
 
 1. `python -m venv .venv && source .venv/bin/activate`
+1. `pip install --upgrade pip setuptools` — a fresh venv's own pip/setuptools are
+   often a version behind, which otherwise shows up as a confusing false-alarm-feeling
+   failure the first time you run `pip-audit` (see "Running the quality checks" below).
 1. `pip install -e ".[dev]"`
 1. `cp config/config.example.yaml config/config.yaml` and fill in your model choice
    and the *name* of the environment variable holding your API key (not the key itself).
@@ -120,6 +163,16 @@ Before every commit and on every push, this repo is designed to run:
 
 See `.pre-commit-config.yaml` and `.github/workflows/ci.yml`.
 
+### Running the quality checks yourself
+
+`python scripts/check.py` runs all four checks in one command (pytest,
+bandit, pip-audit, mdformat, plus gitleaks if you have the binary
+installed — see the script's docstring for why gitleaks is optional
+locally but always runs in CI). This is the same verification pass used
+while building this scaffold, just packaged as a script instead of typed
+commands. Exits non-zero if anything fails, so it's safe to use as a
+pre-push gate.
+
 ## A note on using this at work
 
 If you plan to install and run this against your employer's compliance work, check
@@ -133,10 +186,15 @@ content, org context, or exported policies to this public repo.
 
 ## Roadmap
 
-- [ ] Flesh out `mapping/crosswalk.py` — cross-framework control correspondence
-- [ ] Flesh out `synthesis/merge.py` — the dedupe/merge-to-prose engine
-- [ ] Flesh out `generate/policy_writer.py` — org-context-aware policy/standard/procedure drafting,
-  producing canonical portable markdown (see "Output format priority" above)
-- [ ] Confluence exporter — converts canonical markdown to Confluence storage format
+- [x] `mapping/crosswalk.py` — cross-framework control correspondence
+- [x] `synthesis/merge.py` — the dedupe/merge-to-prose engine
+- [x] `generate/policy_writer.py` — Standard tier (`generate_standard`), Policy tier
+  (`generate_policy`), and Procedure tier (`generate_procedure`), org-context-aware,
+  producing canonical portable markdown (see "Document hierarchy" and "Output format
+  priority" above)
+- [x] Confluence exporter — converts canonical markdown to Confluence storage format
+  via `markdown-it-py`
+- [x] Amazon Bedrock LLM provider (`llm/bedrock_provider.py`) — install with `pip install "policyforge[bedrock]"`
+- [ ] `ingest/byoc_loader.py` — implement HITRUST/GovRAMP export parsing once a sample export is in hand
 - [ ] GovRAMP: follow up on redistribution permission; if granted, move from BYOC to bundled
-- [ ] Optional: provider-agnostic LLM layer (Vertex AI Model Garden, Bedrock) once v1 pipeline works end-to-end
+- [ ] Optional: Vertex AI Model Garden provider

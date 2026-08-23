@@ -59,8 +59,16 @@ def get_provider(config: dict) -> LLMProvider:
             api_key_env=config["llm"]["api_key_env"],
         )
 
+    if provider_name == "bedrock":
+        from .bedrock_provider import BedrockProvider
+
+        return BedrockProvider(
+            model=config["llm"]["model"],
+            region=config["llm"].get("region", "us-east-1"),
+        )
+
     raise ValueError(
         f"Unknown llm.provider '{provider_name}'. "
-        "v1 supports: anthropic. (Vertex/Bedrock providers are a planned "
-        "follow-up — see README roadmap.)"
+        "Supported: anthropic, bedrock. (A Vertex AI Model Garden provider "
+        "is a planned follow-up — see README roadmap.)"
     )

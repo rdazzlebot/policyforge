@@ -8,7 +8,9 @@ a Control came from.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass
@@ -38,3 +40,14 @@ class Control:
     # that produced it.
     source_crosswalk: dict[str, str] = field(default_factory=dict)
     source_path: str | None = None
+
+
+def load_controls(path: Path) -> list[Control]:
+    """Load a controls.json produced by any loader's `dataclasses.asdict`
+    dump (see `cli.py`'s `etl-vault` command) back into `Control` objects."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    controls = []
+    for item in data:
+        enhancements = [ControlEnhancement(**e) for e in item.pop("enhancements", [])]
+        controls.append(Control(enhancements=enhancements, **item))
+    return controls

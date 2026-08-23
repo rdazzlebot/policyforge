@@ -37,32 +37,15 @@ class AnthropicProvider(LLMProvider):
         max_tokens: int = 4096,
         temperature: float = 0.2,
     ) -> LLMResponse:
-        import anthropic
+        from ._anthropic_compat import call_messages_api
 
-        kwargs = dict(
+        return call_messages_api(
+            self._client,
             model=self.model,
-            max_tokens=max_tokens,
             system=system,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        try:
-            response = self._client.messages.create(temperature=temperature, **kwargs)
-        except anthropic.BadRequestError as exc:
-            # Some newer models (e.g. claude-sonnet-5) reject `temperature`
-            # outright rather than just ignoring it, so retry without it
-            # instead of hard-failing every call on those models.
-            if "temperature" in str(exc) and "deprecated" in str(exc):
-                response = self._client.messages.create(**kwargs)
-            else:
-                raise
-        text = "".join(
-            block.text for block in response.content if block.type == "text"
-        )
-        return LLMResponse(
-            text=text,
-            model=self.model,
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
         )
 
     def check(self) -> bool:

@@ -32,13 +32,11 @@ config file.
 
 from __future__ import annotations
 
-import os
-
 from markdown_it import MarkdownIt
 from markdown_it.renderer import RendererHTML
 from mdit_py_plugins.gfm import gfm_plugin
 
-_API_CONTENT_PATH = "rest/api/content"
+from ._confluence_auth import API_CONTENT_PATH, confluence_auth
 
 
 class _ConfluenceRenderer(RendererHTML):
@@ -91,27 +89,17 @@ def export_to_confluence(
     sent as a Bearer token instead, for Confluence Server/Data Center
     personal access tokens.
     """
-    token = os.environ.get(token_env)
-    if not token:
-        raise RuntimeError(
-            f"Environment variable {token_env} is not set. Export your "
-            f"Confluence API token before running policyforge, e.g.:\n"
-            f"  export {token_env}=..."
-        )
-    username = os.environ.get(username_env)
-
     import requests
 
+    auth, headers = confluence_auth(username_env=username_env, token_env=token_env)
     base = host.rstrip("/")
-    auth = (username, token) if username else None
-    headers = {} if auth else {"Authorization": f"Bearer {token}"}
 
     body = markdown_to_confluence(markdown_text)
     body_payload = {"storage": {"value": body, "representation": "storage"}}
     ancestors = [{"id": parent_id}] if parent_id else None
 
     search = requests.get(
-        f"{base}/{_API_CONTENT_PATH}",
+        f"{base}/{API_CONTENT_PATH}",
         params={"title": title, "spaceKey": space, "expand": "version"},
         auth=auth,
         headers=headers,
@@ -133,7 +121,7 @@ def export_to_confluence(
         if ancestors:
             payload["ancestors"] = ancestors
         response = requests.put(
-            f"{base}/{_API_CONTENT_PATH}/{page['id']}",
+            f"{base}/{API_CONTENT_PATH}/{page['id']}",
             json=payload,
             auth=auth,
             headers=headers,
@@ -144,7 +132,7 @@ def export_to_confluence(
         if ancestors:
             payload["ancestors"] = ancestors
         response = requests.post(
-            f"{base}/{_API_CONTENT_PATH}", json=payload, auth=auth, headers=headers, timeout=30
+            f"{base}/{API_CONTENT_PATH}", json=payload, auth=auth, headers=headers, timeout=30
         )
 
     response.raise_for_status()

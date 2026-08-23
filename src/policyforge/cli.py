@@ -7,6 +7,12 @@ import click
 from policyforge.config import load_config
 from policyforge.llm.base import get_provider
 
+# Local, offline version history of generated/imported documents — see
+# history/version_store.py's module docstring for what this is (and isn't)
+# a substitute for. Shared default across `generate`, `import-confluence`,
+# and `history` so a given tier+name lands in the same stream by default.
+_DEFAULT_HISTORY_DIR = Path("output/.history")
+
 
 @click.group()
 def cli():
@@ -178,7 +184,20 @@ def synthesize_cmd(topic: str, nist_controls: str, controls_paths, crosswalk_pat
     help="Where to write the drafted document "
     "(default: output/<tier>s/<synthesis-filename>).",
 )
-def generate_cmd(tier: str, synthesis_path: Path, standard_path: Path | None, out: Path | None):
+@click.option(
+    "--history-dir",
+    default=_DEFAULT_HISTORY_DIR,
+    type=click.Path(path_type=Path),
+    help="Where local version history is recorded (default: output/.history). "
+    "See `policyforge history`.",
+)
+def generate_cmd(
+    tier: str,
+    synthesis_path: Path,
+    standard_path: Path | None,
+    out: Path | None,
+    history_dir: Path,
+):
     """Draft a Standard, Policy, or Procedure document from a synthesized topic."""
     from policyforge.export.markdown_exporter import check_markdown_quality, write_markdown
     from policyforge.generate.policy_writer import (
@@ -224,6 +243,104 @@ def generate_cmd(tier: str, synthesis_path: Path, standard_path: Path | None, ou
         click.echo(f"WARNING: {written} did not pass the mdformat quality check — review before shipping.")
     click.echo(f"Drafted {tier} -> {written}")
 
+    from policyforge.history.version_store import record_version
+
+    slug = f"{tier}/{out_path.stem}"
+    record = record_version(
+        history_dir,
+        slug,
+        document + "\n",
+        source="generate",
+        metadata={"org": org.name, "model": config.get("llm", {}).get("model"), "synthesis_source": str(synthesis_path)},
+    )
+    if record is None:
+        click.echo(f"No content change since the last recorded version of {slug!r} — history unchanged.")
+    else:
+        click.echo(
+            f"Recorded {slug!r} v{record.version} in {history_dir} "
+            f"(+{record.lines_added}/-{record.lines_removed} lines)."
+        )
+
+
+@cli.command("generate-parser")
+@click.option(
+    "--framework",
+    required=True,
+    type=click.Choice(["hitrust", "govramp"]),
+    help="Which BYOC framework this sample export is for.",
+)
+@click.option(
+    "--sample",
+    "sample_path",
+    required=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to a real sample export from your own license (e.g. a MyCSF CSV/Excel "
+    "export). Its full content is sent to your configured LLM provider — confirm "
+    "your license terms permit that before running this.",
+)
+@click.option(
+    "--out",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Where to write the generated parser "
+    "(default: src/policyforge/ingest/<framework>_loader.py).",
+)
+@click.option("--force", is_flag=True, help="Overwrite --out if it already exists.")
+@click.option(
+    "--yes",
+    is_flag=True,
+    help="Skip the confirmation prompt before sending --sample's content to the LLM provider.",
+)
+def generate_parser_cmd(framework: str, sample_path: Path, out: Path | None, force: bool, yes: bool):
+    """Generate a deterministic ETL parser for a BYOC framework export via your
+    configured LLM, from a real sample export file.
+
+    This is a one-time codegen step: it writes a plain Python module to disk,
+    which you should read, test, and commit like any other source file.
+    Nothing under ingest/*_loader.py calls the LLM at parse time — only this
+    command does, and only when you run it.
+    """
+    import ast
+
+    from policyforge.ingest.parser_codegen import generate_byoc_parser
+
+    out_path = out or Path(f"src/policyforge/ingest/{framework}_loader.py")
+    if out_path.exists() and not force:
+        raise click.UsageError(f"{out_path} already exists. Pass --force to overwrite.")
+
+    click.echo(
+        f"This sends the full contents of {sample_path} to your configured LLM "
+        "provider's API. Confirm your license for this export actually permits "
+        "sending it to a third-party API processor before continuing."
+    )
+    if not yes:
+        click.confirm("Continue?", abort=True)
+
+    sample_text = sample_path.read_text(encoding="utf-8", errors="replace")
+    config = load_config()
+    provider = get_provider(config)
+
+    source = generate_byoc_parser(
+        framework=framework,
+        framework_slug=framework,
+        sample_text=sample_text,
+        provider=provider,
+    )
+
+    try:
+        ast.parse(source)
+    except SyntaxError as exc:
+        click.echo(f"Generated code failed to parse as valid Python: {exc}")
+        raise SystemExit(1)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(source, encoding="utf-8")
+    click.echo(
+        f"Wrote generated parser -> {out_path}\n"
+        "Review it, run it against your sample, add it to your test suite, and "
+        "commit like any other source file before relying on it."
+    )
+
 
 @cli.command("export-confluence")
 @click.option(
@@ -262,6 +379,137 @@ def export_confluence_cmd(
         markdown_text, space=space, title=title, host=host, parent_id=parent_id
     )
     click.echo(f"Published to Confluence -> {url}")
+
+
+@cli.command("import-confluence")
+@click.option(
+    "--tier",
+    type=click.Choice(["standard", "policy", "procedure"]),
+    required=True,
+    help="Which document tier this Confluence page corresponds to — determines which "
+    "local version-history stream the import is recorded into.",
+)
+@click.option(
+    "--name",
+    required=True,
+    help="Document slug/filename stem, matching what `policyforge generate` used, "
+    "e.g. 'authenticator-mgmt'. Determines the version-history stream and the "
+    "default --out path.",
+)
+@click.option("--space", required=True, help="Confluence space key to read from.")
+@click.option("--title", required=True, help="Page title to look up.")
+@click.option(
+    "--host",
+    required=True,
+    help="Confluence base URL, e.g. https://yourorg.atlassian.net/wiki.",
+)
+@click.option(
+    "--out",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Where to write the imported markdown "
+    "(default: output/<tier>s/<name>.imported.md — deliberately not the same "
+    "filename `generate` writes, so an import never silently overwrites a fresh draft).",
+)
+@click.option(
+    "--history-dir",
+    default=_DEFAULT_HISTORY_DIR,
+    type=click.Path(path_type=Path),
+    help="Where local version history is recorded (default: output/.history).",
+)
+def import_confluence_cmd(
+    tier: str, name: str, space: str, title: str, host: str, out: Path | None, history_dir: Path
+):
+    """Pull a page's current content back out of Confluence, converting it to
+    markdown, and record it into the same local version-history stream
+    `generate` uses for --tier/--name — so you can diff what this tool last
+    generated against what's actually live (e.g. after a manual edit)."""
+    from policyforge.export.confluence_importer import import_from_confluence
+    from policyforge.history.version_store import load_history, record_version
+
+    markdown_text = import_from_confluence(space=space, title=title, host=host)
+
+    out_path = out or Path(f"output/{tier}s") / f"{name}.imported.md"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(markdown_text, encoding="utf-8")
+    click.echo(f"Imported {title!r} from Confluence -> {out_path}")
+
+    slug = f"{tier}/{name}"
+    previous = load_history(history_dir, slug)
+    record = record_version(
+        history_dir, slug, markdown_text, source="confluence-import", metadata={"space": space, "title": title}
+    )
+
+    if record is None:
+        latest = previous[-1].version if previous else None
+        click.echo(
+            f"Matches the last recorded version of {slug!r} (v{latest}) — no drift detected."
+        )
+    elif previous:
+        click.echo(
+            f"Differs from the last recorded version (v{previous[-1].version}) — recorded as "
+            f"{slug!r} v{record.version}. Run `policyforge history --tier {tier} --name {name} "
+            f"--diff {previous[-1].version}:{record.version}` to see what changed."
+        )
+    else:
+        click.echo(f"Recorded as {slug!r} v{record.version} (first version in this stream).")
+
+
+@cli.command("history")
+@click.option(
+    "--tier",
+    type=click.Choice(["standard", "policy", "procedure"]),
+    required=True,
+)
+@click.option(
+    "--name",
+    required=True,
+    help="Document slug/filename stem — the stem of the file `policyforge generate` "
+    "wrote via --out (e.g. 'authenticator-mgmt' for authenticator-mgmt.md), or the "
+    "--name given to `import-confluence`.",
+)
+@click.option(
+    "--history-dir",
+    default=_DEFAULT_HISTORY_DIR,
+    type=click.Path(path_type=Path),
+    help="Where local version history is recorded (default: output/.history).",
+)
+@click.option(
+    "--diff",
+    "diff_range",
+    default=None,
+    help="Show a unified diff between two versions instead of listing them: 'N:M' for "
+    "specific version numbers (e.g. '2:3'), or 'latest' for the two most recent versions.",
+)
+def history_cmd(tier: str, name: str, history_dir: Path, diff_range: str | None):
+    """List (or diff) the locally recorded version history for one document."""
+    from policyforge.history.version_store import diff_versions, load_history
+
+    slug = f"{tier}/{name}"
+    records = load_history(history_dir, slug)
+    if not records:
+        click.echo(f"No recorded history for {slug!r} in {history_dir}.")
+        return
+
+    if diff_range is not None:
+        if diff_range == "latest":
+            if len(records) < 2:
+                raise click.UsageError(f"{slug!r} only has one recorded version — nothing to diff.")
+            v1, v2 = records[-2].version, records[-1].version
+        else:
+            try:
+                v1_str, v2_str = diff_range.split(":", 1)
+                v1, v2 = int(v1_str), int(v2_str)
+            except ValueError as exc:
+                raise click.UsageError(f"--diff must be 'N:M' or 'latest', got {diff_range!r}.") from exc
+        click.echo(diff_versions(history_dir, slug, v1, v2))
+        return
+
+    for record in records:
+        click.echo(
+            f"v{record.version}  {record.timestamp}  {record.source:<17} "
+            f"+{record.lines_added}/-{record.lines_removed}  {record.content_hash}"
+        )
 
 
 if __name__ == "__main__":

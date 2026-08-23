@@ -3,13 +3,18 @@
 # variable name instead, and set that variable in your shell / .env.
 
 llm:
-  provider: anthropic          # supported: anthropic, bedrock
+  provider: anthropic          # supported: anthropic, bedrock, vertex
   model: claude-opus-4-6       # or claude-sonnet-4-6, etc. — check your provider's
                                  # available models list; this is just an example
-  api_key_env: ANTHROPIC_API_KEY  # anthropic only — ignored by bedrock, which uses
-                                    # AWS's normal credential chain instead
+  api_key_env: ANTHROPIC_API_KEY  # anthropic only — ignored by bedrock/vertex, which
+                                    # use their cloud's normal credential chain instead
   # region: us-east-1          # bedrock only (default: us-east-1). Requires
                                  # `pip install "policyforge[bedrock]"`.
+  # project_id: my-gcp-project  # vertex only, required. Your GCP project ID.
+  # region: us-central1         # vertex only (default: us-central1). Requires
+                                 # `pip install "policyforge[vertex]"` and Google Cloud
+                                 # Application Default Credentials
+                                 # (`gcloud auth application-default login`).
 
 frameworks:
   # Bundled, public-domain — safe to enable out of the box.

@@ -193,14 +193,33 @@ def test_generate_standard_drafts_document_from_synthesis(tmp_path, monkeypatch)
     )
     monkeypatch.setattr(cli_mod, "get_provider", lambda config: fake)
 
+    history_dir = tmp_path / "history"
+
     result = CliRunner().invoke(
         cli_mod.cli,
-        ["generate", "--tier", "standard", "--synthesis", str(synthesis_path), "--out", str(out_path)],
+        [
+            "generate",
+            "--tier",
+            "standard",
+            "--synthesis",
+            str(synthesis_path),
+            "--out",
+            str(out_path),
+            "--history-dir",
+            str(history_dir),
+        ],
     )
 
     assert result.exit_code == 0
     assert "Acme Corp" in fake.calls[0]["prompt"]
     assert out_path.read_text(encoding="utf-8").startswith("# Authenticator Management Standard")
+
+    from policyforge.history.version_store import load_history
+
+    history = load_history(history_dir, "standard/authenticator-mgmt")
+    assert len(history) == 1
+    assert history[0].version == 1
+    assert history[0].source == "generate"
 
 
 def test_generate_policy_requires_standard_and_references_its_title(tmp_path, monkeypatch):
@@ -227,7 +246,15 @@ def test_generate_policy_requires_standard_and_references_its_title(tmp_path, mo
     # --tier policy without --standard should fail fast with a clear error.
     missing_standard = CliRunner().invoke(
         cli_mod.cli,
-        ["generate", "--tier", "policy", "--synthesis", str(synthesis_path)],
+        [
+            "generate",
+            "--tier",
+            "policy",
+            "--synthesis",
+            str(synthesis_path),
+            "--history-dir",
+            str(tmp_path / "history"),
+        ],
     )
     assert missing_standard.exit_code != 0
 
@@ -243,12 +270,205 @@ def test_generate_policy_requires_standard_and_references_its_title(tmp_path, mo
             str(standard_path),
             "--out",
             str(out_path),
+            "--history-dir",
+            str(tmp_path / "history"),
         ],
     )
 
     assert result.exit_code == 0
     assert "Authenticator Management Standard" in fake.calls[0]["prompt"]
     assert out_path.read_text(encoding="utf-8").startswith("# Authenticator Management Policy")
+
+
+def test_generate_parser_writes_generated_module(tmp_path, monkeypatch):
+    import policyforge.cli as cli_mod
+
+    sample_path = tmp_path / "sample.csv"
+    sample_path.write_text("control_id,title\nAC-1,Access Control Policy\n", encoding="utf-8")
+    out_path = tmp_path / "hitrust_loader.py"
+
+    fake = FakeProvider(
+        text="from __future__ import annotations\n\n"
+        "def load_hitrust_export(export_path):\n    return []\n"
+    )
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    monkeypatch.setattr(cli_mod, "get_provider", lambda config: fake)
+
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        [
+            "generate-parser",
+            "--framework",
+            "hitrust",
+            "--sample",
+            str(sample_path),
+            "--out",
+            str(out_path),
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "control_id,title" in fake.calls[0]["prompt"]
+    written = out_path.read_text(encoding="utf-8")
+    assert "def load_hitrust_export(export_path):" in written
+
+    # Re-running without --force should refuse to clobber the file just written.
+    refused = CliRunner().invoke(
+        cli_mod.cli,
+        [
+            "generate-parser",
+            "--framework",
+            "hitrust",
+            "--sample",
+            str(sample_path),
+            "--out",
+            str(out_path),
+            "--yes",
+        ],
+    )
+    assert refused.exit_code != 0
+
+
+def test_generate_parser_rejects_syntactically_invalid_output(tmp_path, monkeypatch):
+    import policyforge.cli as cli_mod
+
+    sample_path = tmp_path / "sample.csv"
+    sample_path.write_text("control_id,title\nAC-1,Access Control Policy\n", encoding="utf-8")
+    out_path = tmp_path / "hitrust_loader.py"
+
+    fake = FakeProvider(text="def broken(:\n    this is not python")
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    monkeypatch.setattr(cli_mod, "get_provider", lambda config: fake)
+
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        [
+            "generate-parser",
+            "--framework",
+            "hitrust",
+            "--sample",
+            str(sample_path),
+            "--out",
+            str(out_path),
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert not out_path.exists()
+
+
+def test_import_confluence_writes_markdown_and_records_history(tmp_path, monkeypatch):
+    from policyforge.cli import cli
+
+    monkeypatch.setenv("CONFLUENCE_API_TOKEN", "tok")
+
+    class FakeResponse:
+        def __init__(self, data):
+            self._data = data
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._data
+
+    monkeypatch.setattr(
+        "requests.get",
+        lambda *a, **k: FakeResponse(
+            {
+                "results": [
+                    {
+                        "id": "1",
+                        "title": "Authenticator Management Standard",
+                        "version": {"number": 1},
+                        "body": {"storage": {"value": "<h1>Authenticator Management Standard</h1><p>Body</p>"}},
+                        "_links": {"webui": "/x"},
+                    }
+                ]
+            }
+        ),
+    )
+
+    out_path = tmp_path / "imported.md"
+    history_dir = tmp_path / "history"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "import-confluence",
+            "--tier",
+            "standard",
+            "--name",
+            "authenticator-mgmt",
+            "--space",
+            "ENG",
+            "--title",
+            "Authenticator Management Standard",
+            "--host",
+            "https://example.atlassian.net/wiki",
+            "--out",
+            str(out_path),
+            "--history-dir",
+            str(history_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert out_path.read_text(encoding="utf-8").startswith("# Authenticator Management Standard")
+
+    from policyforge.history.version_store import load_history
+
+    history = load_history(history_dir, "standard/authenticator-mgmt")
+    assert len(history) == 1
+    assert history[0].source == "confluence-import"
+
+
+def test_history_command_lists_and_diffs_versions(tmp_path):
+    from policyforge.cli import cli
+    from policyforge.history.version_store import record_version
+
+    history_dir = tmp_path / "history"
+    record_version(history_dir, "standard/auth-mgmt", "line one\n", source="generate")
+    record_version(history_dir, "standard/auth-mgmt", "line one\nline two\n", source="generate")
+
+    listing = CliRunner().invoke(
+        cli,
+        ["history", "--tier", "standard", "--name", "auth-mgmt", "--history-dir", str(history_dir)],
+    )
+    assert listing.exit_code == 0
+    assert "v1" in listing.output
+    assert "v2" in listing.output
+
+    diff = CliRunner().invoke(
+        cli,
+        [
+            "history",
+            "--tier",
+            "standard",
+            "--name",
+            "auth-mgmt",
+            "--history-dir",
+            str(history_dir),
+            "--diff",
+            "latest",
+        ],
+    )
+    assert diff.exit_code == 0
+    assert "+line two" in diff.output
+
+
+def test_history_command_reports_no_history(tmp_path):
+    from policyforge.cli import cli
+
+    result = CliRunner().invoke(
+        cli,
+        ["history", "--tier", "standard", "--name", "never-generated", "--history-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "No recorded history" in result.output
 
 
 def test_export_confluence_dry_run_prints_storage_format(tmp_path):

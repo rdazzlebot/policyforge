@@ -1,10 +1,10 @@
 """Provider-agnostic LLM interface.
 
-v1 ships a single concrete provider (Anthropic's API directly). Everything
-that calls an LLM in this codebase should depend on this interface, not on
-`anthropic` directly — that's what makes it possible to add a
-VertexProvider or BedrockProvider later without touching mapping/,
-synthesis/, or generate/.
+Ships three concrete providers: Anthropic's API directly, Amazon Bedrock,
+and Google Cloud's Vertex AI Model Garden. Everything that calls an LLM in
+this codebase should depend on this interface, not on `anthropic` or a
+cloud SDK directly — that's what makes it possible to add another provider
+later without touching mapping/, synthesis/, or generate/.
 """
 
 from __future__ import annotations
@@ -67,8 +67,20 @@ def get_provider(config: dict) -> LLMProvider:
             region=config["llm"].get("region", "us-east-1"),
         )
 
+    if provider_name == "vertex":
+        from .vertex_provider import VertexProvider
+
+        if "project_id" not in config["llm"]:
+            raise ValueError(
+                "llm.project_id is required for the vertex provider — set it to your "
+                "GCP project ID in config.yaml."
+            )
+        return VertexProvider(
+            model=config["llm"]["model"],
+            project_id=config["llm"]["project_id"],
+            region=config["llm"].get("region", "us-central1"),
+        )
+
     raise ValueError(
-        f"Unknown llm.provider '{provider_name}'. "
-        "Supported: anthropic, bedrock. (A Vertex AI Model Garden provider "
-        "is a planned follow-up — see README roadmap.)"
+        f"Unknown llm.provider '{provider_name}'. Supported: anthropic, bedrock, vertex."
     )

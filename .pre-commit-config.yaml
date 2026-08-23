@@ -26,12 +26,15 @@ repos:
 
   # Markdown quality — enforces "Markdown is the primary deliverable" (see
   # README's "Output format priority"). Checks both repo docs and anything
-  # committed under output/ during development.
+  # committed under output/ during development. mdformat-frontmatter is
+  # required so YAML frontmatter (e.g. .claude/skills/*/SKILL.md) is left
+  # alone instead of being reformatted into a heading — without it, mdformat
+  # silently destroys any frontmatter block it touches.
   - repo: https://github.com/executablebooks/mdformat
     rev: 0.7.19
     hooks:
       - id: mdformat
-        additional_dependencies: ["mdformat-gfm"]
+        additional_dependencies: ["mdformat-gfm", "mdformat-frontmatter"]
 
   # Basic hygiene.
   - repo: https://github.com/pre-commit/pre-commit-hooks

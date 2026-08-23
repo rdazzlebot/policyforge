@@ -245,6 +245,23 @@ Before every commit and on every push, this repo is designed to run:
   repo itself) is well-formed CommonMark. This is the enforcement mechanism behind
   the "Markdown is the primary deliverable" requirement above, not just a style nit.
 
+Two more run continuously rather than per-commit/per-push:
+
+- **CodeQL** (`.github/workflows/codeql.yml`) — a second SAST engine alongside semgrep,
+  using data-flow/taint-tracking analysis rather than pattern matching, so it catches a
+  genuinely different class of bug (e.g. untrusted input reaching a dangerous sink
+  across multiple function calls). Runs on push/PR to `main` and weekly on a schedule;
+  results land in the repo's Security tab.
+- **Dependabot** (`.github/dependabot.yml`) — unlike pip-audit's point-in-time CI check,
+  this watches continuously and opens a PR the moment a new CVE is published against a
+  Python dependency or a GitHub Action this repo uses, with a 7-day cooldown before
+  proposing any newly published version (so a malicious or broken release has time to
+  get caught upstream first). It also keeps this repo's SHA-pinned GitHub Actions (see
+  ci.yml) current — Dependabot resolves and updates the pinned SHA, not just tag-based
+  references. **Enabling Dependabot alerts/security updates is a separate step** — go to
+  the repo's Settings → Code security and analysis and turn them on; committing
+  `dependabot.yml` alone doesn't enable it.
+
 See `.pre-commit-config.yaml` and `.github/workflows/ci.yml`.
 
 ### Running the quality checks yourself

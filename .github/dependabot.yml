@@ -1,0 +1,26 @@
+version: 2
+updates:
+  # Python dependencies (pyproject.toml). Catches both routine version bumps
+  # and, more importantly, the moment a new CVE lands against something this
+  # project depends on — continuous, unlike pip-audit's point-in-time CI checks.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Wait before proposing an update to a newly published version — gives
+    # the ecosystem time to catch a malicious or broken release before this
+    # repo pulls it in.
+    cooldown:
+      default-days: 7
+
+  # GitHub Actions used in ci.yml. Actions here are pinned to commit SHAs
+  # (see ci.yml) rather than mutable version tags, for supply-chain
+  # hardening — Dependabot still tracks SHA-pinned actions and opens PRs
+  # that bump the SHA (and its trailing version comment) when a new release
+  # ships, so pinning doesn't mean going stale.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7

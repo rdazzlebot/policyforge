@@ -27,6 +27,9 @@ frameworks:
   - id: arc-ampe
     source: bundled
 
+  - id: hipaa-security-rule
+    source: bundled
+
   # BYOC — point at your own licensed export. The path must live under
   # local_content/ (gitignored) so it never ends up in the repo history.
   - id: govramp

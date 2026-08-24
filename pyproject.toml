@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "policyforge"
 version = "0.1.0"
-description = "Cross-mapped compliance policy/standard/procedure generation from NIST 800-53, FedRAMP, ARC-AMPE, and (BYOC) HITRUST/GovRAMP."
+description = "Cross-mapped compliance policy/standard/procedure generation from NIST 800-53, FedRAMP, ARC-AMPE, the HIPAA Security Rule, and (BYOC) HITRUST/GovRAMP."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }

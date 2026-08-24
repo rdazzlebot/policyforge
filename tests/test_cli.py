@@ -93,6 +93,27 @@ version: Rev 5
     assert controls[0]["control_id"] == "AC-2"
 
 
+def test_etl_hipaa_fetches_and_parses(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from policyforge.cli import cli
+
+    fixture = (
+        Path(__file__).parent / "fixtures" / "ecfr_45cfr164_subpart_c.xml"
+    ).read_text(encoding="utf-8")
+    monkeypatch.setattr(
+        "policyforge.ingest.hipaa_loader.fetch_ecfr_subpart_c_xml", lambda **kwargs: fixture
+    )
+    out_path = tmp_path / "hipaa-controls.json"
+
+    result = CliRunner().invoke(cli, ["etl-hipaa", "--out", str(out_path)])
+
+    assert result.exit_code == 0
+    controls = json.loads(out_path.read_text(encoding="utf-8"))
+    assert len(controls) == 34
+    assert any(c["control_id"] == "164.308(a)(1)(i)" for c in controls)
+
+
 def test_map_builds_crosswalk_from_controls_json(tmp_path):
     from policyforge.cli import cli
 

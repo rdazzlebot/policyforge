@@ -2,8 +2,8 @@
 
 Generate cross-mapped information security policies, standards, and
 procedures from public compliance frameworks (NIST 800-53, FedRAMP,
-ARC-AMPE) plus your own optionally-licensed content (HITRUST CSF, GovRAMP),
-using an LLM you bring the API key for.
+ARC-AMPE, the HIPAA Security Rule) plus your own optionally-licensed
+content (HITRUST CSF, GovRAMP), using an LLM you bring the API key for.
 
 This project separates two things that are easy to accidentally tangle
 together: **the engine** (this code — the crosswalk logic, the merge/dedupe
@@ -16,11 +16,15 @@ add any framework content to this repo.
 
 The full pipeline is functional end-to-end: `etl-vault` -> `map` -> `synthesize`
 -> `generate` -> `export-confluence` (optional). All three LLM providers
-(Anthropic, Bedrock, Vertex), the NIST vault ETL loader, crosswalk builder,
+(Anthropic, Bedrock, Vertex), the NIST vault ETL loader, the HIPAA Security
+Rule loader (`etl-hipaa`, bundled and populated), crosswalk builder,
 LLM-driven synthesis/generation stages, Confluence export/import, and local
 version history are all wired up and tested. HITRUST/GovRAMP BYOC loaders
 remain stubs pending a sample export to parse against — see
-`ingest/byoc_loader.py` and `policyforge generate-parser`.
+`ingest/byoc_loader.py` and `policyforge generate-parser`. HIPAA is loaded
+but **not yet cross-walked to NIST 800-53**, so `synthesize` won't pull it
+into a topic until that mapping exists — see
+`data/frameworks/hipaa-security-rule/README.md`.
 
 ## Zero Obsidian dependency
 
@@ -147,16 +151,17 @@ policyforge generate --tier procedure --synthesis output/synthesis/auth-mgmt.md 
 
 ## Licensing model (per framework)
 
-Not all four frameworks this project targets are safe to bundle and
-redistribute in an open repo. Treat them differently:
+Not all frameworks this project targets are safe to bundle and redistribute
+in an open repo. Treat them differently:
 
-| Framework             | Status                                                                                                                            | How this project handles it                                                                                                                                                                                              |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **NIST 800-53 Rev 5** | US federal government work — public domain                                                                                        | Bundled directly in `data/frameworks/nist-800-53-r5/`                                                                                                                                                                    |
-| **FedRAMP**           | US federal government work — public domain                                                                                        | Bundled directly in `data/frameworks/fedramp/`                                                                                                                                                                           |
-| **ARC-AMPE**          | Published by CMS (federal agency) — public domain                                                                                 | Bundled directly in `data/frameworks/arc-ampe/`                                                                                                                                                                          |
-| **GovRAMP**           | GovRAMP's Terms & Conditions claim ownership of "documents, downloadable files" on their site, with no redistribution grant found | **Not bundled.** Treated as bring-your-own-content (BYOC) via `local_content/` until GovRAMP grants explicit permission (worth emailing info@govramp.org — ask before assuming).                                         |
-| **HITRUST CSF**       | Contractually licensed content                                                                                                    | **Never bundled.** BYOC only — you supply your own MyCSF/CSF export under your own license, and it's parsed locally. It is never committed, never uploaded anywhere by this tool, and stays out of git via `.gitignore`. |
+| Framework               | Status                                                                                                                            | How this project handles it                                                                                                                                                                                              |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **NIST 800-53 Rev 5**   | US federal government work — public domain                                                                                        | Bundled directly in `data/frameworks/nist-800-53-r5/`                                                                                                                                                                    |
+| **FedRAMP**             | US federal government work — public domain                                                                                        | Bundled directly in `data/frameworks/fedramp/`                                                                                                                                                                           |
+| **ARC-AMPE**            | Published by CMS (federal agency) — public domain                                                                                 | Bundled directly in `data/frameworks/arc-ampe/`                                                                                                                                                                          |
+| **HIPAA Security Rule** | US federal regulation (45 CFR 164 Subpart C) — public domain                                                                      | Bundled directly in `data/frameworks/hipaa-security-rule/`, sourced from eCFR's public API via `policyforge etl-hipaa` — see that directory's README for what's not yet covered (the NIST 800-53 crosswalk).             |
+| **GovRAMP**             | GovRAMP's Terms & Conditions claim ownership of "documents, downloadable files" on their site, with no redistribution grant found | **Not bundled.** Treated as bring-your-own-content (BYOC) via `local_content/` until GovRAMP grants explicit permission (worth emailing info@govramp.org — ask before assuming).                                         |
+| **HITRUST CSF**         | Contractually licensed content                                                                                                    | **Never bundled.** BYOC only — you supply your own MyCSF/CSF export under your own license, and it's parsed locally. It is never committed, never uploaded anywhere by this tool, and stays out of git via `.gitignore`. |
 
 **Rule of thumb:** if you're not certain a document is a public-domain
 government work, it goes in `local_content/` (gitignored), not `data/`.
@@ -306,3 +311,11 @@ content, org context, or exported policies to this public repo.
 - [ ] GovRAMP: follow up on redistribution permission; if granted, move from BYOC to bundled
 - [x] Google Cloud Vertex AI Model Garden LLM provider (`llm/vertex_provider.py`) —
   install with `pip install "policyforge[vertex]"`
+- [x] `ingest/hipaa_loader.py` + `policyforge etl-hipaa` — HIPAA Security Rule (45 CFR
+  164 Subpart C), bundled and populated, sourced from eCFR's public API
+- [ ] HIPAA-to-NIST-800-53 crosswalk — NIST SP 800-66 Rev. 2 publishes an official
+  mapping; wiring it into `mapping/crosswalk.py` is what lets `synthesize` actually pull
+  HIPAA requirements into a topic alongside NIST/FedRAMP
+- [ ] Other healthcare-relevant frameworks worth considering: HITRUST CSF (already
+  stubbed as BYOC, and now that `generate-parser` exists, buildable against a real
+  MyCSF export), MARS-E (CMS, NIST-800-53-based, same public-domain lineage as ARC-AMPE)

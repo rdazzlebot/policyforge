@@ -65,6 +65,41 @@ def etl_vault(controls_dir: Path, out: Path):
     click.echo(f"Parsed {len(controls)} controls -> {out}")
 
 
+@cli.command("etl-hipaa")
+@click.option(
+    "--date",
+    default=None,
+    help="Specific eCFR effective date (YYYY-MM-DD) to fetch, for reproducibility. "
+    "Default: eCFR's current published date for Title 45.",
+)
+@click.option(
+    "--out",
+    default=Path("data/frameworks/hipaa-security-rule/controls.json"),
+    type=click.Path(path_type=Path),
+    help="Where to write the parsed control data.",
+)
+def etl_hipaa(date: str | None, out: Path):
+    """Fetch the HIPAA Security Rule (45 CFR 164 Subpart C) from eCFR's public
+    API and parse it into this project's data schema. Public domain — a US
+    federal regulation, same basis as NIST/FedRAMP/ARC-AMPE — so unlike
+    HITRUST/GovRAMP this is safe to bundle directly. See
+    ingest/hipaa_loader.py for parsing details.
+    """
+    import dataclasses
+    import json
+
+    from policyforge.ingest.hipaa_loader import fetch_ecfr_subpart_c_xml, parse_hipaa_security_rule
+
+    xml_text = fetch_ecfr_subpart_c_xml(date=date)
+    controls = parse_hipaa_security_rule(xml_text)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        json.dumps([dataclasses.asdict(c) for c in controls], indent=2),
+        encoding="utf-8",
+    )
+    click.echo(f"Parsed {len(controls)} HIPAA Security Rule requirements -> {out}")
+
+
 @cli.command("map")
 @click.option(
     "--controls",

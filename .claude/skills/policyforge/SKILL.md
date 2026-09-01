@@ -204,6 +204,19 @@ Optional, after generating:
   revision, including what the model flagged and what it declined — that is
   the answer to "why did this page change".
 
+- **`policyforge parameters --controls <path>... [--baseline <b>] [--topics <path>] [--group] [--init]`**
+  — the ledger of organization-defined values. Run it before `synthesize` for a
+  new programme: 800-53 leaves ~1,200 values to the organization, and without a
+  decision recorded the model picks each one inside the prose, inconsistently.
+  **Always scope it** (`--baseline`, `--topics`) — the whole catalog is a
+  thousand parameters and is not a to-do list. `--group` orders by leverage.
+  `--init` scaffolds the file and preserves existing decisions.
+  **Do not fill in values yourself.** A frequency is a commitment the
+  organization has to defend to an assessor; ask the user, and record their
+  reasoning in `rationale`/`source`. A parameter left blank stays as
+  `[Assignment: ...]` in the output, which is the correct outcome for an
+  undecided value — not a bug to paper over.
+
 - **`policyforge roles`** — list the tool and team roles config can assign.
   Run it before editing `org.vendors`/`org.teams`: the keys are fixed, and a
   typo'd one is reported and ignored rather than guessed at. Role-keyed values

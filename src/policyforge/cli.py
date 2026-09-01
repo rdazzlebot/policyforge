@@ -430,6 +430,14 @@ def coverage_cmd(
     help="Path to the crosswalk.json produced by `policyforge map`.",
 )
 @click.option(
+    "--parameters",
+    "parameters_path",
+    default=Path("config/parameters.yaml"),
+    type=click.Path(path_type=Path),
+    help="Ledger of decided organization-defined parameter values. Missing is "
+    "fine — undecided parameters stay as [Assignment: ...] placeholders.",
+)
+@click.option(
     "--out-dir",
     default=Path("output/synthesis"),
     type=click.Path(path_type=Path),
@@ -442,6 +450,7 @@ def synthesize_cmd(
     nist_controls: str | None,
     controls_paths,
     crosswalk_path: Path,
+    parameters_path: Path,
     out_dir: Path,
 ):
     """Merge/dedupe controls for one topic into synthesized requirement prose.
@@ -487,6 +496,17 @@ def synthesize_cmd(
     controls = []
     for path in controls_paths:
         controls.extend(load_controls(path))
+
+    # Decided parameter values go in before synthesis, not after. A
+    # requirement that already says "quarterly" is one the model restates;
+    # one that says [Assignment: organization-defined frequency] is one it
+    # quietly decides, differently in every document.
+    from policyforge.parameters.ledger import apply_to_controls, load_ledger
+
+    decisions = load_ledger(parameters_path)
+    if decisions:
+        controls, filled = apply_to_controls(controls, decisions)
+        click.echo(f"Applied {len(decisions)} recorded parameter decision(s): {filled} filled.")
 
     crosswalk = json.loads(crosswalk_path.read_text(encoding="utf-8"))
     synthesis_topic = build_synthesis_topic(topic, nist_ids, controls, crosswalk)
@@ -1510,6 +1530,119 @@ def _content_dir(override: Path | None) -> Path:
         config = {}
     configured = (config.get("zardoz") or {}).get("content_dir") or ""
     return Path(configured) if configured else Path("docs")
+
+
+@cli.command("parameters")
+@click.option(
+    "--controls",
+    "controls_paths",
+    multiple=True,
+    required=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Framework controls.json to read parameters from. Repeatable.",
+)
+@click.option(
+    "--ledger",
+    "ledger_path",
+    default=Path("config/parameters.yaml"),
+    type=click.Path(path_type=Path),
+    help="Where decisions are recorded.",
+)
+@click.option(
+    "--baseline",
+    type=click.Choice(["low", "moderate", "high"]),
+    default=None,
+    help="Only controls in this baseline. A thousand parameters is not a "
+    "to-do list; the ones you must answer for are.",
+)
+@click.option(
+    "--topics",
+    "topics_path",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Only controls your topic registry anchors — the narrowest useful scope.",
+)
+@click.option(
+    "--group",
+    is_flag=True,
+    help="Summarise by the kind of value being decided (frequency, personnel "
+    "or roles) rather than listing every parameter.",
+)
+@click.option(
+    "--init",
+    "init",
+    is_flag=True,
+    help="Write a ledger covering every in-scope parameter, preserving any "
+    "decisions already recorded.",
+)
+def parameters_cmd(
+    controls_paths,
+    ledger_path: Path,
+    baseline: str | None,
+    topics_path: Path | None,
+    group: bool,
+    init: bool,
+):
+    """Record one decided value per organization-defined parameter.
+
+    SP 800-53 does not say how often to review accounts — it says
+    [Assignment: organization-defined frequency] and leaves it to you, 1,210
+    times across the catalog. Today those get decided implicitly inside
+    generated prose, by a model with no memory of what it chose for the
+    neighbouring control, so the Access Control Standard says quarterly and
+    the SSP says annually and nobody decided anything.
+
+    A value recorded here is substituted into the control text before
+    synthesis, so every document drawn from that control agrees, and the
+    reasoning stays next to the value where an assessor can find it.
+    """
+    from policyforge.ingest.schema import load_controls
+    from policyforge.parameters.ledger import build_report, load_ledger, render_ledger
+
+    controls = []
+    for path in controls_paths:
+        controls.extend(load_controls(path))
+
+    if baseline:
+        controls = [c for c in controls if c.baseline and baseline in c.baseline.lower()]
+    if topics_path is not None:
+        from policyforge.topics.registry import load_topics
+
+        anchored = {
+            control_id.upper()
+            for topic in load_topics(topics_path)
+            for control_id in topic.nist_controls
+        }
+        # An anchor claims its enhancements, the same rule coverage.py uses,
+        # so AC-2 in the registry brings AC-2(1)'s parameters with it.
+        controls = [
+            c
+            for c in controls
+            if c.control_id.upper() in anchored or c.control_id.upper().split("(")[0] in anchored
+        ]
+
+    if not controls:
+        raise click.UsageError("No controls in scope — check --baseline and --topics.")
+
+    decisions = load_ledger(ledger_path)
+    report = build_report(controls, decisions)
+
+    if init:
+        ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        ledger_path.write_text(render_ledger(report.parameters, decisions), encoding="utf-8")
+        click.echo(
+            f"Wrote {ledger_path} with {len(report.parameters)} parameter(s); "
+            f"{len(report.decided)} decision(s) preserved."
+        )
+        click.echo("")
+
+    click.echo(report.format_report(group=group))
+    if report.undecided and not init:
+        click.echo("")
+        click.echo(
+            f"Run with --init to scaffold {ledger_path} with every one of them, "
+            "then fill in the values you can defend."
+        )
 
 
 @cli.command("frameworks")

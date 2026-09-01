@@ -194,6 +194,27 @@ def parse_document(text: str, *, path: Path, root: Path) -> ContentDocument:
     )
 
 
+def render_document(metadata: dict, body: str) -> str:
+    """Serialize frontmatter plus body, the way a file in the tree looks.
+
+    The inverse of `parse_document`, used when a live page is pulled down
+    into the tree: the binding back to the page it came from has to be
+    written into the file, or the next publish would not know where it goes.
+
+    Keys are emitted in the order given rather than sorted, because a human
+    opens this file and `title` belongs above `confluence:`. Empty values
+    are dropped so a pulled document does not arrive full of blank fields
+    nobody filled in.
+    """
+    import yaml
+
+    kept = {key: value for key, value in metadata.items() if value not in ("", None, [], {})}
+    if not kept:
+        return body.rstrip() + "\n"
+    front = yaml.safe_dump(kept, sort_keys=False, allow_unicode=True).strip()
+    return f"---\n{front}\n---\n\n{body.strip()}\n"
+
+
 def load_content_tree(
     root: Path, *, excluded: set[str] | None = None
 ) -> tuple[list[ContentDocument], list[tuple[str, str]]]:

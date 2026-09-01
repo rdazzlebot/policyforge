@@ -1461,6 +1461,217 @@ def history_cmd(tier: str, name: str, history_dir: Path, diff_range: str | None)
             click.echo(f"        asked: {metadata['instruction']}")
 
 
+def _content_dir(override: Path | None) -> Path:
+    """The markdown content tree: the flag, then config, then `docs/`.
+
+    Shared by publish/pull/check and by `zardoz sync`, because they are all
+    talking about the same tree and a repo that had to say where it lives
+    four times would eventually say it differently once.
+    """
+    if override is not None:
+        return override
+    try:
+        config = load_config()
+    except FileNotFoundError:
+        config = {}
+    configured = (config.get("zardoz") or {}).get("content_dir") or ""
+    return Path(configured) if configured else Path("docs")
+
+
+@cli.command("check")
+@click.option(
+    "--content-dir",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Markdown content tree to check. Defaults to `zardoz.content_dir`, else docs/.",
+)
+@click.option(
+    "--synthesis-dir",
+    default=Path("output/synthesis"),
+    type=click.Path(path_type=Path),
+    help="Where the synthesis files live, for the dropped-citation check. "
+    "Skipped if the directory isn't there.",
+)
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Treat warnings as failures too. For a repo that has finished migrating.",
+)
+def check_cmd(content_dir: Path | None, synthesis_dir: Path, strict: bool):
+    """Check the content tree before anything is published.
+
+    Entirely offline, so it runs on a pull request from a fork with no
+    credentials — which is where you want it. Catches the mistakes that
+    survive review and fail later: two files claiming one Confluence page,
+    a link to a document somebody renamed, a rewrite that dropped the
+    framework citations a document exists to carry.
+    """
+    from policyforge.content.check import check_tree
+
+    root = _content_dir(content_dir)
+    if not root.exists():
+        raise click.UsageError(
+            f"No content directory at {root}. Pass --content-dir, or set "
+            "`zardoz.content_dir` in config/config.yaml."
+        )
+
+    report = check_tree(root, synthesis_dir=synthesis_dir)
+    click.echo(report.format_report())
+
+    if not report.ok or (strict and report.warnings):
+        raise SystemExit(1)
+
+
+@cli.command("publish")
+@click.option(
+    "--content-dir",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Markdown content tree to publish from.",
+)
+@click.option("--host", default="", help="Confluence base URL. Defaults to `zardoz.host`.")
+@click.option(
+    "--only",
+    default="",
+    help="Only publish documents whose path contains this substring, so a CI job "
+    "can republish just what a merge touched.",
+)
+@click.option("--apply", "apply_", is_flag=True, help="Actually publish. Without it, plan only.")
+@click.option(
+    "--allow-macros",
+    is_flag=True,
+    help="Publish over pages using macros this tool cannot round-trip. This "
+    "flattens them; do not pass it to get past a skip you haven't read.",
+)
+def publish_cmd(content_dir: Path | None, host: str, only: str, apply_: bool, allow_macros: bool):
+    """Publish the content tree to the pages its frontmatter declares.
+
+    Each document names its own destination, so the file-to-page mapping
+    lives in the repository under review rather than in a workflow argument.
+    A document with no `confluence:` block is not published, which is how a
+    draft stays a draft.
+
+    Plans by default and writes nothing; pass --apply once you have read it.
+    """
+    from policyforge.export.publish import publish_tree
+
+    root = _content_dir(content_dir)
+    if not root.exists():
+        raise click.UsageError(f"No content directory at {root}.")
+
+    try:
+        config = load_config()
+    except FileNotFoundError:
+        config = {}
+    host = _zardoz_setting(config, "host", host)
+    if not host:
+        raise click.UsageError(
+            "No Confluence host. Pass --host, or add one to config/config.yaml:\n"
+            "    zardoz:\n"
+            "      host: https://yourorg.atlassian.net/wiki"
+        )
+
+    report = publish_tree(root, host=host, dry_run=not apply_, allow_macros=allow_macros, only=only)
+    click.echo(report.format_report())
+    if report.skipped and not report.published:
+        raise SystemExit(1)
+
+
+@cli.command("pull")
+@click.option(
+    "--content-dir",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Markdown content tree to write into.",
+)
+@click.option("--host", default="", help="Confluence base URL. Defaults to `zardoz.host`.")
+@click.option(
+    "--topics",
+    "topics_path",
+    default=Path("config/topics.yaml"),
+    type=click.Path(path_type=Path),
+    help="Registry whose declared pages to pull. Ignored if --title is given.",
+)
+@click.option("--space", default="", help="Pull one page: its space key.")
+@click.option("--title", default="", help="Pull one page: its exact title.")
+@click.option(
+    "--tier",
+    default="standard",
+    type=click.Choice(["policy", "standard", "procedure"]),
+    show_default=True,
+    help="Tier for a single --title pull, which decides where it lands.",
+)
+@click.option(
+    "--apply", "apply_", is_flag=True, help="Actually write files. Without it, plan only."
+)
+@click.option(
+    "--allow-macros",
+    is_flag=True,
+    help="Pull pages whose macros would not survive a later publish. The file "
+    "will look correct and destroy them the first time it is published.",
+)
+def pull_cmd(
+    content_dir: Path | None,
+    host: str,
+    topics_path: Path,
+    space: str,
+    title: str,
+    tier: str,
+    apply_: bool,
+    allow_macros: bool,
+):
+    """Bring live Confluence pages down into the tree as markdown.
+
+    The way back. Somebody will edit the wiki directly - that is what a wiki
+    is for - and without this, every such edit is either lost on the next
+    publish or quietly makes the repo wrong. Pulling turns it into a diff on
+    a branch.
+
+    Pages using macros this tool cannot round-trip are refused rather than
+    written, because the file would look correct and destroy them on the
+    first publish.
+    """
+    from policyforge.export.pull import pages_from_topics, pull_pages
+    from policyforge.topics.registry import load_topics
+
+    root = _content_dir(content_dir)
+
+    try:
+        config = load_config()
+    except FileNotFoundError:
+        config = {}
+    host = _zardoz_setting(config, "host", host)
+    if not host:
+        raise click.UsageError("No Confluence host. Pass --host, or set `zardoz.host`.")
+
+    if title:
+        if not space:
+            raise click.UsageError("--title needs --space to say which space to look in.")
+        targets = [(space, title, tier)]
+    else:
+        try:
+            targets = pages_from_topics(load_topics(topics_path))
+        except FileNotFoundError:
+            raise click.UsageError(
+                f"No topic registry at {topics_path}, and no --title given, so there is "
+                "nothing to pull. Name a page with --space/--title, or declare your "
+                "pages in the registry."
+            ) from None
+        if not targets:
+            raise click.UsageError(
+                "No topic declares a `confluence:` block, so there are no pages to pull."
+            )
+
+    click.echo(f"Pulling {len(targets)} page(s) into {root}")
+    report = pull_pages(
+        targets, root=root, host=host, dry_run=not apply_, allow_macros=allow_macros
+    )
+    click.echo("")
+    click.echo(report.format_report())
+    if report.refused:
+        raise SystemExit(1)
+
+
 def _zardoz_setting(config: dict, key: str, override: str) -> str:
     """CLI flag beats config file beats nothing.
 

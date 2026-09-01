@@ -137,7 +137,11 @@ Optional, after generating:
   away — that clears a working corpus. Find out why nothing resolved. The shell
   is read-only: if the user wants a change made, it drafts an `edit-topic`
   command and you run that.
-  Inside the shell, anything not starting with `/` is a question, and it returns
+  Inside the shell, follow-ups work: "who owns that?" is resolved against the
+  previous turns before retrieval, and the rewritten question is printed as
+  `(reading that as: ...)`. **If that line shows a question the user didn't
+  mean, say so rather than relaying the answer** — `/forget` clears the context.
+  Anything not starting with `/` is a question, and it returns
   the matching passages with citations (retrieval has landed; grounded prose
   answering has not). **"Nothing in the synced documents appears to bear on that"
   is a real result, not a failure to work around** — it means the corpus does not
@@ -152,6 +156,24 @@ Optional, after generating:
   answer as fact: read `/sources` and report what the documents actually say.
   Without an LLM the shell returns passages instead of prose; that is a
   supported mode, not a broken one, so don't treat it as a setup problem.
+- **`policyforge check [--content-dir <dir>] [--synthesis-dir <dir>] [--strict]`**
+  — the repo-backed gate, entirely offline (no credentials, no LLM). Run it
+  before any publish and in CI. Errors block: two files claiming one Confluence
+  page, a link to a document that isn't there, a `confluence:` block with no
+  space. Warnings don't: missing owner or tier. Exits 1 on any error, or on any
+  warning with `--strict`.
+- **`policyforge publish [--content-dir <dir>] --host <url> [--only <substr>] [--apply]`**
+  — push each document to the page its own frontmatter declares. **Plans by
+  default; always show the plan before passing `--apply`.** Documents with no
+  `confluence:` block are deliberately not published. If it skips a page because
+  the live version uses unsupported macros, do *not* reach for `--allow-macros`
+  — that flattens them. Tell the user what would be lost.
+- **`policyforge pull [--content-dir <dir>] --host <url> [--space K --title T --tier <tier>] [--apply]`**
+  — bring live pages down into the tree as markdown, with the frontmatter
+  binding written back so the round trip closes. Defaults to every page the
+  topic registry declares; `--space`/`--title` pulls one. Same rule on
+  `--allow-macros`: a refused page would produce a file that looks correct and
+  destroys those macros on its first publish.
 - **`policyforge history --tier <tier> --name <name> [--diff latest | --diff N:M]`**
   — list or diff the local version history for one document. Use this
   whenever the user asks "what changed" or "show me the history" for a

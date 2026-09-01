@@ -799,6 +799,95 @@ plausible-sounding form available.
 configured is supported, not degraded: retrieval is entirely offline, so you
 get the passages and draw the conclusion yourself.
 
+### Follow-up questions
+
+The questions people have about a policy set arrive in chains, and only the
+first one stands on its own:
+
+```
+zardoz> how often are accounts recertified?
+  Quarterly, by the system owner. [1]
+
+zardoz> who owns that?
+  (reading that as: who owns the quarterly account recertification?)
+  IAM Engineering. [1]
+```
+
+"who owns that?" has one content word. Retrieved literally it finds nothing
+and earns an honest refusal that helps nobody, because the question was
+perfectly clear to anyone reading the exchange.
+
+Resolution happens **before** retrieval, not inside answering. Retrieval is
+keyword scoring; it has no mechanism for "that" and never will. The
+alternative — hand the answering model the whole conversation and hope it
+works out which passages *would* have been relevant — fails silently, because
+the model answers from whatever it was given and nobody can tell the right
+section was never fetched.
+
+**The rewritten question is always shown.** Resolving "who owns that?" is a
+guess about intent, and a good guess is indistinguishable from a bad one once
+the answer is written; printing it means a wrong guess is visible rather than
+convincing. `/forget` drops the context when you change subject, and a
+question that already stands alone is never rewritten at all.
+
+## The repo as the source of truth
+
+The pipeline above ends at Confluence. It also runs the other way round, with
+markdown in a git repository as the source of truth and Confluence as a
+publishing target fed from it:
+
+```
+policyforge check                    # the pull-request gate, offline
+policyforge publish --apply          # tree -> Confluence, on merge
+policyforge pull --apply             # Confluence -> tree, when someone hand-edits
+```
+
+That inversion buys what a wiki cannot. A pull request is a review gate with
+named approvers and a diff. `git log` is a history nobody can quietly rewrite.
+A branch is a draft that doesn't confuse anyone reading production. And a
+document set in a repo can be checked *before* it is published rather than
+after somebody notices.
+
+Each document names its own destination, so the file-to-page mapping lives in
+the repository under review rather than in a workflow argument somebody has to
+keep in step:
+
+```yaml
+---
+title: Access Review Standard
+tier: standard
+owner: IAM Engineering
+confluence:
+  space: SEC
+  title: Acme Access Review Standard
+---
+```
+
+A file with no `confluence:` block is never published, which is how a draft
+stays a draft.
+
+**`check` is the piece that earns its keep.** It runs with no credentials, so
+it works on a pull request from a fork, and it catches what survives review:
+
+| Finding                               | Why it isn't visible in a diff                                                    |
+| ------------------------------------- | --------------------------------------------------------------------------------- |
+| Two files claiming one page           | Both publish; the second wins; the repo still holds two apparent sources of truth |
+| A link to a renamed document          | The prose still reads correctly                                                   |
+| A `confluence:` block with no space   | Nothing says where it goes until publish time                                     |
+| Citations dropped since the synthesis | The traceability an assessor needs, gone from a paragraph that reads fine         |
+
+Missing owners and tiers are warnings rather than errors — a repo mid-migration
+is full of them, and a gate that cannot be satisfied gets switched off. `--strict`
+promotes them once you've finished migrating.
+
+**Both directions refuse rather than degrade.** A page using `info`, `expand`,
+`status` or page-properties macros converts to readable markdown and would be
+flattened on the way back. `publish` skips such a page instead of overwriting
+work nobody agreed to lose; `pull` refuses it instead of writing a file that
+looks correct and destroys the macros the first time it is published. Both name
+the page and the macros. `--allow-macros` exists on each and should not be
+reached for to get past a skip you haven't read.
+
 ### Reading pages this tool didn't write
 
 Bringing an existing Confluence space in asks more of the conversion than
@@ -1001,16 +1090,18 @@ src/policyforge/
                           whole topic's document set. See "Editing a live page".
   content/                The markdown content tree: documents as files, resolved
                           into tier/owner/published-page whether or not they carry
-                          frontmatter. Shared, not Zardoz-specific — it's the
-                          reading half of a repo-backed document set.
+                          frontmatter, plus check.py's offline pull-request gate.
+                          Shared, not Zardoz-specific — it's the reading half of a
+                          repo-backed document set, and talks to no network.
   zardoz/                 The conversational read side (`policyforge zardoz`):
                           art.py is the floating head and every persona string,
                           shell.py the REPL, corpus.py the local document
                           snapshot over markdown and/or Confluence, retrieve.py
                           the chunking and ranking that finds the passage a
                           question is about, answer.py the grounded answering
-                          and the checks that verify its citations. Never
-                          imports the publish path.
+                          and the checks that verify its citations, and
+                          conversation.py the follow-up resolution that makes it
+                          a conversation. Never imports the publish path.
   ssp/                    Builds a NIST 800-53 System Security Plan as an .xlsx
                           workbook (`policyforge ssp`), with LLM-drafted
                           implementation narratives. See "System Security Plan" below.
@@ -1210,17 +1301,23 @@ declared, checkable data is where most of the remaining value is.
   access review cadence". Acronyms are handled (MFA ↔ multi-factor authentication)
   because they are standardized; ordinary morphology and synonymy are not, and want
   embeddings *alongside* exact identifier matching rather than instead of it
-- [ ] **`policyforge publish`** — read the content tree's frontmatter and push each
-  document to the page it declares, so publishing is driven by the files rather
-  than by a title typed on the command line. The piece a CI job calls on merge
-- [ ] **`policyforge pull`** — the inverse: fetch live pages into the tree as
-  markdown, with frontmatter written back, so a page somebody hand-edited becomes
-  a reviewable diff instead of a surprise. Refuses pages whose macros wouldn't
-  survive the round trip rather than flattening them
-- [ ] **`policyforge check`** — the CI gate: frontmatter resolves, no two files
-  claim one page, no dangling cross-references, no dropped framework citations
-  against the synthesis. Everything that should fail a pull request rather than
-  reach the wiki
+- [x] **`policyforge publish`** — walks the content tree and pushes each document
+  to the page its own frontmatter declares, so the file-to-page mapping lives in
+  the repo under review rather than in a workflow argument. Plans by default;
+  refuses to publish over a page whose macros it cannot round-trip
+- [x] **`policyforge pull`** — the way back. Fetches live pages into the tree as
+  markdown with the binding written into frontmatter, so a page somebody
+  hand-edited becomes a reviewable diff instead of a surprise. Refuses pages that
+  would not survive a later publish rather than writing a file that looks correct
+  and destroys them
+- [x] **`policyforge check`** — the pull-request gate, entirely offline so it runs
+  on a fork with no credentials: frontmatter resolves, no two files claim one
+  page, no dangling cross-references, no citations dropped since the synthesis
+- [x] **Zardoz follow-up questions** (`zardoz/conversation.py`) — "what's our
+  access review cadence?" then "who owns that?". The question is resolved against
+  the exchange *before* retrieval, since keyword scoring has no mechanism for
+  "that", and the rewritten question is always shown: a good guess about intent
+  is indistinguishable from a bad one once the answer is written
 - [ ] **`zardoz discover`** — crawl a space and propose a draft `topics.yaml` from
   title conventions, page hierarchy, labels and inline control citations, using the
   LLM only for the residue. Ownership stays `[UNASSIGNED]`: nothing in a document

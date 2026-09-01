@@ -537,3 +537,169 @@ def test_an_acronym_expansion_does_not_smuggle_in_stopwords():
     )
 
     assert build_index(corpus).search("SSO"), "a question about SSO finds single sign-on"
+
+
+# --------------------------------------------------------------------------
+# Paraphrase: closing the gap between the question and the document
+# --------------------------------------------------------------------------
+
+
+PRIVILEGED_STANDARD = """# Privileged Access Standard
+
+## 4.1 Review Cadence
+
+Privileged entitlements undergo a quarterly recertification by the service
+owner. [NIST AC-6]
+"""
+
+
+def _paraphrase_corpus():
+    return Corpus(
+        documents=[
+            Doc(
+                doc_id="standards-privileged",
+                title="Privileged Access Standard",
+                space="",
+                confidence=TRUSTED,
+                source=MARKDOWN,
+                path="standards/privileged.md",
+                owner="IAM Engineering",
+                body=PRIVILEGED_STANDARD,
+            ),
+            Doc(
+                doc_id="standards-backup",
+                title="Backup and Restore Standard",
+                space="",
+                confidence=TRUSTED,
+                source=MARKDOWN,
+                path="standards/backup.md",
+                owner="Platform",
+                body=BACKUP_STANDARD,
+            ),
+        ]
+    )
+
+
+def test_the_paraphrase_case_misses_without_expansion():
+    """The documented gap: not one content word overlaps, and the honest
+    refusal that earns is wrong, because the document answers completely."""
+    index = build_index(_paraphrase_corpus())
+
+    assert index.search("how often do we check who has admin?") == []
+
+
+def test_expansion_reaches_the_document_the_question_missed():
+    index = build_index(_paraphrase_corpus())
+
+    results = index.search(
+        "how often do we check who has admin?",
+        expansion="privileged access, recertification, entitlements",
+    )
+
+    assert results
+    assert results[0].chunk.section == "4.1 Review Cadence"
+
+
+def test_a_guessed_term_is_reported_apart_from_what_was_typed():
+    """ "matched cadence" and "matched cadence, which we guessed you meant"
+    are different claims about the evidence."""
+    index = build_index(_paraphrase_corpus())
+
+    results = index.search("who has admin?", expansion="privileged entitlements")
+
+    assert "privileged" in results[0].matched_expansions
+    assert "privileged" not in results[0].matched_terms
+
+
+def test_expansion_never_outranks_the_words_somebody_chose():
+    """An expansion is a guess at vocabulary, and a guess must not beat the
+    user's own words."""
+    index = build_index(_paraphrase_corpus())
+
+    typed = index.search("privileged recertification")[0]
+    guessed = index.search("who has admin?", expansion="privileged recertification")[0]
+
+    assert typed.chunk.section == guessed.chunk.section
+    assert typed.score > guessed.score
+
+
+def test_expansion_cannot_rescue_a_question_the_corpus_does_not_cover():
+    """The refusal has to survive the recovery path, or it was never real."""
+    index = build_index(_paraphrase_corpus())
+
+    assert (
+        index.search(
+            "who approves expense reports?",
+            expansion="reimbursement, receipts, finance approval",
+        )
+        == []
+    )
+
+
+def test_a_question_with_no_terms_at_all_is_still_not_a_search():
+    assert build_index(_paraphrase_corpus()).search("what is the?", expansion="privileged") == []
+
+
+def test_parse_expansion_keeps_terms_and_drops_prose():
+    from policyforge.zardoz.paraphrase import parse_expansion
+
+    assert parse_expansion("privileged access, entitlements, recertification") == [
+        "privileged access",
+        "entitlements",
+        "recertification",
+    ]
+    assert parse_expansion("Certainly, here are the terms a standard would use for this idea") == []
+
+
+def test_parse_expansion_deduplicates_and_caps():
+    from policyforge.zardoz.paraphrase import parse_expansion
+
+    assert parse_expansion("access, Access, ACCESS") == ["access"]
+    assert len(parse_expansion(", ".join(f"term{n}" for n in range(30)), max_terms=5)) == 5
+
+
+def test_expansion_is_skipped_entirely_without_a_model():
+    from policyforge.zardoz.paraphrase import expand_query
+
+    assert expand_query("how often do we check who has admin?", None) == ""
+
+
+def test_a_provider_failure_yields_no_expansion_rather_than_an_error():
+    """Expansion is a recovery path taken after a refusal; failing here
+    should leave the user with the refusal they had."""
+    from policyforge.zardoz.paraphrase import expand_query
+
+    class Exploding:
+        def generate(self, **kwargs):
+            raise RuntimeError("nope")
+
+    assert expand_query("anything", Exploding()) == ""
+
+
+def test_the_shell_does_not_expand_when_the_exact_words_already_worked():
+    """Precision first: a guess mixed into a search that was working can
+    only make it worse, and it costs a request."""
+    from dataclasses import dataclass as _dataclass
+
+    from policyforge.zardoz.shell import ShellState, dispatch
+
+    @_dataclass
+    class R:
+        text: str
+        model: str = "fake"
+
+    class Counting:
+        def __init__(self):
+            self.calls = 0
+
+        def generate(self, **kwargs):
+            self.calls += 1
+            return R("Quarterly. [1]")
+
+    provider = Counting()
+    dispatch(
+        "privileged recertification cadence",
+        ShellState(corpus=_paraphrase_corpus(), provider=provider),
+    )
+
+    assert provider.calls == 1, "one call to answer, none to expand"

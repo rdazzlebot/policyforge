@@ -378,6 +378,21 @@ def _answer(question: str, state: ShellState) -> str:
     preamble = [f"(reading that as: {resolved})", ""] if rewritten else []
     passages = state.index.search(resolved, limit=_PASSAGE_LIMIT)
 
+    # Exact first, expansion only on a miss. While retrieval is finding
+    # passages on the user's own words there is nothing to gain by mixing in
+    # guessed vocabulary and precision to lose.
+    if not passages and state.provider is not None:
+        from .paraphrase import expand_query
+
+        expansion = expand_query(resolved, state.provider)
+        if expansion:
+            passages = state.index.search(resolved, limit=_PASSAGE_LIMIT, expansion=expansion)
+            if passages:
+                preamble += [
+                    f"(nothing matched those words; searched also for: {expansion})",
+                    "",
+                ]
+
     def _record(answer_text: str) -> None:
         state.conversation.add(
             Turn(question=question, resolved=resolved, passages=passages, answer=answer_text)
@@ -461,6 +476,8 @@ def _render_passages(passages) -> str:
             why.append("cites " + ", ".join(passage.matched_controls))
         if passage.matched_terms:
             why.append("matched " + ", ".join(passage.matched_terms[:6]))
+        if passage.matched_expansions:
+            why.append("via " + ", ".join(passage.matched_expansions[:4]) + " (guessed)")
         if why:
             lines.append(f"   [{'; '.join(why)}]")
         lines.append("")

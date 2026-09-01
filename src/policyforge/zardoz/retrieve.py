@@ -104,6 +104,12 @@ MAX_TERM_SHARE = 0.5
 #: is in fact the subject.
 FULL_COVERAGE = 0.75
 
+#: What an expansion term contributes relative to one the user actually
+#: typed. Below 1 on purpose: an expansion is this tool's guess at the
+#: vocabulary a document uses, and a guess must never outrank the words
+#: somebody chose.
+EXPANSION_WEIGHT = 0.6
+
 _K1 = 1.5
 _B = 0.75
 
@@ -303,6 +309,11 @@ class Passage:
     score: float
     matched_terms: list[str] = field(default_factory=list)
     matched_controls: list[str] = field(default_factory=list)
+    #: Terms the user did not type, supplied by paraphrase expansion. Kept
+    #: apart from `matched_terms` so the reason a passage surfaced stays
+    #: honest: "matched cadence" and "matched cadence, which we guessed you
+    #: meant" are different claims about the evidence.
+    matched_expansions: list[str] = field(default_factory=list)
 
     @property
     def citation(self) -> str:
@@ -488,16 +499,32 @@ class RetrievalIndex:
         total = len(self._entries)
         return self._document_frequency.get(term, 0) / total if total else 1.0
 
-    def search(self, query: str, *, limit: int = 5, min_score: float = MIN_SCORE) -> list[Passage]:
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+        min_score: float = MIN_SCORE,
+        expansion: str = "",
+    ) -> list[Passage]:
         """The passages that bear on `query`, best first.
 
         Returns an empty list when nothing clears `min_score`. That is a
         real answer — "the documents do not appear to say" — and the caller
         is expected to pass it on rather than lowering the bar until
         something comes back.
+
+        `expansion` carries extra vocabulary the question did not use — the
+        terms of art a document is likely to phrase the same idea in. It is
+        scored at a discount and never counts toward query coverage, because
+        it is this tool's guess rather than the user's words; it can,
+        however, satisfy the specificity gate, since closing the paraphrase
+        gap is the entire reason it exists.
         """
         groups = term_groups(query)
         query_terms = {term for group in groups for term in group}
+        expansion_terms = {term for group in term_groups(expansion) for term in group}
+        expansion_terms -= query_terms
         query_controls = {c.upper() for c in extract_control_ids(query)}
         if not query_terms and not query_controls:
             return []
@@ -516,19 +543,30 @@ class RetrievalIndex:
         for entry in self._entries:
             score = 0.0
             matched: list[str] = []
-            for term in query_terms:
+            expanded: list[str] = []
+
+            def _bm25(term: str, entry=entry) -> float:
                 frequency = entry.terms.get(term, 0)
                 if not frequency:
-                    continue
-                matched.append(term)
+                    return 0.0
                 normalization = (
                     1
                     - _B
                     + _B * (entry.length / self._average_length if self._average_length else 1)
                 )
-                score += self._idf(term) * (
-                    frequency * (_K1 + 1) / (frequency + _K1 * normalization)
-                )
+                return self._idf(term) * (frequency * (_K1 + 1) / (frequency + _K1 * normalization))
+
+            for term in query_terms:
+                contribution = _bm25(term)
+                if contribution:
+                    matched.append(term)
+                    score += contribution
+
+            for term in expansion_terms:
+                contribution = _bm25(term)
+                if contribution:
+                    expanded.append(term)
+                    score += contribution * EXPANSION_WEIGHT
 
             controls = _matching_controls(query_controls, entry.control_ids)
             score += CONTROL_ID_BONUS * len(controls)
@@ -552,7 +590,7 @@ class RetrievalIndex:
             coverage = covered / len(groups) if groups else 0.0
             specific = (
                 bool(controls)
-                or any(self._share(term) <= MAX_TERM_SHARE for term in matched)
+                or any(self._share(term) <= MAX_TERM_SHARE for term in matched + expanded)
                 or coverage >= FULL_COVERAGE
             )
             if score > 0 and score >= min_score and specific:
@@ -563,6 +601,7 @@ class RetrievalIndex:
                         score=score,
                         matched_terms=sorted(matched),
                         matched_controls=controls,
+                        matched_expansions=sorted(expanded),
                     )
                 )
 

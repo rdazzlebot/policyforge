@@ -1,0 +1,539 @@
+"""zardoz retrieval tests (milestone M2) — finding the right passage.
+
+Retrieval is tested apart from answering on purpose: "did it find the right
+section?" and "did it answer well from that section?" are different failures
+with different fixes. Everything here is pure and offline, so ranking can be
+regression-tested rather than eyeballed.
+
+The cases that matter most are the *refusals*. A retriever that always
+returns its least-bad chunk is how a grounded-answers-only tool starts
+inventing things — the model gets handed irrelevant context, is asked a
+question, and obliges.
+"""
+
+from __future__ import annotations
+
+from policyforge.zardoz.corpus import CONFLUENCE, MARKDOWN, SUPPORTING, TRUSTED, Corpus
+from policyforge.zardoz.corpus import CorpusDocument as Doc
+from policyforge.zardoz.retrieve import (
+    build_index,
+    chunk_document,
+    extract_control_ids,
+    normalize,
+    tokenize,
+)
+
+ACCESS_STANDARD = """# Access Control Standard
+
+## 1. Purpose
+
+This Standard governs how accounts are provisioned and reviewed.
+
+## 4. Policy
+
+### 4.1 Account Review
+
+Account entitlements must be recertified quarterly by the system owner.
+Terminated accounts are disabled within 24 hours. [NIST AC-2 | HIPAA 164.308(a)(4)]
+
+### 4.2 Privileged Access
+
+Administrative credentials require hardware multi-factor authentication.
+[NIST AC-6(5)]
+"""
+
+BACKUP_STANDARD = """# Backup and Restore Standard
+
+## 4. Policy
+
+### 4.1 Restore Testing
+
+Restore drills happen twice a year against production snapshots.
+[NIST CP-9]
+"""
+
+RUNBOOK = """# Laptop Encryption Runbook
+
+Turn on FileVault. Escrow the recovery key in the vault.
+"""
+
+
+def _corpus():
+    return Corpus(
+        documents=[
+            Doc(
+                doc_id="standards-access-control",
+                title="Access Control Standard",
+                space="",
+                confidence=TRUSTED,
+                source=MARKDOWN,
+                path="standards/access-control.md",
+                tier="standard",
+                topic="Access Review",
+                owner="IAM Engineering",
+                body=ACCESS_STANDARD,
+            ),
+            Doc(
+                doc_id="standards-backup",
+                title="Backup and Restore Standard",
+                space="",
+                confidence=TRUSTED,
+                source=MARKDOWN,
+                path="standards/backup.md",
+                tier="standard",
+                owner="Platform",
+                body=BACKUP_STANDARD,
+            ),
+            Doc(
+                doc_id="eng-laptop-encryption-runbook",
+                title="Laptop Encryption Runbook",
+                space="ENG",
+                confidence=SUPPORTING,
+                source=CONFLUENCE,
+                webui_url="https://x/wiki/laptop",
+                body=RUNBOOK,
+            ),
+        ],
+        synced_at="2026-08-31T00:00:00+00:00",
+    )
+
+
+# --------------------------------------------------------------------------
+# Tokenizing
+# --------------------------------------------------------------------------
+
+
+def test_plurals_fold_so_a_question_meets_its_own_document():
+    assert normalize("reviews") == "review"
+    assert normalize("accounts") == "account"
+
+
+def test_words_that_merely_end_in_s_are_left_alone():
+    """`access` is the most common term in this corpus. Stripping it to
+    `acces` would make it match nothing at all."""
+    for word in ("access", "status", "analysis"):
+        assert normalize(word) == word
+
+
+def test_function_words_are_dropped_but_domain_words_are_not():
+    """Domain noise is left to IDF: "policy" is worthless in a corpus of
+    policies and meaningful in one query out of fifty, and hard-coding it
+    into a stoplist breaks that query silently."""
+    assert tokenize("what is the policy") == ["policy"]
+
+
+def test_identifiers_never_become_bare_terms():
+    """`MP-6` used to tokenize to `mp`, which matched a section citing
+    `MP-1` — a claimed match on a control the document does not mention."""
+    assert "mp" not in tokenize("what does MP-6 require?")
+    assert tokenize("what does MP-6 require?") == ["require"]
+
+
+def test_control_identifiers_are_extracted_from_prose_and_from_tags():
+    assert extract_control_ids("see [NIST AC-2 | HIPAA 164.308(a)(4)]") == [
+        "AC-2",
+        "164.308(a)(4)",
+    ]
+    assert extract_control_ids("ac-2 and AC-2 again") == ["AC-2"]
+    assert extract_control_ids("enhancement MP-6(1) applies") == ["MP-6(1)"]
+
+
+def test_a_section_number_is_not_a_regulatory_citation():
+    """`10.1 Scope` is a heading, not 45 CFR anything."""
+    assert extract_control_ids("## 10.1 Scope") == []
+
+
+# --------------------------------------------------------------------------
+# Chunking
+# --------------------------------------------------------------------------
+
+
+def test_each_heading_becomes_its_own_citable_chunk():
+    chunks = chunk_document(_corpus().documents[0])
+
+    sections = [chunk.section for chunk in chunks]
+    assert "4. Policy > 4.1 Account Review" in sections
+    assert "4. Policy > 4.2 Privileged Access" in sections
+
+
+def test_an_h1_restating_the_title_is_not_repeated_in_the_path():
+    """Otherwise every citation reads "Access Control Standard § Access
+    Control Standard > 4.1", and the repetition is pure noise."""
+    chunks = chunk_document(_corpus().documents[0])
+
+    assert all(not chunk.section.startswith("Access Control Standard") for chunk in chunks)
+
+
+def test_a_chunk_knows_the_controls_its_text_cites():
+    chunks = chunk_document(_corpus().documents[0])
+
+    review = next(c for c in chunks if "Account Review" in c.section)
+    assert review.control_ids == ["AC-2", "164.308(a)(4)"]
+
+
+def test_headings_inside_a_code_fence_are_not_headings():
+    document = Doc(
+        doc_id="d",
+        title="T",
+        space="",
+        confidence=TRUSTED,
+        body="# T\n\n## Steps\n\n```sh\n# rotate the key\nvault rotate\n```\n",
+    )
+
+    chunks = chunk_document(document)
+
+    assert [c.section for c in chunks] == ["Steps"]
+    assert "vault rotate" in chunks[0].text
+
+
+def test_text_before_the_first_heading_is_kept():
+    """A document's opening paragraph is frequently its scope statement."""
+    document = Doc(
+        doc_id="d",
+        title="T",
+        space="",
+        confidence=TRUSTED,
+        body="This applies to all staff.\n\n## Details\n\nMore.\n",
+    )
+
+    chunks = chunk_document(document)
+
+    assert chunks[0].section == ""
+    assert "all staff" in chunks[0].text
+
+
+def test_a_heading_level_jump_does_not_leave_stale_ancestors():
+    document = Doc(
+        doc_id="d",
+        title="T",
+        space="",
+        confidence=TRUSTED,
+        body="## A\n\ntext a\n\n#### A1\n\ntext a1\n\n## B\n\ntext b\n",
+    )
+
+    chunks = chunk_document(document)
+
+    assert next(c for c in chunks if c.text == "text b").section == "B"
+
+
+def test_a_very_long_section_is_split_on_paragraph_boundaries():
+    paragraph = "Requirements text. " * 40
+    document = Doc(
+        doc_id="d",
+        title="T",
+        space="",
+        confidence=TRUSTED,
+        body="## Long\n\n" + "\n\n".join([paragraph] * 6),
+    )
+
+    chunks = chunk_document(document)
+
+    assert len(chunks) > 1
+    assert all(c.section == "Long" for c in chunks), "every piece keeps its citation"
+
+
+# --------------------------------------------------------------------------
+# Ranking
+# --------------------------------------------------------------------------
+
+
+def test_the_right_section_comes_first():
+    results = build_index(_corpus()).search("how often are accounts recertified?")
+
+    assert results
+    assert results[0].chunk.section == "4. Policy > 4.1 Account Review"
+    assert "quarterly" in results[0].chunk.text
+
+
+def test_naming_a_control_finds_the_section_that_cites_it():
+    results = build_index(_corpus()).search("what does AC-6(5) require?")
+
+    assert results[0].matched_controls == ["AC-6(5)"]
+    assert results[0].chunk.section == "4. Policy > 4.2 Privileged Access"
+
+
+def test_a_control_the_corpus_does_not_cite_is_not_answered_from_a_neighbour():
+    """AC-2 and AC-3 are different controls to an assessor, and a retriever
+    that treats them as similar is worse than one that says nothing."""
+    results = build_index(_corpus()).search("what does AC-3 require?")
+
+    assert results == []
+
+
+def test_a_question_the_documents_do_not_cover_returns_nothing():
+    index = build_index(_corpus())
+
+    assert index.search("what is our vacation policy?") == []
+    assert index.search("who approves expense reports?") == []
+
+
+def test_an_empty_query_is_not_a_search():
+    assert build_index(_corpus()).search("what is the?") == []
+
+
+def test_a_passage_says_why_it_matched():
+    """Every score in this module has to be explainable by naming what hit,
+    or ranking cannot be iterated on."""
+    results = build_index(_corpus()).search("restore drills")
+
+    assert "restore" in results[0].matched_terms
+    assert results[0].score > 0
+
+
+def test_an_owned_document_wins_a_tie_with_an_unowned_one():
+    corpus = Corpus(
+        documents=[
+            Doc(
+                doc_id="unowned",
+                title="Shared Text",
+                space="ENG",
+                confidence=SUPPORTING,
+                body="## Rotation\n\nCredentials rotate every ninety days.\n",
+            ),
+            Doc(
+                doc_id="owned",
+                title="Shared Text",
+                space="ENG",
+                confidence=TRUSTED,
+                owner="Platform",
+                body="## Rotation\n\nCredentials rotate every ninety days.\n",
+            ),
+        ]
+    )
+
+    results = build_index(corpus).search("credential rotation")
+
+    assert results[0].document.doc_id == "owned"
+    assert results[0].is_trusted
+
+
+def test_results_are_capped_and_ordered_deterministically():
+    index = build_index(_corpus())
+
+    first = index.search("access control account review", limit=2)
+    again = index.search("access control account review", limit=2)
+
+    assert len(first) <= 2
+    assert [p.chunk.section for p in first] == [p.chunk.section for p in again]
+
+
+# --------------------------------------------------------------------------
+# Citations
+# --------------------------------------------------------------------------
+
+
+def test_a_markdown_citation_points_at_the_file():
+    results = build_index(_corpus()).search("account recertification")
+
+    assert results[0].citation == (
+        "Access Control Standard § 4. Policy > 4.1 Account Review (standards/access-control.md)"
+    )
+
+
+def test_a_confluence_citation_points_at_the_page():
+    results = build_index(_corpus()).search("filevault escrow")
+
+    assert "https://x/wiki/laptop" in results[0].citation
+
+
+# --------------------------------------------------------------------------
+# In the shell
+# --------------------------------------------------------------------------
+
+
+def test_a_question_returns_passages_with_citations():
+    from policyforge.zardoz.shell import ShellState, dispatch
+
+    output = dispatch("how often are accounts recertified?", ShellState(corpus=_corpus()))
+
+    assert "4.1 Account Review" in output
+    assert "standards/access-control.md" in output
+    assert "quarterly" in output
+
+
+def test_a_question_the_corpus_cannot_answer_says_so_plainly():
+    from policyforge.zardoz.shell import ShellState, dispatch
+
+    output = dispatch("what is our vacation policy?", ShellState(corpus=_corpus()))
+
+    assert "Nothing in the synced documents" in output
+    assert "may not be synced" in output
+
+
+def test_an_unowned_passage_is_flagged_as_such():
+    from policyforge.zardoz.shell import ShellState, dispatch
+
+    output = dispatch("filevault recovery key escrow", ShellState(corpus=_corpus()))
+
+    assert "supporting" in output
+
+
+def test_reloading_rebuilds_the_index_over_the_new_corpus(tmp_path):
+    """An index that outlived its corpus would answer from documents that
+    are no longer there, which is the one failure a re-sync exists to fix."""
+    from policyforge.zardoz.corpus import write_corpus
+    from policyforge.zardoz.shell import ShellState, dispatch
+
+    state = ShellState(corpus=_corpus(), corpus_dir=tmp_path)
+    assert dispatch("account recertification", state) != ""
+    assert state.index is not None
+
+    write_corpus(
+        [
+            Doc(
+                doc_id="only",
+                title="Backup and Restore Standard",
+                space="",
+                confidence=TRUSTED,
+                source=MARKDOWN,
+                path="standards/backup.md",
+                owner="Platform",
+                body=BACKUP_STANDARD,
+            )
+        ],
+        corpus_dir=tmp_path,
+    )
+    dispatch("/reload", state)
+
+    assert dispatch("account recertification", state).startswith("Nothing in the synced")
+    assert "Restore drills" in dispatch("restore drills", state)
+
+
+# --------------------------------------------------------------------------
+# The behaviour table
+# --------------------------------------------------------------------------
+
+
+def test_answers_and_refusals_across_a_realistic_question_set():
+    """One table, because ranking regressions show up as a *shift* in where
+    the answer/refuse line falls, and a single case moving is easy to miss
+    when each lives in its own test.
+
+    The refusals are the half that matters. Every one of them is a question
+    a real person would ask of a real policy set, and every one is about
+    something these documents do not cover.
+    """
+    index = build_index(_corpus())
+    expected = [
+        # (should it answer?, question, the section it should land on)
+        (True, "how often are accounts recertified?", "4. Policy > 4.1 Account Review"),
+        (True, "when are terminated accounts disabled?", "4. Policy > 4.1 Account Review"),
+        (True, "do admins need MFA?", "4. Policy > 4.2 Privileged Access"),
+        (True, "what does AC-2 cover?", "4. Policy > 4.1 Account Review"),
+        (True, "how often do we test restores?", "4. Policy > 4.1 Restore Testing"),
+        (True, "how is the laptop recovery key escrowed?", ""),
+        (False, "what is our vacation policy?", None),
+        (False, "who approves expense reports?", None),
+        (False, "what is the incident severity matrix?", None),
+        (False, "what does AC-3 require?", None),
+    ]
+
+    wrong = []
+    for should_answer, question, section in expected:
+        results = index.search(question)
+        if bool(results) is not should_answer:
+            wrong.append(f"{question!r}: expected {'a hit' if should_answer else 'nothing'}")
+        elif results and section is not None and results[0].chunk.section != section:
+            wrong.append(f"{question!r}: landed on {results[0].chunk.section!r}, want {section!r}")
+
+    assert not wrong, "\n".join(wrong)
+
+
+def test_asking_about_a_control_also_reaches_its_enhancements():
+    """Nobody enumerates AC-2(1) through AC-2(13) to ask about AC-2, which
+    is the same rule `coverage.py` uses to decide what a topic claims."""
+    results = build_index(_corpus()).search("what does AC-6 require?")
+
+    assert results
+    assert results[0].matched_controls == ["AC-6(5)"]
+
+
+def test_asking_about_an_enhancement_does_not_reach_the_parent():
+    """The narrower question is not answered by the broader citation."""
+    corpus = Corpus(
+        documents=[
+            Doc(
+                doc_id="d",
+                title="Access Control Standard",
+                space="",
+                confidence=TRUSTED,
+                body="## Accounts\n\nEntitlements are recertified. [NIST AC-2]\n",
+            )
+        ]
+    )
+
+    assert build_index(corpus).search("AC-2(7)") == []
+
+
+def test_an_acronym_finds_its_spelled_out_form():
+    """Questions use "MFA"; Standards say "multi-factor authentication"."""
+    results = build_index(_corpus()).search("do admins need MFA?")
+
+    assert results
+    assert results[0].chunk.section == "4. Policy > 4.2 Privileged Access"
+
+
+def test_the_expansion_works_in_both_directions():
+    corpus = Corpus(
+        documents=[
+            Doc(
+                doc_id="d",
+                title="Authentication Standard",
+                space="",
+                confidence=TRUSTED,
+                body="## Login\n\nAll staff must enrol in MFA before first login.\n",
+            )
+        ]
+    )
+
+    results = build_index(corpus).search("multi-factor authentication enrolment")
+
+    assert results, "a page that only says MFA is still found"
+
+
+def test_a_passage_only_reports_citations_its_own_text_carries():
+    """A document titled "AC-2 Account Management Standard" once made every
+    one of its sections report `[cites AC-2]`, including ones that said
+    nothing about it. A fabricated citation is the one output this package
+    must never produce."""
+    corpus = Corpus(
+        documents=[
+            Doc(
+                doc_id="d",
+                title="AC-2 Account Management Standard",
+                space="",
+                confidence=TRUSTED,
+                body=(
+                    "## 1. Scope\n\nThis applies to every production system.\n\n"
+                    "## 2. Review\n\nEntitlements are recertified quarterly. [NIST AC-2]\n"
+                ),
+            )
+        ]
+    )
+
+    for passage in build_index(corpus).search("AC-2"):
+        for control in passage.matched_controls:
+            assert control in passage.chunk.text, (
+                f"{passage.chunk.section!r} claims to cite {control} but does not"
+            )
+
+
+def test_an_acronym_expansion_does_not_smuggle_in_stopwords():
+    """`sso` expands to "single sign on", and an unfiltered "on" is a query
+    term no document can match — the document side drops it — so it only
+    drags the coverage ratio down."""
+    assert "on" not in tokenize("SSO")
+
+    corpus = Corpus(
+        documents=[
+            Doc(
+                doc_id="d",
+                title="Authentication Standard",
+                space="",
+                confidence=TRUSTED,
+                body="## Login\n\nUse single sign-on for all internal applications.\n",
+            )
+        ]
+    )
+
+    assert build_index(corpus).search("SSO"), "a question about SSO finds single sign-on"

@@ -47,6 +47,24 @@ class OrgContext:
     vendors: list[str] = field(default_factory=list)
 
 
+@dataclass
+class TopicContext:
+    """Which topic a document is being drafted for, and who owns it.
+
+    Sourced from the topic registry (`topics/registry.py`) and carried into
+    the generated document through the synthesis file's frontmatter. Its
+    whole job is to remove one specific placeholder: without an owner, every
+    generator writes `[Responsible Team]` wherever the document has to name
+    who performs a step or answers for the outcome, which is precisely the
+    ownership question the "one topic, one team" model exists to settle.
+    """
+
+    name: str = ""
+    owner: str = ""
+    cadence: str = ""
+    evidence: list[str] = field(default_factory=list)
+
+
 _STANDARD_SYSTEM_PROMPT = """You are a compliance policy drafting engine. \
 Turn a set of already-synthesized, source-tagged requirement statements \
 into a formal information security STANDARD document for one \
@@ -167,6 +185,38 @@ def _render_org(org: OrgContext) -> str:
     return "\n".join(lines)
 
 
+def _render_context(org: OrgContext, topic: TopicContext | None) -> str:
+    """Org context, plus topic ownership when the registry supplied it."""
+    block = _render_org(org)
+    if topic is None or not topic.owner:
+        return block
+
+    lines = [block, ""]
+    if topic.name:
+        lines.append(f"Topic: {topic.name}")
+    lines.append(
+        f"Owning team: {topic.owner} — this team is accountable for this process end "
+        "to end. Name it wherever the document must say who performs a step, who "
+        "reviews, or who answers for the outcome. Do not write [Responsible Team], "
+        "[Owning Team] or similar placeholders for that role; you have the answer. "
+        "Other teams may appear as participants in individual steps, but "
+        f"{topic.owner} owns the process and its handoffs."
+    )
+    if topic.cadence:
+        lines.append(
+            f"Cadence: {topic.cadence} — use this where the document states how often "
+            "the process runs, instead of a placeholder frequency."
+        )
+    if topic.evidence:
+        lines.append(
+            "Evidence this process is expected to produce: "
+            + "; ".join(topic.evidence)
+            + ". Reference these artifacts where the document describes what is "
+            "recorded or retained."
+        )
+    return "\n".join(lines)
+
+
 def extract_title(markdown_text: str) -> str:
     """Pull the document title out of a generated document's leading '# '
     heading — used to have a Policy reference its Standard by name without
@@ -178,12 +228,18 @@ def extract_title(markdown_text: str) -> str:
     raise ValueError("No '# ' title heading found in markdown_text.")
 
 
-def generate_standard(topic_synthesis: str, org: OrgContext, provider: LLMProvider) -> str:
+def generate_standard(
+    topic_synthesis: str,
+    org: OrgContext,
+    provider: LLMProvider,
+    *,
+    topic: TopicContext | None = None,
+) -> str:
     if not topic_synthesis.strip():
         raise ValueError("topic_synthesis is empty — nothing to draft a document from.")
 
     prompt = (
-        f"{_render_org(org)}\n\n"
+        f"{_render_context(org, topic)}\n\n"
         f"Synthesized requirements:\n\n{topic_synthesis}\n\n"
         "Draft the Standard document per the rules above."
     )
@@ -194,7 +250,12 @@ def generate_standard(topic_synthesis: str, org: OrgContext, provider: LLMProvid
 
 
 def generate_policy(
-    topic_synthesis: str, org: OrgContext, provider: LLMProvider, *, standard_title: str
+    topic_synthesis: str,
+    org: OrgContext,
+    provider: LLMProvider,
+    *,
+    standard_title: str,
+    topic: TopicContext | None = None,
 ) -> str:
     if not topic_synthesis.strip():
         raise ValueError("topic_synthesis is empty — nothing to draft a document from.")
@@ -205,7 +266,7 @@ def generate_policy(
         )
 
     prompt = (
-        f"{_render_org(org)}\n\n"
+        f"{_render_context(org, topic)}\n\n"
         f"This policy's implementing Standard document is titled: "
         f"{standard_title!r}\n\n"
         "Synthesized requirements (the Standard above is built from these "
@@ -220,7 +281,12 @@ def generate_policy(
 
 
 def generate_procedure(
-    topic_synthesis: str, org: OrgContext, provider: LLMProvider, *, standard_title: str
+    topic_synthesis: str,
+    org: OrgContext,
+    provider: LLMProvider,
+    *,
+    standard_title: str,
+    topic: TopicContext | None = None,
 ) -> str:
     if not topic_synthesis.strip():
         raise ValueError("topic_synthesis is empty — nothing to draft a document from.")
@@ -231,7 +297,7 @@ def generate_procedure(
         )
 
     prompt = (
-        f"{_render_org(org)}\n\n"
+        f"{_render_context(org, topic)}\n\n"
         f"This procedure operationalizes the Standard document titled: "
         f"{standard_title!r}\n\n"
         "Synthesized requirements (turn each into ordered, concrete steps "

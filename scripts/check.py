@@ -2,11 +2,17 @@
 """Run the full quality-check suite locally, in one command.
 
 Runs the same checks enforced in .pre-commit-config.yaml and
-.github/workflows/ci.yml: pytest, bandit (static security analysis),
-semgrep (broader SAST — catches patterns bandit's Python-specific ruleset
-doesn't, e.g. GitHub Actions supply-chain hygiene), pip-audit (dependency
-CVEs), mdformat (markdown quality), and gitleaks (secrets scan, if
-installed). Each check is invoked directly rather than through
+.github/workflows/ci.yml: ruff (lint + format), pytest, bandit (static
+security analysis), semgrep (broader SAST — catches patterns bandit's
+Python-specific ruleset doesn't, e.g. GitHub Actions supply-chain hygiene),
+pip-audit (dependency CVEs), mdformat (markdown quality), and gitleaks
+(secrets scan, if installed).
+
+Ruff's rule selection, line length and per-file ignores live in
+pyproject.toml, so this script, the pre-commit hook and CI all enforce
+exactly the same thing instead of drifting apart.
+
+Each check is invoked directly rather than through
 `pre-commit run` so this has no dependency on pre-commit's hook-environment
 builds — notably, pre-commit's official gitleaks hook builds gitleaks from
 source via Go on first run, which requires outbound access to Go's module
@@ -64,12 +70,26 @@ def check_gitleaks() -> bool | None:
 
 
 def main() -> int:
-    md_targets = [str(REPO_ROOT / "README.md")]
-    md_targets += sorted(
-        str(p) for p in (REPO_ROOT / "data" / "frameworks").glob("*/README.md")
+    # Every markdown file the pre-commit mdformat hook would touch, so this
+    # script and that hook can't disagree about what "formatted" means. Only
+    # output/ is excluded — it holds generated drafts, which are checked by
+    # `check_markdown_quality` at generation time instead.
+    md_targets = sorted(
+        str(p)
+        for p in REPO_ROOT.rglob("*.md")
+        if not any(
+            part in {".venv", "output", "local_content", ".git", ".pytest_cache"}
+            for part in p.relative_to(REPO_ROOT).parts
+        )
     )
 
+    lint_targets = ["src", "tests", "scripts"]
+
     results: dict[str, bool | None] = {
+        # Lint/format first: they're the fastest checks and the most likely
+        # to fail on a fresh edit, so failing here saves waiting on semgrep.
+        "ruff (lint)": run("ruff check", ["ruff", "check", *lint_targets]),
+        "ruff (format)": run("ruff format --check", ["ruff", "format", "--check", *lint_targets]),
         "pytest (test suite)": run("pytest", ["pytest", "-q"]),
         "bandit (static security analysis)": run(
             "bandit", ["bandit", "-c", "pyproject.toml", "-r", "src"]

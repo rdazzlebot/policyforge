@@ -1,4 +1,15 @@
 repos:
+  # Python lint + format. Ruff replaces the flake8/isort/black stack with a
+  # single tool, and its config (rule selection, line length, per-file
+  # ignores) lives in pyproject.toml so the hook, CI and `scripts/check.py`
+  # all enforce exactly the same thing rather than drifting apart.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.5
+    hooks:
+      - id: ruff-check
+        args: ["--fix"]
+      - id: ruff-format
+
   # Secrets scanning — catches API keys, tokens, and credentials before they
   # ever reach a commit. This is the most important hook in this file: it's
   # what stops your Anthropic key or an employer config value from leaking

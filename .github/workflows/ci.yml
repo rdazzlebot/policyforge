@@ -22,6 +22,12 @@ jobs:
           python -m pip install --upgrade pip setuptools
           pip install -e ".[dev]"
 
+      - name: ruff (lint)
+        run: ruff check src tests scripts
+
+      - name: ruff (format)
+        run: ruff format --check src tests scripts
+
       - name: gitleaks (secrets scan)
         uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2
         env:
@@ -39,9 +45,12 @@ jobs:
             --config=p/owasp-top-ten --error .
 
       - name: mdformat (markdown quality)
-        run: |
-          pip install mdformat mdformat-gfm
-          mdformat --check README.md data/frameworks/*/README.md
+        # mdformat-gfm and mdformat-frontmatter are already project
+        # dependencies, so no extra install here — and pulling them from the
+        # pinned project install keeps this identical to what pre-commit and
+        # scripts/check.py run. Without mdformat-frontmatter, mdformat
+        # rewrites YAML frontmatter into a heading.
+        run: mdformat --check README.md data/frameworks/*/README.md .claude/skills/*/SKILL.md
 
       - name: pytest
         run: pytest -q

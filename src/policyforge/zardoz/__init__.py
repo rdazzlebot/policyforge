@@ -14,6 +14,7 @@ Module map, in the order the milestones land:
     corpus.py    local snapshot of the documents to answer from (M1)
     retrieve.py  find the passages that bear on a question (M2)
     answer.py    grounded answering, with citations and refusals (M3)
+    conversation.py  resolving a follow-up against the turns before it (M4)
 
 The documents themselves come from `policyforge.content`, which reads a tree
 of markdown files, and from Confluence. Markdown needs no credentials, so

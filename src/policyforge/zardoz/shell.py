@@ -37,6 +37,7 @@ from pathlib import Path
 from policyforge.topics.registry import Topic
 
 from .art import voice
+from .conversation import Conversation, Turn, resolve_question
 from .corpus import DEFAULT_CORPUS_DIR, Corpus, load_corpus
 
 PROMPT = "zardoz> "
@@ -82,6 +83,10 @@ class ShellState:
     #: The last answer, so `/sources` can show what it was drawn from in
     #: full rather than in the excerpts that fit beside the prose.
     last_answer: object | None = field(default=None, repr=False)
+    #: The turns so far, so a follow-up can be resolved against them.
+    #: "who owns that?" is only answerable in the light of what was asked
+    #: before it, and that context lives here rather than in the model.
+    conversation: Conversation = field(default_factory=Conversation)
 
     @property
     def voice(self) -> dict[str, str]:
@@ -283,11 +288,28 @@ _PASSAGE_LIMIT = 4
 _EXCERPT_CHARS = 400
 
 
+def _cmd_forget(args: list[str], state: ShellState) -> str:
+    """Drop the conversation so the next question stands on its own.
+
+    Follow-up resolution is a guess about intent, and a chain of them can
+    drift: three turns after "access review" the subject has quietly become
+    something adjacent, and every later question inherits it. Starting a new
+    subject is the common case where that matters, and it is cheaper to
+    offer a reset than to make the resolver clever enough not to need one.
+    """
+    count = len(state.conversation)
+    state.conversation.clear()
+    if not count:
+        return "Nothing to forget — no questions asked yet."
+    return f"Forgotten {count} turn(s). The next question will be read on its own."
+
+
 COMMANDS: dict[str, Command] = {
     "help": Command("Show the available commands.", _cmd_help, aliases=("?",)),
     "topics": Command("List the topic registry and who owns each topic.", _cmd_topics),
     "corpus": Command("Show which documents are synced and available.", _cmd_corpus),
     "sources": Command("Show the last answer's passages in full.", _cmd_sources),
+    "forget": Command("Drop the conversation; ask the next question fresh.", _cmd_forget),
     "reload": Command("Re-read the snapshot from disk after a re-sync.", _cmd_reload),
     "quit": Command("Leave the shell.", _cmd_quit, aliases=("exit",)),
 }
@@ -345,22 +367,45 @@ def _answer(question: str, state: ShellState) -> str:
             "what it found, and `/topics` shows which topics declare pages at all."
         )
 
-    passages = state.index.search(question, limit=_PASSAGE_LIMIT)
+    # Resolve before retrieving. Retrieval is keyword scoring and has no
+    # mechanism for "that"; rewriting the question first is what turns a
+    # chain of follow-ups into a series of separately answerable questions.
+    try:
+        resolved, rewritten = resolve_question(question, state.conversation, state.provider)
+    except Exception:  # noqa: BLE001 - a failed rewrite must not lose the question
+        resolved, rewritten = question, False
+
+    preamble = [f"(reading that as: {resolved})", ""] if rewritten else []
+    passages = state.index.search(resolved, limit=_PASSAGE_LIMIT)
+
+    def _record(answer_text: str) -> None:
+        state.conversation.add(
+            Turn(question=question, resolved=resolved, passages=passages, answer=answer_text)
+        )
 
     if state.provider is None:
+        _record("")
         if not passages:
-            return (
-                "Nothing in the synced documents appears to bear on that.\n"
-                "That may be the answer — the documents genuinely may not say — or the "
-                "page you want may not be synced; `/corpus` shows what is."
+            return "\n".join(
+                [
+                    *preamble,
+                    "Nothing in the synced documents appears to bear on that.",
+                    "That may be the answer — the documents genuinely may not say — or "
+                    "the page you want may not be synced; `/corpus` shows what is.",
+                ]
             )
         note = state.provider_note or "No LLM configured"
         return "\n".join(
-            [f"{note}, so here are the passages themselves:", "", _render_passages(passages)]
+            [
+                *preamble,
+                f"{note}, so here are the passages themselves:",
+                "",
+                _render_passages(passages),
+            ]
         )
 
     try:
-        answer = answer_question(question, passages, state.provider)
+        answer = answer_question(resolved, passages, state.provider)
     except Exception as exc:  # noqa: BLE001 - any provider/SDK failure, session survives
         lines = [f"The model could not be reached ({type(exc).__name__}: {exc})."]
         if passages:
@@ -368,7 +413,8 @@ def _answer(question: str, state: ShellState) -> str:
         return "\n".join(lines)
 
     state.last_answer = answer
-    return _render_answer(answer)
+    _record("" if answer.refused else answer.text)
+    return "\n".join([*preamble, _render_answer(answer)])
 
 
 def _render_answer(answer) -> str:

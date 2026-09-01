@@ -1046,6 +1046,56 @@ in an open repo. Treat them differently:
 | **GovRAMP**             | GovRAMP's Terms & Conditions claim ownership of "documents, downloadable files" on their site, with no redistribution grant found | **Not bundled.** Treated as bring-your-own-content (BYOC) via `local_content/` until GovRAMP grants explicit permission (worth emailing info@govramp.org — ask before assuming).                                         |
 | **HITRUST CSF**         | Contractually licensed content                                                                                                    | **Never bundled.** BYOC only — you supply your own MyCSF/CSF export under your own license, and it's parsed locally. It is never committed, never uploaded anywhere by this tool, and stays out of git via `.gitignore`. |
 
+### Two repositories, two sets of rights
+
+The table above is about **this** repository. Your own is a different
+question, and the answer is usually different too.
+
+A HITRUST CSF export must never be committed here — this repo is public and
+Apache-licensed, and may hold only content anyone may redistribute. But your
+organization's repository, the private one holding your `docs/` tree, your
+`topics.yaml` and your config, very often **may** hold that same export,
+because your MyCSF licence permits internal use. Telling you to keep your own
+licensed catalog outside your own private repo, when your licence allows it,
+is a restriction this project has no standing to impose — and it makes CI
+harder for nothing.
+
+So the rule isn't "licensed content never goes in a repository". It's
+**"licensed content never goes in a repository that hasn't declared the right
+to hold it"** — a permission only you can grant, granted once:
+
+```yaml
+# your repo's config/config.yaml
+frameworks:
+  search_paths:
+    - data/frameworks     # bundled: 800-53, HIPAA
+    - frameworks          # yours, committed alongside docs/
+  allow_licensed_in_repo: true    # our MyCSF licence permits this
+```
+
+Each catalog directory carries a `framework.yaml` declaring its terms:
+
+```yaml
+id: hitrust-csf
+name: HITRUST CSF v11.3
+licence: licensed        # or: public-domain
+source: MyCSF export, 2026-01
+```
+
+`policyforge frameworks` lists what's on disk and where each one stands.
+`policyforge check` fails on licensed content committed to a repo that hasn't
+declared the right — so **this** repo's CI breaks the moment a HITRUST export
+lands in it, while the identical command passes in yours. A directory with no
+manifest is treated as licensed: assuming content is freely redistributable
+because nobody said otherwise is the mistake with consequences.
+
+**What this does not decide.** Whether a *generated document* citing
+`[HITRUST 01.c]` may be redistributed is a question about identifiers,
+paraphrase and fair use that depends on your licence and your jurisdiction,
+and this tool has no business answering it. What it can do is tell you which
+documents drew on licensed catalogs, so the question gets asked about the
+right files by someone qualified to answer it.
+
 **Rule of thumb:** if you're not certain a document is a public-domain
 government work, it goes in `local_content/` (gitignored), not `data/`.
 
@@ -1400,16 +1450,16 @@ declared, checkable data is where most of the remaining value is.
   pages those conventions did not reach. Ownership stays `[UNASSIGNED]`: nothing
   in a page reliably says which team is accountable, and a wrong owner in a
   compliance artifact gets believed while a blank one gets filled in
-- [ ] **Role-keyed vendors in company context** — `vendors` is a flat list today, so
-  the generator infers what each product does and hedges when it can't
-  (`[Identity Provider — Okta]` for a vendor it was actually given). Keying by role —
-  `identity_provider: Okta`, `edr: CrowdStrike` — makes substitution deterministic.
-  Backwards-compatible: keep accepting a list, treat a mapping as the richer form.
-- [ ] **Team roster in company context** — a `teams:` block naming the org's real
-  teams, so topics can declare an owner and generated procedures say "the IAM
-  Engineering team" instead of `[Responsible Team]`. This is the piece that turns
-  "one topic, one team" from a convention into something the tool can enforce and
-  report on.
+- [x] **Role-keyed tools and teams** (`org/`) — `identity_provider: Okta` says what
+  Okta is *for*, which is the only fact a substitution needs. 33 tool roles and 14
+  team roles (`policyforge roles`), and the fill happens in code after generation
+  rather than in the prompt, so the same document and config give the same output
+  every time. A flat `vendors:` list still works
+- [x] **Licensed catalogs in your own repository** (`frameworks/`) — a HITRUST or
+  GovRAMP export may not be committed here, but your own private repo very often
+  may hold it under your own licence. Each catalog declares its terms in a
+  `framework.yaml`, and `check` fails on licensed content committed to a repository
+  that has not declared the right to hold it
 - [ ] **Parameter ledger** (`parameters.yaml`) — one decided value per NIST
   organization-defined parameter, with the reasoning and the source that drove it
   ("access review = quarterly; HITRUST 01.c specifies quarterly, 800-53 AC-2 leaves it

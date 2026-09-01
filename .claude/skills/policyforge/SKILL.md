@@ -94,11 +94,13 @@ Optional, after generating:
   set in the user's shell. Always offer `--dry-run` first to show the
   converted storage format before actually publishing, unless the user
   clearly just wants it published.
+
 - **`policyforge import-confluence --tier <tier> --name <name> --space <KEY> --title "<title>" --host <url>`**
   — pull the page's *current live* content back and diff it against the last
   locally-recorded version for that tier/name (drift detection — did someone
   hand-edit the published page?). `--name` must match the filename stem
   `generate` used (e.g. `auth-mgmt` for `auth-mgmt.md`).
+
 - **`policyforge edit-confluence --instruction "<what to change>" --space <KEY> --title "<title>" --host <url> [--apply] [--yes] [--allow-macros]`**
   — edit a live page from a plain-language instruction: fetch, plan, rewrite,
   diff, publish. **Always run it without `--apply` first** and show the user
@@ -110,6 +112,7 @@ Optional, after generating:
   them decide. If the output warns that framework citations or sections went
   missing, surface that prominently: it means the rewrite dropped
   traceability, and publishing it would be a compliance regression.
+
 - **`policyforge edit-topic --instruction "<what to change>" --topic-name "<topic>" --host <url> [--tiers standard,procedure] [--apply] [--yes]`**
   — apply one instruction across a topic's whole Policy/Standard/Procedure
   set, resolving the pages from the `confluence:` block in
@@ -119,6 +122,7 @@ Optional, after generating:
   gates as `edit-confluence` — dry run first, always. If a publish fails
   part-way through, the output names which pages already landed; relay that
   exactly, because the set is then inconsistent.
+
 - **`policyforge zardoz discover --space <KEY> [--host <url>] [--out <path>] [--no-llm]`**
   — propose a `topics.yaml` for a space that has never been catalogued. Writes
   `config/topics.proposed.yaml`, never `topics.yaml`, and every owner comes back
@@ -126,6 +130,7 @@ Optional, after generating:
   team owns each topic; guessing one into a compliance artifact is the failure
   this deliberately avoids. Check the groupings and anchor controls with the
   user, then have them rename the file and run `coverage` against it.
+
 - **`policyforge zardoz sync`** then **`policyforge zardoz`** — build the local
   document snapshot, then open the conversational shell over it. Two sources,
   either or both: `--content-dir` (or `zardoz.content_dir`) reads a markdown
@@ -168,24 +173,28 @@ Optional, after generating:
   answer as fact: read `/sources` and report what the documents actually say.
   Without an LLM the shell returns passages instead of prose; that is a
   supported mode, not a broken one, so don't treat it as a setup problem.
+
 - **`policyforge check [--content-dir <dir>] [--synthesis-dir <dir>] [--strict]`**
   — the repo-backed gate, entirely offline (no credentials, no LLM). Run it
   before any publish and in CI. Errors block: two files claiming one Confluence
   page, a link to a document that isn't there, a `confluence:` block with no
   space. Warnings don't: missing owner or tier. Exits 1 on any error, or on any
   warning with `--strict`.
+
 - **`policyforge publish [--content-dir <dir>] --host <url> [--only <substr>] [--apply]`**
   — push each document to the page its own frontmatter declares. **Plans by
   default; always show the plan before passing `--apply`.** Documents with no
   `confluence:` block are deliberately not published. If it skips a page because
   the live version uses unsupported macros, do *not* reach for `--allow-macros`
   — that flattens them. Tell the user what would be lost.
+
 - **`policyforge pull [--content-dir <dir>] --host <url> [--space K --title T --tier <tier>] [--apply]`**
   — bring live pages down into the tree as markdown, with the frontmatter
   binding written back so the round trip closes. Defaults to every page the
   topic registry declares; `--space`/`--title` pulls one. Same rule on
   `--allow-macros`: a refused page would produce a file that looks correct and
   destroys those macros on its first publish.
+
 - **`policyforge history --tier <tier> --name <name> [--diff latest | --diff N:M]`**
   — list or diff the local version history for one document. Use this
   whenever the user asks "what changed" or "show me the history" for a
@@ -194,6 +203,16 @@ Optional, after generating:
   `access-control-standard`); those entries print the plan that produced each
   revision, including what the model flagged and what it declined — that is
   the answer to "why did this page change".
+
+- **`policyforge roles`** — list the tool and team roles config can assign.
+  Run it before editing `org.vendors`/`org.teams`: the keys are fixed, and a
+  typo'd one is reported and ignored rather than guessed at. Role-keyed values
+  are substituted deterministically after generation, so `[Identity Provider]`
+  becomes the configured name in every document or in none.
+
+- **`policyforge frameworks`** — list the catalogs on disk and their licence
+  position. Exits 1 if licensed content is committed to a repository that has
+  not declared `frameworks.allow_licensed_in_repo: true`.
 
 ## Guardrails — do not skip these
 
@@ -207,9 +226,14 @@ Optional, after generating:
   license actually permits sending that content to a third-party API
   processor — don't just proceed because they asked. A synthetic/dummy
   sample needs no such confirmation.
-- **BYOC frameworks (HITRUST, GovRAMP) never go in `data/frameworks/` or
-  get bundled/committed.** They live in `local_content/` (gitignored) only.
-  See README's licensing table before touching either framework's data.
+- **BYOC frameworks (HITRUST, GovRAMP) never go in `data/frameworks/` or get
+  committed *to this repository*.** They live in `local_content/` (gitignored).
+  **In a user's own repository the answer is often different**: their MyCSF
+  licence commonly permits their private repo to hold the export, and they
+  declare that with `frameworks.allow_licensed_in_repo: true`. Do not set that
+  flag on their behalf — it is a statement about their licence, and only they
+  can make it. If `check` reports a breach, explain what it means and let them
+  decide. See README's licensing section.
 - **Org context (`config.yaml`'s `org:` block) drives placeholders.** If
   `vendors` is empty, generated docs use `[Square-Bracket Vendor]`
   placeholders rather than inventing product names — that's correct

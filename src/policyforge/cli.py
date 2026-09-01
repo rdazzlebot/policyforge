@@ -6,6 +6,7 @@ import click
 
 from policyforge.config import load_config
 from policyforge.llm.base import get_provider
+from policyforge.org.context import load_org_profile
 
 # Local, offline version history of generated/imported documents — see
 # history/version_store.py's module docstring for what this is (and isn't)
@@ -583,11 +584,19 @@ def ssp_cmd(
 
     config = load_config()
     org_cfg = config.get("org", {})
+    profile = load_org_profile(config)
     org = OrgContext(
         name=org_cfg.get("name", ""),
         industry=org_cfg.get("industry", ""),
-        vendors=org_cfg.get("vendors", []),
+        vendors=profile.unkeyed_vendors,
+        profile=profile,
     )
+    if profile.unknown:
+        click.echo(
+            "WARNING: config names roles this version does not know: "
+            + ", ".join(profile.unknown)
+            + " — run `policyforge roles` for the list. They were ignored."
+        )
     system_cfg = dict(config.get("system", {}) or {})
     if system_name:
         system_cfg["name"] = system_name
@@ -720,11 +729,19 @@ def generate_cmd(
 
     config = load_config()
     org_cfg = config.get("org", {})
+    profile = load_org_profile(config)
     org = OrgContext(
         name=org_cfg.get("name", ""),
         industry=org_cfg.get("industry", ""),
-        vendors=org_cfg.get("vendors", []),
+        vendors=profile.unkeyed_vendors,
+        profile=profile,
     )
+    if profile.unknown:
+        click.echo(
+            "WARNING: config names roles this version does not know: "
+            + ", ".join(profile.unknown)
+            + " — run `policyforge roles` for the list. They were ignored."
+        )
 
     # Topic ownership travels in the synthesis file's frontmatter, written by
     # `synthesize --topic-name`. Files without it still work — they just draft
@@ -763,6 +780,23 @@ def generate_cmd(
         )
     else:
         document = generate_standard(topic_synthesis, org, provider, topic=topic_context)
+
+    # Fill the role placeholders here rather than trusting the prompt to have
+    # done it consistently. Same document plus same config gives the same
+    # output every time, with no model in the loop.
+    from policyforge.org.context import apply_substitutions
+
+    substituted = apply_substitutions(document, profile)
+    document = substituted.text
+    if substituted.filled:
+        pairs = sorted({f"{label} -> {value}" for label, value in substituted.filled})
+        click.echo(f"Filled {len(substituted.filled)} role placeholder(s): " + ", ".join(pairs))
+    if substituted.outstanding:
+        click.echo(
+            f"{len(substituted.outstanding)} role(s) left as placeholders: "
+            + ", ".join(substituted.outstanding)
+        )
+        click.echo("  Add them under `org.vendors` or `org.teams`, then regenerate.")
 
     out_path = out or Path(f"output/{tier}s") / synthesis_path.name
     written = write_markdown(document + "\n", output_dir=out_path.parent, filename=out_path.name)
@@ -1478,6 +1512,90 @@ def _content_dir(override: Path | None) -> Path:
     return Path(configured) if configured else Path("docs")
 
 
+@cli.command("frameworks")
+def frameworks_cmd():
+    """List the framework catalogs on disk, and their licence position.
+
+    A catalog is public domain or it is licensed, and that decides which
+    repository may hold a copy of it. This repository may hold only the
+    former; your own private repository can very often hold both, because
+    your MyCSF or GovRAMP licence permits internal use.
+
+    Licensed content committed to a repository that has not declared the
+    right to hold it is reported as an error — set
+    `frameworks.allow_licensed_in_repo: true` in config.yaml if your licence
+    permits yours to carry it.
+    """
+    from policyforge.frameworks.registry import check_licences
+
+    try:
+        config = load_config()
+    except FileNotFoundError:
+        config = {}
+
+    report = check_licences(config)
+    if not report.frameworks:
+        click.echo(
+            "No frameworks found. Run `policyforge etl-oscal` for 800-53, or point "
+            "`frameworks.search_paths` at your own catalogs."
+        )
+        return
+
+    click.echo(report.format_report())
+    if report.allowed:
+        click.echo("")
+        click.echo(
+            "This repository declares `allow_licensed_in_repo: true`, so committing "
+            "licensed catalogs here is permitted by your own configuration. That is a "
+            "statement about your licence, not a check of it."
+        )
+    if not report.ok:
+        raise SystemExit(1)
+
+
+@cli.command("roles")
+@click.option(
+    "--kind",
+    type=click.Choice(["vendors", "teams", "all"]),
+    default="all",
+    show_default=True,
+    help="Which taxonomy to list.",
+)
+def roles_cmd(kind: str):
+    """List the tool and team roles config can assign.
+
+    These keys go under `org.vendors` and `org.teams` in config.yaml, and
+    naming a role is what makes substitution deterministic: the generator is
+    told what a tool is *for* rather than inferring it from a product name,
+    and every placeholder for a filled role is then replaced exactly.
+
+    The lists are not exhaustive. They cover what NIST 800-53 and HIPAA
+    Security Rule procedures actually reference; a tool fitting none of them
+    can still be passed as a plain list.
+    """
+    from policyforge.org.roles import TEAM_ROLES, VENDOR_ROLES
+
+    wanted = {"vendors": ("Tool",), "teams": ("Team",), "all": ("Tool", "Team")}[kind]
+    for title, roles in (("Tool", VENDOR_ROLES), ("Team", TEAM_ROLES)):
+        if title not in wanted:
+            continue
+        click.echo(f"{title} roles ({len(roles)}):")
+        width = max(len(key) for key in roles)
+        for key, role in roles.items():
+            families = f"  [{', '.join(role.families)}]" if role.families else ""
+            click.echo(f"  {key.ljust(width)}  {role.placeholder}{families}")
+            click.echo(f"  {' ' * width}  {role.description}")
+        click.echo("")
+
+    click.echo("Assign them like this:")
+    click.echo("    org:")
+    click.echo("      vendors:")
+    click.echo("        identity_provider: Okta")
+    click.echo("        ticketing: Jira")
+    click.echo("      teams:")
+    click.echo("        identity_access: IAM Engineering")
+
+
 @cli.command("check")
 @click.option(
     "--content-dir",
@@ -1518,7 +1636,25 @@ def check_cmd(content_dir: Path | None, synthesis_dir: Path, strict: bool):
     report = check_tree(root, synthesis_dir=synthesis_dir)
     click.echo(report.format_report())
 
-    if not report.ok or (strict and report.warnings):
+    # Licensed catalog content committed to a repository that has not
+    # declared the right to hold it is a licence breach, not a lint. It
+    # belongs in the same gate as everything else that must not reach a
+    # merge, and it needs no credentials to check.
+    from policyforge.frameworks.registry import check_licences
+
+    try:
+        config = load_config()
+    except FileNotFoundError:
+        config = {}
+    licences = check_licences(config)
+    if licences.findings:
+        click.echo("")
+        click.echo("Framework licences:")
+        for finding in licences.findings:
+            mark = "ERROR" if finding.severity == "error" else "warn "
+            click.echo(f"  {mark}  {finding.framework.id}: {finding.message}")
+
+    if not report.ok or not licences.ok or (strict and report.warnings):
         raise SystemExit(1)
 
 

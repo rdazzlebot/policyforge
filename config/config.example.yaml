@@ -17,33 +17,57 @@ llm:
                                  # (`gcloud auth application-default login`).
 
 frameworks:
-  # Bundled, public-domain — safe to enable out of the box.
-  - id: nist-800-53-r5
-    source: bundled
+  # Where to look for framework catalogs, in order. The first match for an
+  # id wins, so your own newer export shadows a bundled one without deleting
+  # anything.
+  search_paths:
+    - data/frameworks     # bundled with policyforge: 800-53, HIPAA (public domain)
+    - frameworks          # your own, committed alongside your docs/ tree
+    - local_content       # your own, deliberately kept out of git
 
-  - id: fedramp
-    source: bundled
+  # Some catalogs are licensed rather than public domain — HITRUST CSF and
+  # GovRAMP are the ones this project maps. Whether your repository may hold
+  # a copy is a question about YOUR licence, and only you can answer it.
+  #
+  # Leave this false and `policyforge check` fails if licensed content is
+  # ever committed here — keep it under local_content/ (gitignored) instead.
+  # Set it true if your MyCSF/GovRAMP licence permits your own repository to
+  # carry the export, which for a private repo it commonly does.
+  allow_licensed_in_repo: false
 
-  - id: arc-ampe
-    source: bundled
-
-  - id: hipaa-security-rule
-    source: bundled
-
-  # BYOC — point at your own licensed export. The path must live under
-  # local_content/ (gitignored) so it never ends up in the repo history.
-  - id: govramp
-    source: byoc
-    path: local_content/govramp/
-
-  - id: hitrust
-    source: byoc
-    path: local_content/hitrust/
+  # Each catalog directory should carry a framework.yaml declaring its terms:
+  #   id: hitrust-csf
+  #   name: HITRUST CSF v11.3
+  #   licence: licensed        # or: public-domain
+  #   source: MyCSF export, 2026-01
+  # A directory with no manifest is treated as licensed. Assuming content is
+  # freely redistributable because nobody said otherwise is the mistake with
+  # consequences.
 
 org:
   name: "Example Org"
   industry: ""
-  vendors: []          # used to fill [Square-Bracket Vendor] placeholders in generated procedures
+
+  # Tools, keyed by the role each one fills. Naming the role is what makes
+  # substitution deterministic: the generator is told what a tool is FOR
+  # rather than inferring it from a product name, and every `[Identity
+  # Provider]` in a generated document becomes "Okta" or none of them does.
+  #
+  # `policyforge roles` lists every key. A flat list still works and still
+  # means "these exist, work out where they go" — it is just less exact.
+  vendors: {}
+    # identity_provider: Okta
+    # endpoint_protection: CrowdStrike
+    # ticketing: Jira
+    # siem: Splunk
+
+  # Teams, keyed by the function each one performs. This is what lets a
+  # generated procedure say "Identity and Access Management" instead of
+  # [Responsible Team].
+  teams: {}
+    # identity_access: IAM Engineering
+    # security_operations: SecOps
+    # grc: Security Assurance
 
 # Optional. Describes the system a System Security Plan is written about,
 # using NIST SP 800-18's plan elements. Only used by `policyforge ssp`;

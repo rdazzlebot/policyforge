@@ -23,12 +23,12 @@ def call_messages_api(
 ) -> LLMResponse:
     import anthropic
 
-    kwargs = dict(
-        model=model,
-        max_tokens=max_tokens,
-        system=system,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    kwargs = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "system": system,
+        "messages": [{"role": "user", "content": prompt}],
+    }
     try:
         response = client.messages.create(temperature=temperature, **kwargs)
     except anthropic.BadRequestError as exc:

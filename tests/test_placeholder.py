@@ -17,9 +17,7 @@ def test_markdown_quality_check(tmp_path):
     # Sloppy formatting (extra blank lines, inconsistent bullet markers)
     # should fail the check rather than silently pass as "primary
     # deliverable quality" output.
-    bad = write_markdown(
-        "# Title\n\n\n\n* one\n- two\n", output_dir=tmp_path, filename="bad.md"
-    )
+    bad = write_markdown("# Title\n\n\n\n* one\n- two\n", output_dir=tmp_path, filename="bad.md")
     assert check_markdown_quality(bad) is False
 
 
@@ -56,7 +54,7 @@ Account management covers the full lifecycle.
 
 | Enhancement | Title | Baseline | Description |
 |-------------|-------|----------|-------------|
-| **AC-2(1)** | Automated System Account Management | Moderate, High | Support automated mechanisms. |
+| **AC-2(1)** | Automated Account Management | Moderate, High | Support automated mechanisms. |
 
 ## Related Controls
 
@@ -142,6 +140,83 @@ def test_build_crosswalk_folds_in_non_nist_controls_pointing_back():
     crosswalk = build_crosswalk(controls)
 
     assert crosswalk == {"AC-2": {"arc-ampe": ["ARC-AC-2"]}}
+
+
+def test_build_crosswalk_reads_enhancement_level_source_crosswalk():
+    """A framework may be mapped at the sub-requirement level rather than the
+    control level (NIST's HIPAA-to-800-53 crosswalk maps most rows to
+    individual implementation specifications). Those must reach the crosswalk
+    under the enhancement's own ID, not be folded into the parent's."""
+    from policyforge.ingest.schema import Control, ControlEnhancement
+    from policyforge.mapping.crosswalk import build_crosswalk
+
+    controls = [
+        Control(
+            control_id="STD-1",
+            title="A standard",
+            framework="ExampleFramework",
+            framework_version="v1",
+            source_crosswalk={"nist": "AC-1"},
+            enhancements=[
+                ControlEnhancement(
+                    enhancement_id="STD-1(a)",
+                    title="A specification",
+                    baseline="Required",
+                    description="",
+                    source_crosswalk={"nist": "AC-2, AC-3"},
+                ),
+                ControlEnhancement(
+                    enhancement_id="STD-1(b)",
+                    title="An unmapped specification",
+                    baseline="Addressable",
+                    description="",
+                ),
+            ],
+        )
+    ]
+
+    crosswalk = build_crosswalk(controls)
+
+    assert crosswalk == {
+        "AC-1": {"exampleframework": ["STD-1"]},
+        "AC-2": {"exampleframework": ["STD-1(a)"]},
+        "AC-3": {"exampleframework": ["STD-1(a)"]},
+    }
+
+
+def test_load_controls_accepts_json_written_before_enhancement_crosswalks(tmp_path):
+    """`ControlEnhancement.source_crosswalk` was added after the first
+    controls.json files were generated — older data must still load."""
+    import json
+
+    from policyforge.ingest.schema import load_controls
+
+    path = tmp_path / "controls.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "control_id": "AC-2",
+                    "title": "Account Management",
+                    "framework": "NIST 800-53",
+                    "framework_version": "Rev 5",
+                    "enhancements": [
+                        {
+                            "enhancement_id": "AC-2(1)",
+                            "title": "Automated System Account Management",
+                            "baseline": "Moderate, High",
+                            "description": "Support automated mechanisms.",
+                        }
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_controls(path)
+
+    assert loaded[0].enhancements[0].source_crosswalk == {}
 
 
 def test_load_controls_round_trips_through_json(tmp_path):

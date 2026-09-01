@@ -51,7 +51,9 @@ def _control(**overrides):
 def test_llm_check_reports_ok(monkeypatch):
     import policyforge.cli as cli_mod
 
-    monkeypatch.setattr(cli_mod, "load_config", lambda: {"llm": {"provider": "anthropic", "model": "m"}})
+    monkeypatch.setattr(
+        cli_mod, "load_config", lambda: {"llm": {"provider": "anthropic", "model": "m"}}
+    )
     monkeypatch.setattr(cli_mod, "get_provider", lambda config: FakeProvider())
 
     result = CliRunner().invoke(cli_mod.cli, ["llm-check"])
@@ -98,9 +100,9 @@ def test_etl_hipaa_fetches_and_parses(tmp_path, monkeypatch):
 
     from policyforge.cli import cli
 
-    fixture = (
-        Path(__file__).parent / "fixtures" / "ecfr_45cfr164_subpart_c.xml"
-    ).read_text(encoding="utf-8")
+    fixture = (Path(__file__).parent / "fixtures" / "ecfr_45cfr164_subpart_c.xml").read_text(
+        encoding="utf-8"
+    )
     monkeypatch.setattr(
         "policyforge.ingest.hipaa_loader.fetch_ecfr_subpart_c_xml", lambda **kwargs: fixture
     )
@@ -205,7 +207,8 @@ def test_generate_standard_drafts_document_from_synthesis(tmp_path, monkeypatch)
     out_path = tmp_path / "standards" / "authenticator-mgmt.md"
 
     fake = FakeProvider(
-        text="# Authenticator Management Standard\n\nStaff must manage authenticators. [NIST IA-5]\n"
+        text="# Authenticator Management Standard\n\n"
+        "Staff must manage authenticators. [NIST IA-5]\n"
     )
     monkeypatch.setattr(
         cli_mod,
@@ -256,7 +259,9 @@ def test_generate_policy_requires_standard_and_references_its_title(tmp_path, mo
     )
     out_path = tmp_path / "policies" / "authenticator-mgmt.md"
 
-    fake = FakeProvider(text="# Authenticator Management Policy\n\nStaff must use strong authentication.\n")
+    fake = FakeProvider(
+        text="# Authenticator Management Policy\n\nStaff must use strong authentication.\n"
+    )
     monkeypatch.setattr(
         cli_mod,
         "load_config",
@@ -404,7 +409,11 @@ def test_import_confluence_writes_markdown_and_records_history(tmp_path, monkeyp
                         "id": "1",
                         "title": "Authenticator Management Standard",
                         "version": {"number": 1},
-                        "body": {"storage": {"value": "<h1>Authenticator Management Standard</h1><p>Body</p>"}},
+                        "body": {
+                            "storage": {
+                                "value": "<h1>Authenticator Management Standard</h1><p>Body</p>"
+                            }
+                        },
                         "_links": {"webui": "/x"},
                     }
                 ]
@@ -485,7 +494,15 @@ def test_history_command_reports_no_history(tmp_path):
 
     result = CliRunner().invoke(
         cli,
-        ["history", "--tier", "standard", "--name", "never-generated", "--history-dir", str(tmp_path)],
+        [
+            "history",
+            "--tier",
+            "standard",
+            "--name",
+            "never-generated",
+            "--history-dir",
+            str(tmp_path),
+        ],
     )
 
     assert result.exit_code == 0

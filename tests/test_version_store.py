@@ -8,7 +8,11 @@ def test_record_version_creates_first_version(tmp_path):
     from policyforge.history.version_store import load_history, record_version
 
     record = record_version(
-        tmp_path, "standard/auth-mgmt", "# Title\n\nBody.\n", source="generate", metadata={"org": "Acme"}
+        tmp_path,
+        "standard/auth-mgmt",
+        "# Title\n\nBody.\n",
+        source="generate",
+        metadata={"org": "Acme"},
     )
 
     assert record is not None

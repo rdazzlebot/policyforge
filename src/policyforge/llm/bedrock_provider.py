@@ -57,9 +57,7 @@ class BedrockProvider(LLMProvider):
             inferenceConfig={"maxTokens": max_tokens, "temperature": temperature},
         )
         text = "".join(
-            block["text"]
-            for block in response["output"]["message"]["content"]
-            if "text" in block
+            block["text"] for block in response["output"]["message"]["content"] if "text" in block
         )
         usage = response.get("usage", {})
         return LLMResponse(

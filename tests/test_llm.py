@@ -72,7 +72,12 @@ def test_call_messages_api_sends_expected_request_and_parses_response():
     client = FakeAnthropicSdkClient(reply_text="ok")
 
     result = call_messages_api(
-        client, model="claude-x", system="sys prompt", prompt="hello", max_tokens=16, temperature=0.1
+        client,
+        model="claude-x",
+        system="sys prompt",
+        prompt="hello",
+        max_tokens=16,
+        temperature=0.1,
     )
 
     assert result.text == "ok"
@@ -191,7 +196,14 @@ def test_get_provider_dispatches_to_vertex(monkeypatch):
     monkeypatch.setattr("policyforge.llm.vertex_provider.VertexProvider", FakeVertexProvider)
 
     provider = get_provider(
-        {"llm": {"provider": "vertex", "model": "m", "project_id": "proj", "region": "europe-west4"}}
+        {
+            "llm": {
+                "provider": "vertex",
+                "model": "m",
+                "project_id": "proj",
+                "region": "europe-west4",
+            }
+        }
     )
 
     assert isinstance(provider, FakeVertexProvider)
@@ -287,9 +299,7 @@ def test_get_provider_dispatches_to_bedrock(monkeypatch):
             created["model"] = model
             created["region"] = region
 
-    monkeypatch.setattr(
-        "policyforge.llm.bedrock_provider.BedrockProvider", FakeBedrockProvider
-    )
+    monkeypatch.setattr("policyforge.llm.bedrock_provider.BedrockProvider", FakeBedrockProvider)
 
     provider = get_provider({"llm": {"provider": "bedrock", "model": "m", "region": "us-west-2"}})
 

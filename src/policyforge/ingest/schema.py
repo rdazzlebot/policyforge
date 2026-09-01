@@ -19,13 +19,20 @@ class ControlEnhancement:
     title: str
     baseline: str
     description: str
+    # Same role as `Control.source_crosswalk` below, but at the
+    # sub-requirement level. Some frameworks publish their crosswalk at both
+    # levels — NIST's HIPAA-to-800-53 crosswalk, for instance, maps each
+    # Required/Addressable implementation specification to its own set of
+    # 800-53 controls, distinct from its parent Standard's — so folding
+    # those into the parent would lose real mapping detail.
+    source_crosswalk: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
 class Control:
     control_id: str
     title: str
-    framework: str          # e.g. "NIST-800-53", "FedRAMP", "ARC-AMPE", "HITRUST-CSF", "GovRAMP"
+    framework: str  # e.g. "NIST-800-53", "FedRAMP", "ARC-AMPE", "HITRUST-CSF", "GovRAMP"
     framework_version: str  # e.g. "Rev 5", "v11.8"
     family: str | None = None
     family_abbr: str | None = None

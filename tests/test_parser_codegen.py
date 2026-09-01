@@ -22,7 +22,9 @@ class FakeProvider:
 def test_generate_byoc_parser_grounds_prompt_in_framework_and_sample():
     from policyforge.ingest.parser_codegen import generate_byoc_parser
 
-    provider = FakeProvider(text="from __future__ import annotations\n\ndef load_hitrust_export(): ...")
+    provider = FakeProvider(
+        text="from __future__ import annotations\n\ndef load_hitrust_export(): ..."
+    )
 
     result = generate_byoc_parser(
         framework="HITRUST CSF",
@@ -45,9 +47,7 @@ def test_generate_byoc_parser_grounds_prompt_in_framework_and_sample():
 def test_generate_byoc_parser_strips_markdown_code_fence():
     from policyforge.ingest.parser_codegen import generate_byoc_parser
 
-    provider = FakeProvider(
-        text="```python\nfrom __future__ import annotations\n\nx = 1\n```"
-    )
+    provider = FakeProvider(text="```python\nfrom __future__ import annotations\n\nx = 1\n```")
 
     result = generate_byoc_parser(
         framework="GovRAMP",

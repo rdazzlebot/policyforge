@@ -120,9 +120,7 @@ def parse_control_file(
 
     crosswalk = {}
     if "cross-framework mappings" in sections:
-        crosswalk = _parse_crosswalk(
-            sections["cross-framework mappings"], keep_crosswalk_columns
-        )
+        crosswalk = _parse_crosswalk(sections["cross-framework mappings"], keep_crosswalk_columns)
 
     control_statement = sections.get("control statement", "").strip("> \n")
     discussion = sections.get("discussion", "")
@@ -153,9 +151,9 @@ def load_vault_controls(
     controls = []
     for path in sorted(controls_dir.glob("*.md")):
         try:
-            controls.append(
-                parse_control_file(path, keep_crosswalk_columns=keep_crosswalk_columns)
-            )
-        except Exception as exc:  # noqa: BLE001 — collect and report, don't abort the batch
+            controls.append(parse_control_file(path, keep_crosswalk_columns=keep_crosswalk_columns))
+        # Deliberately broad: one malformed note must not abort the whole
+        # batch, so the failure is reported and parsing continues.
+        except Exception as exc:  # noqa: BLE001
             print(f"WARN: failed to parse {path}: {exc}")
     return controls

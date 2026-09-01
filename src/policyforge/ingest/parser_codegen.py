@@ -63,7 +63,8 @@ dataclass schema in a larger project.
 Rules:
 - Output ONLY a single, complete, well-formed Python module — no markdown
   code fences, no prose before or after the code.
-- The module must define exactly one function, `load_<framework_slug>_export(export_path: Path) -> list[Control]`
+- The module must define exactly one function,
+  `load_<framework_slug>_export(export_path: Path) -> list[Control]`
   (substitute the literal framework slug given below), that parses the
   export format shown in the sample and returns a list of `Control`
   objects matching the schema given below exactly (field names, types,

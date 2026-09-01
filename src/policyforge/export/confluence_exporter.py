@@ -138,3 +138,83 @@ def export_to_confluence(
     response.raise_for_status()
     data = response.json()
     return f"{base}{data['_links']['webui']}"
+
+
+class ConcurrentEditError(RuntimeError):
+    """The page changed between being read and being written back."""
+
+
+def update_page_body(
+    markdown_text: str,
+    *,
+    page_id: str,
+    title: str,
+    space: str,
+    host: str,
+    expected_version: int,
+    username_env: str = "CONFLUENCE_USERNAME",
+    token_env: str = "CONFLUENCE_API_TOKEN",
+) -> str:
+    """Replace a known page's body, but only if it is still at
+    `expected_version`. Returns the resulting page URL.
+
+    This differs from `export_to_confluence` on purpose. That function
+    re-reads the current version at publish time and increments it, so a
+    publish always wins — which is right when you are pushing a freshly
+    generated document that is the source of truth. It is wrong when you are
+    *editing what is already there*: between reading the page and writing it
+    back, someone else may have edited it, and blindly incrementing would
+    discard their change without either party noticing.
+
+    So the version read at fetch time is passed back in here and checked.
+    Confluence itself rejects a stale version number, and that rejection is
+    surfaced as `ConcurrentEditError` rather than a bare HTTP error, because
+    the fix ("re-read the page and redo the edit") is specific and worth
+    saying.
+    """
+    import requests
+
+    auth, headers = confluence_auth(username_env=username_env, token_env=token_env)
+    base = host.rstrip("/")
+
+    current = requests.get(
+        f"{base}/{API_CONTENT_PATH}/{page_id}",
+        params={"expand": "version"},
+        auth=auth,
+        headers=headers,
+        timeout=30,
+    )
+    current.raise_for_status()
+    live_version = current.json()["version"]["number"]
+    if live_version != expected_version:
+        raise ConcurrentEditError(
+            f"Page {title!r} is at version {live_version}, but the edit was planned "
+            f"against version {expected_version}. Someone changed it in the meantime. "
+            "Re-run to plan against the current content."
+        )
+
+    payload = {
+        "id": page_id,
+        "type": "page",
+        "title": title,
+        "space": {"key": space},
+        "body": {
+            "storage": {"value": markdown_to_confluence(markdown_text), "representation": "storage"}
+        },
+        "version": {"number": expected_version + 1},
+    }
+    response = requests.put(
+        f"{base}/{API_CONTENT_PATH}/{page_id}",
+        json=payload,
+        auth=auth,
+        headers=headers,
+        timeout=30,
+    )
+    if response.status_code == 409:
+        raise ConcurrentEditError(
+            f"Confluence rejected the update to {title!r} as a version conflict — the "
+            "page changed while the edit was being applied. Re-run to plan against "
+            "the current content."
+        )
+    response.raise_for_status()
+    return f"{base}{response.json()['_links']['webui']}"

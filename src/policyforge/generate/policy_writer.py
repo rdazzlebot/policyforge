@@ -45,6 +45,11 @@ class OrgContext:
     name: str
     industry: str
     vendors: list[str] = field(default_factory=list)
+    #: The role-keyed profile, when config supplied one. Present means the
+    #: generator is told what each tool is *for* rather than left to infer
+    #: it, and the placeholders it writes are role labels that a
+    #: deterministic pass can fill in afterwards.
+    profile: object | None = None
 
 
 @dataclass
@@ -82,10 +87,12 @@ Rules:
 - Preserve each requirement's inline source tag (e.g. `[NIST IA-5 |
   GovRAMP IA-5]`) so the document stays traceable back to the frameworks it
   was drawn from.
-- Where a requirement is vendor/tool-specific: if the organization's vendor
-  list below names a plausible match, use that vendor's actual name. If not,
-  write a placeholder in the square-bracket form `[Square-Bracket Vendor]`
-  (e.g. `[Endpoint Protection Vendor]`) rather than naming a real product.
+- Where a requirement is vendor/tool-specific: if the tool list below fills
+  that role, use that tool's actual name. If not, write the role itself in
+  square brackets (`[Identity Provider]`, `[Ticketing System]`, `[Backup
+  System]`) rather than naming a product the organization has not said it
+  uses. Write the role exactly as it is worded in the list below where one
+  applies — those labels are substituted automatically afterwards.
 - Write in formal policy language ("must", "shall"), addressed to the
   security/IT staff who implement and audit against this document, not to
   a generic reader.
@@ -159,9 +166,9 @@ Rules:
   end of its subsection heading or its first step, so the document stays
   traceable back to the frameworks it was drawn from.
 - Where a step is vendor/tool-specific: if the organization's vendor list
-  below names a plausible match, use that vendor's actual name and its real
-  UI/CLI actions where you can reasonably infer them. If not, write a
-  placeholder in the square-bracket form `[Square-Bracket Vendor]` rather
+  below fills that role, use that tool's actual name and its real UI/CLI
+  actions where you can reasonably infer them. If not, write the role itself
+  in square brackets (`[Identity Provider]`, `[Ticketing System]`) rather
   than naming a real product or inventing specific UI steps for it.
 - Roles & Responsibilities: 1-2 sentences on who is authorized to perform
   these steps and who reviews/approves exceptions.
@@ -174,13 +181,24 @@ Rules:
 
 
 def _render_org(org: OrgContext) -> str:
+    """The organization block, from the role-keyed profile where there is one.
+
+    The legacy branch is what a flat `vendors:` list has always produced, and
+    it stays because config files in the wild use it.
+    """
+    if org.profile is not None:
+        from policyforge.org.context import render_for_prompt
+
+        return render_for_prompt(org.profile)
+
     lines = [f"Organization: {org.name}", f"Industry: {org.industry}"]
     if org.vendors:
         lines.append(f"Known vendors/tools: {', '.join(org.vendors)}")
     else:
         lines.append(
-            "Known vendors/tools: none supplied — use [Square-Bracket Vendor] "
-            "placeholders throughout."
+            "Known vendors/tools: none supplied — write the role in square "
+            "brackets ([Identity Provider], [Ticketing System]) wherever the "
+            "document needs to name a system."
         )
     return "\n".join(lines)
 

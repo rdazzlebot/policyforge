@@ -1783,6 +1783,75 @@ def zardoz_cmd(ctx, topics_path: Path, corpus_dir: Path, no_art: bool, plain: bo
     )
 
 
+@zardoz_cmd.command("discover")
+@click.option("--space", required=True, help="Confluence space key to crawl.")
+@click.option("--host", default="", help="Confluence base URL. Defaults to `zardoz.host`.")
+@click.option(
+    "--out",
+    default=Path("config/topics.proposed.yaml"),
+    type=click.Path(path_type=Path),
+    help="Where to write the proposal. Deliberately not topics.yaml — it needs "
+    "owners set before it is usable.",
+)
+@click.option(
+    "--max-results",
+    default=500,
+    show_default=True,
+    help="Refuse to crawl a space larger than this rather than proposing a "
+    "registry from an arbitrary subset of it.",
+)
+@click.option(
+    "--no-llm",
+    is_flag=True,
+    help="Group only by naming convention and control citations. Pages no "
+    "convention reaches are listed rather than clustered.",
+)
+@click.pass_context
+def zardoz_discover(ctx, space: str, host: str, out: Path, max_results: int, no_llm: bool):
+    """Propose a topic registry from a space nobody has catalogued.
+
+    Most of the grouping is already written down, just not as data: a
+    governance space names its pages by convention (Access Control Policy,
+    Access Control Standard) and cites the same controls throughout a related
+    set. Those signals are exact and free, and they place the majority of a
+    real space with no model involved. The LLM is used only for the residue.
+
+    Every proposed owner is [UNASSIGNED]. Nothing in a page reliably says
+    which team is accountable for it, and a wrong owner in a compliance
+    artifact is worse than a blank one.
+    """
+    from policyforge.export.confluence_search import search_pages, space_cql
+    from policyforge.zardoz.discover import discover_topics, render_registry
+
+    try:
+        config = load_config()
+    except FileNotFoundError:
+        config = {}
+    host = _zardoz_setting(config, "host", host)
+    if not host:
+        raise click.UsageError("No Confluence host. Pass --host, or set `zardoz.host`.")
+
+    provider = None
+    if not no_llm:
+        try:
+            provider = get_provider(load_config())
+        except (FileNotFoundError, KeyError, ValueError) as exc:
+            click.echo(f"  (no usable llm config: {exc} — grouping by convention only)")
+
+    click.echo(f"Crawling space {space}")
+    pages = search_pages(host=host, cql=space_cql(space), with_body=True, max_results=max_results)
+    report = discover_topics(pages, space=space, provider=provider)
+
+    click.echo("")
+    click.echo(report.format_report())
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(render_registry(report), encoding="utf-8")
+    click.echo("")
+    click.echo(f"Wrote {out}. Set the owners, check the groupings, then rename it to")
+    click.echo("config/topics.yaml and run `policyforge coverage` against it.")
+
+
 @zardoz_cmd.command("sync")
 @click.option(
     "--content-dir",

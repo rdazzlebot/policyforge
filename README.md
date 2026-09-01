@@ -746,11 +746,36 @@ about something, or essentially the whole question. Ask about a control the
 corpus never cites and you get nothing, which is itself the answer a
 coverage check is looking for.
 
-The known gap is paraphrase: "how often do we check who has admin?" against
-a document that only says "privileged access review cadence". Acronyms are
-handled (MFA ↔ multi-factor authentication) because they're standardized;
-general synonymy is not, and wants embeddings *alongside* exact identifier
-matching rather than instead of it.
+When the question's own words find nothing, and only then, the model is
+asked to name the vocabulary a document would use instead — *how often do we
+check who has admin?* becomes a search that also looks for *privileged
+access*, *entitlements*, *recertification*:
+
+```
+zardoz> how often do we check who has admin?
+(nothing matched those words; searched also for: privileged access,
+ entitlements, recertification)
+...
+   [via privileged, entitlements (guessed)]
+```
+
+Exact first, expansion only on a miss. While retrieval is finding passages on
+the user's own words there is nothing to gain by mixing in guessed vocabulary
+and precision to lose. Guessed terms score at a discount, never count toward
+whether the question was covered, and are reported separately — "matched
+cadence" and "matched cadence, which we guessed you meant" are different
+claims about the evidence. A question the corpus genuinely doesn't cover is
+still refused: expansion can only find words that are actually in a document.
+
+**Not embeddings, deliberately.** A vector index would work, and it would need
+an embedding model: a local one is a multi-gigabyte dependency for a tool that
+installs in seconds, and a hosted one is an API this project's default
+provider doesn't offer, since Anthropic ships no embeddings endpoint. For a
+corpus of tens to hundreds of documents, asking the already-configured model
+to name the vocabulary gets the same recall on this failure mode, adds no
+dependency, and has the property embeddings don't — you can read the expansion
+and see exactly why a passage surfaced. What it doesn't cover is scale; the
+seam for that is `RetrievalIndex.search(..., expansion=...)`.
 
 ### Answers you can check, or none
 
@@ -879,6 +904,55 @@ it works on a pull request from a fork, and it catches what survives review:
 Missing owners and tiers are warnings rather than errors — a repo mid-migration
 is full of them, and a gate that cannot be satisfied gets switched off. `--strict`
 promotes them once you've finished migrating.
+
+### Wiring it to GitHub
+
+`.github/workflows/content.yml` runs the two halves with deliberately
+different privileges:
+
+|           | When                    | Credentials                               | Can block a merge |
+| --------- | ----------------------- | ----------------------------------------- | ----------------- |
+| `check`   | every pull request      | none                                      | yes               |
+| `publish` | after a merge to `main` | Confluence token, behind an `environment` | no                |
+
+`check` needing nothing is what lets it run on a pull request from a fork —
+exactly where a gate is worth having. `publish` is fenced the other way: only
+on `push`, only from this repository, and behind a GitHub environment, because
+a workflow that could write to a live wiki from an untrusted pull request is a
+supply-chain problem rather than a convenience. It plans into the job log
+before applying, so when a publish does something surprising there's a record
+of what it believed it was doing.
+
+Set `CONFLUENCE_HOST` as a repository variable, `CONFLUENCE_USERNAME` and
+`CONFLUENCE_API_TOKEN` as secrets on the `confluence` environment. The
+workflow does not pass `--allow-macros`, on purpose.
+
+### Starting from a space nobody catalogued
+
+`policyforge zardoz discover --space ENG` proposes a registry rather than
+requiring you to write one:
+
+```
+Proposed 14 topic(s) from 61 page(s):
+
+  Access Control    [UNASSIGNED]  [policy, standard]  AC-2, AC-6
+                    (3 page(s) sharing the title stem 'Access Control')
+  Backup and Restore [UNASSIGNED] [standard]          CP-9
+```
+
+Most of the grouping is already written down, just not as data: a governance
+space names its pages by convention and cites the same controls across a
+related set. Those signals are exact and free, and they place the majority of
+a real space with no model involved — which matters for trust as much as cost,
+since "these pages share a title stem and cite AC-2" is a reason you can check
+and "a model thought so" is not. The LLM sees only the residue, and a page it
+can't place is listed rather than forced into a topic.
+
+**Every owner comes back `[UNASSIGNED]`.** Nothing in a page reliably says
+which team is accountable — authorship isn't ownership, and the last editor is
+usually neither. A wrong owner in a compliance artifact gets believed; a blank
+one gets filled in. The file is written to `topics.proposed.yaml`, not
+`topics.yaml`, for the same reason.
 
 **Both directions refuse rather than degrade.** A page using `info`, `expand`,
 `status` or page-properties macros converts to readable markdown and would be
@@ -1101,7 +1175,10 @@ src/policyforge/
                           question is about, answer.py the grounded answering
                           and the checks that verify its citations, and
                           conversation.py the follow-up resolution that makes it
-                          a conversation. Never imports the publish path.
+                          a conversation, paraphrase.py the vocabulary expansion
+                          that runs only after a miss, and discover.py the topic
+                          proposal for an uncatalogued space. Never imports the
+                          publish path.
   ssp/                    Builds a NIST 800-53 System Security Plan as an .xlsx
                           workbook (`policyforge ssp`), with LLM-drafted
                           implementation narratives. See "System Security Plan" below.
@@ -1296,11 +1373,11 @@ declared, checkable data is where most of the remaining value is.
   all, or a quotation that isn't verbatim in the source are each caught and shown
   above the answer. With no model configured the passages are returned instead,
   which is a supported way to run — retrieval is entirely offline
-- [ ] **Hybrid retrieval for paraphrase** — the known gap: a question asking "how
-  often do we check who has admin?" misses a document that only says "privileged
-  access review cadence". Acronyms are handled (MFA ↔ multi-factor authentication)
-  because they are standardized; ordinary morphology and synonymy are not, and want
-  embeddings *alongside* exact identifier matching rather than instead of it
+- [x] **Paraphrase recovery** (`zardoz/paraphrase.py`) — when the question's own
+  words find nothing, the model names the vocabulary a document would use and the
+  search is retried with it, scored at a discount and reported separately. Chosen
+  over embeddings: no dependency, no endpoint the default provider lacks, and an
+  expansion you can read
 - [x] **`policyforge publish`** — walks the content tree and pushes each document
   to the page its own frontmatter declares, so the file-to-page mapping lives in
   the repo under review rather than in a workflow argument. Plans by default;
@@ -1318,11 +1395,11 @@ declared, checkable data is where most of the remaining value is.
   the exchange *before* retrieval, since keyword scoring has no mechanism for
   "that", and the rewritten question is always shown: a good guess about intent
   is indistinguishable from a bad one once the answer is written
-- [ ] **`zardoz discover`** — crawl a space and propose a draft `topics.yaml` from
-  title conventions, page hierarchy, labels and inline control citations, using the
-  LLM only for the residue. Ownership stays `[UNASSIGNED]`: nothing in a document
-  reliably says which team is accountable, and guessing one into a compliance
-  artifact is worse than leaving it blank
+- [x] **`zardoz discover`** — crawls a space and proposes a draft `topics.yaml`
+  from title conventions and inline control citations, using the LLM only for the
+  pages those conventions did not reach. Ownership stays `[UNASSIGNED]`: nothing
+  in a page reliably says which team is accountable, and a wrong owner in a
+  compliance artifact gets believed while a blank one gets filled in
 - [ ] **Role-keyed vendors in company context** — `vendors` is a flat list today, so
   the generator infers what each product does and hedges when it can't
   (`[Identity Provider — Okta]` for a vendor it was actually given). Keying by role —

@@ -119,6 +119,13 @@ Optional, after generating:
   gates as `edit-confluence` — dry run first, always. If a publish fails
   part-way through, the output names which pages already landed; relay that
   exactly, because the set is then inconsistent.
+- **`policyforge zardoz discover --space <KEY> [--host <url>] [--out <path>] [--no-llm]`**
+  — propose a `topics.yaml` for a space that has never been catalogued. Writes
+  `config/topics.proposed.yaml`, never `topics.yaml`, and every owner comes back
+  `[UNASSIGNED]`. **Do not fill those owners in yourself** — ask the user which
+  team owns each topic; guessing one into a compliance artifact is the failure
+  this deliberately avoids. Check the groupings and anchor controls with the
+  user, then have them rename the file and run `coverage` against it.
 - **`policyforge zardoz sync`** then **`policyforge zardoz`** — build the local
   document snapshot, then open the conversational shell over it. Two sources,
   either or both: `--content-dir` (or `zardoz.content_dir`) reads a markdown
@@ -141,6 +148,11 @@ Optional, after generating:
   previous turns before retrieval, and the rewritten question is printed as
   `(reading that as: ...)`. **If that line shows a question the user didn't
   mean, say so rather than relaying the answer** — `/forget` clears the context.
+  If a question's own words find nothing and a model is configured, the shell
+  retries with vocabulary the model guesses a document would use, and says so:
+  `(nothing matched those words; searched also for: ...)`, with guessed terms
+  marked `(guessed)` in the match reasons. Treat a passage found only that way
+  as weaker evidence and say which words were guessed.
   Anything not starting with `/` is a question, and it returns
   the matching passages with citations (retrieval has landed; grounded prose
   answering has not). **"Nothing in the synced documents appears to bear on that"

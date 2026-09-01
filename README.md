@@ -1,9 +1,15 @@
 # PolicyForge
 
-Generate cross-mapped information security policies, standards, and
-procedures from public compliance frameworks (NIST 800-53, FedRAMP,
-ARC-AMPE, the HIPAA Security Rule) plus your own optionally-licensed
-content (HITRUST CSF, GovRAMP), using an LLM you bring the API key for.
+**Security compliance documentation for healthcare organizations running
+HITRUST and a NIST-based program at the same time.**
+
+PolicyForge turns overlapping control catalogs — HITRUST CSF, the HIPAA
+Security Rule, NIST 800-53, FedRAMP, ARC-AMPE — into policies, standards and
+procedures an engineer can actually execute, organized so that **every topic
+has one clearly accountable owner** rather than being split across teams. It
+uses an LLM you bring the API key for, grounded strictly in the control text
+you supply rather than the model's own recollection of what a framework
+says.
 
 This project separates two things that are easy to accidentally tangle
 together: **the engine** (this code — the crosswalk logic, the merge/dedupe
@@ -12,32 +18,374 @@ themselves, some of which are freely redistributable and some of which are
 not). See [Licensing model](#licensing-model-per-framework) below before you
 add any framework content to this repo.
 
+## The problem this solves
+
+A healthcare organization rarely gets to pick one framework. It carries the
+HIPAA Security Rule because it's law, HITRUST CSF because a payer or partner
+contract demands certification, and often a NIST-based program on top —
+800-53 directly, or through FedRAMP, ARC-AMPE, or a customer's security
+addendum. These catalogs cover largely the same ground in different words,
+at different granularity, with different prescribed values.
+
+The obvious fix is a crosswalk, and both NIST and HITRUST publish one. In
+practice the published mappings are necessary but nowhere near sufficient,
+for reasons that are structural rather than fixable by a better spreadsheet:
+
+- **They are bare ID pairs, often with no stated relationship.** This repo
+  ingests NIST's own HIPAA-to-800-53 crosswalk from CPRT. Its OLIR format
+  has fields for a relationship type (*equal to*, *subset of*, *intersects
+  with*) and a rationale — and in the published data those fields are
+  **empty**, for that crosswalk and for the other OLIR crosswalks alongside
+  it. What you get is "these two identifiers are related somehow."
+- **The fan-out is unusable at the row level.** That same crosswalk is 278
+  pairs across 68 HIPAA citations and 108 NIST controls. One citation —
+  § 164.316(b)(2)(iii), on updating documentation — maps to 21 separate NIST
+  controls. An engineer handed that row has a matrix, not a task.
+- **Granularity doesn't line up.** NIST AC-2 is twelve lettered parts,
+  a. through l., several with sub-items of their own. A mapping to a HITRUST
+  requirement points at *AC-2*, not at which of those parts it actually
+  corresponds to.
+- **The prescribed values are missing on one side and specified on the
+  other.** SP 800-53 Rev 5 carries 1,600 organization-defined parameters —
+  1,467 assignments (`[Assignment: organization-defined frequency]` and
+  friends) plus 133 selections. HITRUST frequently states a concrete value
+  instead, and varies it by implementation level. A crosswalk row reconciles
+  none of this: someone still has to decide the number, once, and defend it
+  to both assessors.
+- **The scoping axes are different.** HITRUST implementation levels are
+  driven by organizational risk factors (record volumes, regulatory
+  exposure). NIST baselines are driven by FIPS 199 impact categorization.
+  Level 2 is not Moderate.
+- **Control text is declarative; procedures are imperative.** "Review
+  accounts for compliance with account management requirements
+  [Assignment: frequency]" and "every quarter, the IAM team exports the
+  Okta user list, reconciles it against Workday active employees, and opens
+  a ticket per exception" are different genres of writing. Nothing in a
+  crosswalk performs that translation.
+- **No framework tells you who does the work.** AC-2 alone touches identity
+  engineering, HR onboarding/offboarding, and individual application owners.
+  The catalog is silent on ownership, which is precisely the thing an
+  operational document needs to establish.
+
+Reconciling all of that is a language problem before it is a data problem —
+which is why the merge step here is LLM-driven rather than a lookup table.
+It is doing work a join cannot do: collapsing requirements that say the same
+thing in different vocabulary, keeping genuinely conflicting ones apart,
+carrying the stricter prescribed value forward with its source attached, and
+rewriting declarative control language as ordered steps — while every
+statement stays tagged back to the controls it came from, so the traceability
+an assessor needs survives the rewrite.
+
+## One topic, one team
+
+Compliance catalogs are organized for the person auditing the work: by
+control family, in the order the framework's authors chose. Engineering
+organizations are organized around the people doing the work: by system, by
+service, by on-call rotation. Those two shapes almost never coincide, and
+most compliance documentation fails because it keeps the auditor's shape and
+hands it to engineers.
+
+The synthesis step in this pipeline is a transpose. Instead of generating one
+document per control — 300-plus artifacts, none of which anyone owns —
+it generates one document per **topic**, and every topic has a single
+accountable team.
+
+The test is **ownership, not step count**. A topic can — and usually does —
+involve several teams' work. User lifecycle touches HR for the joiner and
+leaver signal, IAM for provisioning, IT support for hardware, and individual
+app owners for entitlements. That's still *one* topic, because one team can
+comfortably own the process end to end. What breaks a topic is not
+cross-team steps; it's cross-team *accountability*, where two owners each
+assume the other has it.
+
+So a topic is well-formed when:
+
+- **One team can comfortably own the whole process.** There's a clear owner
+  who can describe it end to end, chase the handoffs, and answer for the
+  outcome — not a process split down the middle between two teams who each
+  own half.
+- **Its handoffs live inside it, and the owner is accountable for them
+  working.** This is deliberate. Most compliance failures aren't inside a
+  team's remit, they're at the boundary — HR processes a termination and the
+  deprovisioning signal never reaches IAM. Putting the seam inside a topic
+  with a named owner is what makes someone responsible for the seam.
+- **It has a coherent operational rhythm.** Continuous, on-change, quarterly.
+  A topic that mixes a real-time detection duty with an annual attestation
+  is two rhythms wearing one hat.
+- **Its evidence collects together.** The same export, dashboard or ticket
+  query should satisfy most of the requirements underneath it. This is where
+  the multi-framework overlap finally pays off: one quarterly access-review
+  artifact can answer HITRUST, HIPAA and 800-53 at once, but only if the
+  requirements were gathered into one topic first.
+- **It reads like a runbook, not a restatement.** If the output could be
+  mistaken for a paraphrase of the control catalog, the topic hasn't earned
+  its place.
+
+**Around 25 topics is the practical ceiling.** Fewer than that and a topic
+grows too broad for one team to own comfortably; many more and the topics
+start slicing the same process apart, which reintroduces the split
+accountability the model exists to avoid — and the cross-framework overlap
+stops consolidating, because the shared requirements scatter across
+neighbouring topics instead of gathering in one.
+
+Twenty-odd procedures with named owners is a program someone can run. Three
+hundred control write-ups is a document set that goes stale the week after
+the audit.
+
+The ownership axis is also what makes the multi-framework problem tractable
+rather than multiplicative. HITRUST, HIPAA and 800-53 each have something to
+say about access review; they say it three times, in three vocabularies, at
+three levels of specificity. Gathered into one topic, that becomes a single
+procedure the IAM team executes, with three sets of citations attached — and
+the next framework added to the mix costs one more citation per requirement,
+not a fourth parallel document set.
+
+### The topic registry
+
+Topics are declared in `config/topics.yaml` — gitignored, because it names
+your internal teams. Copy `config/topics.example.yaml`, which ships a
+20-topic starter set that fully covers the Low, Moderate and High baselines,
+and change the owners to your teams.
+
+```yaml
+topics:
+  - name: Identity Lifecycle & Access Review
+    owner: IAM Engineering
+    cadence: quarterly
+    nist_controls: [AC-1, AC-2, AC-3, AC-5, AC-6, AC-14, IA-4, IA-12, PS-4, PS-5]
+    evidence:
+      - Identity provider user export
+      - HR active-employee roster
+      - Access review tickets with sign-off
+```
+
+`nist_controls` are **anchors, not an exhaustive list**: anchoring AC-2 also
+claims AC-2(1) through AC-2(13), so a topic doesn't have to enumerate
+enhancements. Anchor an enhancement directly only when it genuinely belongs
+to another team — a direct claim beats an inherited one, which is how
+AC-2(1) can sit with Platform Engineering while AC-2 stays with IAM without
+either becoming contested.
+
+### Checking ownership: `policyforge coverage`
+
+```
+policyforge coverage \
+  --controls data/frameworks/nist-800-53-r5/controls.json \
+  --controls data/frameworks/hipaa-security-rule/controls.json \
+  --baseline moderate
+```
+
+```
+Coverage — scope: Moderate baseline
+============================================================
+  In scope        287
+  Owned           287 (100%)
+  Orphaned        0
+  Contested       0
+...
+HIPAA reachable via the crosswalk
+------------------------------------------------------------
+  65 of 75 requirements map to an owned NIST control
+```
+
+It reports four things, and needs no LLM — it's set arithmetic over the
+registry:
+
+- **Orphaned** — in-scope controls no topic claims. Nobody is doing the work,
+  and nobody knows nobody is doing it.
+- **Contested** — controls two or more topics claim. The worse of the two: on
+  paper it looks covered, while each owner assumes the other has it.
+- **Unknown anchors** — control IDs that don't exist in the catalog, i.e.
+  typos. Distinguished from *anchored but out of scope*, which is normal —
+  the PM and PT families sit in no baseline at all, so a topic legitimately
+  anchors controls a Moderate analysis doesn't include.
+- **Cross-framework reachability** — because topics anchor NIST controls and
+  the crosswalk maps other frameworks onto them, an owned NIST control also
+  accounts for the HIPAA requirements mapped to it. Same orphan question,
+  asked from the assessor's side.
+
+`--baseline` matters: "orphaned" only means something relative to a defined
+scope. `--strict` exits non-zero when anything is orphaned, contested or
+mis-anchored, which makes it usable as a CI gate; `--json` emits the report
+for further processing.
+
+### From registry to document
+
+`synthesize --topic-name` takes a topic straight from the registry, so its
+anchor controls and its owning team come from one declared place instead of
+being retyped on the command line:
+
+```
+policyforge synthesize --topic-name "Media Handling & Disposal" \
+  --controls data/frameworks/nist-800-53-r5/controls.json \
+  --controls data/frameworks/hipaa-security-rule/controls.json
+```
+
+The owner then has to survive the gap between two commands — `synthesize`
+knows it, `generate` needs it — so it travels *in* the synthesis file, as
+YAML frontmatter:
+
+```yaml
+---
+topic: Media Handling & Disposal
+owner: IT Asset Management
+cadence: continuous
+evidence:
+  - Certificates of destruction
+  - Media transport log
+nist_controls: [MP-1, MP-2, MP-3, MP-4, MP-5, MP-6]
+---
+```
+
+`generate` reads that back and names the real team wherever the document has
+to say who performs a step, who reviews, or who answers for the outcome —
+instead of falling back to `[Responsible Team]`. The cadence and evidence
+artifacts flow through the same way, so a generated Standard cites the
+actual review frequency and the actual artifacts the topic is expected to
+produce.
+
+The frontmatter is optional and additive. `synthesize --topic <name> --nist-controls <ids>` still works for a one-off topic that isn't in the
+registry; it writes no frontmatter, and says so, and the resulting document
+uses placeholders exactly as before. Synthesis files written before any of
+this existed still generate unchanged.
+
+## Company context
+
+Frameworks describe what must be true. They can't describe *your* org — and
+that difference is most of the distance between a document template and a
+procedure someone can follow on a Tuesday. That org-specific half lives in
+one gitignored file, `config/config.yaml` (copy `config/config.example.yaml`
+to start), and it feeds every generation stage.
+
+```yaml
+org:
+  name: "Northwind Health"
+  industry: "Healthcare provider"
+  vendors: [Okta, AWS, CrowdStrike, Workday]
+
+system:              # NIST SP 800-18 plan elements, used by `policyforge ssp`
+  name: "Patient Portal"
+  overall_categorization: "Moderate"
+  owner: "Platform Engineering"
+```
+
+It matters more than its size suggests, for three reasons.
+
+**It decides whether output is specific or generic.** Every generator here
+is under strict instructions never to invent a vendor, a frequency, an owner
+or a tool. What it doesn't know, it writes as a `[Square-Bracket Placeholder]` — deliberately, because a plausible-sounding invention in a
+compliance document is worse than an obvious blank. The context file is how
+you convert those blanks into specifics. With `vendors: [Okta]`, an access
+control procedure names Okta; without it, you get `[Identity Provider]` and
+a job for a human. Placeholders are the correct default, not a failure —
+but the more context you supply, the fewer of them you're left editing.
+
+**It's a boundary, not just a convenience.** `config.yaml` is gitignored
+because it holds your org's name, vendor stack, system inventory and the env
+var naming your API key. That keeps the engine publishable while the
+org-specific content stays local — the same split that lets licensed HITRUST
+content be processed here without ever being committed.
+
+**It makes regeneration cheap.** Swapping an EDR vendor or re-categorizing a
+system is a config edit and a re-run, not a pass through every document
+looking for the old product name. The same property makes the documents
+reproducible: same context plus same control data yields the same output.
+
+### A known rough edge
+
+`vendors` is a flat list, so the model has to *infer* what each product is
+for. In a real run against AC-7 with `vendors: [Okta, AWS]`, the draft came
+back as:
+
+> …enforces unsuccessful logon attempt limits through **\[Identity Provider
+> — Okta\]**, the identity provider for the system.
+
+It hedged a vendor it had actually been given, wrapping a known name in
+placeholder brackets, because nothing told it Okta was the IdP rather than,
+say, the HR system. Role-keyed context — `identity_provider: Okta`,
+`edr: CrowdStrike`, `hr_system: Workday` — would make that substitution
+deterministic instead of inferred. See the roadmap.
+
 ## Status
 
-The full pipeline is functional end-to-end: `etl-vault` -> `map` -> `synthesize`
--> `generate` -> `export-confluence` (optional). All three LLM providers
-(Anthropic, Bedrock, Vertex), the NIST vault ETL loader, the HIPAA Security
-Rule loader (`etl-hipaa`, bundled and populated), crosswalk builder,
-LLM-driven synthesis/generation stages, Confluence export/import, and local
-version history are all wired up and tested. HITRUST/GovRAMP BYOC loaders
-remain stubs pending a sample export to parse against — see
-`ingest/byoc_loader.py` and `policyforge generate-parser`. HIPAA is loaded
-but **not yet cross-walked to NIST 800-53**, so `synthesize` won't pull it
-into a topic until that mapping exists — see
-`data/frameworks/hipaa-security-rule/README.md`.
+The full pipeline is functional end-to-end: `etl-oscal` -> `map` ->
+`synthesize` -> `generate` -> `export-confluence` (optional), plus `ssp` as a
+separate output path. All three LLM providers (Anthropic, Bedrock, Vertex),
+the control loaders, crosswalk builder, LLM-driven synthesis/generation
+stages, Confluence export/import, and local version history are all wired up
+and tested. HITRUST/GovRAMP BYOC loaders remain stubs pending a sample export
+to parse against — see `ingest/byoc_loader.py` and
+`policyforge generate-parser`.
 
-## Zero Obsidian dependency
+Bundled and populated from public-domain sources, each re-fetchable:
 
-Nothing in this codebase requires Obsidian. The only place Obsidian shows up
-is `ingest/nist_vault_loader.py`, which parses one *specific* markdown shape
-(YAML frontmatter + `## headings` + `[[wikilinks]]`) as one possible input
-adapter — because that happens to be the format of the vault this project
-started from. Everything downstream of ingestion (schema, mapping,
-synthesis, generation, export) works from plain, portable data and has no
-idea Obsidian exists. Swap in a different loader for a different source
-format and the rest of the pipeline doesn't change. You can keep authoring
-your personal knowledge base in Obsidian (or anything else) — that's a
-choice about where *you* maintain content, not a requirement of this tool.
+| Data                                                                            | Command               | Source                          |
+| ------------------------------------------------------------------------------- | --------------------- | ------------------------------- |
+| NIST 800-53 Rev 5 (300 controls, 714 enhancements, Low/Moderate/High baselines) | `etl-oscal`           | NIST's OSCAL content repository |
+| HIPAA Security Rule (34 standards, 41 implementation specifications)            | `etl-hipaa`           | eCFR's public API               |
+| HIPAA-to-800-53 crosswalk (278 mappings over 108 NIST controls)                 | `etl-hipaa-crosswalk` | NIST's CPRT catalog             |
+
+Because the crosswalk is wired into `mapping/crosswalk.py`, `synthesize`
+pulls HIPAA requirements into a NIST-anchored topic alongside NIST/FedRAMP,
+and `ssp` shows each 800-53 control's HIPAA equivalents as a column.
+
+### Why HITRUST is bring-your-own-content
+
+The table above is the public-domain half of the overlap. The HITRUST half
+isn't there, and won't be: **HITRUST CSF is licensed content.** Its
+requirement text and its mappings can't be redistributed, so no open-source
+project can ship them — not this one, not any other. That is a licensing
+fact, not an oversight, and it's the reason a healthcare organization can't
+just download a solved HITRUST-to-NIST reconciliation from anywhere.
+
+This project's answer is to split the problem along the licence line:
+
+- **The engine is open.** Crosswalk logic, topic synthesis, the
+  Policy/Standard/Procedure generators, the SSP builder — all here, all
+  public.
+- **The public-domain content is bundled.** NIST 800-53, HIPAA, and NIST's
+  own HIPAA-to-800-53 crosswalk, each re-fetchable from source.
+- **You bring your own HITRUST.** Your MyCSF export, under your own licence,
+  parsed from `local_content/` (gitignored). It is never written into
+  `data/frameworks/`, never committed, never uploaded by this tool.
+- **The LLM closes the gap between them.** This is the part that makes the
+  arrangement work rather than merely legal. Even with both halves in hand,
+  the published mappings are the bare ID pairs described above. Reconciling
+  your licensed HITRUST requirements against the public NIST controls —
+  collapsing the duplicates, keeping the real conflicts, carrying the
+  stricter prescribed value — is the language work the LLM does locally,
+  against content you already hold a licence to.
+
+`policyforge generate-parser --framework hitrust --sample <path>` drafts the
+loader from a real export. `ingest/byoc_loader.py`'s `load_hitrust_export` is
+currently a stub, so today the pipeline reconciles HIPAA against 800-53 but
+not yet HITRUST against either — that's the next thing worth building. Read
+[Generating a BYOC parser](#generating-a-byoc-parser-from-a-sample-export)
+first: that command sends your export's contents to your LLM provider, and
+whether your licence permits that is a question to answer before running it,
+not after.
+
+## Input adapters
+
+Ingestion is pluggable: every loader in `ingest/` parses one source format
+into the same `Control` schema, and nothing downstream (mapping, synthesis,
+generation, export) knows or cares which one produced the data.
+
+| Loader                      | Command               | Reads                                                                                                                            |
+| --------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `oscal_loader.py`           | `etl-oscal`           | NIST's OSCAL release of SP 800-53 — the default way to populate 800-53 data                                                      |
+| `hipaa_loader.py`           | `etl-hipaa`           | eCFR's XML for 45 CFR 164 Subpart C                                                                                              |
+| `hipaa_crosswalk_loader.py` | `etl-hipaa-crosswalk` | NIST CPRT's HIPAA-to-800-53 OLIR catalog                                                                                         |
+| `nist_vault_loader.py`      | `etl-vault`           | Markdown notes in one specific shape (YAML frontmatter + `## headings` + `[[wikilinks]]`) — the format this project started from |
+| `byoc_loader.py`            | —                     | Your own licensed HITRUST/GovRAMP exports (stubbed; see `generate-parser`)                                                       |
+
+`nist_vault_loader.py` is the only one that touches Obsidian-flavoured
+markdown, and it's an *option*, not a dependency — `etl-oscal` needs nothing
+but network access. It's kept because it reads one thing the OSCAL catalog
+doesn't carry: a "Cross-Framework Mappings" table, which is currently the
+only route to FedRAMP crosswalk data. Nothing about it is Obsidian-specific
+at runtime; point it at any directory of markdown in that shape and it works
+identically.
 
 ## Output format priority
 
@@ -113,6 +461,378 @@ policyforge history --tier standard --name auth-mgmt --diff 1:2
 # -> unified diff between what was generated and what's actually live
 ```
 
+## Editing a live page
+
+`policyforge edit-confluence` takes a plain-language instruction, fetches the
+page, **plans** the edits, shows you the plan and the resulting diff, and
+publishes only when you ask it to.
+
+```
+policyforge edit-confluence \
+  --instruction "Tighten the access review cadence to monthly, and add a
+                 section on how review outcomes are recorded." \
+  --space ENG --title "Access Control Standard" \
+  --host https://yourorg.atlassian.net/wiki
+```
+
+Plan and execution are deliberately two separate LLM calls. The plan is the
+review surface: six steps read in a few seconds catch "you're about to delete
+the exceptions section" far more reliably than diffing a regenerated page,
+rejecting a bad plan costs one call instead of a careful read of the whole
+document, and the plan itself records what was asked, what was intended, and
+what was declined — which is the provenance a change to a live policy page
+needs.
+
+The planner is allowed to refuse, and does. Asked to shorten a review cadence,
+add a section, *and* delete a requirement, it planned the first two and put
+the third under **Needs your judgement**:
+
+> Deleting the least privilege requirement [NIST AC-6] would remove a stated
+> access control requirement tied to a NIST citation; this narrows the
+> standard's scope and should be confirmed by a human before removal.
+
+It also listed what it wouldn't guess at under **Not attempted** — where the
+new section should live, and what system records the outcomes — and filled
+the gaps it did write with `[Access Review Record Repository]` placeholders
+rather than inventing a tool.
+
+### Editing a topic's whole document set
+
+A real change rarely lands in one document. "Access reviews move from
+quarterly to monthly" belongs in the Standard (which states the requirement)
+and the Procedure (which carries the steps), and usually shouldn't touch the
+Policy at all. `policyforge edit-topic` applies one instruction across the
+set, resolving the pages from the topic registry:
+
+```yaml
+# config/topics.yaml
+- name: Identity Lifecycle & Access Review
+  owner: IAM Engineering
+  nist_controls: [AC-1, AC-2, AC-3, ...]
+  confluence:
+    space: SEC
+    pages:
+      policy: Access Control Policy
+      standard: Access Control Standard
+      procedure: Access Review Procedure
+```
+
+```
+policyforge edit-topic   --instruction "Access reviews move from quarterly to monthly."   --topic-name "Identity Lifecycle & Access Review"   --host https://yourorg.atlassian.net/wiki
+```
+
+This is not three single-page runs in a loop. Two things make it different:
+
+- **Each page is planned at its own altitude.** The planner is told which
+  tier it's reading and that the siblings exist and are being edited in the
+  same run, so it doesn't paste a threshold change into the Policy or restate
+  the Standard's requirement in the Procedure. A page whose plan comes back
+  empty is left completely untouched — no rewrite call, no diff, no publish —
+  rather than having an edit forced into it to justify the run.
+- **Nothing publishes until everything is ready.** Every page is fetched,
+  macro-checked, planned and rewritten before any of them is written back,
+  and you confirm the set once. Confluence has no cross-page transaction, so
+  this narrows the window rather than closing it: a failure *during* the
+  publish loop is reported page by page, naming exactly what landed and what
+  didn't, so a half-updated set is visible instead of silent.
+
+`--tiers standard,procedure` narrows the run when you already know where the
+change belongs. Everything in **The gates** below applies to `edit-topic`
+identically.
+
+### The gates
+
+This is the only part of PolicyForge that changes something outside the repo,
+so the defaults are conservative:
+
+- **Dry run by default.** Without `--apply` it plans, rewrites, writes the
+  result to `output/edits/` and shows the diff — and touches nothing in
+  Confluence. `--apply` publishes; without `--yes` it still asks first.
+
+- **Version-guarded writes.** The page version read at fetch time is checked
+  at publish time, so an edit made while you were planning fails loudly
+  instead of being silently overwritten. This is why editing uses
+  `update_page_body` rather than `export_to_confluence` — the latter re-reads
+  the version and always wins, which is right for publishing a generated
+  document and wrong for editing what's already there.
+
+- **Macro refusal.** The edit path is storage format → markdown → edit →
+  storage format, which is lossless only for the `code` macro this project's
+  own exporter emits. A page containing a panel, expand block or page-property
+  macro is **refused**, not warned about, because editing it would flatten
+  parts nobody asked to change. `--allow-macros` overrides once you've read
+  what will be lost.
+
+- **Citation and section checks.** After the rewrite, every inline source tag
+  (`[NIST AC-2 | HIPAA 164.308(a)(3)(i)]`) present before is checked for
+  afterwards, as is every heading the plan didn't ask to remove. Losses are
+  reported before the publish prompt. A rewrite that reads fine but has
+  quietly dropped an assessor's traceability is the most damaging failure
+  this tool could have.
+
+- **Local history either way.** The page's "before" state is recorded to
+  `output/.history/confluence/<slug>/` as soon as it's fetched — before any
+  LLM call — so there's something to diff and restore from even if the run is
+  abandoned. Confluence keeps its own page versions too; this is the local
+  copy.
+
+- **The plan is kept, not just printed.** Terminal output scrolls away, and
+  Confluence's own page history records *what* changed but not why. So the
+  plan — the instruction, each step, what was flagged under **Needs your
+  judgement**, and what the model declined under **Not attempted** — is
+  written to `output/edits/<slug>.plan.json` (dry runs included) and stored in
+  the published version's history metadata alongside the model name and the
+  page version the edit created. Read it back with:
+
+  ```
+  policyforge history --tier confluence --name access-control-standard
+  ```
+
+  which prints each revision with the plan that produced it:
+
+  ```
+  v1  2026-08-30T00:58:04+00:00  confluence-edit-before  +3/-0  cc2c08068aef
+  v2  2026-08-30T01:14:22+00:00  confluence-edit-after   +1/-1  a9b5c9d61bc8
+          asked: Access reviews move from quarterly to monthly.
+          - [modify] Requirements: change the review cadence to monthly
+          ! flagged: A monthly cadence increases reviewer workload.
+          ~ not done: Left the Policy alone; cadence is a Standard-tier detail.
+  ```
+
+  The refusals matter as much as the edits: "the model was asked to delete
+  the least-privilege requirement and declined" is exactly the kind of thing
+  an assessor asks about a year later, and it exists nowhere else.
+
+## Zardoz: asking questions instead of running commands
+
+Everything above is one-shot — a command runs a pipeline stage and exits.
+`policyforge zardoz` is the read side, and it is a conversation because the
+questions people actually have about a policy set are follow-ups: *what's our
+access review cadence?*, then *who owns that?*, then *does it satisfy the
+HIPAA citation?* Each is cheap to answer and expensive to re-ask from a cold
+command line.
+
+```
+policyforge zardoz sync --content-dir docs   # read a markdown tree (no credentials)
+policyforge zardoz sync                      # or/and pull the published pages
+policyforge zardoz                           # open the shell
+```
+
+Zardoz **reads; it does not write.** It can draft a `policyforge edit-topic`
+command for you to run, but the publish path is not in its import graph at
+all — a test walks the parsed AST of every module in the package to prove it,
+which catches a lazy import inside a function body as readily as one at the
+top of a file. That makes it a structural property rather than a rule
+somebody has to remember during review.
+
+### Two sources: files and pages
+
+`zardoz sync` builds a local snapshot in `output/.zardoz/` rather than
+reading live on every question. A Confluence round trip is 300–800ms,
+answering one question well wants several, the API is rate-limited per token,
+and a conversation is a burst rather than a trickle. The snapshot also means
+retrieval can be developed and tested against fixtures — you cannot iterate
+on ranking quality against a resource that answers slowly and differently
+each time.
+
+Documents come from either or both of:
+
+- **a markdown content tree** (`--content-dir`, or `zardoz.content_dir`).
+  Needs no network and no credentials at all, which means a repo-backed
+  document set is answerable offline and trying Zardoz doesn't require an
+  Atlassian account. Tier comes from the directory (`standards/` → standard,
+  the layout `generate` already writes), owner from the topic registry or
+  from the file's own frontmatter.
+- **Confluence** (`--host`, or `zardoz.host`), a round trip per page.
+
+Where both are configured **the tree wins**: in a repo-backed setup the file
+is the source of truth and the page is a copy of it, so holding both would
+cite one requirement twice and invite an answer quoting the stale half. A
+file says which page it publishes to in its frontmatter, since a repo path
+and a page title are different strings:
+
+```yaml
+---
+title: Access Review Standard
+tier: standard
+topic: Access Review
+owner: IAM Engineering
+confluence:
+  space: SEC
+  title: Acme Access Review Standard
+---
+```
+
+None of that is required — a file with no frontmatter still resolves from its
+path and its first heading, which is what makes an existing tree loadable
+without anyone editing forty files first.
+
+### Trusted and supporting
+
+Orthogonally to where a document came from, each carries a confidence level,
+and the distinction is load-bearing:
+
+- **trusted** — the document knows who is accountable for it, because the
+  topic registry declares it or its frontmatter says so. An answer drawn from
+  it can say who owns this and whether a threshold belongs there at all.
+- **supporting** — real content nobody has claimed: a page from
+  `zardoz.supporting_space`, or a file in the tree with no topic and no
+  owner. Often more current than the governance set. Answers may draw on it
+  and will say when they did.
+
+```yaml
+# config/config.yaml
+zardoz:
+  content_dir: docs                          # optional
+  host: https://yourorg.atlassian.net/wiki   # optional
+  supporting_space: RUNBOOKS                 # optional
+```
+
+Sync is forgiving of individual failures and unforgiving of silent ones. A
+registry page whose title no longer matches is reported as a skip and the run
+continues — one renamed page should not cost you the other nineteen topics.
+A page two topics both declare is reported rather than synced twice, because
+two teams claiming one document is the contested-ownership problem
+`coverage` exists to surface, not a duplicate to quietly drop. A page that
+vanishes from the registry has its cached file deleted, so a corpus can't
+keep answering from documents that were deliberately removed.
+
+But a sync that resolves **nothing** will not overwrite a corpus that has
+documents in it. A typo'd space key used to empty the snapshot silently; the
+way you found out was by getting worse answers, which is the worst way to
+find out anything. Pass `--allow-empty` to clear it on purpose.
+
+### Asking a question, and being told no
+
+Anything you type that doesn't start with `/` is a question. Zardoz chunks
+each document at its headings, ranks the chunks, and shows the passages that
+bear on what you asked, each with a citation you can go and check:
+
+```
+zardoz> how long do we retain media protection documentation?
+
+1. Media Handling & Disposal Standard § 4. Policy > 4.2 Documentation
+   Retention and Maintenance  (standards/media-handling-disposal.md)
+   All media-protection policies, procedures, and related action and
+   assessment records must be maintained in written form ... retain such
+   documentation for 6 years from the date of its creation ...
+   [matched documentation, media, protection, retain]
+```
+
+**No embeddings, deliberately.** The highest-signal terms in a compliance
+question are exact tokens — `AC-2`, `164.312(a)(1)`, `MP-6(1)` — where a
+near-miss is not a near-answer but a *different control*, and semantic
+similarity works against you: AC-2 and AC-3 embed almost identically and
+mean different things to an assessor. So identifiers are matched exactly
+(and an identifier anchors its enhancements, the same rule `coverage` uses),
+and everything else is BM25 over terms of art that appear verbatim in both
+the question and the document, because the people asking learned the words
+from the documents. Every result can say which terms hit, which is what
+makes ranking something you can iterate on.
+
+**Refusing is a feature.** Ask about something the documents don't cover and
+you get told so, rather than handed the least-bad section in the corpus:
+
+```
+zardoz> what is our vacation policy?
+Nothing in the synced documents appears to bear on that.
+```
+
+That matters more than it sounds. A retriever that always returns
+*something* is how a grounded-answers-only tool starts inventing things —
+the model is handed irrelevant context, asked a question, and obliges. A
+passage has to match a control identifier, a term distinctive enough to be
+about something, or essentially the whole question. Ask about a control the
+corpus never cites and you get nothing, which is itself the answer a
+coverage check is looking for.
+
+The known gap is paraphrase: "how often do we check who has admin?" against
+a document that only says "privileged access review cadence". Acronyms are
+handled (MFA ↔ multi-factor authentication) because they're standardized;
+general synonymy is not, and wants embeddings *alongside* exact identifier
+matching rather than instead of it.
+
+### Answers you can check, or none
+
+With an LLM configured, those passages become prose — with a citation on
+every claim, and the sources listed under it:
+
+```
+zardoz> how long do we retain media protection documentation?
+
+IT Asset Management must retain media-protection documentation for six years
+from creation or last effective date, whichever is later. [1]
+
+Sources:
+  [1] Media Handling & Disposal Standard § 4. Policy > 4.2 Documentation
+      Retention and Maintenance  (standards/media-handling-disposal.md)
+```
+
+The model is *asked* to cite every claim. It is not trusted to have done it.
+Three things are checked after the reply comes back, because a prompt is a
+request and a check is a guarantee:
+
+- **a citation pointing at a passage that was never supplied** — a fabricated
+  source, caught here rather than by the reader;
+- **an answer with no citations at all** — prose with nothing behind it;
+- **a quotation that isn't verbatim in the passage it cites** — the most
+  damaging thing this tool could emit, because a quotation is what somebody
+  pastes into a ticket or shows an assessor.
+
+Anything found is printed *above* the answer, not below it, since a warning
+is only useful if you see it before you believe the sentence it's about:
+
+```
+!! This answer did not pass its own checks:
+!!   - it quotes text that appears in no passage: "records shall be destroyed
+!!     after three years"
+!! Read the passages below rather than trusting the prose.
+```
+
+And when retrieval finds nothing, **the model is never called at all**. There
+is nothing to ground an answer in, and a model handed a question with no
+context will answer it from what access control standards usually say — which
+is exactly the failure this package exists to prevent, arriving in the most
+plausible-sounding form available.
+
+`/sources` shows the full text behind the last answer. Running with no model
+configured is supported, not degraded: retrieval is entirely offline, so you
+get the passages and draw the conclusion yourself.
+
+### Reading pages this tool didn't write
+
+Bringing an existing Confluence space in asks more of the conversion than
+round-tripping our own documents does, and it turned up a real defect.
+Confluence stores cross-page links, user mentions and images as `<ac:link>`
+and `<ac:image>` elements whose payload lives entirely in *attributes*.
+markdownify knows only HTML, so it rendered all three as nothing at all:
+
+| On the page                       | Was read as      | Now reads as                            |
+| --------------------------------- | ---------------- | --------------------------------------- |
+| `Owner: @Jane`                    | `Owner:` (blank) | the display name, or `@unresolved-user` |
+| "see the Access Review Procedure" | "see ."          | the linked page's title                 |
+| an architecture diagram           | *nothing*        | `[image: access-flow.png]`              |
+
+The first row is why this mattered enough to fix before anything else. A
+blank owner field doesn't read as a gap — it reads as *an answer*, and
+"nobody owns this" is exactly the kind of confident wrong that a compliance
+tool cannot afford. Where a mention can't be resolved to a name, it renders
+as a conspicuous `@unresolved-user` and `sync` reports the count, rather than
+leaving an empty cell.
+
+This never mattered before because PolicyForge's own exporter emits only the
+`code` macro, so round-tripping its own documents was always clean. It only
+surfaces when reading somebody else's page.
+
+**Readable is a lower bar than editable.** There is no required format —
+almost any page converts, and headings and tables both survive intact, which
+is what chunking, citation and requirements-in-a-table depend on. But a
+hand-written page full of `info`, `expand`, `status` and page-properties
+macros will be *readable* while `edit-topic` still refuses to touch it,
+because writing it back would flatten those macros. `sync` flags those pages
+so Zardoz can say "I can answer from this but not safely change it" instead
+of drafting an edit that gets refused later.
+
 ## Document hierarchy: Policy > Standard > Procedure
 
 Every topic's synthesis output (see `synthesis/merge.py`) can be drafted
@@ -156,10 +876,10 @@ in an open repo. Treat them differently:
 
 | Framework               | Status                                                                                                                            | How this project handles it                                                                                                                                                                                              |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **NIST 800-53 Rev 5**   | US federal government work — public domain                                                                                        | Bundled directly in `data/frameworks/nist-800-53-r5/`                                                                                                                                                                    |
+| **NIST 800-53 Rev 5**   | US federal government work — public domain                                                                                        | Bundled directly in `data/frameworks/nist-800-53-r5/`, sourced from NIST's own OSCAL content repository via `policyforge etl-oscal`                                                                                      |
 | **FedRAMP**             | US federal government work — public domain                                                                                        | Bundled directly in `data/frameworks/fedramp/`                                                                                                                                                                           |
 | **ARC-AMPE**            | Published by CMS (federal agency) — public domain                                                                                 | Bundled directly in `data/frameworks/arc-ampe/`                                                                                                                                                                          |
-| **HIPAA Security Rule** | US federal regulation (45 CFR 164 Subpart C) — public domain                                                                      | Bundled directly in `data/frameworks/hipaa-security-rule/`, sourced from eCFR's public API via `policyforge etl-hipaa` — see that directory's README for what's not yet covered (the NIST 800-53 crosswalk).             |
+| **HIPAA Security Rule** | US federal regulation (45 CFR 164 Subpart C) — public domain                                                                      | Bundled directly in `data/frameworks/hipaa-security-rule/`, sourced from eCFR's public API via `policyforge etl-hipaa`, with NIST's official 800-53 crosswalk attached via `policyforge etl-hipaa-crosswalk`             |
 | **GovRAMP**             | GovRAMP's Terms & Conditions claim ownership of "documents, downloadable files" on their site, with no redistribution grant found | **Not bundled.** Treated as bring-your-own-content (BYOC) via `local_content/` until GovRAMP grants explicit permission (worth emailing info@govramp.org — ask before assuming).                                         |
 | **HITRUST CSF**         | Contractually licensed content                                                                                                    | **Never bundled.** BYOC only — you supply your own MyCSF/CSF export under your own license, and it's parsed locally. It is never committed, never uploaded anywhere by this tool, and stays out of git via `.gitignore`. |
 
@@ -191,6 +911,70 @@ public-repo maintainers building the parsing logic itself (which contains
 no licensed content once written); it is not a way around that license
 question.
 
+## System Security Plan (SSP)
+
+`policyforge ssp` builds a NIST 800-53 System Security Plan as a spreadsheet
+workbook — a different output path from the Policy/Standard/Procedure
+documents, aimed at the control-by-control table an assessor reads.
+
+```
+policyforge ssp \
+  --controls data/frameworks/nist-800-53-r5/controls.json \
+  --controls data/frameworks/hipaa-security-rule/controls.json \
+  --baseline moderate \
+  --system-name "Acme Health Platform"
+```
+
+**Format: `.xlsx`, and no Excel licence is needed.** Despite the name, xlsx
+is not a Microsoft-proprietary format — it's the open ISO/IEC 29500
+(ECMA-376) standard, written here by `openpyxl` in pure Python. LibreOffice
+Calc opens and edits it natively. It's used in preference to `.ods` only
+because the same file also opens unmodified in Excel and Google Sheets, and
+in preference to `.csv` because a csv can't carry dropdowns, frozen headers
+or multiple sheets.
+
+Five sheets:
+
+| Sheet                  | What's in it                                                                                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| System Information     | The plan elements NIST SP 800-18 expects — system identification, FIPS 199 categorization, owner, authorizing official, operational status, environment, interconnections |
+| Control Implementation | One row per control: NIST's verbatim control text, its enhancements, plus implementation status, control origination, responsible role and implementation narrative       |
+| Control Enhancements   | One row per enhancement, since baselines select and assessors evaluate them separately                                                                                    |
+| CIS Summary            | The checkbox matrix from FedRAMP's SSP Appendix J "CIS Worksheet", derived by formula from the Control Implementation sheet so the two can't drift apart                  |
+| Reference              | The controlled vocabularies backing the dropdowns, their definitions, and the provenance of the control data                                                              |
+
+The Implementation Status and Control Origination vocabularies are
+FedRAMP's, read from its published
+[SSP Appendix J CIS/CRM Workbook](https://www.fedramp.gov/assets/resources/templates/SSP-Appendix-J-CSO-CIS-and-CRM-Workbook.xlsx),
+and enforced by dropdown. `--baseline low|moderate|high` narrows the plan to
+one NIST baseline, selecting controls and enhancements independently the way
+NIST's own profiles do (AC-2 is in Low; AC-2(1) is not).
+
+Because this is built inside PolicyForge, each control also carries a
+`Maps to: HIPAA` column drawn from the crosswalk — so a single workbook shows
+which HIPAA requirements each 800-53 control satisfies.
+
+### What the LLM does, and what it deliberately doesn't
+
+Only the **implementation description** is generated. The control
+description is copied verbatim from the NIST catalog and is never
+paraphrased — it's authoritative wording, and a drifting paraphrase is an
+audit finding waiting to happen.
+
+The narrative itself is a *scaffold*, not an assertion. Nothing in this tool
+can know what a system actually does, so the prompt requires a
+`[Square-Bracket Placeholder]` wherever a detail is unknown rather than a
+plausible guess, forbids naming vendors outside your configured vendor list,
+and follows the control's own a./b./c. lettering so it can be checked
+part-by-part. Every generated cell is prefixed `[DRAFT — REVIEW REQUIRED]`
+and the row is flagged "Not reviewed". An SSP that confidently describes
+controls a system doesn't have is worse than an empty one: it's a false
+attestation.
+
+`--no-narratives` builds the workbook with those cells empty and makes no
+LLM calls; otherwise the command tells you how many requests it's about to
+make and asks before making them.
+
 ## Architecture
 
 ```
@@ -209,8 +993,31 @@ src/policyforge/
   synthesis/              Topic-themed merge/dedupe engine (the "30 synthesis docs" pattern).
   generate/               Turns synthesized requirements + org context into draft
                           policies/standards/procedures.
-  export/                 Markdown / Confluence exporters, and the Confluence importer
-                          (pulls a page's content back out, converts it to markdown).
+  edit/                   LLM-driven editing of live Confluence pages
+                          (`policyforge edit-confluence`, `edit-topic`): plan.py
+                          turns an instruction into a reviewable plan, apply.py
+                          carries it out and checks nothing else was damaged, and
+                          session.py runs the fetch/plan/rewrite sequence over a
+                          whole topic's document set. See "Editing a live page".
+  content/                The markdown content tree: documents as files, resolved
+                          into tier/owner/published-page whether or not they carry
+                          frontmatter. Shared, not Zardoz-specific — it's the
+                          reading half of a repo-backed document set.
+  zardoz/                 The conversational read side (`policyforge zardoz`):
+                          art.py is the floating head and every persona string,
+                          shell.py the REPL, corpus.py the local document
+                          snapshot over markdown and/or Confluence, retrieve.py
+                          the chunking and ranking that finds the passage a
+                          question is about, answer.py the grounded answering
+                          and the checks that verify its citations. Never
+                          imports the publish path.
+  ssp/                    Builds a NIST 800-53 System Security Plan as an .xlsx
+                          workbook (`policyforge ssp`), with LLM-drafted
+                          implementation narratives. See "System Security Plan" below.
+  export/                 Markdown / Confluence exporters, the Confluence importer
+                          (pulls a page's content back out, converts it to markdown,
+                          restoring the links/mentions/images markdownify drops),
+                          and confluence_search.py for finding pages by CQL.
   history/                Local, offline version history of generated/imported
                           documents (output/.history/) — see "Confluence import and
                           local version history" above.
@@ -237,6 +1044,13 @@ scripts/
 
 Before every commit and on every push, this repo is designed to run:
 
+- **ruff** — lint and format, replacing the flake8/isort/black stack with one tool.
+  It's the consistency gate: rule selection, line length (100) and per-file ignores
+  live in `[tool.ruff]` in `pyproject.toml`, so the pre-commit hook, CI and
+  `scripts/check.py` all enforce byte-identical formatting instead of three
+  near-identical configs drifting apart. Beyond style it selects rule families that
+  catch real defects — `B` (bugbear), `BLE` (blind excepts must be deliberate),
+  `F` (unused imports, undefined names) and `SIM`.
 - **gitleaks** — scans staged changes for API keys, tokens, and secrets so you never
   accidentally commit your Anthropic key or an employer-specific config.
 - **pip-audit** — checks dependencies for known CVEs.
@@ -255,8 +1069,11 @@ Two more run continuously rather than per-commit/per-push:
 - **CodeQL** (`.github/workflows/codeql.yml`) — a second SAST engine alongside semgrep,
   using data-flow/taint-tracking analysis rather than pattern matching, so it catches a
   genuinely different class of bug (e.g. untrusted input reaching a dangerous sink
-  across multiple function calls). Runs on push/PR to `main` and weekly on a schedule;
-  results land in the repo's Security tab.
+  across multiple function calls). Runs the `security-extended` query suite rather than
+  the default — the default is tuned to keep false positives low on very large
+  codebases, and this repo is small enough to absorb the extra noise in exchange for
+  wider coverage. Runs on push/PR to `main` and weekly on a schedule; results land in
+  the repo's Security tab.
 - **Dependabot** (`.github/dependabot.yml`) — unlike pip-audit's point-in-time CI check,
   this watches continuously and opens a PR the moment a new CVE is published against a
   Python dependency or a GitHub Action this repo uses, with a 7-day cooldown before
@@ -271,13 +1088,17 @@ See `.pre-commit-config.yaml` and `.github/workflows/ci.yml`.
 
 ### Running the quality checks yourself
 
-`python scripts/check.py` runs all five checks in one command (pytest,
-bandit, semgrep, pip-audit, mdformat, plus gitleaks if you have the binary
-installed — see the script's docstring for why gitleaks is optional
-locally but always runs in CI). This is the same verification pass used
-while building this scaffold, just packaged as a script instead of typed
-commands. Exits non-zero if anything fails, so it's safe to use as a
-pre-push gate.
+`python scripts/check.py` runs every check in one command — ruff (lint),
+ruff (format), pytest, bandit, semgrep, pip-audit, mdformat, plus gitleaks
+if you have the binary installed (see the script's docstring for why
+gitleaks is optional locally but always runs in CI). Lint and format run
+first, since they're the fastest and the most likely to fail on a fresh
+edit. Exits non-zero if anything fails, so it's safe to use as a pre-push
+gate.
+
+To fix rather than just report, run `ruff check --fix src tests scripts`
+and `ruff format src tests scripts` — or install the pre-commit hooks
+(`pre-commit install`), which do both automatically on commit.
 
 ## A note on using this at work
 
@@ -313,9 +1134,128 @@ content, org context, or exported policies to this public repo.
   install with `pip install "policyforge[vertex]"`
 - [x] `ingest/hipaa_loader.py` + `policyforge etl-hipaa` — HIPAA Security Rule (45 CFR
   164 Subpart C), bundled and populated, sourced from eCFR's public API
-- [ ] HIPAA-to-NIST-800-53 crosswalk — NIST SP 800-66 Rev. 2 publishes an official
-  mapping; wiring it into `mapping/crosswalk.py` is what lets `synthesize` actually pull
-  HIPAA requirements into a topic alongside NIST/FedRAMP
+- [x] HIPAA-to-NIST-800-53 crosswalk (`ingest/hipaa_crosswalk_loader.py` +
+  `policyforge etl-hipaa-crosswalk`) — sourced from NIST's CPRT catalog, *not* SP
+  800-66 Rev. 2's PDF: that document's Appendix D states the mapping table was moved
+  out of the PDF and into CPRT. `synthesize` now pulls HIPAA requirements into a topic
+  alongside NIST/FedRAMP
+- [x] `ingest/oscal_loader.py` + `policyforge etl-oscal` — NIST 800-53 Rev 5 from NIST's
+  own OSCAL catalog, so 800-53 data can be populated with no pre-existing Obsidian vault
+- [x] `ssp/` + `policyforge ssp` — NIST 800-53 System Security Plan as a LibreOffice-
+  compatible .xlsx workbook, with FedRAMP's CIS vocabularies and LLM-drafted
+  implementation narratives (see "System Security Plan" above)
+- [ ] SSP round-trip: read an edited workbook back in, so implementation status and
+  narratives survive a catalog refresh instead of being re-drafted from scratch
+- [ ] OSCAL SSP export — NIST's machine-readable SSP model is what FedRAMP is moving
+  to; the same data assembled by `ssp/` could emit it
 - [ ] Other healthcare-relevant frameworks worth considering: HITRUST CSF (already
   stubbed as BYOC, and now that `generate-parser` exists, buildable against a real
   MyCSF export), MARS-E (CMS, NIST-800-53-based, same public-domain lineage as ARC-AMPE)
+
+### Making "one topic, one team" first-class
+
+The ownership model above is currently a convention you hold in your head:
+`synthesize` takes `--topic "Access Review" --nist-controls AC-2,AC-6` and
+nothing records which team owns it or what it's for. Turning that into
+declared, checkable data is where most of the remaining value is.
+
+- [x] **Topic registry** (`config/topics.yaml` + `topics/registry.py`) — topic name,
+  owner, cadence, NIST anchors, evidence artifacts, with a 20-topic starter set in
+  `config/topics.example.yaml` that fully covers all three baselines
+- [x] **Coverage and ownership analysis** (`policyforge coverage`) — orphaned and
+  contested controls, unknown vs out-of-scope anchors, per-team rollup, and
+  cross-framework reachability via the crosswalk. `--strict` for CI, `--json` for
+  downstream tooling
+- [x] **Registry wired into `synthesize`/`generate`** — `synthesize --topic-name` pulls
+  anchors and the owning team from the registry and records them as frontmatter on the
+  synthesis file; `generate` reads them back, so documents name the real team instead
+  of `[Responsible Team]`, and carry the topic cadence and evidence artifacts
+- [x] **Confluence editing harness** (`edit/` + `policyforge edit-confluence`) —
+  instruction -> plan -> review -> execute against a live page, with dry-run by
+  default, version-guarded writes, macro round-trip refusal, and a post-edit check
+  for dropped citations or sections (see "Editing a live page")
+- [x] **Edit a whole topic's document set** (`policyforge edit-topic`) — resolves a
+  topic's pages from the registry's `confluence:` block and applies one instruction
+  across them, planning each page at its own tier and leaving untouched any page
+  whose plan comes back empty; nothing publishes until the whole set is ready
+- [x] **The plan is part of the record** — written to `output/edits/<slug>.plan.json`
+  and into version-history metadata, and read back with
+  `policyforge history --tier confluence`, so what was flagged and what was declined
+  survive the terminal scrolling away
+- [x] **Zardoz, the conversational read side** (`zardoz/` + `policyforge zardoz`) —
+  a REPL over the policy set, with a local corpus that tags each document
+  trusted (owner known) or supporting (unowned). Reads only; the publish path is
+  kept out of its import graph and a test asserts it
+- [x] **Markdown as a first-class source** (`content/`) — sync a tree of files with
+  no network and no credentials, so a repo-backed document set is answerable
+  offline. Frontmatter binds a file to the page it publishes to; a file without any
+  still resolves from its path and first heading
+- [x] **Confluence read fidelity for foreign pages** — cross-page links, user
+  mentions and images are attribute-only elements markdownify dropped entirely, so
+  an Owner field read as blank. Restored before conversion; unresolvable mentions
+  render as a conspicuous `@unresolved-user` and are counted by `sync`
+- [x] **Zardoz retrieval** (`zardoz/retrieve.py`) — chunks at headings so a citation
+  can name a section, scores with BM25 over terms plus exact matching on control
+  identifiers, and refuses rather than returning its least-bad chunk. No embeddings:
+  `AC-2` and `AC-3` embed almost identically and mean different things to an
+  assessor, so a near-miss is a wrong answer, not a close one
+- [x] **Zardoz answering** (`zardoz/answer.py`) — grounded prose with a citation
+  on every claim, verified after the fact rather than merely requested: a marker
+  pointing at a passage that was never supplied, an answer with no citations at
+  all, or a quotation that isn't verbatim in the source are each caught and shown
+  above the answer. With no model configured the passages are returned instead,
+  which is a supported way to run — retrieval is entirely offline
+- [ ] **Hybrid retrieval for paraphrase** — the known gap: a question asking "how
+  often do we check who has admin?" misses a document that only says "privileged
+  access review cadence". Acronyms are handled (MFA ↔ multi-factor authentication)
+  because they are standardized; ordinary morphology and synonymy are not, and want
+  embeddings *alongside* exact identifier matching rather than instead of it
+- [ ] **`policyforge publish`** — read the content tree's frontmatter and push each
+  document to the page it declares, so publishing is driven by the files rather
+  than by a title typed on the command line. The piece a CI job calls on merge
+- [ ] **`policyforge pull`** — the inverse: fetch live pages into the tree as
+  markdown, with frontmatter written back, so a page somebody hand-edited becomes
+  a reviewable diff instead of a surprise. Refuses pages whose macros wouldn't
+  survive the round trip rather than flattening them
+- [ ] **`policyforge check`** — the CI gate: frontmatter resolves, no two files
+  claim one page, no dangling cross-references, no dropped framework citations
+  against the synthesis. Everything that should fail a pull request rather than
+  reach the wiki
+- [ ] **`zardoz discover`** — crawl a space and propose a draft `topics.yaml` from
+  title conventions, page hierarchy, labels and inline control citations, using the
+  LLM only for the residue. Ownership stays `[UNASSIGNED]`: nothing in a document
+  reliably says which team is accountable, and guessing one into a compliance
+  artifact is worse than leaving it blank
+- [ ] **Role-keyed vendors in company context** — `vendors` is a flat list today, so
+  the generator infers what each product does and hedges when it can't
+  (`[Identity Provider — Okta]` for a vendor it was actually given). Keying by role —
+  `identity_provider: Okta`, `edr: CrowdStrike` — makes substitution deterministic.
+  Backwards-compatible: keep accepting a list, treat a mapping as the richer form.
+- [ ] **Team roster in company context** — a `teams:` block naming the org's real
+  teams, so topics can declare an owner and generated procedures say "the IAM
+  Engineering team" instead of `[Responsible Team]`. This is the piece that turns
+  "one topic, one team" from a convention into something the tool can enforce and
+  report on.
+- [ ] **Parameter ledger** (`parameters.yaml`) — one decided value per NIST
+  organization-defined parameter, with the reasoning and the source that drove it
+  ("access review = quarterly; HITRUST 01.c specifies quarterly, 800-53 AC-2 leaves it
+  ODP"). All 1,600 ODPs currently get decided implicitly and inconsistently inside
+  generated prose; this makes each one a recorded decision that flows into every
+  document and the SSP alike.
+- [ ] **Conflict log** — where frameworks genuinely disagree, `synthesis/merge.py`
+  already keeps both statements rather than silently picking. The next step is to
+  surface those as an explicit decision queue rather than leaving them for a reader to
+  notice. Password rotation is the standing example: some frameworks still expect
+  periodic expiry, NIST SP 800-63B advises against it.
+- [ ] **Per-team bundles** — generate one packet per owning team (its procedures, the
+  requirements underneath them, the evidence it owes, its review cadence) instead of
+  one document per topic. This is the artifact a team lead can actually be handed.
+- [ ] **Evidence-artifact modelling** — let a procedure step declare what it produces
+  (an export, a dashboard link, a ticket query). Collect once, satisfy many: the
+  bridge between a procedure and a HITRUST assessment's evidence demands.
+- [ ] **Reverse view for assessors** — given a generated procedure, list every
+  framework requirement it satisfies. Inverse of the crosswalk, and the view an
+  assessor actually asks for.
+- [ ] **Framework-version drift** — when HITRUST CSF or the 800-53 catalog bumps
+  version, report which topics and which generated documents are affected, so review
+  is scoped to what changed rather than restarting the document set.

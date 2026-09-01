@@ -1,6 +1,6 @@
 ---
 name: policyforge
-description: Operate the PolicyForge CLI in this repo to draft, publish, and version cross-mapped information-security policies/standards/procedures from NIST 800-53/FedRAMP/ARC-AMPE/HITRUST/GovRAMP. Use whenever the user asks to generate, draft, or update a policy/standard/procedure/SOP; synthesize or map compliance controls/frameworks; publish to or pull from Confluence; check what changed in a policy over time (version history/drift); or set up/troubleshoot the policyforge CLI (config.yaml, API key, llm-check, "temperature deprecated" errors). Covers the etl-vault -> map -> synthesize -> generate -> export/import-confluence -> history pipeline.
+description: Operate the PolicyForge CLI in this repo to draft, publish, and version cross-mapped information-security policies/standards/procedures from NIST 800-53/FedRAMP/ARC-AMPE/HITRUST/GovRAMP. Use whenever the user asks to generate, draft, or update a policy/standard/procedure/SOP; synthesize or map compliance controls/frameworks; publish to or pull from Confluence; check what changed in a policy over time (version history/drift); or set up/troubleshoot the policyforge CLI (config.yaml, API key, llm-check, "temperature deprecated" errors). Covers the etl-oscal/etl-hipaa -> map -> synthesize -> generate -> export/import-confluence -> history pipeline, and the ssp (System Security Plan spreadsheet) output path.
 ---
 
 # PolicyForge operator skill
@@ -33,18 +33,40 @@ cover, read `README.md` — it's the source of truth; this skill is the
 Only steps 3-4 are needed per new topic once steps 1-2 have been run once for
 the org's framework data.
 
-1. **`policyforge etl-vault --controls-dir <path> [--out <path>]`** — one-time
-   (or refresh-on-demand): parse NIST 800-53 control notes from a vault into
-   `data/frameworks/nist-800-53-r5/controls.json`. Skip if that file already
-   exists and is current.
-1. **`policyforge map --controls <path> [--out <path>]`** — build/refresh the
-   cross-framework crosswalk (`data/frameworks/crosswalk.json`). Re-run after
-   any change to controls.json.
-1. **`policyforge synthesize --topic "<name>" --nist-controls <IDs> --controls <path>... [--crosswalk <path>] [--out-dir <path>]`**
-   — merge/dedupe controls for one topic (e.g. "Password & Credential
-   Management", `IA-5,IA-5(1)`) into synthesized requirement prose. This is
-   the only stage where you need to know NIST control IDs — ask the user or
-   infer from context if they only named a topic in plain language.
+1. **`policyforge etl-oscal [--out <path>]`** — one-time (or
+   refresh-on-demand): fetch NIST's OSCAL release of SP 800-53 Rev 5 into
+   `data/frameworks/nist-800-53-r5/controls.json`, baseline-tagged. Skip if
+   that file already exists and is current. `policyforge etl-vault --controls-dir <path>` is the alternative for markdown-vault sources —
+   only needed if you want its "Cross-Framework Mappings" (FedRAMP) data,
+   which the OSCAL catalog doesn't carry.
+   HIPAA equivalents, also one-time: **`policyforge etl-hipaa`** then
+   **`policyforge etl-hipaa-crosswalk`** (the second attaches NIST's
+   HIPAA-to-800-53 mapping; without it `synthesize` won't pull HIPAA in).
+1. **`policyforge map --controls <path> [--controls <path> ...] [--out <path>]`**
+   — build/refresh the cross-framework crosswalk
+   (`data/frameworks/crosswalk.json`). **Pass every framework's controls.json**
+   with repeated `--controls`: a cross-framework crosswalk needs them loaded
+   together, and passing only the NIST file produces an empty one. The command
+   prints which frameworks it mapped — if it says none were found, that's the
+   mistake. Re-run after any change to controls.json.
+1. **`policyforge coverage --controls <path>... [--baseline low|moderate|high] [--strict] [--json]`**
+   — optional but cheap and LLM-free: reports which in-scope controls no
+   topic owns (orphaned) and which two topics claim (contested), from
+   `config/topics.yaml`. Run it after editing the topic registry, and before
+   synthesizing a new topic, to check the new topic isn't claiming controls
+   another one already owns. If `config/topics.yaml` is missing, tell the user
+   to copy `config/topics.example.yaml` and set the owners to their teams —
+   don't invent team names.
+1. **`policyforge synthesize --topic-name "<registry topic>" --controls <path>...`**
+   — merge/dedupe controls for one topic into synthesized requirement prose.
+   Prefer this form: it takes the anchor controls *and* the owning team from
+   `config/topics.yaml`, and records the owner in the output so `generate`
+   names the real team instead of `[Responsible Team]`. If the user names a
+   topic in plain language, match it against the registry first — an unknown
+   name errors with the list of available topics. Fall back to
+   **`--topic "<name>" --nist-controls <IDs>`** only for a genuine one-off
+   that is not in the registry, and say that its documents will use
+   `[Responsible Team]` placeholders.
 1. **`policyforge generate --tier standard --synthesis <synthesis.md>`**
    first, then, once the Standard exists:
    **`policyforge generate --tier policy --synthesis <synthesis.md> --standard <standard.md>`**
@@ -54,6 +76,16 @@ the org's framework data.
    title (auto-extracted). Never generate Policy/Procedure before Standard
    exists for that topic. Each successful `generate` auto-records into local
    version history (see below) — no extra flag needed.
+
+Separate output path (not part of the Policy/Standard/Procedure chain):
+
+- **`policyforge ssp --controls <path>... [--baseline low|moderate|high] [--system-name "<name>"] [--no-narratives] [--yes]`**
+  — build a NIST 800-53 System Security Plan as a LibreOffice-compatible
+  `.xlsx` workbook. Makes one LLM request per in-scope control for the
+  implementation narratives, so it prompts for confirmation first; pass
+  `--no-narratives` to build the workbook without any LLM calls. Needs
+  baseline-tagged control data (i.e. `etl-oscal` without `--no-baselines`)
+  for `--baseline` to work.
 
 Optional, after generating:
 
@@ -67,10 +99,67 @@ Optional, after generating:
   locally-recorded version for that tier/name (drift detection — did someone
   hand-edit the published page?). `--name` must match the filename stem
   `generate` used (e.g. `auth-mgmt` for `auth-mgmt.md`).
+- **`policyforge edit-confluence --instruction "<what to change>" --space <KEY> --title "<title>" --host <url> [--apply] [--yes] [--allow-macros]`**
+  — edit a live page from a plain-language instruction: fetch, plan, rewrite,
+  diff, publish. **Always run it without `--apply` first** and show the user
+  the plan and the diff; that form changes nothing in Confluence. Only add
+  `--apply` after they have seen it and said yes, and prefer letting the
+  command's own confirmation prompt run rather than passing `--yes`. If it
+  refuses because the page uses unsupported macros, do *not* reach for
+  `--allow-macros` on your own — tell the user what would be lost and let
+  them decide. If the output warns that framework citations or sections went
+  missing, surface that prominently: it means the rewrite dropped
+  traceability, and publishing it would be a compliance regression.
+- **`policyforge edit-topic --instruction "<what to change>" --topic-name "<topic>" --host <url> [--tiers standard,procedure] [--apply] [--yes]`**
+  — apply one instruction across a topic's whole Policy/Standard/Procedure
+  set, resolving the pages from the `confluence:` block in
+  `config/topics.yaml`. Prefer this over three `edit-confluence` runs when the
+  change plausibly touches more than one tier; it plans each page at its own
+  altitude and leaves untouched any page whose plan comes back empty. Same
+  gates as `edit-confluence` — dry run first, always. If a publish fails
+  part-way through, the output names which pages already landed; relay that
+  exactly, because the set is then inconsistent.
+- **`policyforge zardoz sync`** then **`policyforge zardoz`** — build the local
+  document snapshot, then open the conversational shell over it. Two sources,
+  either or both: `--content-dir` (or `zardoz.content_dir`) reads a markdown
+  tree and **needs no credentials at all**, so prefer it when the user just
+  wants to try the shell or is working on local drafts; `--host` (or
+  `zardoz.host`) pulls published Confluence pages, with `zardoz.supporting_space`
+  optionally adding an extra space as unowned context. Where both are set the
+  markdown tree wins, because the file is the source of truth and the page is a
+  copy of it. Re-run `sync` after anything changes, then `/reload` inside the
+  shell rather than restarting it. Read the report rather than skimming it:
+  skipped pages mean a registry title no longer matches a live page, "already
+  claimed by topic" means two topics declare one page (a real ownership
+  problem — run `coverage`), and `@unresolved-user` counts usually mean an Owner
+  field that will read as blank. If sync reports it **refused to write** because
+  it resolved nothing, do not reach for `--allow-empty` to make the message go
+  away — that clears a working corpus. Find out why nothing resolved. The shell
+  is read-only: if the user wants a change made, it drafts an `edit-topic`
+  command and you run that.
+  Inside the shell, anything not starting with `/` is a question, and it returns
+  the matching passages with citations (retrieval has landed; grounded prose
+  answering has not). **"Nothing in the synced documents appears to bear on that"
+  is a real result, not a failure to work around** — it means the corpus does not
+  cover the question, which for a control identifier is itself a coverage finding.
+  Report it as an answer; do not rephrase the question repeatedly to force a hit.
+  If the user believes the document exists, check `/corpus` first — the usual
+  cause is a page that never synced, not bad ranking.
+  With an LLM configured the passages become prose with a citation per claim.
+  **If the output starts with `!!`, the answer failed its own integrity checks**
+  — a citation pointing at a passage that was never supplied, no citations at
+  all, or a quotation that isn't verbatim in the source. Never relay such an
+  answer as fact: read `/sources` and report what the documents actually say.
+  Without an LLM the shell returns passages instead of prose; that is a
+  supported mode, not a broken one, so don't treat it as a setup problem.
 - **`policyforge history --tier <tier> --name <name> [--diff latest | --diff N:M]`**
   — list or diff the local version history for one document. Use this
   whenever the user asks "what changed" or "show me the history" for a
-  policy/standard/procedure.
+  policy/standard/procedure. `--tier confluence` reads the streams the edit
+  commands write (`--name` is the page-title slug, e.g.
+  `access-control-standard`); those entries print the plan that produced each
+  revision, including what the model flagged and what it declined — that is
+  the answer to "why did this page change".
 
 ## Guardrails — do not skip these
 
@@ -102,7 +191,7 @@ User: "Draft a password policy and standard for us, then publish the
 standard to Confluence."
 
 1. Check env (above).
-1. `synthesize --topic "Password & Credential Management" --nist-controls IA-5,IA-5(1) --controls data/frameworks/*/controls.json`
+1. `synthesize --topic-name "Authentication & Credential Management" --controls data/frameworks/*/controls.json`
 1. `generate --tier standard --synthesis output/synthesis/password-credential-management.md`
 1. `generate --tier policy --synthesis output/synthesis/password-credential-management.md --standard output/standards/password-credential-management.md`
 1. Show the user both drafts before publishing anything.

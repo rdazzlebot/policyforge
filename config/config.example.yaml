@@ -44,3 +44,44 @@ org:
   name: "Example Org"
   industry: ""
   vendors: []          # used to fill [Square-Bracket Vendor] placeholders in generated procedures
+
+# Optional. Describes the system a System Security Plan is written about,
+# using NIST SP 800-18's plan elements. Only used by `policyforge ssp`;
+# anything left blank becomes a visible [Placeholder] in the workbook rather
+# than being guessed at. `--system-name` overrides `name` for a one-off run.
+system:
+  name: ""
+  identifier: ""
+  system_type: ""            # General Support System | Major Application | Minor Application
+  operational_status: ""     # Operational | Under Development | Major Modification
+  # FIPS 199 impact levels — Low | Moderate | High. `overall_categorization`
+  # is the high-water mark of the three, and is what picks the 800-53
+  # baseline you'd pass to `policyforge ssp --baseline`.
+  confidentiality: ""
+  integrity: ""
+  availability: ""
+  overall_categorization: ""
+  owner: ""
+  authorizing_official: ""
+  security_officer: ""
+  description: ""
+  environment: ""
+  interconnections: ""
+  laws_and_regulations: []
+
+# Optional. Where the Zardoz conversational shell reads from
+# (`policyforge zardoz`). Only used by `zardoz sync`.
+zardoz:
+  # A markdown content tree — the documents as files. Needs no credentials,
+  # so this alone is enough to sync and ask questions offline. In a
+  # repo-backed setup this is the source of truth and Confluence is the
+  # published copy, so where both are configured the tree wins.
+  content_dir: ""            # e.g. docs
+  # Your Confluence base URL, so you don't retype it on every sync.
+  host: ""                   # e.g. https://yourorg.atlassian.net/wiki
+  # An extra space pulled in as *supporting* context: real content, often
+  # more current than the governance set, but nobody has declared what it is
+  # or who owns it. Answers may draw on it and will say when they did.
+  # Leave blank to sync only the pages your topic registry declares, which
+  # are the ones that arrive knowing their topic, owner and tier.
+  supporting_space: ""       # e.g. RUNBOOKS

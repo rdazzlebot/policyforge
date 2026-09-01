@@ -1532,6 +1532,132 @@ def _content_dir(override: Path | None) -> Path:
     return Path(configured) if configured else Path("docs")
 
 
+@cli.command("drift")
+@click.option(
+    "--controls",
+    "controls_path",
+    required=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="The updated catalog. Compared against its committed version unless --old says otherwise.",
+)
+@click.option(
+    "--old",
+    "old_path",
+    default=None,
+    type=click.Path(exists=True, path_type=Path),
+    help="Explicit previous catalog. Without it, the version git has.",
+)
+@click.option(
+    "--revision",
+    default="HEAD",
+    show_default=True,
+    help="Git revision to compare against when --old is not given.",
+)
+@click.option(
+    "--topics",
+    "topics_path",
+    default=Path("config/topics.yaml"),
+    type=click.Path(path_type=Path),
+    help="Registry, to say which topics a change reaches.",
+)
+@click.option(
+    "--content-dir",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Content tree, to say which documents cite a changed control.",
+)
+@click.option(
+    "--parameters",
+    "parameters_path",
+    default=Path("config/parameters.yaml"),
+    type=click.Path(path_type=Path),
+    help="Ledger, to say which recorded decisions a change reaches.",
+)
+@click.option("--detail", is_flag=True, help="Show the changed lines of each control statement.")
+@click.option(
+    "--fail-on-change",
+    is_flag=True,
+    help="Exit non-zero when anything substantive changed. For a scheduled "
+    "job that should open an issue rather than pass quietly.",
+)
+def drift_cmd(
+    controls_path: Path,
+    old_path: Path | None,
+    revision: str,
+    topics_path: Path,
+    content_dir: Path | None,
+    parameters_path: Path,
+    detail: bool,
+    fail_on_change: bool,
+):
+    """Report what a framework update changed, and what it reaches.
+
+    A catalog bump touches a few dozen controls out of a thousand, and behind
+    those sit a handful of your topics and a smaller handful of your
+    documents. Everything else is unaffected and should stay unread.
+
+    Run the ETL, then run this — the ETL overwrites the catalog in place and
+    git is still holding the version you had, so no snapshot is needed:
+
+        policyforge etl-oscal
+        policyforge drift --controls data/frameworks/nist-800-53-r5/controls.json
+    """
+    from policyforge.frameworks.drift import analyze_drift, load_previous
+    from policyforge.ingest.schema import load_controls
+
+    new_controls = load_controls(controls_path)
+
+    if old_path is not None:
+        old_controls = load_controls(old_path)
+    else:
+        old_controls = load_previous(controls_path, revision=revision)
+        if old_controls is None:
+            raise click.UsageError(
+                f"Could not read {controls_path} at {revision} from git, so there is "
+                "nothing to compare against. Pass --old with the previous catalog, or "
+                "commit the current one first so the next update has a baseline."
+            )
+
+    topics = []
+    if topics_path.exists():
+        from policyforge.topics.registry import TopicRegistryError, load_topics
+
+        try:
+            topics = load_topics(topics_path)
+        except TopicRegistryError as exc:
+            click.echo(f"  (topic registry unreadable: {exc} — topics not assessed)")
+
+    decisions = {}
+    if parameters_path.exists():
+        from policyforge.parameters.ledger import load_ledger
+
+        decisions = load_ledger(parameters_path)
+
+    root = _content_dir(content_dir) if content_dir is not None else None
+    if root is None:
+        default_root = _content_dir(None)
+        root = default_root if default_root.exists() else None
+
+    report = analyze_drift(
+        old_controls,
+        new_controls,
+        topics=topics,
+        content_root=root,
+        decisions=decisions,
+    )
+    click.echo(report.format_report(detail=detail))
+
+    if root is None:
+        click.echo("")
+        click.echo(
+            "  (no content tree found, so no documents were assessed — pass "
+            "--content-dir to include them)"
+        )
+
+    if fail_on_change and report.needs_review:
+        raise SystemExit(1)
+
+
 @cli.command("parameters")
 @click.option(
     "--controls",

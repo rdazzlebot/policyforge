@@ -204,6 +204,15 @@ Optional, after generating:
   revision, including what the model flagged and what it declined — that is
   the answer to "why did this page change".
 
+- **`policyforge drift --controls <path> [--old <path>] [--content-dir <dir>] [--detail] [--fail-on-change]`**
+  — after any ETL re-run, report what a catalog update changed and what it
+  reaches. Compares against the git-committed catalog by default, so `etl-oscal`
+  then `drift` needs no snapshot. **Never respond to drift by regenerating the
+  document set** — that discards every hand edit and review those documents have
+  had. Work the blast radius: re-read only the named documents, and re-check any
+  recorded parameter decision it flags, because those were decided against
+  wording that may have moved. Changes marked editorial need no action.
+
 - **`policyforge parameters --controls <path>... [--baseline <b>] [--topics <path>] [--group] [--init]`**
   — the ledger of organization-defined values. Run it before `synthesize` for a
   new programme: 800-53 leaves ~1,200 values to the organization, and without a

@@ -2153,8 +2153,12 @@ def zardoz_cmd(ctx, topics_path: Path, corpus_dir: Path, no_art: bool, plain: bo
         shell_config = {}
     try:
         provider = get_provider(shell_config)
-    except (FileNotFoundError, KeyError, ValueError) as exc:
-        provider_note = f"No usable llm config ({exc})"
+    except (FileNotFoundError, KeyError, ValueError, RuntimeError) as exc:
+        # RuntimeError is what a missing API key raises, which is the most
+        # common way to open this shell — running without a model is a
+        # supported mode, so it must not be a crash on launch. It was one
+        # until the test suite stopped carrying a live key.
+        provider_note = f"No model configured ({str(exc).splitlines()[0]})"
 
     configured_content = (shell_config.get("zardoz") or {}).get("content_dir") or ""
     content_root = Path(configured_content) if configured_content else None

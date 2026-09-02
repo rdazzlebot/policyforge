@@ -349,3 +349,35 @@ def test_an_empty_reply_is_treated_as_ungrounded(reply):
     answer = answer_question("how often?", _passages(), provider)
 
     assert answer.warnings, "an empty answer cites nothing and must say so"
+
+
+def test_the_shell_opens_with_no_api_key_at_all(tmp_path, monkeypatch):
+    """Running without a model is a supported mode, not a crash.
+
+    `AnthropicProvider` raises RuntimeError for a missing key, and the shell
+    caught only ValueError — so `policyforge zardoz` died on launch for
+    anyone without a key. Invisible for as long as everybody working on it
+    had one, which is exactly how this class of bug survives.
+    """
+    from click.testing import CliRunner
+
+    import policyforge.cli as cli_mod
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(
+        cli_mod,
+        "load_config",
+        lambda: {
+            "llm": {"provider": "anthropic", "model": "m", "api_key_env": "ANTHROPIC_API_KEY"}
+        },
+    )
+
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        ["zardoz", "--no-art", "--corpus-dir", str(tmp_path / "absent")],
+        input="/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "No model configured" in result.output
+    assert "passages, not prose" in result.output

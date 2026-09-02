@@ -52,6 +52,14 @@ where = ["src"]
 [tool.bandit]
 exclude_dirs = ["tests", ".venv"]
 
+[tool.pytest.ini_options]
+# The repo root on sys.path, so tests can import `evals/` — the graded eval
+# harness, which lives outside src/ because it is a dev tool rather than
+# part of the shipped package. Without this, `python -m pytest` works (it
+# puts the CWD on the path) and the bare `pytest` console script does not,
+# which is the kind of difference that passes locally and fails in CI.
+pythonpath = ["."]
+
 [tool.ruff]
 # 100 rather than the 88 default: it matches the width this codebase was
 # already written to, so adopting a formatter reflows comments and docstrings

@@ -1168,6 +1168,49 @@ public-repo maintainers building the parsing logic itself (which contains
 no licensed content once written); it is not a way around that license
 question.
 
+## Grading the prompts
+
+Four things in Zardoz are prompts — answering, follow-up resolution,
+paraphrase expansion, skill routing — and a prompt cannot be tested against
+a fixture. Whether the answerer refuses when the passages don't support a
+claim, whether the router picks the right analysis, whether the rewriter
+invents a detail: those are properties of a model's behaviour, and the only
+way to know them is to ask the model.
+
+```
+python scripts/eval_zardoz.py --repeat 3
+python scripts/eval_zardoz.py --suite routing --repeat 20
+python scripts/eval_zardoz.py --dry-run      # cost first, calls nothing
+```
+
+**One run is not evidence.** That's what the harness is built around. A
+truncation bug in the routing budget failed one call in eight, and the first
+two probes came back clean — graded once per case it would have shipped. So
+every case runs `--repeat` times and the report is a rate:
+
+```
+routing: 11/11 cases always pass (110/110 runs, 100%)
+```
+
+A case right seven times in eight is reported as **FLAKY**, not as passing,
+and flaky exits non-zero. That distinction is the whole point.
+
+**Grading is deterministic.** No model judges another model's output —
+every check is a substring, a citation marker, a refusal sentinel, or the
+project's own `check_answer`, the same integrity checks that run in
+production. A grader that needed a model would have the failure mode it
+exists to detect. The grading logic itself is unit-tested offline in
+`tests/test_eval_harness.py`, because a harness whose scoring is wrong is
+worse than none: it produces numbers that look like evidence.
+
+The negative cases are the ones worth writing. A question that must *not*
+route to an analysis, a follow-up that must *not* be rewritten, an expansion
+that must *not* supply a frequency, a question the passages cannot answer
+and must be refused.
+
+Deliberately outside `scripts/check.py`: these cost money and need network,
+and a gate people can't run offline is a gate people stop running.
+
 ## Handling a framework update
 
 NIST republishes the 800-53 catalog without telling you. The failure is

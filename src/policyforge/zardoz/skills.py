@@ -360,7 +360,9 @@ def route(question: str, provider=None) -> str:
             system=ROUTER_SYSTEM_PROMPT,
             prompt=f"ANALYSES\n\n{catalog}\n\nQUESTION\n\n{question.strip()}\n\nOne word.",
             temperature=0.0,
-            max_tokens=12,
+            # Room for a reasoning preamble plus one word. The shim retries a
+            # truncation, but paying for that on every call would be silly.
+            max_tokens=64,
         )
     except Exception:  # noqa: BLE001 - a routing failure is not a session failure
         return route_offline(question)

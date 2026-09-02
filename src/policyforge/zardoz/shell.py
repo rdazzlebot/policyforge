@@ -39,6 +39,7 @@ from policyforge.topics.registry import Topic
 from .art import voice
 from .conversation import Conversation, Turn, resolve_question
 from .corpus import DEFAULT_CORPUS_DIR, Corpus, load_corpus
+from .skills import skill_fields
 
 PROMPT = "zardoz> "
 
@@ -87,6 +88,18 @@ class ShellState:
     #: "who owns that?" is only answerable in the light of what was asked
     #: before it, and that context lives here rather than in the model.
     conversation: Conversation = field(default_factory=Conversation)
+
+    # Everything below is what the analyses need. Half the questions people
+    # have about a compliance programme are not answerable from any
+    # document — which controls nobody owns, what the catalog changed — and
+    # those fall out of the registry, the catalogs and the ledger instead.
+    config: dict = field(default_factory=dict)
+    #: Control catalogs. Empty means "whatever the framework registry finds
+    #: on disk", so opening the shell needs no --controls.
+    controls_paths: tuple[Path, ...] = ()
+    parameters_path: Path = Path("config/parameters.yaml")
+    history_dir: Path = Path("output/.history")
+    content_dir: Path | None = None
 
     @property
     def voice(self) -> dict[str, str]:
@@ -314,6 +327,27 @@ COMMANDS: dict[str, Command] = {
     "quit": Command("Leave the shell.", _cmd_quit, aliases=("exit",)),
 }
 
+
+def _skill_command(name: str):
+    """Wrap one analysis as a shell command.
+
+    Generated from the registry rather than written out, so adding a skill
+    adds its command, its help entry and its routing target at once and they
+    cannot drift apart.
+    """
+
+    def handler(args: list[str], state: ShellState) -> str:
+        from .skills import run_skill
+
+        return run_skill(name, state, args)
+
+    return handler
+
+
+for _name, _summary in skill_fields():
+    COMMANDS[_name] = Command(_summary, _skill_command(_name))
+
+
 #: Flattened alias -> canonical name, built once from the table above.
 _ALIASES = {alias: name for name, cmd in COMMANDS.items() for alias in cmd.aliases}
 
@@ -354,28 +388,51 @@ def _answer(question: str, state: ShellState) -> str:
     evidence an answer would have been built out of.
     """
     from .answer import answer_question
+    from .skills import NO_SKILL, route, run_skill
 
-    if state.corpus is None:
-        return (
-            "No document corpus is synced yet, so I have nothing to answer from.\n"
-            "Run `policyforge zardoz sync --content-dir <your markdown tree>` — that "
-            "needs no Confluence credentials — then /reload."
-        )
-    if not state.corpus_loaded:
-        return (
-            "The corpus is empty — sync ran but found no documents. `/corpus` shows "
-            "what it found, and `/topics` shows which topics declare pages at all."
-        )
-
-    # Resolve before retrieving. Retrieval is keyword scoring and has no
-    # mechanism for "that"; rewriting the question first is what turns a
-    # chain of follow-ups into a series of separately answerable questions.
+    # Resolve before anything else. Retrieval is keyword scoring and has no
+    # mechanism for "that", and neither has the router — rewriting the
+    # question first is what turns a chain of follow-ups into a series of
+    # separately answerable questions.
     try:
         resolved, rewritten = resolve_question(question, state.conversation, state.provider)
     except Exception:  # noqa: BLE001 - a failed rewrite must not lose the question
         resolved, rewritten = question, False
 
     preamble = [f"(reading that as: {resolved})", ""] if rewritten else []
+
+    # Route before the corpus checks. "Which controls does nobody own?" is
+    # answerable with nothing synced at all — it comes out of the registry
+    # and the catalogs — and refusing it for want of a document corpus would
+    # be answering a question nobody asked.
+    skill = route(resolved, state.provider)
+    if skill != NO_SKILL:
+        state.conversation.add(Turn(question=question, resolved=resolved, answer=""))
+        # The skill's output goes through untouched. A model that read the
+        # numbers and told you about them could turn "14 orphaned" into
+        # "mostly in the audit family", and there would be nothing to check
+        # that against.
+        return "\n".join([*preamble, f"(ran /{skill})", "", run_skill(skill, state)])
+
+    if state.corpus is None:
+        return "\n".join(
+            [
+                *preamble,
+                "No document corpus is synced yet, so I have nothing to answer from.",
+                "Run `policyforge zardoz sync --content-dir <your markdown tree>` — "
+                "that needs no Confluence credentials — then /reload.",
+            ]
+        )
+    if not state.corpus_loaded:
+        return "\n".join(
+            [
+                *preamble,
+                "The corpus is empty — sync ran but found no documents. `/corpus` "
+                "shows what it found, and `/topics` shows which topics declare "
+                "pages at all.",
+            ]
+        )
+
     passages = state.index.search(resolved, limit=_PASSAGE_LIMIT)
 
     # Exact first, expansion only on a miss. While retrieval is finding

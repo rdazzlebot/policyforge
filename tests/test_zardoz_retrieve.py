@@ -688,18 +688,22 @@ def test_the_shell_does_not_expand_when_the_exact_words_already_worked():
         text: str
         model: str = "fake"
 
-    class Counting:
+    class Recording:
         def __init__(self):
-            self.calls = 0
+            self.systems = []
 
-        def generate(self, **kwargs):
-            self.calls += 1
-            return R("Quarterly. [1]")
+        def generate(self, *, system, **kwargs):
+            self.systems.append(system)
+            return R("documents" if "rewrite" in system.lower() else "Quarterly. [1]")
 
-    provider = Counting()
+    provider = Recording()
     dispatch(
         "privileged recertification cadence",
         ShellState(corpus=_paraphrase_corpus(), provider=provider),
     )
 
-    assert provider.calls == 1, "one call to answer, none to expand"
+    # Asserted on which prompts ran rather than on how many, so adding a
+    # routing or resolution call does not look like an expansion.
+    assert not any("vocabulary" in system.lower() for system in provider.systems), (
+        "the exact words worked, so no expansion should have been requested"
+    )

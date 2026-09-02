@@ -824,6 +824,50 @@ plausible-sounding form available.
 configured is supported, not degraded: retrieval is entirely offline, so you
 get the passages and draw the conclusion yourself.
 
+### Asking about the programme, not the documents
+
+Half the questions people have aren't answerable from any document, because
+they're questions *about* the programme rather than about its prose. Which
+controls does nobody own. What did the catalog change. How many values are
+still undecided. No Standard states any of that — it falls out of the
+registry, the catalogs and the ledger.
+
+Those computations already existed as CLI commands. Zardoz can now reach
+them, either by name or by asking:
+
+```
+zardoz> are we missing any controls in the audit family?
+
+(ran /coverage)
+
+Coverage — scope: all controls
+============================================================
+  In scope        1089
+  Owned           36 (3%)
+  Orphaned        1053
+```
+
+Seven analyses, each also a command: `/coverage`, `/parameters`, `/drift`,
+`/history`, `/check`, `/frameworks`, `/roles`.
+
+**The model routes; the report speaks.** Choosing which analysis a question
+wants is a judgement about intent, which is what a model is for. Reporting
+the result is not — a paraphrase of "14 orphaned controls" can become
+"mostly in the audit family" with nothing to check it against, and a
+compliance answer nobody can check is worth less than no answer. So the
+model picks, and then the analysis's own output is printed **verbatim**.
+Routing can be wrong in a way you can see, because the chosen skill is
+always named. Reporting can't be wrong at all, because no model touches it.
+
+Analyses answer with **nothing synced** — coverage comes out of the registry
+and the catalogs, not the corpus — and without a model at all, via a
+deliberately narrow keyword router. Narrow because a keyword router that
+guessed broadly would be worse than none: it would hijack ordinary document
+questions and send them somewhere that can't answer them.
+
+Note the cost: routing adds one small model call per question (a dozen
+output tokens), on top of answering.
+
 ### Follow-up questions
 
 The questions people have about a policy set arrive in chains, and only the
@@ -1577,6 +1621,10 @@ declared, checkable data is where most of the remaining value is.
 - [x] **`policyforge check`** — the pull-request gate, entirely offline so it runs
   on a fork with no credentials: frontmatter resolves, no two files claim one
   page, no dangling cross-references, no citations dropped since the synthesis
+- [x] **Zardoz analyses** (`zardoz/skills.py`) — coverage, drift, parameters,
+  history, check, frameworks and roles reachable from the shell, by name or by
+  asking. The model routes and the deterministic report is printed verbatim, so a
+  number in a Zardoz answer is worth the same as a number from the CLI
 - [x] **Zardoz follow-up questions** (`zardoz/conversation.py`) — "what's our
   access review cadence?" then "who owns that?". The question is resolved against
   the exchange *before* retrieval, since keyword scoring has no mechanism for

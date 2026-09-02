@@ -149,6 +149,15 @@ Optional, after generating:
   away — that clears a working corpus. Find out why nothing resolved. The shell
   is read-only: if the user wants a change made, it drafts an `edit-topic`
   command and you run that.
+  Inside the shell it can also run read-only analyses — `/coverage`,
+  `/parameters`, `/drift`, `/history`, `/check`, `/frameworks`, `/roles` — and a
+  question routes to one automatically, printing `(ran /coverage)` first. Those
+  reports are the deterministic command output verbatim, so **quote them rather
+  than summarising**; the whole design is that no model paraphrases the numbers.
+  If a question routed somewhere wrong, the `(ran /...)` line is how you can
+  tell — say so and re-ask rather than working from the wrong report.
+  Zardoz cannot publish, edit or export: the Confluence write path is unreachable
+  from the package and a test enforces it. For a change, draft `edit-topic`.
   Inside the shell, follow-ups work: "who owns that?" is resolved against the
   previous turns before retrieval, and the rewritten question is printed as
   `(reading that as: ...)`. **If that line shows a question the user didn't

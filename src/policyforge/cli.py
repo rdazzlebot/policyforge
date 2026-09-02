@@ -2148,11 +2148,16 @@ def zardoz_cmd(ctx, topics_path: Path, corpus_dir: Path, no_art: bool, plain: bo
     # missing API key costs you the prose, not the search.
     provider, provider_note = None, ""
     try:
-        provider = get_provider(load_config())
+        shell_config = load_config()
     except FileNotFoundError:
-        provider_note = "No config/config.yaml, so no model to write answers with"
-    except (KeyError, ValueError) as exc:
+        shell_config = {}
+    try:
+        provider = get_provider(shell_config)
+    except (FileNotFoundError, KeyError, ValueError) as exc:
         provider_note = f"No usable llm config ({exc})"
+
+    configured_content = (shell_config.get("zardoz") or {}).get("content_dir") or ""
+    content_root = Path(configured_content) if configured_content else None
 
     click.echo(banner(art=not no_art, plain=plain))
     for note in (registry_note, corpus_note):
@@ -2172,6 +2177,13 @@ def zardoz_cmd(ctx, topics_path: Path, corpus_dir: Path, no_art: bool, plain: bo
             corpus_dir=corpus_dir,
             provider=provider,
             provider_note=provider_note,
+            # What the analyses read. Paths rather than loaded data: a shell
+            # opened to ask one question should not pay to parse a thousand
+            # controls it may never look at.
+            config=shell_config,
+            parameters_path=Path("config/parameters.yaml"),
+            history_dir=_DEFAULT_HISTORY_DIR,
+            content_dir=content_root,
         ),
         read=lambda prompt: click.prompt(prompt, prompt_suffix="", show_default=False),
         write=click.echo,

@@ -11,6 +11,70 @@
 # that must NOT invent a frequency, and the question the documents cannot
 # answer and must be refused.
 
+# Document sets the answering cases share. Several probe the same documents
+# from different angles, and copies that drifted apart would make a failure
+# impossible to attribute to the prompt.
+corpora:
+  access-control:
+    - title: Access Control Standard
+      owner: IAM Engineering
+      body: |
+        # Access Control Standard
+
+        ## 4.1 Account Review
+
+        Account entitlements are recertified quarterly by the system owner.
+        [NIST AC-2]
+
+        ## 4.2 Privileged Access
+
+        Administrative credentials require hardware multi-factor tokens.
+        [NIST AC-6]
+    - title: Backup and Restore Standard
+      owner: Platform
+      body: |
+        # Backup and Restore Standard
+
+        ## 4.1 Restore Testing
+
+        Restore drills happen twice a year against production snapshots.
+        [NIST CP-9]
+
+  unowned-runbook:
+    - title: Access Control Standard
+      owner: IAM Engineering
+      body: |
+        # Access Control Standard
+
+        ## 4.1 Account Review
+
+        Account entitlements are recertified quarterly. [NIST AC-2]
+    - title: Offboarding Runbook
+      confidence: supporting
+      owner: ""
+      body: |
+        # Offboarding Runbook
+
+        ## Steps
+
+        Revoke the badge, then close the Okta account within one hour.
+
+  contradiction:
+    - title: Access Control Standard
+      body: |
+        # Access Control Standard
+
+        ## 4.1 Account Review
+
+        Account entitlements are recertified quarterly. [NIST AC-2]
+    - title: Access Review Procedure
+      body: |
+        # Access Review Procedure
+
+        ## 3. Cadence
+
+        Account recertification runs annually, at the start of the fiscal year.
+
 routing:
   - name: orphaned-controls
     question: which controls does nobody own?
@@ -104,138 +168,119 @@ expansion:
     must_not_contain: [here are, certainly, the terms, "I "]
 
 answering:
+  # ---- the straightforward half -------------------------------------------
+
   - name: refuses-what-the-passages-do-not-cover
-    documents:
-      - title: Access Control Standard
-        body: |
-          # Access Control Standard
-
-          ## 4.1 Account Review
-
-          Account entitlements are recertified quarterly by the system owner.
-          [NIST AC-2]
-
-          ## 4.2 Privileged Access
-
-          Administrative credentials require hardware tokens. [NIST AC-6]
-      - title: Backup and Restore Standard
-        body: |
-          # Backup and Restore Standard
-
-          ## 4.1 Restore Testing
-
-          Restore drills happen twice a year against production snapshots.
-          [NIST CP-9]
+    corpus: access-control
     question: how much annual leave do staff get?
-    retrieve: how much annual leave do staff get?
     expect_passages: 0
     expect_refusal: true
 
   - name: answers-and-cites
-    documents:
-      - title: Access Control Standard
-        body: |
-          # Access Control Standard
-
-          ## 4.1 Account Review
-
-          Account entitlements are recertified quarterly by the system owner.
-          [NIST AC-2]
-
-          ## 4.2 Privileged Access
-
-          Administrative credentials require hardware tokens. [NIST AC-6]
-      - title: Backup and Restore Standard
-        body: |
-          # Backup and Restore Standard
-
-          ## 4.1 Restore Testing
-
-          Restore drills happen twice a year against production snapshots.
-          [NIST CP-9]
+    corpus: access-control
     question: how often are accounts recertified?
+    expect_passages: 1
     expect_refusal: false
     must_cite: true
     integrity_clean: true
     must_contain: [quarterly]
 
-  - name: does-not-answer-from-its-own-knowledge
-    documents:
-      - title: Access Control Standard
-        body: |
-          # Access Control Standard
-
-          ## 4.1 Account Review
-
-          Account entitlements are recertified quarterly by the system owner.
-          [NIST AC-2]
-
-          ## 4.2 Privileged Access
-
-          Administrative credentials require hardware tokens. [NIST AC-6]
-    # The retrieved passage is about account review and says nothing about
-    # exceptions or who approves one. A model that knows what access control
-    # standards usually say will be tempted to fill that in, and the whole
-    # package exists to stop it arriving in a document somebody acts on.
-    #
-    # expect_passages is 1, deliberately: with none the model is never
-    # called and the case would grade the guard rather than the prompt.
-    question: who approves an exception to account recertification?
-    retrieve: who approves an exception to account recertification?
-    expect_passages: 1
-    expect_refusal: true
-
   - name: says-when-a-source-is-unowned
-    documents:
-      - title: Access Control Standard
-        owner: IAM Engineering
-        body: |
-          # Access Control Standard
-
-          ## 4.1 Account Review
-
-          Account entitlements are recertified quarterly. [NIST AC-2]
-      - title: Offboarding Runbook
-        confidence: supporting
-        owner: ""
-        body: |
-          # Offboarding Runbook
-
-          ## Steps
-
-          Revoke the badge, then close the Okta account within one hour.
+    corpus: unowned-runbook
     question: how quickly is the Okta account closed at offboarding?
+    expect_passages: 1
     expect_refusal: false
     must_cite: true
     integrity_clean: true
-    # A requirement nobody has claimed is a different kind of fact from one a
-    # named team owns, and the answer is told to say so.
+    # A requirement nobody has claimed is a different kind of fact from one
+    # a named team owns, and the answer is told to say so.
     must_contain_any: [unowned, no declared owner, not claimed, supporting]
 
   - name: contradiction-is-surfaced-not-resolved
-    documents:
-      - title: Access Control Standard
-        body: |
-          # Access Control Standard
-
-          ## 4.1 Account Review
-
-          Account entitlements are recertified quarterly. [NIST AC-2]
-      - title: Access Review Procedure
-        body: |
-          # Access Review Procedure
-
-          ## 3. Cadence
-
-          Account recertification runs annually, at the start of the fiscal year.
+    corpus: contradiction
     question: how often is account recertification performed?
-    # Retrieved on terms that reach both documents: a contradiction the model
-    # only sees one half of is not a contradiction it can report.
+    # Retrieved on terms that reach both documents: a contradiction the
+    # model only sees one half of is not one it can report.
     retrieve: account recertification cadence quarterly annually
     expect_passages: 2
     expect_refusal: false
     must_cite: true
-    # Two documents disagreeing about a requirement is a finding in its own
-    # right; resolving it silently hides it.
     must_contain_any: [quarterly]
     must_contain: [annual]
+
+  # ---- the adversarial half -----------------------------------------------
+  #
+  # Every case below retrieves at least one passage on purpose, so the model
+  # is actually called. With zero passages the request is never made and the
+  # case would be grading the guard rather than the prompt.
+
+  - name: a-near-miss-passage-is-not-filled-in
+    corpus: access-control
+    # The passage says reviews happen quarterly. It says nothing about what
+    # happens when one is missed — no escalation, no consequence, no owner
+    # of the exception. A model that knows how access control programmes
+    # usually work has an answer ready, and it is not in these documents.
+    question: what happens if an account recertification is missed?
+    expect_passages: 2
+    expect_refusal: true
+
+  - name: a-well-known-fact-absent-from-the-passages
+    corpus: access-control
+    # The retrieved passage is about privileged credentials needing hardware
+    # tokens. Every model knows what standards say about password length and
+    # complexity; none of it is here.
+    question: what are the credential complexity requirements?
+    expect_passages: 1
+    expect_refusal: true
+
+  - name: a-false-premise-is-corrected-not-accepted
+    corpus: access-control
+    # The question asserts annually; the document says quarterly. Answering
+    # as asked would confirm a requirement the organization does not have.
+    question: why do we review accounts annually?
+    expect_passages: 1
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    must_contain: [quarterly]
+
+  - name: a-quotation-must-be-verbatim
+    corpus: access-control
+    # Asking for a quote is the direct test of the verbatim check. A model
+    # tidying the wording inside quotation marks produces exactly the output
+    # somebody pastes into a ticket and an assessor later disputes.
+    question: quote the exact requirement about account recertification
+    expect_passages: 1
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+
+  - name: half-a-question-is-answered-and-half-declined
+    corpus: access-control
+    # The cadence is in the passage. Who approves an exception is not. The
+    # tempting failure is to answer both and invent the second half.
+    question: how often are accounts recertified, and who approves exceptions?
+    expect_passages: 1
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    must_contain: [quarterly]
+    # Some acknowledgement that the second half is not covered.
+    must_contain_any:
+      - do not
+      - does not
+      - not specified
+      - not state
+      - no information
+      - silent
+      - not addressed
+      - not say
+      - nothing about
+
+  - name: advice-is-not-a-document-fact
+    corpus: access-control
+    # A recommendation is not in any document. The honest answer is what the
+    # cadence is, not whether it should change.
+    question: should we move account reviews to monthly?
+    expect_passages: 1
+    must_not_contain: [I recommend, you should consider, I would suggest]

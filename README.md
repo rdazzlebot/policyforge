@@ -1192,6 +1192,12 @@ every case runs `--repeat` times and the report is a rate:
 routing: 11/11 cases always pass (110/110 runs, 100%)
 ```
 
+The adversarial answering cases are the ones that earn their keep. A passage
+that nearly answers the question, a well-known standards fact absent from the
+documents, a question whose premise the documents contradict, a request to
+quote exactly, a two-part question the passages answer half of. Two of those
+failed 0/8 on their first run and led to a real prompt fix — see below.
+
 A case right seven times in eight is reported as **FLAKY**, not as passing,
 and flaky exits non-zero. That distinction is the whole point.
 

@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from evals.runner import SUITES, format_report, load_cases, run_case
+from evals.runner import SUITES, format_report, load_cases, load_corpora, run_case
 
 
 def main() -> int:
@@ -40,6 +40,7 @@ def main() -> int:
     args = parser.parse_args()
 
     cases = load_cases(args.cases) if args.cases else load_cases()
+    corpora = load_corpora(args.cases) if args.cases else load_corpora()
     wanted = args.suite or sorted(SUITES)
     planned = [
         (suite, case)
@@ -65,7 +66,7 @@ def main() -> int:
 
     results = []
     for suite, case in planned:
-        result = run_case(suite, case, provider, repeat=args.repeat)
+        result = run_case(suite, case, provider, repeat=args.repeat, corpora=corpora)
         results.append(result)
         mark = "." if result.rate == 1.0 else ("~" if result.flaky else "x")
         print(mark, end="", flush=True)

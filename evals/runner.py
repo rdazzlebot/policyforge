@@ -155,8 +155,16 @@ def run_expansion(case: dict, provider) -> Outcome:
     return grade_text(expand_query(case["question"], provider), case)
 
 
-def _passages(case: dict):
-    """Build retrieval passages from the case's own documents."""
+def _passages(case: dict, corpora: dict | None = None):
+    """Build retrieval passages from the case's documents.
+
+    A case either inlines its documents or names one of the shared corpora.
+    Sharing matters for the adversarial cases: several of them probe the
+    same document set from different angles, and copies that drift apart
+    would make a failure impossible to attribute to the prompt.
+    """
+    if "corpus" in case:
+        case = {**case, "documents": (corpora or {})[case["corpus"]]}
     from policyforge.zardoz.corpus import TRUSTED, Corpus
     from policyforge.zardoz.corpus import CorpusDocument as Doc
     from policyforge.zardoz.retrieve import build_index
@@ -182,11 +190,11 @@ def _passages(case: dict):
     return build_index(corpus).search(case.get("retrieve", case["question"]), limit=4)
 
 
-def run_answering(case: dict, provider) -> Outcome:
+def run_answering(case: dict, provider, corpora: dict | None = None) -> Outcome:
     """Does the answer stay inside its passages, and refuse when it must?"""
     from policyforge.zardoz.answer import answer_question, check_answer
 
-    passages = _passages(case)
+    passages = _passages(case, corpora)
     if case.get("expect_passages") is not None and len(passages) != case["expect_passages"]:
         return Outcome(
             False,
@@ -232,11 +240,24 @@ def load_cases(path: Path = DEFAULT_CASES) -> dict[str, list[dict]]:
     return {suite: list(cases or []) for suite, cases in data.items() if suite in SUITES}
 
 
-def run_case(suite: str, case: dict, provider, *, repeat: int = 1) -> CaseResult:
+def load_corpora(path: Path = DEFAULT_CASES) -> dict[str, list[dict]]:
+    """Document sets several answering cases share."""
+    import yaml
+
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    return dict(data.get("corpora") or {})
+
+
+def run_case(
+    suite: str, case: dict, provider, *, repeat: int = 1, corpora: dict | None = None
+) -> CaseResult:
     result = CaseResult(suite=suite, name=case.get("name") or case.get("question", "?"))
     for _ in range(repeat):
         try:
-            result.outcomes.append(SUITES[suite](case, provider))
+            if suite == "answering":
+                result.outcomes.append(run_answering(case, provider, corpora))
+            else:
+                result.outcomes.append(SUITES[suite](case, provider))
         except Exception as exc:  # noqa: BLE001 - one bad case must not end the run
             result.outcomes.append(Outcome(False, f"{type(exc).__name__}: {exc}"))
     return result

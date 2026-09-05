@@ -92,20 +92,33 @@ def expand_query(question: str, provider, *, max_terms: int = MAX_EXPANSION_TERM
 def parse_expansion(text: str, *, max_terms: int = MAX_EXPANSION_TERMS) -> list[str]:
     """Read a comma-separated expansion back, defensively.
 
-    Models occasionally answer the question instead of naming vocabulary. A
-    sentence-shaped segment means the format was not followed, and then the
-    whole reply is discarded rather than mined for the fragments that happen
-    to fit — "Certainly, here are the terms a standard would use" yields the
-    term "Certainly", which is not vocabulary, and salvaging it puts the
-    model's preamble into the search. No expansion is better than noise.
+    Models occasionally answer the question instead of naming vocabulary,
+    and a reply that is mostly sentence-shaped is discarded whole rather
+    than mined for the fragments that happen to fit — "Certainly, here are
+    the terms a standard would use" yields the term "Certainly", which is
+    not vocabulary, and salvaging it puts the model's preamble into the
+    search. No expansion is better than noise.
     """
     segments = [
         segment.strip().strip("-*•").strip().strip('"').strip()
         for segment in text.replace("\n", ",").split(",")
     ]
     kept = [segment for segment in segments if segment]
-    if any(len(segment.split()) > 4 for segment in kept):
+    if not kept:
         return []
+
+    # Prose is judged by proportion, not by a single long entry. Discarding
+    # the whole reply for one oversized segment threw away usable lists: a
+    # legitimate term of art can run to five or six words ("user access
+    # certification and re-validation"), and the expansion then came back
+    # empty for a question the model had answered perfectly well. A reply
+    # where most segments are sentence-shaped is prose and is still refused
+    # whole; one where a few are is a list with a couple of long terms in
+    # it, and those are simply dropped.
+    oversized = [segment for segment in kept if len(segment.split()) > 4]
+    if len(oversized) * 2 >= len(kept):
+        return []
+    kept = [segment for segment in kept if segment not in oversized]
 
     terms: list[str] = []
     for segment in kept:

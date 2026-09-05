@@ -345,3 +345,21 @@ def test_export_to_confluence_requires_api_token(monkeypatch):
         assert "CONFLUENCE_API_TOKEN" in str(exc)
     else:
         raise AssertionError("expected RuntimeError when no API token is configured")
+
+
+def test_no_source_file_carries_a_stray_control_character():
+    """Twice now a shell heredoc has turned an escape into the character it
+    denotes — `\b` became a backspace inside a regex, which then matched
+    nothing and silently disabled the check it belonged to. Ruff does not
+    flag it and it is invisible in a diff, so it is worth one cheap sweep.
+    """
+    from pathlib import Path
+
+    offenders = []
+    for path in list(Path("src").rglob("*.py")) + list(Path("evals").rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        bad = {ord(c) for c in text if ord(c) < 32 and c not in "\n\t"}
+        if bad:
+            offenders.append(f"{path}: {sorted(hex(b) for b in bad)}")
+
+    assert not offenders, "control characters in source: " + "; ".join(offenders)

@@ -707,3 +707,23 @@ def test_the_shell_does_not_expand_when_the_exact_words_already_worked():
     assert not any("vocabulary" in system.lower() for system in provider.systems), (
         "the exact words worked, so no expansion should have been requested"
     )
+
+
+def test_one_long_term_does_not_discard_a_usable_expansion():
+    """A term of art can legitimately run to five or six words. Refusing the
+    whole list for one of them returned an empty expansion for questions the
+    model had answered perfectly well."""
+    from policyforge.zardoz.paraphrase import parse_expansion
+
+    terms = parse_expansion(
+        "privileged access, entitlement review, user access certification and re-validation, audit"
+    )
+
+    assert terms == ["privileged access", "entitlement review", "audit"]
+
+
+def test_a_mostly_sentence_shaped_reply_is_still_refused_whole():
+    from policyforge.zardoz.paraphrase import parse_expansion
+
+    assert parse_expansion("Certainly, here are the terms a standard would use") == []
+    assert parse_expansion("The documents refer to privileged access review cadence") == []

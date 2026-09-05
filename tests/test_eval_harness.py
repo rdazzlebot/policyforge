@@ -364,3 +364,74 @@ def test_no_attribution_rules_means_no_attribution_check():
     from evals.runner import check_attribution
 
     assert check_attribution("anything at all", _two_passages(), None) == ""
+
+
+# --------------------------------------------------------------------------
+# A run that could not happen is not evidence about the prompt
+# --------------------------------------------------------------------------
+
+
+class Broke:
+    def __init__(self, message):
+        self.message = message
+
+    def generate(self, **kwargs):
+        raise RuntimeError(self.message)
+
+
+def test_an_exhausted_api_balance_is_an_error_not_a_failure():
+    """Reported as a graded failure, an expired card reads as a regression:
+    "7 never passed" says the model got the answers wrong when it was never
+    asked the questions."""
+    # Resolution, not routing: route() catches provider failures by design
+    # and falls back to keyword matching, so the harness never sees the
+    # error. That is what the preflight probe exists to catch.
+    result = run_case(
+        "resolution",
+        {"history": [{"q": "cadence?", "a": "Quarterly."}], "question": "who owns that?"},
+        Broke("Your credit balance is too low to access the Anthropic API."),
+        repeat=3,
+    )
+
+    assert result.errors
+    assert result.graded == 0
+
+
+def test_a_rate_limit_is_also_an_error():
+    result = run_case(
+        "resolution",
+        {"history": [{"q": "cadence?", "a": "Quarterly."}], "question": "who owns that?"},
+        Broke("rate limit exceeded"),
+    )
+
+    assert result.errors
+
+
+def test_an_ordinary_bug_in_a_case_is_still_a_failure():
+    """Only infrastructure gets the benefit of the doubt."""
+    result = run_case(
+        "resolution",
+        {"history": [{"q": "cadence?", "a": "Quarterly."}], "question": "who owns that?"},
+        Broke("something else broke"),
+    )
+
+    assert not result.errors
+    assert result.rate == 0.0
+
+
+def test_the_report_says_the_run_did_not_happen():
+    from evals.runner import Outcome
+
+    results = [
+        CaseResult(
+            "routing",
+            "unreachable",
+            [Outcome(False, "RuntimeError: credit balance too low", errored=True)],
+        )
+    ]
+
+    report = format_report(results, repeat=1)
+
+    assert "could not run" in report
+    assert "say nothing about the prompts" in report
+    assert "never passed" not in report

@@ -94,6 +94,16 @@ corpora:
 
         Terminated accounts are disabled within one week of the leaving date.
 
+  generated-standard:
+    # A real generated document, with what `generate` actually emits: bold
+    # inside requirement text, an evidence table, multi-clause source tags,
+    # and placeholders left unfilled because nobody configured them. Every
+    # other corpus here was hand-written to be clean, which is exactly the
+    # thing that hid a false positive in the quotation check.
+    - title: Media Handling & Disposal Standard
+      owner: IT Asset Management
+      from_file: documents/media-handling-standard.md
+
 routing:
   - name: orphaned-controls
     question: which controls does nobody own?
@@ -357,3 +367,82 @@ answering:
       - 30 days
       - revoked automatically
       - escalated to
+
+  # ---- against a real generated document ----------------------------------
+
+  - name: a-quote-survives-markdown-emphasis
+    corpus: generated-standard
+    # The requirement is written "retain ... for **6 years**". A model
+    # quoting that into prose drops the asterisks, and the verbatim check
+    # reported it as a fabricated quotation until it compared visible text.
+    question: quote the retention requirement for media protection documentation
+    retrieve: how long is media protection documentation retained?
+    expect_passages: 4
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    must_contain: ["6 years"]
+
+  - name: an-answer-can-come-from-a-table
+    corpus: generated-standard
+    # The evidence register is a markdown table. Chunking keeps it whole,
+    # but nothing had ever asked the model to answer out of one.
+    question: what evidence proves that media was destroyed?
+    expect_passages: 1
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    # Either number: the table heads the row "Certificates of Destruction"
+    # and referring to one of them in the singular is ordinary English, not
+    # a different answer.
+    must_contain_any: [certificates of destruction, certificate of destruction]
+
+  - name: an-unfilled-placeholder-is-not-an-answer
+    corpus: generated-standard
+    # The passage says removal requests are logged in "[Ticketing System]" —
+    # an unfilled role placeholder, not the name of a system. Reporting it
+    # as the answer tells a reader their organization uses a product called
+    # Ticketing System; inventing Jira is worse still.
+    question: which system are media removal requests logged in?
+    expect_passages: 3
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    must_not_contain: [Jira, ServiceNow, Remedy, Zendesk]
+    must_contain_any:
+      - placeholder
+      - not name
+      - does not specify
+      - not specified
+      - not identified
+      - generic
+      - unfilled
+      - has not been
+
+  - name: an-undecided-parameter-is-reported-as-undecided
+    corpus: generated-standard
+    # The passage says reviews happen "[Assignment: organization-defined
+    # frequency]" — the catalog's way of saying the organization has not
+    # chosen one. Supplying a number here would attach an invented
+    # commitment to a real citation.
+    question: how often are media sanitization records reviewed?
+    expect_passages: 4
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    must_not_contain: [quarterly, annually, monthly, "30 days", "90 days"]
+    # Any phrasing that tells the reader the frequency is not set. Widened
+    # after "an unfilled placeholder in the document" — plainly correct, and
+    # failing only because the list did not anticipate it. The guard that
+    # matters is must_not_contain: no invented frequency, whatever words the
+    # answer reaches for.
+    must_contain_any:
+      - organization-defined
+      - placeholder
+      - unfilled
+      - not been defined
+      - not specified
+      - does not specify
+      - not stated
+      - undefined
+      - not set

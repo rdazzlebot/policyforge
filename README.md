@@ -1192,6 +1192,11 @@ every case runs `--repeat` times and the report is a rate:
 routing: 11/11 cases always pass (110/110 runs, 100%)
 ```
 
+Cases run against a **real generated Standard** as well as hand-written
+fixtures — bold inside requirement text, an evidence table, multi-clause
+source tags, unfilled placeholders. Every clean fixture agreed with the
+checks; the realistic one found four false positives in them.
+
 The adversarial answering cases are the ones that earn their keep. A passage
 that nearly answers the question, a well-known standards fact absent from the
 documents, a question whose premise the documents contradict, a request to

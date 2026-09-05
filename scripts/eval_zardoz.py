@@ -62,13 +62,30 @@ def main() -> int:
     from policyforge.llm.base import get_provider
 
     provider = get_provider(load_config())
+
+    # One cheap call before spending a whole run. Several of the paths under
+    # test swallow provider failures on purpose — route() falls back to
+    # keyword matching, expand_query returns nothing — so a dead API does
+    # not raise. It quietly grades the fallback and reports a clean pass,
+    # which is worse than an error because it looks like evidence. Measured:
+    # with an exhausted balance the routing suite reported 11 of 11.
+    try:
+        provider.generate(system="Reply with one word.", prompt="ok?", max_tokens=64)
+    except Exception as exc:  # noqa: BLE001 - any failure means do not proceed
+        print(f"The API is not reachable, so nothing was run:\n  {exc}")
+        return 2
+
     print(f"Running {len(planned)} case(s) x {args.repeat} against the configured model...\n")
 
     results = []
     for suite, case in planned:
         result = run_case(suite, case, provider, repeat=args.repeat, corpora=corpora)
         results.append(result)
-        mark = "." if result.rate == 1.0 else ("~" if result.flaky else "x")
+        mark = (
+            "!"
+            if result.errors
+            else ("." if result.rate == 1.0 else ("~" if result.flaky else "x"))
+        )
         print(mark, end="", flush=True)
     print("\n")
     print(format_report(results, repeat=args.repeat))
@@ -76,6 +93,10 @@ def main() -> int:
     # Flaky is a failure. The whole reason this exists is that a case which
     # is right most of the time is indistinguishable, from one run, from a
     # case that is right always.
+    # An exit code of 2 for "could not run" so a caller can tell a dead key
+    # from a regression. 1 stays the graded failure.
+    if any(r.errors for r in results):
+        return 2
     return 1 if any(r.rate < 1.0 for r in results) else 0
 
 

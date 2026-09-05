@@ -381,3 +381,191 @@ def test_the_shell_opens_with_no_api_key_at_all(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "No model configured" in result.output
     assert "passages, not prose" in result.output
+
+
+# --------------------------------------------------------------------------
+# Quoting from a real generated document
+# --------------------------------------------------------------------------
+
+
+def _emphasised_passages():
+    """A passage written the way `generate` actually writes one."""
+    from policyforge.zardoz.corpus import TRUSTED, Corpus
+    from policyforge.zardoz.corpus import CorpusDocument as Doc
+    from policyforge.zardoz.retrieve import build_index
+
+    body = (
+        "# Media Standard\n\n## 4.2 Documentation Retention\n\n"
+        "IT Asset Management shall retain such documentation for **6 years** "
+        "from the date of its creation or the date it was last in effect.\n"
+        "[HIPAA 164.316(b)(1)]\n\n"
+        "## 4.3 Access Restriction\n\nAccess is restricted to authorized staff.\n"
+    )
+    corpus = Corpus(
+        documents=[Doc(doc_id="1", title="Media Standard", space="", confidence=TRUSTED, body=body)]
+    )
+    return build_index(corpus).search("how long is documentation retained?")
+
+
+def test_a_faithful_quote_that_drops_markdown_is_not_a_fabrication():
+    """A generated Standard writes "**6 years**"; a model quoting that
+    sentence into prose drops the asterisks, which is correct. Reporting it
+    as a fabricated quotation is a false positive on the one check people
+    most need to trust — and a check that cries wolf teaches them to scroll
+    past the time it catches a real invention."""
+    passages = _emphasised_passages()
+
+    _, warnings = check_answer(
+        'It says "retain such documentation for 6 years from the date of its creation" [1].',
+        passages,
+    )
+
+    assert warnings == []
+
+
+def test_a_quote_that_keeps_the_markdown_also_passes():
+    passages = _emphasised_passages()
+
+    _, warnings = check_answer(
+        'It says "retain such documentation for **6 years** from the date" [1].', passages
+    )
+
+    assert warnings == []
+
+
+def test_stripping_markup_does_not_blind_the_check_to_a_real_fabrication():
+    """The whole point of relaxing the comparison is that it must not relax
+    what the check is for."""
+    passages = _emphasised_passages()
+
+    _, warnings = check_answer(
+        'It says "retain such documentation for 3 years from the date of its creation" [1].',
+        passages,
+    )
+
+    assert warnings
+    assert "appears in no passage" in warnings[0]
+
+
+def test_prose_between_two_short_quotes_is_not_read_as_a_quotation():
+    """A short quote fails the length test, and a pattern that filtered
+    length inside the brackets would then resume at its closing mark and
+    match the ordinary prose running to the next quotation — reporting words
+    nobody quoted as a fabricated quote."""
+    passages = _emphasised_passages()
+
+    _, warnings = check_answer(
+        'Retain it for "6 years" from the date of its creation or the date it '
+        'was last in effect, and log it in the "transport log" afterwards. [1]',
+        passages,
+    )
+
+    assert warnings == []
+
+
+def test_a_long_fabricated_quote_beside_a_short_real_one_is_still_caught():
+    passages = _emphasised_passages()
+
+    _, warnings = check_answer(
+        'Retain for "6 years", and note that "every removal is authorised by '
+        'the deputy director in writing" [1].',
+        passages,
+    )
+
+    assert warnings
+    assert "deputy director" in warnings[0]
+
+
+def test_punctuation_inside_the_quotation_marks_is_not_a_fabrication():
+    """Putting the comma inside the quotes is a typographic convention, not
+    a change to what the document says."""
+    passages = _emphasised_passages()
+
+    _, warnings = check_answer(
+        'It says "retain such documentation for 6 years from the date," and then goes on. [1]',
+        passages,
+    )
+
+    assert warnings == []
+
+
+def test_trimming_punctuation_does_not_admit_a_changed_quotation():
+    passages = _emphasised_passages()
+
+    _, warnings = check_answer(
+        'It says "retain such documentation for 6 decades from the date," [1]', passages
+    )
+
+    assert warnings
+
+
+def test_a_quote_lowercased_to_fit_the_sentence_is_not_a_fabrication():
+    """A source sentence starts with a capital; a model embedding it
+    mid-answer lowercases it. That edits the sentence into its own prose, it
+    does not change what the document requires."""
+    passages = _emphasised_passages()
+
+    _, warnings = check_answer(
+        'The rule is that "it asset management shall retain such documentation '
+        'for 6 years" here. [1]',
+        passages,
+    )
+
+    assert warnings == []
+
+
+def test_an_interval_no_passage_states_is_flagged():
+    """The citation and quotation checks both work on things the model
+    marked. An invented frequency is marked as nothing at all — it sits in
+    ordinary prose beside a real citation and inherits its authority."""
+    passages = _emphasised_passages()
+
+    _, warnings = check_answer("Records are reviewed quarterly [1].", passages)
+
+    assert warnings
+    assert "quarterly" in warnings[0]
+
+
+def test_an_interval_the_passage_does_state_is_not_flagged():
+    passages = _emphasised_passages()
+
+    _, warnings = check_answer("Documentation is retained for 6 years [1].", passages)
+
+    assert warnings == []
+
+
+def test_saying_a_value_is_unset_is_not_stating_one():
+    passages = _emphasised_passages()
+
+    _, warnings = check_answer(
+        "The frequency is an unfilled placeholder and has not been set [1].", passages
+    )
+
+    assert warnings == []
+
+
+def test_echoing_the_question_s_own_value_to_deny_it_is_not_an_invention():
+    """Asked "why do we review accounts annually?", the honest answer says
+    the documents do not say annually and gives the real figure. Flagging
+    that would punish exactly the behaviour rule 5 asks for."""
+    passages = _emphasised_passages()
+
+    _, warnings = check_answer(
+        "The documents do not say annually; retention is 6 years [1].",
+        passages,
+        question="why do we review accounts annually?",
+    )
+
+    assert warnings == []
+
+
+def test_a_value_in_neither_the_question_nor_a_passage_is_still_caught():
+    passages = _emphasised_passages()
+
+    _, warnings = check_answer(
+        "Records are reviewed quarterly [1].",
+        passages,
+        question="how often are sanitization records reviewed?",
+    )
+
+    assert warnings

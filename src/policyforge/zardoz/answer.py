@@ -48,7 +48,15 @@ REFUSAL_SENTINEL = "INSUFFICIENT_CONTEXT"
 MIN_QUOTE_CHARS = 25
 
 _CITATION_RE = re.compile(r"\[(\d+)\]")
-_QUOTE_RE = re.compile(rf"[\"“]([^\"”]{{{MIN_QUOTE_CHARS},}})[\"”]")
+
+#: Quoted spans, paired left to right. Length is filtered afterwards rather
+#: than in the pattern, and that ordering is the whole point: a pattern that
+#: required the minimum length inside the brackets would fail on a short
+#: quote, resume scanning at its *closing* mark, and match the ordinary
+#: prose running to the next quotation — reporting the words between two
+#: quotes as a quotation nobody made. Consuming each pair whole makes that
+#: impossible.
+_QUOTE_RE = re.compile(r"\"([^\"]*)\"|“([^”]*)”")
 
 SYSTEM_PROMPT = """You answer questions about an organization's own \
 information-security policy documents, using only the passages you are given.
@@ -89,7 +97,15 @@ Rules, in priority order:
    are people checking one fact, not reading an essay.
 9. A passage marked `supporting` has no declared owner. You may use it, but
    say that it is unowned when you do — a requirement nobody is accountable
-   for is a different kind of fact from one a named team owns."""
+   for is a different kind of fact from one a named team owns.
+10. Square brackets in a passage mark something nobody has filled in, not a
+   value. "[Ticketing System]" is a role with no product assigned to it;
+   "[Assignment: organization-defined frequency]" is a frequency the
+   organization has not chosen. Say so — the document does not name the
+   system, the frequency has not been set — and never present a placeholder
+   as the answer, never guess what belongs there, and never illustrate it
+   with example values. Naming "quarterly or monthly" beside a real citation
+   is how a number nobody decided acquires the authority of one that was."""
 
 
 @dataclass
@@ -141,7 +157,68 @@ def build_prompt(question: str, passages: list[Passage]) -> str:
     )
 
 
-def check_answer(text: str, passages: list[Passage]) -> tuple[list[int], list[str]]:
+#: Markdown emphasis and code markers. Deliberately not lone underscores:
+#: `identity_provider` appears in this project's own prose, and mangling a
+#: word to strip italics nobody wrote would trade one false positive for
+#: another.
+_MARKUP_RE = re.compile(r"\*\*|__|\*|`")
+
+
+def _visible(text: str) -> str:
+    """The words a reader sees, with markup and line wrapping removed.
+
+    Both sides of a quote comparison go through this, so a faithful quote
+    that drops `**` is recognised as faithful and a fabricated one still is
+    not.
+    """
+    return " ".join(_MARKUP_RE.sub("", text).split())
+
+
+#: Concrete intervals and periods. Narrow on purpose: these are the values a
+#: compliance document is read for — how often a review happens, how long a
+#: record is kept — and the ones an assessor asks about. A model filling in
+#: an unstated frequency is the most consequential invention this tool can
+#: make, and unlike a fabricated quotation it arrives unquoted, so nothing
+#: else here can see it.
+_VALUE_RE = re.compile(
+    r"\b(?:"
+    r"quarterly|annually|annual|biannually|semi-annually|monthly|weekly|daily|"
+    r"fortnightly|hourly|continuously|"
+    r"\d+\s*(?:hour|day|week|month|year|business day)s?"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def ungrounded_values(text: str, haystack: str, question: str = "") -> list[str]:
+    """Intervals stated in the answer that appear in no passage.
+
+    The citation and quotation checks both work on things the model marked:
+    a `[2]` that points nowhere, a quotation that was altered. An invented
+    frequency is marked as nothing at all — it sits in ordinary prose next
+    to a real citation and inherits its authority. Asked about a requirement
+    whose frequency is an unfilled placeholder, the model named "quarterly"
+    in roughly one run in six even after being told not to, which is what
+    turned this from a prompt rule into a check.
+    """
+    asked = question.casefold()
+    found: list[str] = []
+    for match in _VALUE_RE.finditer(text):
+        value = match.group(0).casefold()
+        # A value the question itself used is not an invention. Asked "why do
+        # we review accounts annually?", the honest answer says the documents
+        # do not say annually and gives the real figure — echoing the word in
+        # order to deny it must not read as asserting it. Only a value in
+        # neither the question nor any passage came from nowhere.
+        if value in haystack or value in asked or value in found:
+            continue
+        found.append(value)
+    return found
+
+
+def check_answer(
+    text: str, passages: list[Passage], question: str = ""
+) -> tuple[list[int], list[str]]:
     """Verify an answer against the passages it was built from.
 
     Returns `(cited passage numbers, warnings)`. Everything here is a check
@@ -168,11 +245,38 @@ def check_answer(text: str, passages: list[Passage]) -> tuple[list[int], list[st
 
     # A quotation is what somebody pastes into a ticket. If it is not
     # verbatim, that is the most damaging thing this tool could emit.
-    haystack = " ".join(" ".join(p.chunk.text.split()) for p in passages)
-    for quote in _QUOTE_RE.findall(text):
-        if " ".join(quote.split()) not in haystack:
+    #
+    # Compared on visible text, with markdown emphasis removed from both
+    # sides. A generated Standard writes "retain such documentation for
+    # **6 years**", and a model quoting that sentence into prose drops the
+    # asterisks, which is the correct thing to do and was being reported as
+    # a fabricated quotation. That false positive is worse than it looks: a
+    # check that cries wolf on faithful quotes teaches people to scroll past
+    # the one time it catches a real invention.
+    # Compared case-insensitively: a model embedding a source sentence
+    # mid-answer lowercases its first letter, which is editing the
+    # sentence into its own prose rather than changing what the document
+    # requires.
+    haystack = _visible(" ".join(p.chunk.text for p in passages)).casefold()
+    for match in _QUOTE_RE.finditer(text):
+        quote = match.group(1) or match.group(2) or ""
+        if len(quote) < MIN_QUOTE_CHARS:
+            continue
+        # Trailing punctuation is trimmed from the quoted span before the
+        # comparison. Putting the comma inside the quotation marks is a
+        # typographic convention, not a change to what the document says,
+        # and "…frequency]," failing because the source has no comma is the
+        # third variant of the same false positive — each one of which
+        # teaches a reader that this warning is noise.
+        if _visible(quote).strip(" .,;:").casefold() not in haystack:
             excerpt = quote if len(quote) <= 60 else quote[:60] + "..."
             warnings.append(f'quotes text that appears in no passage: "{excerpt}"')
+
+    invented = ungrounded_values(text, haystack, question)
+    if invented:
+        warnings.append(
+            "states " + ", ".join(f"{v!r}" for v in invented[:4]) + " — no passage says so"
+        )
 
     return cited, warnings
 
@@ -219,5 +323,5 @@ def answer_question(
             refused=True,
         )
 
-    cited, warnings = check_answer(text, passages)
+    cited, warnings = check_answer(text, passages, question)
     return Answer(text=text, passages=passages, cited=cited, warnings=warnings)

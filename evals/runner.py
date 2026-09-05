@@ -37,6 +37,21 @@ DEFAULT_CASES = Path(__file__).parent / "cases.yaml"
 _CITATION_RE = re.compile(r"\[(\d+)\]")
 
 
+#: Substrings identifying a failure of the API rather than of the prompt.
+#: A dead key, an exhausted balance and a rate limit are all "this did not
+#: run", and reporting them as graded failures says the model got the answer
+#: wrong when it was never asked the question.
+_INFRASTRUCTURE = (
+    "credit balance",
+    "rate limit",
+    "authentication",
+    "api key",
+    "overloaded",
+    "connection",
+    "timeout",
+)
+
+
 @dataclass
 class Outcome:
     """What one graded run produced."""
@@ -44,6 +59,11 @@ class Outcome:
     passed: bool
     detail: str = ""
     output: str = ""
+    #: True when the request never reached a verdict. Counted apart from
+    #: failures: a run that could not happen is not evidence about the
+    #: prompt, and folding it in turns an expired card into what looks like
+    #: a regression.
+    errored: bool = False
 
 
 @dataclass
@@ -75,6 +95,15 @@ class CaseResult:
     @property
     def failures(self) -> list[Outcome]:
         return [o for o in self.outcomes if not o.passed]
+
+    @property
+    def errors(self) -> list[Outcome]:
+        return [o for o in self.outcomes if o.errored]
+
+    @property
+    def graded(self) -> int:
+        """Runs that actually reached a verdict."""
+        return self.runs - len(self.errors)
 
 
 def _missing(text: str, required) -> list[str]:
@@ -165,6 +194,19 @@ def _passages(case: dict, corpora: dict | None = None):
     """
     if "corpus" in case:
         case = {**case, "documents": (corpora or {})[case["corpus"]]}
+
+    # A document may live in a file rather than inline. The realistic cases
+    # need a whole generated Standard - bold inside requirement text, an
+    # evidence table, multi-clause source tags, unfilled placeholders - and
+    # pasting six thousand characters into YAML would make the case
+    # unreadable and the document uneditable.
+    documents = [
+        {**doc, "body": (Path(__file__).parent / doc["from_file"]).read_text(encoding="utf-8")}
+        if "from_file" in doc
+        else doc
+        for doc in case["documents"]
+    ]
+    case = {**case, "documents": documents}
     from policyforge.zardoz.corpus import TRUSTED, Corpus
     from policyforge.zardoz.corpus import CorpusDocument as Doc
     from policyforge.zardoz.retrieve import build_index
@@ -260,7 +302,7 @@ def run_answering(case: dict, provider, corpora: dict | None = None) -> Outcome:
     # citation or a quotation that is not in the source is a failure here
     # for exactly the reason it is a warning in production.
     if case.get("integrity_clean", True):
-        _, warnings = check_answer(answer.text, passages)
+        _, warnings = check_answer(answer.text, passages, case["question"])
         if warnings:
             return Outcome(False, f"integrity: {'; '.join(warnings)}", answer.text)
 
@@ -305,7 +347,9 @@ def run_case(
             else:
                 result.outcomes.append(SUITES[suite](case, provider))
         except Exception as exc:  # noqa: BLE001 - one bad case must not end the run
-            result.outcomes.append(Outcome(False, f"{type(exc).__name__}: {exc}"))
+            detail = f"{type(exc).__name__}: {exc}"
+            infrastructure = any(hint in detail.lower() for hint in _INFRASTRUCTURE)
+            result.outcomes.append(Outcome(False, detail, errored=infrastructure))
     return result
 
 
@@ -325,16 +369,23 @@ def format_report(results: list[CaseResult], *, repeat: int) -> str:
         for row in rows:
             if row.rate == 1.0:
                 continue
-            mark = "FLAKY" if row.flaky else "FAIL "
+            mark = "ERROR" if row.errors else ("FLAKY" if row.flaky else "FAIL ")
             lines.append(f"  {mark} {row.passes}/{row.runs}  {row.name}")
             for outcome in row.failures[:1]:
                 lines.append(f"        {outcome.detail}")
                 if outcome.output:
                     lines.append(f"        got: {' '.join(outcome.output.split())[:150]}")
 
-    flaky = [r for r in results if r.flaky]
-    failed = [r for r in results if r.passes == 0]
+    errored = [r for r in results if r.errors]
+    flaky = [r for r in results if r.flaky and not r.errors]
+    failed = [r for r in results if r.passes == 0 and not r.errors]
     lines += ["", f"{len(results)} case(s) x {repeat} run(s)"]
+    if errored:
+        lines += [
+            f"  {len(errored)} could not run — the API refused the request, so "
+            "these say nothing about the prompts:",
+            f"    {errored[0].errors[0].detail[:130]}",
+        ]
     if failed:
         lines.append(f"  {len(failed)} never passed")
     if flaky:

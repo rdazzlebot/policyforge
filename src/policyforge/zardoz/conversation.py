@@ -75,16 +75,22 @@ Rules:
    that?" after a question about access review cadence becomes "who owns
    the access review cadence?" — not "who owns access control", which is a
    broader subject nobody raised.
-2. Keep the user's own words wherever they still work. You are resolving
+2. Carry the subject, never the answer. "who owns that?", after being told
+   the cadence is quarterly, becomes "who owns the access review cadence?"
+   and not "who owns the quarterly access review cadence?" — the frequency
+   was the previous answer, it is already known, and putting it in a search
+   query narrows retrieval on a detail the user did not ask about. Take the
+   subject from the earlier question, not the facts from the earlier reply.
+3. Keep the user's own words wherever they still work. You are resolving
    references, not improving phrasing, and a rewrite that swaps the user's
    terms for synonyms will retrieve different documents.
-3. If the question already stands alone, return it exactly as given. Most
+4. If the question already stands alone, return it exactly as given. Most
    questions do.
-4. Never answer the question, and never add facts. You are producing a
+5. Never answer the question, and never add facts. You are producing a
    search query, and a detail you supplied rather than the user is a detail
    the documents will be searched for and may well contain — giving a
    confident answer to a question nobody asked.
-5. Keep control identifiers (AC-2, 164.312(a)(1)) exactly as written."""
+6. Keep control identifiers (AC-2, 164.312(a)(1)) exactly as written."""
 
 
 @dataclass

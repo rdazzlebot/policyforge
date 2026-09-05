@@ -252,3 +252,115 @@ def test_the_report_calls_out_flaky_cases_separately_from_failures():
     assert "FLAKY" in report
     assert "1 never passed" in report
     assert "1 flaky" in report
+
+
+# --------------------------------------------------------------------------
+# Attribution: the failure the integrity checks structurally cannot see
+# --------------------------------------------------------------------------
+
+
+def _two_passages():
+    from evals.runner import _passages
+
+    return _passages(
+        {
+            "documents": [
+                {
+                    "title": "Access Control Standard",
+                    "body": (
+                        "# A\n\n## 4.1 Account Review\n\n"
+                        "Account entitlements are recertified quarterly. [NIST AC-2]\n"
+                    ),
+                },
+                {
+                    "title": "Backup and Restore Standard",
+                    "body": (
+                        "# B\n\n## 4.1 Restore Testing\n\n"
+                        "Restore drills happen twice a year. [NIST CP-9]\n"
+                    ),
+                },
+            ],
+            "question": "x",
+            "retrieve": "account recertification and restore drill testing",
+        }
+    )
+
+
+def _rules(passages):
+    """Claims keyed to whichever passage number actually holds them."""
+    return [
+        {"claim": "quarterly", "from": "Access Control Standard"},
+        {"claim": "twice a year", "from": "Backup and Restore Standard"},
+    ]
+
+
+def _number_of(passages, title):
+    return next(n for n, p in enumerate(passages, start=1) if p.document.title == title)
+
+
+def test_a_correctly_attributed_answer_passes():
+    from evals.runner import check_attribution
+
+    passages = _two_passages()
+    access = _number_of(passages, "Access Control Standard")
+    backup = _number_of(passages, "Backup and Restore Standard")
+    text = f"Recertified quarterly [{access}]. Restores are tested twice a year [{backup}]."
+
+    assert check_attribution(text, passages, _rules(passages)) == ""
+
+
+def test_a_swapped_citation_is_caught():
+    """An answer that credits a real passage for the wrong claim passes every
+    integrity check and is wrong in the way that matters: the reader who
+    follows the citation finds nothing there."""
+    from evals.runner import check_attribution
+
+    passages = _two_passages()
+    access = _number_of(passages, "Access Control Standard")
+    backup = _number_of(passages, "Backup and Restore Standard")
+    text = f"Recertified quarterly [{backup}]. Restores are tested twice a year [{access}]."
+
+    detail = check_attribution(text, passages, _rules(passages))
+
+    assert "quarterly" in detail
+    assert "comes from" in detail
+
+
+def test_the_existing_integrity_checks_do_not_catch_a_swap():
+    """The reason this grader exists at all."""
+    from policyforge.zardoz.answer import check_answer
+
+    passages = _two_passages()
+    access = _number_of(passages, "Access Control Standard")
+    backup = _number_of(passages, "Backup and Restore Standard")
+    text = f"Recertified quarterly [{backup}]. Restores are tested twice a year [{access}]."
+
+    _, warnings = check_answer(text, passages)
+
+    assert warnings == [], "check_answer sees a valid citation and stops there"
+
+
+def test_a_claim_stated_with_no_citation_is_caught():
+    from evals.runner import check_attribution
+
+    passages = _two_passages()
+    backup = _number_of(passages, "Backup and Restore Standard")
+    text = f"Recertified quarterly. Restores are tested twice a year [{backup}]."
+
+    assert "no citation" in check_attribution(text, passages, _rules(passages))
+
+
+def test_a_claim_never_stated_is_caught():
+    from evals.runner import check_attribution
+
+    passages = _two_passages()
+
+    detail = check_attribution("Nothing relevant [1].", passages, _rules(passages))
+
+    assert "never states" in detail
+
+
+def test_no_attribution_rules_means_no_attribution_check():
+    from evals.runner import check_attribution
+
+    assert check_attribution("anything at all", _two_passages(), None) == ""

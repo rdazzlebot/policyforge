@@ -34,7 +34,7 @@ from pathlib import Path
 
 DEFAULT_CASES = Path(__file__).parent / "cases.yaml"
 
-_CITATION_RE = re.compile(r"\[\d+\]")
+_CITATION_RE = re.compile(r"\[(\d+)\]")
 
 
 @dataclass
@@ -190,6 +190,48 @@ def _passages(case: dict, corpora: dict | None = None):
     return build_index(corpus).search(case.get("retrieve", case["question"]), limit=4)
 
 
+_SENTENCE_RE = re.compile(r"[^.!?]+(?:[.!?]+|$)")
+
+
+def check_attribution(text: str, passages, attributions) -> str:
+    """Verify each claim is credited to the passage that actually supports it.
+
+    `check_answer` already proves a citation *exists* and points at a real
+    passage. It cannot tell whether it points at the right one — an answer
+    that says "restores are tested twice a year [1]" while [1] is the access
+    control standard passes every integrity check and is wrong in the way
+    that matters, because the reader who follows the citation finds nothing.
+
+    Graded from the case rather than inferred: the case names the claim and
+    the document that should be credited for it, and this checks the
+    sentence carrying that claim cites a passage from that document. A claim
+    stated with no citation at all fails here too, which is the other half
+    of the same problem.
+    """
+    by_number = dict(enumerate(passages, start=1))
+
+    for rule in attributions or []:
+        claim, source = rule["claim"].lower(), rule["from"].lower()
+        sentences = [s for s in _SENTENCE_RE.findall(text) if claim in s.lower()]
+        if not sentences:
+            return f"never states {rule['claim']!r}"
+
+        cited_titles = {
+            by_number[int(n)].document.title.lower()
+            for sentence in sentences
+            for n in _CITATION_RE.findall(sentence)
+            if int(n) in by_number
+        }
+        if not cited_titles:
+            return f"states {rule['claim']!r} with no citation"
+        if source not in cited_titles:
+            return (
+                f"credits {rule['claim']!r} to {sorted(cited_titles)}, "
+                f"but it comes from {rule['from']!r}"
+            )
+    return ""
+
+
 def run_answering(case: dict, provider, corpora: dict | None = None) -> Outcome:
     """Does the answer stay inside its passages, and refuse when it must?"""
     from policyforge.zardoz.answer import answer_question, check_answer
@@ -221,6 +263,10 @@ def run_answering(case: dict, provider, corpora: dict | None = None) -> Outcome:
         _, warnings = check_answer(answer.text, passages)
         if warnings:
             return Outcome(False, f"integrity: {'; '.join(warnings)}", answer.text)
+
+    misattributed = check_attribution(answer.text, passages, case.get("attributions"))
+    if misattributed:
+        return Outcome(False, f"attribution: {misattributed}", answer.text)
 
     return grade_text(answer.text, case)
 

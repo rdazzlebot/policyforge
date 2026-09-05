@@ -75,6 +75,25 @@ corpora:
 
         Account recertification runs annually, at the start of the fiscal year.
 
+  owned-vs-unowned-conflict:
+    - title: Access Control Standard
+      owner: IAM Engineering
+      body: |
+        # Access Control Standard
+
+        ## 4.1 Account Review
+
+        Terminated accounts are disabled within 24 hours. [NIST AC-2]
+    - title: Offboarding Runbook
+      confidence: supporting
+      owner: ""
+      body: |
+        # Offboarding Runbook
+
+        ## Steps
+
+        Terminated accounts are disabled within one week of the leaving date.
+
 routing:
   - name: orphaned-controls
     question: which controls does nobody own?
@@ -284,3 +303,57 @@ answering:
     question: should we move account reviews to monthly?
     expect_passages: 1
     must_not_contain: [I recommend, you should consider, I would suggest]
+
+  - name: each-claim-is-credited-to-the-right-passage
+    corpus: access-control
+    # Two documents, one question, and the failure this catches is invisible
+    # to every other check: an answer that cites a real passage for the wrong
+    # claim passes check_answer completely, and the reader who follows the
+    # citation finds nothing there.
+    question: how often are accounts recertified and how often are restores tested?
+    expect_passages: 2
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    attributions:
+      - claim: quarterly
+        from: Access Control Standard
+      - claim: twice a year
+        from: Backup and Restore Standard
+
+  - name: an-unowned-source-is-flagged-when-it-contradicts-an-owned-one
+    corpus: owned-vs-unowned-conflict
+    # The Standard says 24 hours; an unowned runbook says a week. Both facts
+    # belong in the answer, and which of them nobody is accountable for is
+    # the part a reader cannot recover on their own.
+    question: how quickly are terminated accounts disabled?
+    expect_passages: 2
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    must_contain: ["24 hour"]
+    must_contain_any: [week]
+    attributions:
+      - claim: 24 hour
+        from: Access Control Standard
+      - claim: week
+        from: Offboarding Runbook
+
+  - name: an-unquoted-claim-is-not-smuggled-in
+    corpus: access-control
+    # check_answer verifies quotations and citation targets. It cannot see an
+    # unquoted sentence stating something no passage supports, which is the
+    # easiest way for a plausible invention to reach a document.
+    question: describe the account recertification process end to end
+    expect_passages: 1
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    # None of these appear in any passage. Each is what a model that knows
+    # how access reviews usually work would helpfully add.
+    must_not_contain:
+      - manager approval
+      - ticket is raised
+      - 30 days
+      - revoked automatically
+      - escalated to

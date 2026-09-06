@@ -224,12 +224,25 @@ def test_a_case_whose_retrieval_does_not_match_blames_the_case():
 def test_the_shipped_cases_load_and_are_well_formed():
     cases = load_cases()
 
-    assert set(cases) == {"routing", "resolution", "expansion", "answering"}
+    assert set(cases) == {
+        "routing",
+        "resolution",
+        "expansion",
+        "answering",
+        "conversation",
+    }
     for suite, rows in cases.items():
         assert rows, f"{suite} has no cases"
         for case in rows:
             assert case.get("name"), f"unnamed case in {suite}"
-            assert case.get("question"), f"{case.get('name')} asks nothing"
+            if suite == "conversation":
+                # A conversation is a list of turns rather than one question,
+                # and a single-turn one would be an answering case wearing a
+                # different hat.
+                assert len(case.get("turns", [])) > 1, f"{case['name']} is not a chain"
+                assert all(t.get("ask") for t in case["turns"]), case["name"]
+            else:
+                assert case.get("question"), f"{case.get('name')} asks nothing"
 
 
 def test_routing_cases_include_questions_that_must_not_route():
@@ -435,3 +448,99 @@ def test_the_report_says_the_run_did_not_happen():
     assert "could not run" in report
     assert "say nothing about the prompts" in report
     assert "never passed" not in report
+
+
+# --------------------------------------------------------------------------
+# Conversations: a suite that always passes may not be checking anything
+# --------------------------------------------------------------------------
+
+
+_CHAIN_CORPUS = [
+    {
+        "title": "Access Control Standard",
+        "owner": "IAM Engineering",
+        "body": (
+            "# Access Control Standard\n\n## 4.1 Account Review\n\n"
+            "Account entitlements are recertified quarterly by the system owner.\n\n"
+            "## 4.2 Privileged Access\n\nAdmin credentials need hardware tokens.\n"
+        ),
+    },
+    {
+        "title": "Backup Standard",
+        "owner": "Platform",
+        "body": (
+            "# Backup Standard\n\n## 4.1 Restore Testing\n\n"
+            "Restore drills happen twice a year against production snapshots.\n"
+        ),
+    },
+]
+
+
+def _chain(turns):
+    """Run a conversation offline — no provider, so no API and no cost."""
+    from evals.runner import run_conversation
+
+    return run_conversation({"documents": _CHAIN_CORPUS, "turns": turns}, None)
+
+
+def test_a_conversation_whose_expectations_hold_passes():
+    outcome = _chain(
+        [
+            {"ask": "how often are accounts recertified?", "answer_contains": ["quarterly"]},
+            {"ask": "how are restore drills tested?", "answer_contains": ["twice a year"]},
+        ]
+    )
+
+    assert outcome.passed, outcome.detail
+
+
+def test_a_wrong_answer_expectation_fails_and_names_the_turn():
+    outcome = _chain(
+        [
+            {"ask": "how often are accounts recertified?", "answer_contains": ["quarterly"]},
+            {"ask": "how are restore drills tested?", "answer_contains": ["every fortnight"]},
+        ]
+    )
+
+    assert not outcome.passed
+    assert "turn 2" in outcome.detail
+
+
+def test_a_forbidden_term_in_an_answer_fails():
+    outcome = _chain(
+        [
+            {"ask": "how often are accounts recertified?", "answer_not_contains": ["quarterly"]},
+        ]
+    )
+
+    assert not outcome.passed
+    assert "turn 1" in outcome.detail
+
+
+def test_a_resolution_expectation_is_graded_on_the_rewritten_question():
+    """Offline, a follow-up is resolved by carrying the previous subject, so
+    the rewritten text is checkable without a model."""
+    outcome = _chain(
+        [
+            {"ask": "how are restore drills tested?"},
+            {"ask": "who owns that?", "resolved_contains": ["restore"]},
+        ]
+    )
+
+    assert outcome.passed, outcome.detail
+
+    wrong = _chain(
+        [
+            {"ask": "how are restore drills tested?"},
+            {"ask": "who owns that?", "resolved_contains": ["payroll"]},
+        ]
+    )
+    assert not wrong.passed
+    assert "resolved" in wrong.detail
+
+
+def test_an_expected_skill_that_did_not_run_fails():
+    outcome = _chain([{"ask": "how often are accounts recertified?", "expect_skill": "coverage"}])
+
+    assert not outcome.passed
+    assert "did not run /coverage" in outcome.detail

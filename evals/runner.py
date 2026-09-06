@@ -184,34 +184,26 @@ def run_expansion(case: dict, provider) -> Outcome:
     return grade_text(expand_query(case["question"], provider), case)
 
 
-def _passages(case: dict, corpora: dict | None = None):
-    """Build retrieval passages from the case's documents.
+def _corpus_of(case: dict, corpora: dict | None = None):
+    """The Corpus a case is about, before anything is retrieved from it.
 
-    A case either inlines its documents or names one of the shared corpora.
-    Sharing matters for the adversarial cases: several of them probe the
-    same document set from different angles, and copies that drift apart
-    would make a failure impossible to attribute to the prompt.
+    Split out because a multi-turn case cannot pre-compute passages: each
+    turn asks a different question and must retrieve for itself, which is
+    the point of driving the real shell rather than the answering function.
     """
+    from policyforge.zardoz.corpus import TRUSTED, Corpus
+    from policyforge.zardoz.corpus import CorpusDocument as Doc
+
     if "corpus" in case:
         case = {**case, "documents": (corpora or {})[case["corpus"]]}
 
-    # A document may live in a file rather than inline. The realistic cases
-    # need a whole generated Standard - bold inside requirement text, an
-    # evidence table, multi-clause source tags, unfilled placeholders - and
-    # pasting six thousand characters into YAML would make the case
-    # unreadable and the document uneditable.
     documents = [
         {**doc, "body": (Path(__file__).parent / doc["from_file"]).read_text(encoding="utf-8")}
         if "from_file" in doc
         else doc
         for doc in case["documents"]
     ]
-    case = {**case, "documents": documents}
-    from policyforge.zardoz.corpus import TRUSTED, Corpus
-    from policyforge.zardoz.corpus import CorpusDocument as Doc
-    from policyforge.zardoz.retrieve import build_index
-
-    corpus = Corpus(
+    return Corpus(
         documents=[
             Doc(
                 doc_id=str(n),
@@ -223,12 +215,21 @@ def _passages(case: dict, corpora: dict | None = None):
                 owner=doc.get("owner", "IAM Engineering"),
                 body=doc["body"],
             )
-            for n, doc in enumerate(case["documents"])
+            for n, doc in enumerate(documents)
         ]
     )
-    # Retrieval is deterministic, so the passages a case is graded on are the
-    # same every run and only the answering varies. Grading two stochastic
-    # stages at once would make a failure impossible to attribute.
+
+
+def _passages(case: dict, corpora: dict | None = None):
+    """The passages a single-turn answering case is graded on.
+
+    Retrieval is deterministic, so these are the same every run and only the
+    answering varies. Grading two stochastic stages at once would make a
+    failure impossible to attribute.
+    """
+    from policyforge.zardoz.retrieve import build_index
+
+    corpus = _corpus_of(case, corpora)
     return build_index(corpus).search(case.get("retrieve", case["question"]), limit=4)
 
 
@@ -239,7 +240,7 @@ def check_attribution(text: str, passages, attributions) -> str:
     """Verify each claim is credited to the passage that actually supports it.
 
     `check_answer` already proves a citation *exists* and points at a real
-    passage. It cannot tell whether it points at the right one — an answer
+    passage. It cannot tell whether it points at the right one â€” an answer
     that says "restores are tested twice a year [1]" while [1] is the access
     control standard passes every integrity check and is wrong in the way
     that matters, because the reader who follows the citation finds nothing.
@@ -313,11 +314,75 @@ def run_answering(case: dict, provider, corpora: dict | None = None) -> Outcome:
     return grade_text(answer.text, case)
 
 
+def run_conversation(case: dict, provider, corpora: dict | None = None) -> Outcome:
+    """Drive several turns through the real shell and grade each one.
+
+    Every other suite exercises one prompt in isolation, which is right for
+    attributing a failure and wrong for the thing a conversation actually
+    is. A chain compounds: turn three is resolved against turn two's
+    resolution, retrieved on the result, and answered from that. The
+    failures worth finding here — a subject that drifts and is never
+    reclaimed, a pronoun that binds to the wrong antecedent, an analysis
+    that hijacks the middle of a document conversation — cannot appear in a
+    single-turn case by construction.
+
+    Driven through `dispatch` rather than the underlying functions so that
+    resolution, routing and answering interact exactly as they do for a
+    person at the prompt.
+    """
+    from policyforge.zardoz.shell import ShellState, dispatch
+
+    state = ShellState(
+        corpus=_corpus_of(case, corpora),
+        provider=provider,
+        config={},
+        topics=[],
+    )
+
+    for number, turn in enumerate(case["turns"], start=1):
+        output = dispatch(turn["ask"], state)
+        recorded = state.conversation.last
+        resolved = recorded.resolved if recorded else ""
+        where = f"turn {number} ({turn['ask']!r})"
+
+        if "expect_skill" in turn:
+            ran = f"(ran /{turn['expect_skill']})" in output
+            if turn["expect_skill"] == "documents":
+                if "(ran /" in output:
+                    return Outcome(False, f"{where}: routed to an analysis", output[:200])
+            elif not ran:
+                return Outcome(False, f"{where}: did not run /{turn['expect_skill']}", output[:200])
+
+        checks = {
+            "must_contain": turn.get("resolved_contains"),
+            "must_not_contain": turn.get("resolved_not_contains"),
+            "must_contain_any": turn.get("resolved_contains_any"),
+        }
+        if any(checks.values()):
+            graded = grade_text(resolved, {k: v for k, v in checks.items() if v})
+            if not graded.passed:
+                return Outcome(False, f"{where} resolved: {graded.detail}", resolved)
+
+        answer_checks = {
+            "must_contain": turn.get("answer_contains"),
+            "must_not_contain": turn.get("answer_not_contains"),
+            "must_contain_any": turn.get("answer_contains_any"),
+        }
+        answer_checks["must_not_contain"] = turn.get("answer_not_contains")
+        if any(answer_checks.values()):
+            graded = grade_text(output, {k: v for k, v in answer_checks.items() if v})
+            if not graded.passed:
+                return Outcome(False, f"{where} answer: {graded.detail}", output[:220])
+
+    return Outcome(True, output=f"{len(case['turns'])} turns")
+
+
 SUITES = {
     "routing": run_routing,
     "resolution": run_resolution,
     "expansion": run_expansion,
     "answering": run_answering,
+    "conversation": run_conversation,
 }
 
 
@@ -342,8 +407,8 @@ def run_case(
     result = CaseResult(suite=suite, name=case.get("name") or case.get("question", "?"))
     for _ in range(repeat):
         try:
-            if suite == "answering":
-                result.outcomes.append(run_answering(case, provider, corpora))
+            if suite in ("answering", "conversation"):
+                result.outcomes.append(SUITES[suite](case, provider, corpora))
             else:
                 result.outcomes.append(SUITES[suite](case, provider))
         except Exception as exc:  # noqa: BLE001 - one bad case must not end the run

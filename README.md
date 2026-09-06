@@ -1192,6 +1192,13 @@ every case runs `--repeat` times and the report is a rate:
 routing: 11/11 cases always pass (110/110 runs, 100%)
 ```
 
+A fifth suite grades whole **conversations**, driven through the real shell
+rather than the underlying functions, because a chain compounds: turn three
+is resolved against turn two's resolution, retrieved on the result, and
+answered from that. A subject that drifts and is never reclaimed, or a
+pronoun binding to the wrong antecedent, cannot appear in a single-turn case
+by construction.
+
 Cases run against a **real generated Standard** as well as hand-written
 fixtures — bold inside requirement text, an evidence table, multi-clause
 source tags, unfilled placeholders. Every clean fixture agreed with the

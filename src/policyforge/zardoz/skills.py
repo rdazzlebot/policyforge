@@ -259,8 +259,10 @@ SKILLS: dict[str, Skill] = {
         name="check",
         summary="Problems in the content tree before anything is published.",
         answers=(
-            "whether the document tree is healthy; broken links between documents; "
-            "two files publishing to one page; documents with no owner"
+            "whether the document tree is healthy before publishing; broken links "
+            "between documents; two files publishing to one page; documents "
+            "missing required frontmatter. Not for looking up who owns a "
+            "particular document — that is a question for the documents."
         ),
         run=_check,
     ),

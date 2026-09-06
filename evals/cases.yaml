@@ -446,3 +446,95 @@ answering:
       - not stated
       - undefined
       - not set
+
+# Whole exchanges, driven through the real shell. Every other suite grades
+# one prompt in isolation, which is right for attributing a failure and
+# wrong for what a conversation is: turn three is resolved against turn
+# two's resolution, retrieved on the result, and answered from that. A
+# subject that drifts and is never reclaimed cannot appear in a single-turn
+# case by construction.
+conversation:
+  - name: a-pronoun-binds-to-the-most-recent-subject
+    corpus: access-control
+    turns:
+      - ask: how often are accounts recertified?
+        answer_contains: [quarterly]
+      - ask: how are backups tested?
+        answer_contains_any: [twice a year, restore]
+      # "that" now means backups. Binding it to the account review — the
+      # subject two turns ago — answers a question nobody asked, with a
+      # citation that makes it look deliberate.
+      - ask: who owns that?
+        resolved_contains_any: [backup, restore]
+        resolved_not_contains: [account recertification]
+
+  - name: three-follow-ups-stay-on-subject
+    corpus: access-control
+    # Each resolution is built from the last, so an error on turn two is
+    # inherited by turn three rather than corrected.
+    turns:
+      - ask: how often are accounts recertified?
+        answer_contains: [quarterly]
+      - ask: who performs it?
+        resolved_contains_any: [account, recertif]
+        answer_contains_any: [system owner]
+      - ask: and what about privileged credentials?
+        resolved_contains_any: [privileged, credential]
+        answer_contains_any: [token, multi-factor, hardware]
+
+  - name: an-analysis-mid-chain-does-not-stick
+    corpus: access-control
+    # Routing is per-question. Having run an analysis once, the next
+    # document question must go back to the documents.
+    turns:
+      - ask: how often are accounts recertified?
+        expect_skill: documents
+      - ask: which controls does nobody own?
+        expect_skill: coverage
+      - ask: how are backups tested?
+        expect_skill: documents
+        answer_contains_any: [twice a year, restore]
+
+  - name: a-standalone-question-mid-chain-is-left-alone
+    corpus: access-control
+    # The commonest real failure is the opposite of an unresolved pronoun:
+    # a perfectly clear question quietly rewritten against whatever preceded
+    # it, so the user is answered on a subject they had moved off.
+    turns:
+      - ask: how often are accounts recertified?
+        answer_contains: [quarterly]
+      - ask: how are restore drills tested against production snapshots?
+        resolved_not_contains: [account, recertif]
+        answer_contains_any: [twice a year]
+
+  - name: an-earlier-subject-can-be-reclaimed-by-naming-it
+    corpus: access-control
+    # Only the last two turns reach the rewriter, so by turn four the
+    # account review is outside the window entirely. Naming a subject
+    # explicitly has to work anyway — otherwise the window silently caps how
+    # long a conversation can be about anything.
+    turns:
+      - ask: how often are accounts recertified?
+        answer_contains: [quarterly]
+      - ask: how are backups tested?
+        answer_contains_any: [twice a year, restore]
+      - ask: what do the drills run against?
+        answer_contains_any: [production, snapshot]
+      - ask: and the account recertification — who performs it?
+        answer_contains_any: [system owner]
+        answer_not_contains: [restore drill]
+
+  - name: a-follow-up-after-an-analysis-does-not-bind-backwards
+    corpus: access-control
+    # An analysis turn records no answer text, so the rewriter sees a
+    # question with nothing under it. The failure to avoid is reaching past
+    # it to the document subject two turns back and answering that instead,
+    # which would look authoritative and be about the wrong thing.
+    turns:
+      - ask: how often are accounts recertified?
+        expect_skill: documents
+      - ask: which controls does nobody own?
+        expect_skill: coverage
+      - ask: who owns those?
+        resolved_not_contains: [recertif, quarterly]
+

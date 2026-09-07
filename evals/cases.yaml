@@ -296,6 +296,10 @@ answering:
     expect_passages: 2
     expect_refusal: false
     must_cite: true
+    # Both, not either. An answer that cites only the Standard has picked a
+    # side, and picking a side reads exactly like a straight answer to
+    # somebody who never learns the Procedure says something else.
+    must_cite_all: true
     must_contain_any: [quarterly]
     must_contain: [annual]
 

@@ -313,6 +313,20 @@ def run_answering(case: dict, provider, corpora: dict | None = None) -> Outcome:
     if case.get("must_cite", True) and not _CITATION_RE.search(answer.text):
         return Outcome(False, "no citation marker", answer.text)
 
+    # Some answers are only answers if they credit every passage. A
+    # contradiction reported from one of the two documents that disagree is
+    # not a contradiction reported — it is the model having quietly picked
+    # one, which reads exactly like a straight answer.
+    if case.get("must_cite_all"):
+        uncited = [n for n in range(1, len(passages) + 1) if f"[{n}]" not in answer.text]
+        if uncited:
+            return Outcome(
+                False,
+                f"cites no passage {', '.join(f'[{n}]' for n in uncited)} of "
+                f"{len(passages)} supplied",
+                answer.text,
+            )
+
     # The project's own integrity checks, run as a grader. A fabricated
     # citation or a quotation that is not in the source is a failure here
     # for exactly the reason it is a warning in production.

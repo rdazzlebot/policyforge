@@ -631,3 +631,30 @@ def test_the_cases_that_never_reach_a_model_are_the_ones_we_know_about():
         and not (case.get("must_contain") or case.get("must_contain_any"))
     }
     assert vacuous == set()
+
+
+def test_must_cite_all_fails_when_a_passage_is_left_uncited():
+    """A contradiction credited to one of the two documents that disagree is
+    the model having quietly picked a side, which reads exactly like a
+    straight answer."""
+    case = {
+        "documents": [
+            {"title": "Standard", "body": "# Standard\n\n## 4.1\n\nReviews are quarterly.\n"},
+            {"title": "Procedure", "body": "# Procedure\n\n## 3\n\nReviews are annual.\n"},
+        ],
+        "question": "how often are reviews?",
+        "retrieve": "reviews quarterly annual",
+        "must_cite_all": True,
+        "integrity_clean": False,
+    }
+
+    picked_one = run_case("answering", case, Scripted("Reviews are quarterly [1]."))
+    cited_both = run_case(
+        "answering",
+        case,
+        Scripted("The Standard says quarterly [1]; the Procedure says annual [2]."),
+    )
+
+    assert picked_one.rate == 0.0
+    assert "cites no passage [2]" in picked_one.failures[0].detail
+    assert cited_both.rate == 1.0, [f.detail for f in cited_both.failures]

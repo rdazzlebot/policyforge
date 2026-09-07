@@ -105,7 +105,11 @@ Rules, in priority order:
    system, the frequency has not been set — and never present a placeholder
    as the answer, never guess what belongs there, and never illustrate it
    with example values. Naming "quarterly or monthly" beside a real citation
-   is how a number nobody decided acquires the authority of one that was."""
+   is how a number nobody decided acquires the authority of one that was.
+   This holds when you are saying the value is *absent*, which is the case
+   that looks safe and is not: "no frequency has been set (e.g. annual,
+   quarterly)" still puts two frequencies next to a citation, and the reader
+   skimming for a frequency finds them. Name no candidate values at all."""
 
 
 @dataclass

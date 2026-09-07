@@ -569,3 +569,20 @@ def test_a_value_in_neither_the_question_nor_a_passage_is_still_caught():
     )
 
     assert warnings
+
+
+def test_an_empty_answer_is_reported_as_empty_not_as_uncited():
+    """ "Makes claims without citing any passage" is the wrong finding for
+    text that makes no claims. An empty reply is still a problem — a
+    truncation, or a provider returning nothing — and naming the right one
+    is what lets a reader act on it."""
+    cited, warnings = check_answer("", _passages())
+
+    assert cited == []
+    assert warnings == ["the model returned an empty answer"]
+
+
+def test_an_uncited_answer_that_does_make_claims_still_says_so():
+    _, warnings = check_answer("Accounts are reviewed quarterly.", _passages())
+
+    assert "makes claims without citing any passage" in warnings

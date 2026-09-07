@@ -245,7 +245,15 @@ def check_answer(
         )
 
     if not cited:
-        warnings.append("makes claims without citing any passage")
+        # An answer with no text makes no claims, so "makes claims without
+        # citing" is the wrong finding — but an empty reply is still a
+        # problem, and reporting the accurate one is what lets a reader act
+        # on it. A truncated or refused-at-the-API reply reaches here.
+        warnings.append(
+            "makes claims without citing any passage"
+            if text.strip()
+            else "the model returned an empty answer"
+        )
 
     # A quotation is what somebody pastes into a ticket. If it is not
     # verbatim, that is the most damaging thing this tool could emit.

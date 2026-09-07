@@ -1268,6 +1268,19 @@ rule written twice, jointly load-bearing, and single-rule mutation can only
 report them as dead weight; `--pairs` is what tells those two situations
 apart. That question is now a case.
 
+The third answer is that the sweep itself was wrong. The answering
+prompt's refusal rule reported as unguarded because the same instruction
+sits on the user turn as well as in rule 3, so deleting the rule left the
+model told anyway and every refusal case stayed green. Delete both and
+five of the six fail. Anything a prompt says twice is invisible to a
+mutation that can only reach one copy, so the sweep now pairs each
+surviving rule with blanking that companion text — and subtracts what the
+companion breaks on its own, because without that a rule gets credited for
+failures it had nothing to do with.
+
+That last correction is the same discipline as the baseline: a case counts
+as guarding a rule only when removing *that rule* is what broke it.
+
 Deliberately outside `scripts/check.py`: these cost money and need network,
 and a gate people can't run offline is a gate people stop running.
 

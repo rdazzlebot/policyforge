@@ -107,6 +107,24 @@ def _sweep_pairs(unguarded, plan, provider, corpora, repeat):
         if companion:
             companion_module = importlib.import_module(companion[0])
             companion_text = getattr(companion_module, companion[1])
+
+            # What the companion breaks on its own, with every rule intact.
+            # Without subtracting this, a rule is credited for failures the
+            # companion caused by itself: the answering prompt's rule about
+            # contradictions was credited by a refusal case that fails
+            # whenever the companion goes, whichever rule went with it.
+            setattr(companion_module, companion[1], "")
+            try:
+                alone = _run(suite, cases, provider, corpora, repeat)
+            finally:
+                setattr(companion_module, companion[1], companion_text)
+            confounded = {n for n, r in alone.items() if r.rate < 1.0}
+            if confounded:
+                print(
+                    f"  {companion[1]} alone breaks {len(confounded)}: "
+                    f"{', '.join(sorted(confounded)[:3])} — discounted below"
+                )
+
             for number, _ in pending:
                 setattr(module, attribute, without_rule(prompt, number))
                 setattr(companion_module, companion[1], "")
@@ -115,7 +133,9 @@ def _sweep_pairs(unguarded, plan, provider, corpora, repeat):
                 finally:
                     setattr(module, attribute, prompt)
                     setattr(companion_module, companion[1], companion_text)
-                caught = sorted(n for n, r in results.items() if r.rate < 1.0)
+                caught = sorted(
+                    n for n, r in results.items() if r.rate < 1.0 and n not in confounded
+                )
                 if caught:
                     joint.add(number)
                     print(

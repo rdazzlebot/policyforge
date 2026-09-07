@@ -141,22 +141,208 @@ _STOPWORD_TEXT = """
 _STOPWORDS = frozenset(_STOPWORD_TEXT.split())
 
 
+# --------------------------------------------------------------------------
+# Stemming
+#
+# Porter (1980), written out rather than depended on, and validated in the
+# tests against the vocabulary Porter published with it.
+#
+# Folding plurals alone left every noun/verb pair in a compliance vocabulary
+# failing to meet: "recertification" against a Standard that says
+# "recertified", "approval" against "approved", "sanitization" against
+# "sanitized" -- eleven of eleven common pairs missed.
+#
+# That is worse than a missed hit. Query expansion already recovers a
+# question that finds *nothing*, so a total miss is handled. What nothing
+# could see is a partial one: when a question matches one document and
+# misses another that contradicts it, retrieval has found something,
+# expansion never fires, and the answer is confident and one-sided.
+# Measured rather than imagined -- "how often is account recertification
+# performed?" returned the Procedure saying annually and never reached the
+# Standard saying quarterly.
+#
+# Aggressive by design. "security" and "secure" collapse to one stem, and so
+# do "management" and "manage"; that is the point rather than a cost.
+# --------------------------------------------------------------------------
+
+_VOWELS = "aeiou"
+
+
+def _is_consonant(word: str, i: int) -> bool:
+    letter = word[i]
+    if letter in _VOWELS:
+        return False
+    if letter == "y":
+        return i == 0 or not _is_consonant(word, i - 1)
+    return True
+
+
+def _measure(stem: str) -> int:
+    """The count of vowel-consonant pairs in [C](VC)^m[V]."""
+    count = 0
+    i = 0
+    while i < len(stem) and _is_consonant(stem, i):
+        i += 1
+    while i < len(stem):
+        while i < len(stem) and not _is_consonant(stem, i):
+            i += 1
+        if i >= len(stem):
+            break
+        count += 1
+        while i < len(stem) and _is_consonant(stem, i):
+            i += 1
+    return count
+
+
+def _has_vowel(stem: str) -> bool:
+    return any(not _is_consonant(stem, i) for i in range(len(stem)))
+
+
+def _double_consonant(word: str) -> bool:
+    return len(word) >= 2 and word[-1] == word[-2] and _is_consonant(word, len(word) - 1)
+
+
+def _cvc(word: str) -> bool:
+    """Consonant-vowel-consonant, where the last is not w, x or y."""
+    if len(word) < 3:
+        return False
+    if not (
+        _is_consonant(word, len(word) - 1)
+        and not _is_consonant(word, len(word) - 2)
+        and _is_consonant(word, len(word) - 3)
+    ):
+        return False
+    return word[-1] not in "wxy"
+
+
+_STEP2 = [
+    ("ational", "ate"),
+    ("tional", "tion"),
+    ("enci", "ence"),
+    ("anci", "ance"),
+    ("izer", "ize"),
+    ("abli", "able"),
+    ("alli", "al"),
+    ("entli", "ent"),
+    ("eli", "e"),
+    ("ousli", "ous"),
+    ("ization", "ize"),
+    ("ation", "ate"),
+    ("ator", "ate"),
+    ("alism", "al"),
+    ("iveness", "ive"),
+    ("fulness", "ful"),
+    ("ousness", "ous"),
+    ("aliti", "al"),
+    ("iviti", "ive"),
+    ("biliti", "ble"),
+]
+_STEP3 = [
+    ("icate", "ic"),
+    ("ative", ""),
+    ("alize", "al"),
+    ("iciti", "ic"),
+    ("ical", "ic"),
+    ("ful", ""),
+    ("ness", ""),
+]
+_STEP4 = [
+    "al",
+    "ance",
+    "ence",
+    "er",
+    "ic",
+    "able",
+    "ible",
+    "ant",
+    "ement",
+    "ment",
+    "ent",
+    "ou",
+    "ism",
+    "ate",
+    "iti",
+    "ous",
+    "ive",
+    "ize",
+]
+
+
+def _stem(word: str) -> str:
+    if len(word) <= 2:
+        return word
+
+    for suffix, replacement in (("sses", "ss"), ("ies", "i"), ("ss", "ss"), ("s", "")):
+        if word.endswith(suffix):
+            word = word[: len(word) - len(suffix)] + replacement
+            break
+
+    stripped = False
+    if word.endswith("eed"):
+        if _measure(word[:-3]) > 0:
+            word = word[:-1]
+    elif word.endswith("ed") and _has_vowel(word[:-2]):
+        word, stripped = word[:-2], True
+    elif word.endswith("ing") and _has_vowel(word[:-3]):
+        word, stripped = word[:-3], True
+    if stripped:
+        if word.endswith(("at", "bl", "iz")):
+            word += "e"
+        elif _double_consonant(word) and word[-1] not in "lsz":
+            word = word[:-1]
+        elif _measure(word) == 1 and _cvc(word):
+            word += "e"
+
+    if word.endswith("y") and _has_vowel(word[:-1]):
+        word = word[:-1] + "i"
+
+    for table in (_STEP2, _STEP3):
+        for suffix, replacement in table:
+            if word.endswith(suffix):
+                stem = word[: len(word) - len(suffix)]
+                if _measure(stem) > 0:
+                    word = stem + replacement
+                break
+
+    for suffix in sorted(_STEP4, key=len, reverse=True):
+        if word.endswith(suffix):
+            stem = word[: len(word) - len(suffix)]
+            if _measure(stem) > 1:
+                word = stem
+            break
+    else:
+        if word.endswith("ion"):
+            stem = word[:-3]
+            if _measure(stem) > 1 and stem.endswith(("s", "t")):
+                word = stem
+
+    if word.endswith("e"):
+        measure = _measure(word[:-1])
+        if measure > 1 or (measure == 1 and not _cvc(word[:-1])):
+            word = word[:-1]
+    if _measure(word) > 1 and _double_consonant(word) and word.endswith("l"):
+        word = word[:-1]
+
+    # Beyond Porter, for a family it leaves split. Step 1c folds y to i, so
+    # "classified" ends at "classifi" while "classification" reduces to
+    # "classif" -- the noun and the verb of one idea still miss, and
+    # "recertification" against "recertified" is the query that started all
+    # of this. Only after f, which is where that family lives: certify,
+    # classify, verify, identify, notify, specify, qualify. The published
+    # results for "poni" and "happi" are untouched.
+    if len(word) > 4 and word.endswith("fi"):
+        word = word[:-1]
+    return word
+
+
 def normalize(token: str) -> str:
-    """Fold the plural forms that make a query miss its own document.
+    """Fold a token to the stem it shares with its other forms.
 
-    "reviews" in the question and "review" in the standard should meet.
-    Only the trailing `s` is stripped, and only where it is unlikely to be
-    part of the word — `access`, `status` and `analysis` all end in `s` and
-    none of them is a plural, so stripping blindly would turn the most
-    common term in the corpus into a token that matches nothing.
-
-    A real stemmer would do better. It would also be a dependency and a
-    source of surprises ("policies" -> "polici"), and this covers the case
-    that actually shows up.
+    Applied to documents and questions alike, so the folding is symmetric
+    and a question meets its own document whichever form each happens to
+    use.
     """
-    if len(token) > 3 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
-        return token[:-1]
-    return token
+    return _stem(token)
 
 
 def _strip_control_ids(text: str) -> str:
@@ -225,6 +411,21 @@ def term_groups(text: str) -> list[tuple[str, ...]]:
         expansion = tuple(word for word in ACRONYMS.get(raw, ()) if word not in _STOPWORDS)
         groups.append((normalize(raw), *expansion))
     return groups
+
+
+def surface_forms(text: str) -> dict[str, str]:
+    """Stem to the word `text` actually used for it.
+
+    Only for reporting. First occurrence wins, so a question that says
+    "reviews" once and "reviewed" later is explained with the word it led
+    with rather than whichever happened to be scanned last.
+    """
+    forms: dict[str, str] = {}
+    for raw in _TOKEN_RE.findall(_strip_control_ids(text).lower()):
+        if raw in _STOPWORDS or len(raw) < 2:
+            continue
+        forms.setdefault(normalize(raw), raw)
+    return forms
 
 
 def tokenize(text: str) -> list[str]:
@@ -524,6 +725,13 @@ class RetrievalIndex:
         groups = term_groups(query)
         query_terms = {term for group in groups for term in group}
         expansion_terms = {term for group in term_groups(expansion) for term in group}
+
+        # Matching happens on stems; the explanation is shown to a person.
+        # A passage that says it matched "restor" and "privileg" has stopped
+        # explaining itself, and being able to name which terms hit is the
+        # reason this scorer was chosen over embeddings in the first place.
+        surface = surface_forms(query)
+        surface.update(surface_forms(expansion))
         expansion_terms -= query_terms
         query_controls = {c.upper() for c in extract_control_ids(query)}
         if not query_terms and not query_controls:
@@ -599,9 +807,9 @@ class RetrievalIndex:
                         chunk=entry.chunk,
                         document=entry.document,
                         score=score,
-                        matched_terms=sorted(matched),
+                        matched_terms=sorted(surface.get(t, t) for t in matched),
                         matched_controls=controls,
-                        matched_expansions=sorted(expanded),
+                        matched_expansions=sorted(surface.get(t, t) for t in expanded),
                     )
                 )
 

@@ -13,6 +13,8 @@ question, and obliges.
 
 from __future__ import annotations
 
+import pytest
+
 from policyforge.zardoz.corpus import CONFLUENCE, MARKDOWN, SUPPORTING, TRUSTED, Corpus
 from policyforge.zardoz.corpus import CorpusDocument as Doc
 from policyforge.zardoz.retrieve import (
@@ -108,25 +110,51 @@ def test_plurals_fold_so_a_question_meets_its_own_document():
     assert normalize("accounts") == "account"
 
 
-def test_words_that_merely_end_in_s_are_left_alone():
-    """`access` is the most common term in this corpus. Stripping it to
-    `acces` would make it match nothing at all."""
-    for word in ("access", "status", "analysis"):
-        assert normalize(word) == word
+def test_a_word_that_merely_ends_in_s_is_not_treated_as_a_plural():
+    """`access` is the most common term in this corpus, and `acces` would
+    match nothing. Porter keeps it because it ends in a double s."""
+    assert normalize("access") == "access"
+
+
+def test_folding_is_symmetric_rather_than_pretty():
+    """The stems are not words, and do not need to be. What matters is that
+    every form of one idea lands on the same one, since the same folding is
+    applied to the question and to the document.
+
+    `status` becomes `statu` and `policy` becomes `polici`, which is the
+    surprise the old plural-only rule was written to avoid. It was the wrong
+    thing to avoid: `policy` and `policies` did not meet under that rule,
+    and they do under this one."""
+    for word, inflections in [
+        ("policy", ["policies"]),
+        ("status", ["status"]),
+        ("review", ["reviews", "reviewed", "reviewing"]),
+        ("recertify", ["recertified", "recertification"]),
+        ("approve", ["approved", "approval"]),
+    ]:
+        stems = {normalize(form) for form in [word, *inflections]}
+        assert len(stems) == 1, f"{word}: {stems}"
+
+
+def test_distinct_ideas_keep_distinct_stems():
+    """Aggressive folding is only safe while words that mean different
+    things stay apart."""
+    for a, b in [("access", "audit"), ("policy", "procedure"), ("backup", "badge")]:
+        assert normalize(a) != normalize(b)
 
 
 def test_function_words_are_dropped_but_domain_words_are_not():
     """Domain noise is left to IDF: "policy" is worthless in a corpus of
     policies and meaningful in one query out of fifty, and hard-coding it
     into a stoplist breaks that query silently."""
-    assert tokenize("what is the policy") == ["policy"]
+    assert tokenize("what is the policy") == [normalize("policy")]
 
 
 def test_identifiers_never_become_bare_terms():
     """`MP-6` used to tokenize to `mp`, which matched a section citing
     `MP-1` — a claimed match on a control the document does not mention."""
     assert "mp" not in tokenize("what does MP-6 require?")
-    assert tokenize("what does MP-6 require?") == ["require"]
+    assert tokenize("what does MP-6 require?") == [normalize("require")]
 
 
 def test_control_identifiers_are_extracted_from_prose_and_from_tags():
@@ -553,6 +581,36 @@ owner. [NIST AC-6]
 """
 
 
+def _one_passage_corpus():
+    """A corpus big enough that one passage is a sliver of it.
+
+    The size matters as much as the hit count. Thinness is judged against
+    the corpus, so a document set with only a section or two never counts as
+    thin however few passages a question reaches.
+    """
+    sections = "\n".join(
+        f"## 4.{n} Section {n}\n\nUnrelated requirement number {n} about audit logging.\n"
+        for n in range(1, 10)
+    )
+    return Corpus(
+        documents=[
+            Doc(
+                doc_id="standards-backup",
+                title="Backup Standard",
+                space="",
+                confidence=TRUSTED,
+                source=MARKDOWN,
+                owner="Platform",
+                body=(
+                    "# Backup Standard\n\n"
+                    "## 3.1 Tape Retention\n\n"
+                    "Backup tapes are kept for seven years. [NIST CP-9]\n\n" + sections
+                ),
+            )
+        ]
+    )
+
+
 def _paraphrase_corpus():
     return Corpus(
         documents=[
@@ -696,16 +754,61 @@ def test_the_shell_does_not_expand_when_the_exact_words_already_worked():
             self.systems.append(system)
             return R("documents" if "rewrite" in system.lower() else "Quarterly. [1]")
 
-    provider = Recording()
-    dispatch(
-        "privileged recertification cadence",
-        ShellState(corpus=_paraphrase_corpus(), provider=provider),
+    corpus = _paraphrase_corpus()
+    query = "privileged recertification cadence"
+    index = build_index(corpus)
+    # One passage out of two chunks is the corpus, not a sliver of it, so
+    # there is nothing a second opinion on vocabulary could add.
+    assert len(index.search(query, limit=4)) * 4 > len(index), (
+        "this case only says anything while the result is good coverage"
     )
+
+    provider = Recording()
+    dispatch(query, ShellState(corpus=corpus, provider=provider))
 
     # Asserted on which prompts ran rather than on how many, so adding a
     # routing or resolution call does not look like an expansion.
     assert not any("vocabulary" in system.lower() for system in provider.systems), (
         "the exact words worked, so no expansion should have been requested"
+    )
+
+
+def test_the_shell_does_expand_when_the_exact_words_found_only_one_passage():
+    """A single passage is the shape that hides a disagreement: the document
+    that contradicts it is simply absent, and nothing in the answer can say
+    so. Measured on the real corpus — asked how often account
+    recertification happens, retrieval returned the Procedure saying
+    annually and never reached the Standard saying quarterly."""
+    from dataclasses import dataclass as _dataclass
+
+    from policyforge.zardoz.shell import ShellState, dispatch
+
+    @_dataclass
+    class R:
+        text: str
+        model: str = "fake"
+
+    class Recording:
+        def __init__(self):
+            self.systems = []
+
+        def generate(self, *, system, **kwargs):
+            self.systems.append(system)
+            return R("documents" if "rewrite" in system.lower() else "Quarterly. [1]")
+
+    corpus = _one_passage_corpus()
+    query = "how long are backup tapes kept?"
+    index = build_index(corpus)
+    passages = index.search(query, limit=4)
+    assert len(passages) == 1 and len(passages) * 4 <= len(index), (
+        f"the case assumes a sliver: {len(passages)} of {len(index)} chunks"
+    )
+
+    provider = Recording()
+    dispatch(query, ShellState(corpus=corpus, provider=provider))
+
+    assert any("vocabulary" in system.lower() for system in provider.systems), (
+        "one passage is thin, so a second look at the vocabulary was worth a call"
     )
 
 
@@ -727,3 +830,157 @@ def test_a_mostly_sentence_shaped_reply_is_still_refused_whole():
 
     assert parse_expansion("Certainly, here are the terms a standard would use") == []
     assert parse_expansion("The documents refer to privileged access review cadence") == []
+
+
+# --------------------------------------------------------------------------
+# The stemmer
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "word, expected",
+    [
+        ("caresses", "caress"),
+        ("ponies", "poni"),
+        ("ties", "ti"),
+        ("cats", "cat"),
+        ("feed", "feed"),
+        ("agreed", "agre"),
+        ("plastered", "plaster"),
+        ("motoring", "motor"),
+        ("hopping", "hop"),
+        ("failing", "fail"),
+        ("filing", "file"),
+        ("happy", "happi"),
+        ("relational", "relat"),
+        ("conditional", "condit"),
+        ("rational", "ration"),
+        ("callousness", "callous"),
+        ("hopeful", "hope"),
+        ("goodness", "good"),
+        ("revival", "reviv"),
+        ("allowance", "allow"),
+        ("adjustment", "adjust"),
+        ("adoption", "adopt"),
+        ("communism", "commun"),
+        ("activate", "activ"),
+        ("effective", "effect"),
+        ("roll", "roll"),
+    ],
+)
+def test_the_stemmer_agrees_with_porters_published_vocabulary(word, expected):
+    """Written out rather than depended on, so it is worth proving it is
+    actually the algorithm and not an approximation of it. These are Porter's
+    own worked examples."""
+    assert normalize(word) == expected
+
+
+@pytest.mark.parametrize(
+    "noun, verb",
+    [
+        ("recertification", "recertified"),
+        ("review", "reviewed"),
+        ("authorization", "authorized"),
+        ("encryption", "encrypted"),
+        ("approval", "approved"),
+        ("disposal", "disposed"),
+        ("termination", "terminated"),
+        ("sanitization", "sanitized"),
+        ("monitoring", "monitored"),
+        ("classification", "classified"),
+    ],
+)
+def test_the_noun_and_the_verb_of_one_idea_meet(noun, verb):
+    """Every one of these missed under plural-only folding. The question
+    asks with the noun and the document is written with the verb, or the
+    other way round, and neither finds the other."""
+    assert normalize(noun) == normalize(verb)
+
+
+def test_an_irregular_pair_is_still_missed_and_that_is_expected():
+    """No suffix stripper folds retention onto retain. Recorded so the gap
+    is known rather than discovered again — expansion is what covers it."""
+    assert normalize("retention") != normalize("retain")
+
+
+def test_the_ify_family_is_folded_beyond_porter():
+    """Porter's step 1c turns "classified" into "classifi" while
+    "classification" reduces to "classif". Only after f, so Porter's own
+    results for words like "ponies" are untouched."""
+    assert normalize("classification") == normalize("classified")
+    assert normalize("ponies") == "poni"
+
+
+def test_a_passage_explains_itself_in_the_words_that_were_typed():
+    """Matching happens on stems and the explanation is read by a person. A
+    passage reporting that it matched "restor" and "privileg" has stopped
+    explaining itself, and naming which terms hit is why this scorer was
+    chosen over embeddings."""
+    from policyforge.zardoz.retrieve import surface_forms
+
+    forms = surface_forms("how often are privileged accounts reviewed?")
+
+    assert forms[normalize("reviewed")] == "reviewed"
+    assert forms[normalize("privileged")] == "privileged"
+
+
+def test_the_natural_question_reaches_both_sides_of_a_contradiction():
+    """The failure that motivated stemming, pinned.
+
+    Two documents disagree about how often accounts are recertified. The
+    Standard writes it as "recertified", the Procedure as "recertification",
+    and under plural-only folding a question using either word reached only
+    one of them — so the answer was confident, cited, and half the truth,
+    with nothing to indicate the other half existed.
+
+    Retrieval finding *something* is also why nothing recovered: query
+    expansion only ran on a total miss.
+    """
+    standard = Doc(
+        doc_id="standards-access-control",
+        title="Access Control Standard",
+        space="",
+        confidence=TRUSTED,
+        source=MARKDOWN,
+        owner="IAM Engineering",
+        body=(
+            "# Access Control Standard\n\n## 4.1 Account Review\n\n"
+            "Account entitlements are recertified quarterly. [NIST AC-2]\n"
+        ),
+    )
+    procedure = Doc(
+        doc_id="procedures-access-review",
+        title="Access Review Procedure",
+        space="",
+        confidence=TRUSTED,
+        source=MARKDOWN,
+        owner="IAM Engineering",
+        body=(
+            "# Access Review Procedure\n\n## 3. Cadence\n\n"
+            "Account recertification runs annually, at the start of the fiscal year.\n"
+        ),
+    )
+    # Enough other material that the specificity gate can tell a term about
+    # recertification from one about everything. In a corpus of two chunks
+    # every shared term is in 100% of it and the gate has nothing to work
+    # with — a small-corpus degeneracy, not a property of the question.
+    filler = [
+        Doc(
+            doc_id=f"filler-{n}",
+            title=f"Filler Standard {n}",
+            space="",
+            confidence=TRUSTED,
+            source=MARKDOWN,
+            body=f"# Filler Standard {n}\n\n## 4.1 Scope\n\nUnrelated logging duty {n}.\n",
+        )
+        for n in range(6)
+    ]
+
+    passages = build_index(Corpus(documents=[standard, procedure, *filler])).search(
+        "how often is account recertification performed?", limit=4
+    )
+
+    assert {p.document.title for p in passages} == {
+        "Access Control Standard",
+        "Access Review Procedure",
+    }, "a question using one form must reach the document written in the other"

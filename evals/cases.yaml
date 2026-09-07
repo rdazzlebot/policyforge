@@ -143,6 +143,21 @@ routing:
     question: what does AC-2 require?
     expect: documents
 
+  - name: a-topic-question-that-sounds-like-coverage
+    # Found by mutation testing, not by imagination. The word "covering"
+    # pulls hard toward the coverage analysis, which reports which controls
+    # nobody owns — a different question that would be answered confidently
+    # and uselessly. What is actually being asked is whether a document on
+    # the subject exists, which is the documents path.
+    #
+    # This is the only case that fails when the prompt's two
+    # default-to-documents rules are both removed, and it fails 4 times out
+    # of 4. Removing either rule alone changes nothing, because each states
+    # what the other states; they are a redundant pair that is jointly
+    # load-bearing, and no single-rule mutation can show it.
+    question: do we have anything covering media sanitization?
+    expect: documents
+
 resolution:
   - name: pronoun-carries-the-subject
     history:
@@ -165,12 +180,59 @@ resolution:
     must_contain_any: [backup, restore]
 
   - name: standalone-is-left-alone
+    # This one never reaches the rewriter: looks_like_a_follow_up() sees
+    # three content words and no anaphora and returns early, so what is
+    # being tested is that predicate, not the prompt. Worth keeping, and
+    # worth not mistaking for evidence about the rewriter — deleting the
+    # prompt rule about leaving standalone questions alone does not change
+    # this case's verdict, because no model is ever asked.
     history:
       - q: what is our access review cadence?
         a: Quarterly. [1]
     question: what is our password rotation policy?
     rewritten: false
     must_contain: [password]
+
+  - name: a-standalone-question-that-does-reach-the-rewriter
+    # "their" is an anaphora word, so this one does go to the model — and
+    # must come back untouched. The rewriter is being handed a question
+    # that needs nothing done to it, next to a conversation about an
+    # unrelated subject, and the failure is that it helpfully welds the two
+    # together and retrieves for a question nobody asked.
+    history:
+      - q: what is our access review cadence?
+        a: Quarterly, by the system owner. [1]
+    question: which teams have their own runbooks?
+    rewritten: false
+    must_not_contain: [access review, cadence, quarterly]
+
+  - name: a-control-identifier-survives-the-rewrite
+    # Identifier truncation has been a real bug in this codebase more than
+    # once — a trailing word boundary in a regex quietly turned AC-6(5)
+    # into AC-6, which is a different control with different requirements.
+    # A rewriter that does the same thing loses the enhancement, retrieval
+    # matches the parent control, and the answer is about the wrong
+    # requirement while looking entirely correct.
+    history:
+      - q: what does AC-6(5) require?
+        a: Privileged accounts are restricted to named administrators. [1]
+    question: who owns that?
+    rewritten: true
+    must_contain: ["AC-6(5)"]
+
+  - name: the-users-own-words-survive
+    # The rewriter resolves references; it does not improve phrasing. A
+    # rewrite that swaps the user's "laptop wipes" for the register a
+    # policy would use searches for different documents than the user asked
+    # about — and expansion already exists to bridge that gap, on a miss,
+    # where it is visible.
+    history:
+      - q: how do we handle laptop wipes when someone leaves?
+        a: Devices are wiped before reissue. [1]
+    question: who signs off on that?
+    rewritten: true
+    must_contain_any: [wipe, laptop]
+    must_not_contain: [sanitization, sanitisation, decommission]
 
   - name: no-invented-detail
     history:
@@ -545,6 +607,31 @@ conversation:
       - ask: who owns that?
         resolved_contains_any: [backup, restore]
         resolved_not_contains: [account recertification]
+
+  - name: an-evaluative-follow-up-carries-the-answer-on-purpose
+    corpus: access-control
+    # "is that enough?" refers to the *answer*, not to the subject, so
+    # carrying "quarterly" into the query is right here — even though the
+    # resolver's rule 2 ("carry the subject, never the answer") reads as
+    # though it forbids exactly that. It does not: the rule is about a
+    # follow-up that asks something new about the subject, where the
+    # previous answer would narrow retrieval onto a detail nobody asked
+    # about. Probing this looked at first like a rule-2 violation, and
+    # end-to-end it is the correct behaviour.
+    #
+    # What must hold is what the reader gets. The documents record a
+    # cadence and do not rate it, so the answer reports the cadence, cites
+    # it, and leaves the judgement alone. Asserting the absence of a
+    # judgement by substring is not possible without flakiness — a correct
+    # answer says "whether this frequency is sufficient" and a wrong one
+    # says "this frequency is sufficient" — so what is pinned is that the
+    # subject survives, the fact is reported, and the integrity checks pass.
+    turns:
+      - ask: how often are accounts recertified?
+        answer_contains: [quarterly]
+      - ask: is that enough?
+        resolved_contains_any: [recertif, account]
+        answer_contains: [quarterly]
 
   - name: three-follow-ups-stay-on-subject
     corpus: access-control

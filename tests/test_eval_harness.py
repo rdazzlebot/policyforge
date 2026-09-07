@@ -590,3 +590,44 @@ def test_every_case_names_a_corpus_that_exists():
                     "expansion",
                     "paraphrase",
                 }, f"{suite}/{case.get('name')}"
+
+
+def test_the_cases_that_never_reach_a_model_are_the_ones_we_know_about():
+    """An inventory, so adding a fourth is a deliberate act.
+
+    Three cases turned out to be decided in code before any provider was
+    called, and each looked like evidence about a prompt until mutation
+    testing deleted the rule it was supposedly guarding and the verdict did
+    not move:
+
+    * an answering case retrieving zero passages, refused by
+      `answer_question` before the model is reached
+    * a resolution case whose question `looks_like_a_follow_up` rejects, so
+      `resolve_question` returns early
+    * an expansion case asserting only what must NOT appear, which an empty
+      expansion satisfies — now a failure by default in `grade_text`
+
+    They are all worth keeping; they cover the code that short-circuits.
+    What they are not is evidence about a model's behaviour, and a green
+    mark does not say which kind it is.
+    """
+    from policyforge.zardoz.conversation import looks_like_a_follow_up
+
+    cases = load_cases()
+
+    never_asked = {
+        case["name"] for case in cases["resolution"] if not looks_like_a_follow_up(case["question"])
+    }
+    assert never_asked == {"standalone-is-left-alone"}
+
+    no_passages = {case["name"] for case in cases["answering"] if case.get("expect_passages") == 0}
+    assert no_passages == {"refuses-what-the-passages-do-not-cover"}
+
+    vacuous = {
+        case["name"]
+        for suite in ("expansion", "resolution")
+        for case in cases[suite]
+        if case.get("allow_empty")
+        and not (case.get("must_contain") or case.get("must_contain_any"))
+    }
+    assert vacuous == set()

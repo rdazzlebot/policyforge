@@ -119,7 +119,19 @@ def _present(text: str, forbidden) -> list[str]:
 
 
 def grade_text(text: str, case: dict) -> Outcome:
-    """The shared substring checks every suite uses."""
+    """The shared substring checks every suite uses.
+
+    Empty output is a failure unless the case says otherwise, and that
+    default is the whole point. A case whose assertions are all negative
+    passes trivially on an empty string, so it cannot fail for the reason it
+    was written: `no-prose` forbids a prose expansion, but `parse_expansion`
+    already discards a prose reply and returns nothing, and nothing contains
+    no prose. Mutation testing found it — deleting the rule that forbids
+    prose changed the case's verdict not at all.
+    """
+    if not text.strip() and not case.get("allow_empty"):
+        return Outcome(False, "empty output — negative assertions pass on nothing", text)
+
     missing = _missing(text, case.get("must_contain"))
     if missing:
         return Outcome(False, f"missing {missing}", text)
@@ -332,6 +344,7 @@ def run_conversation(case: dict, provider, corpora: dict | None = None) -> Outco
     resolution, routing and answering interact exactly as they do for a
     person at the prompt.
     """
+    from policyforge.zardoz.answer import check_answer
     from policyforge.zardoz.shell import ShellState, dispatch
 
     state = ShellState(
@@ -370,11 +383,28 @@ def run_conversation(case: dict, provider, corpora: dict | None = None) -> Outco
             "must_not_contain": turn.get("answer_not_contains"),
             "must_contain_any": turn.get("answer_contains_any"),
         }
-        answer_checks["must_not_contain"] = turn.get("answer_not_contains")
         if any(answer_checks.values()):
             graded = grade_text(output, {k: v for k, v in answer_checks.items() if v})
             if not graded.passed:
                 return Outcome(False, f"{where} answer: {graded.detail}", output[:220])
+
+        # The same integrity checks the single-turn suite runs. They were
+        # missing here, which left the chain — the one place a drifted
+        # subject produces a confident answer about the wrong thing —
+        # graded only on substrings. Skipped for a turn that ran an
+        # analysis, which has no passages and is printed verbatim.
+        # `recorded.answer` is empty on the no-provider path, where the
+        # shell prints the passages verbatim and no model wrote anything.
+        # There are no claims there to check.
+        if (
+            turn.get("integrity_clean", True)
+            and recorded
+            and recorded.passages
+            and recorded.answer.strip()
+        ):
+            _, warnings = check_answer(recorded.answer, recorded.passages, recorded.subject)
+            if warnings:
+                return Outcome(False, f"{where} integrity: {'; '.join(warnings)}", recorded.answer)
 
     return Outcome(True, output=f"{len(case['turns'])} turns")
 

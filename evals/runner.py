@@ -33,6 +33,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_CASES = Path(__file__).parent / "cases.yaml"
+DEFAULT_PARAPHRASES = Path(__file__).parent / "paraphrases.yaml"
+DEFAULT_ANSWER_PARAPHRASES = Path(__file__).parent / "answer_paraphrases.yaml"
 
 _CITATION_RE = re.compile(r"\[(\d+)\]")
 
@@ -138,7 +140,7 @@ def grade_text(text: str, case: dict) -> Outcome:
 # --------------------------------------------------------------------------
 
 
-def run_routing(case: dict, provider) -> Outcome:
+def run_routing(case: dict, provider, corpora: dict | None = None) -> Outcome:
     """Does the question reach the analysis that can answer it?
 
     The negative cases matter as much as the positive ones: a router that
@@ -154,7 +156,7 @@ def run_routing(case: dict, provider) -> Outcome:
     return Outcome(True, output=chosen)
 
 
-def run_resolution(case: dict, provider) -> Outcome:
+def run_resolution(case: dict, provider, corpora: dict | None = None) -> Outcome:
     """Does a follow-up become the question it obviously means?"""
     from policyforge.zardoz.conversation import Conversation, Turn, resolve_question
 
@@ -172,7 +174,7 @@ def run_resolution(case: dict, provider) -> Outcome:
     return grade_text(resolved, case)
 
 
-def run_expansion(case: dict, provider) -> Outcome:
+def run_expansion(case: dict, provider, corpora: dict | None = None) -> Outcome:
     """Does expansion name the document's vocabulary, and nothing else?
 
     The forbidden list is the important half. An expansion that supplies a
@@ -383,6 +385,15 @@ SUITES = {
     "expansion": run_expansion,
     "answering": run_answering,
     "conversation": run_conversation,
+    # Same grader as routing; a separate suite so the hand-written
+    # cases and the generated ones are reported apart. They measure
+    # different things: whether routing is right, and whether it is
+    # right only for the wording its author happened to think of.
+    "paraphrase": run_routing,
+    # Answering, asked in wordings its author did not choose. Same
+    # grader and same passages as the parent case; only the question
+    # text differs.
+    "answer_paraphrase": run_answering,
 }
 
 
@@ -390,7 +401,72 @@ def load_cases(path: Path = DEFAULT_CASES) -> dict[str, list[dict]]:
     import yaml
 
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-    return {suite: list(cases or []) for suite, cases in data.items() if suite in SUITES}
+    cases = {suite: list(rows or []) for suite, rows in data.items() if suite in SUITES}
+
+    paraphrases = load_paraphrases()
+    if paraphrases:
+        cases["paraphrase"] = paraphrases
+
+    reworded = load_answer_paraphrases(parents=cases.get("answering", []))
+    if reworded:
+        cases["answer_paraphrase"] = reworded
+    return cases
+
+
+def load_answer_paraphrases(
+    parents: list[dict], path: Path = DEFAULT_ANSWER_PARAPHRASES
+) -> list[dict]:
+    """Answering cases reworded, keeping their parent's expectations.
+
+    Retrieval is pinned to the parent's wording, so the passages are
+    identical across every phrasing and only the answering varies. A
+    paraphrase that drove retrieval too would change the passages *and* the
+    question at once, and a failure could not be attributed to either.
+    """
+    import yaml
+
+    if not Path(path).exists():
+        return []
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    by_name = {case["name"]: case for case in parents}
+
+    rows = []
+    for origin, entry in data.items():
+        parent = by_name.get(origin)
+        if parent is None:
+            continue
+        for n, phrasing in enumerate(entry.get("phrasings") or [], start=1):
+            rows.append(
+                {
+                    **parent,
+                    "name": f"{origin}#{n}",
+                    "question": phrasing,
+                    "retrieve": entry.get("retrieve", parent.get("question")),
+                }
+            )
+    return rows
+
+
+def load_paraphrases(path: Path = DEFAULT_PARAPHRASES) -> list[dict]:
+    """Generated rewordings of the routing cases, as routing cases.
+
+    The expected label is inherited from the case each was generated from,
+    so novel wording is graded against a fixed answer. What this measures is
+    paraphrase-invariance: a router that only works on the phrasings its
+    author happened to write is brittle, and no hand-written case can show
+    that, because the author writes those too.
+    """
+    import yaml
+
+    if not Path(path).exists():
+        return []
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+
+    rows = []
+    for origin, entry in data.items():
+        for n, phrasing in enumerate(entry.get("phrasings") or [], start=1):
+            rows.append({"name": f"{origin}#{n}", "question": phrasing, "expect": entry["expect"]})
+    return rows
 
 
 def load_corpora(path: Path = DEFAULT_CASES) -> dict[str, list[dict]]:
@@ -407,10 +483,13 @@ def run_case(
     result = CaseResult(suite=suite, name=case.get("name") or case.get("question", "?"))
     for _ in range(repeat):
         try:
-            if suite in ("answering", "conversation"):
-                result.outcomes.append(SUITES[suite](case, provider, corpora))
-            else:
-                result.outcomes.append(SUITES[suite](case, provider))
+            # Every runner takes the same three arguments, whether or not it
+            # uses the corpora. Dispatching on a list of suite names instead
+            # meant a new suite silently ran without its documents: the
+            # answering paraphrases were added and every one of them failed
+            # with a KeyError for a corpus that was loaded and sitting right
+            # there.
+            result.outcomes.append(SUITES[suite](case, provider, corpora))
         except Exception as exc:  # noqa: BLE001 - one bad case must not end the run
             detail = f"{type(exc).__name__}: {exc}"
             infrastructure = any(hint in detail.lower() for hint in _INFRASTRUCTURE)

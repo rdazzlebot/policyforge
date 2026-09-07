@@ -224,12 +224,23 @@ def test_a_case_whose_retrieval_does_not_match_blames_the_case():
 def test_the_shipped_cases_load_and_are_well_formed():
     cases = load_cases()
 
-    assert set(cases) == {
+    # The hand-written suites are required. The generated ones are present
+    # only when their file is, so they are permitted but not demanded.
+    assert {
         "routing",
         "resolution",
         "expansion",
         "answering",
         "conversation",
+    } <= set(cases)
+    assert set(cases) <= {
+        "routing",
+        "resolution",
+        "expansion",
+        "answering",
+        "conversation",
+        "paraphrase",
+        "answer_paraphrase",
     }
     for suite, rows in cases.items():
         assert rows, f"{suite} has no cases"
@@ -544,3 +555,38 @@ def test_an_expected_skill_that_did_not_run_fails():
 
     assert not outcome.passed
     assert "did not run /coverage" in outcome.detail
+
+
+def test_every_suite_runner_takes_the_corpora():
+    """A new suite must not silently run without its documents.
+
+    `run_case` used to decide who got the corpora from a hardcoded list of
+    suite names. Adding a suite that needed them and forgetting the list
+    produced twenty-five cases failing with a KeyError for a corpus that was
+    loaded and sitting in the argument that was never passed.
+    """
+    import inspect
+
+    from evals.runner import SUITES
+
+    for name, runner in SUITES.items():
+        parameters = list(inspect.signature(runner).parameters)
+        assert parameters[:3] == ["case", "provider", "corpora"], name
+
+
+def test_every_case_names_a_corpus_that_exists():
+    """Catch a typo or an inherited corpus name offline, not mid-run."""
+    from evals.runner import load_cases, load_corpora
+
+    corpora = load_corpora()
+    for suite, cases in load_cases().items():
+        for case in cases:
+            if "corpus" in case:
+                assert case["corpus"] in corpora, f"{suite}/{case.get('name')}"
+            else:
+                assert "documents" in case or suite in {
+                    "routing",
+                    "resolution",
+                    "expansion",
+                    "paraphrase",
+                }, f"{suite}/{case.get('name')}"

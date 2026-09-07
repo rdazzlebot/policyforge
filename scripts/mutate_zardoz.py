@@ -52,6 +52,17 @@ TARGETS = {
 }
 
 
+#: Text outside the numbered rules that says the same thing one of them
+#: says. A rule duplicated here survives its own deletion and reads as dead
+#: weight: the answering prompt's refusal rule looked unguarded until the
+#: sentence on the user turn was deleted alongside it, at which point five
+#: of six refusal cases failed. Swept like a pair.
+COMPANIONS = {
+    "answering": ("policyforge.zardoz.answer", "USER_TURN_INSTRUCTION"),
+    "answer_paraphrase": ("policyforge.zardoz.answer", "USER_TURN_INSTRUCTION"),
+}
+
+
 def _run(suite, cases, provider, corpora, repeat):
     return {
         case.get("name", "?"): run_case(suite, case, provider, repeat=repeat, corpora=corpora)
@@ -82,13 +93,41 @@ def _sweep_pairs(unguarded, plan, provider, corpora, repeat):
 
     for suite, module_path, attribute, prompt, cases, _ in plan:
         pending = by_suite.get(suite)
-        if not pending or len(pending) < 2:
-            still.extend((suite, n, label) for n, label in pending or [])
+        if not pending:
             continue
 
         module = importlib.import_module(module_path)
         print(f"=== {suite}: pairing {len(pending)} rules that survived alone")
         joint: set[int] = set()
+
+        # First against the companion text, if this suite has any. A rule
+        # restated outside the numbered list is invisible to every other
+        # mutation here.
+        companion = COMPANIONS.get(suite)
+        if companion:
+            companion_module = importlib.import_module(companion[0])
+            companion_text = getattr(companion_module, companion[1])
+            for number, _ in pending:
+                setattr(module, attribute, without_rule(prompt, number))
+                setattr(companion_module, companion[1], "")
+                try:
+                    results = _run(suite, cases, provider, corpora, repeat)
+                finally:
+                    setattr(module, attribute, prompt)
+                    setattr(companion_module, companion[1], companion_text)
+                caught = sorted(n for n, r in results.items() if r.rate < 1.0)
+                if caught:
+                    joint.add(number)
+                    print(
+                        f"  rule {number} + {companion[1]}  CAUGHT by "
+                        f"{len(caught)}: {', '.join(caught[:3])}"
+                    )
+            pending = [(n, label) for n, label in pending if n not in joint]
+
+        if len(pending) < 2:
+            still.extend((suite, n, label) for n, label in pending)
+            print()
+            continue
         for (first, _), (second, _) in combinations(pending, 2):
             mutated = without_rule(without_rule(prompt, first), second)
             setattr(module, attribute, mutated)

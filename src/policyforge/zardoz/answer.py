@@ -152,12 +152,23 @@ def format_passages(passages: list[Passage]) -> str:
     return "\n\n".join(blocks)
 
 
+#: The instruction on the user turn, restating rules 1 and 3 of the system
+#: prompt. Deliberately duplicated: the turn the model is answering is the
+#: one it attends to hardest, and grounding and refusal are the two things
+#: that must not slip. Named rather than inlined so the duplication is
+#: greppable, and so the mutation harness can delete it — with this sentence
+#: standing, removing rule 3 changes nothing and the rule reads as dead
+#: weight. Remove both and five of six refusal cases fail.
+USER_TURN_INSTRUCTION = (
+    "Answer from the passages above, citing each claim. If they do not "
+    f"answer the question, reply with exactly {REFUSAL_SENTINEL}."
+)
+
+
 def build_prompt(question: str, passages: list[Passage]) -> str:
     return (
         f"PASSAGES\n\n{format_passages(passages)}\n\n"
-        f"QUESTION\n\n{question.strip()}\n\n"
-        "Answer from the passages above, citing each claim. If they do not "
-        f"answer the question, reply with exactly {REFUSAL_SENTINEL}."
+        f"QUESTION\n\n{question.strip()}\n\n" + USER_TURN_INSTRUCTION
     )
 
 

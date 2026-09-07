@@ -176,13 +176,20 @@ _MARKUP_RE = re.compile(r"\*\*|__|\*|`")
 #: still caught: nothing here changes a word.
 _TYPOGRAPHY = str.maketrans(
     {
-        **dict.fromkeys("‘’‚‛′´`", "'"),
-        **dict.fromkeys("“”„‟″«»", '"'),
-        **dict.fromkeys("‐‑‒–—―−", "-"),
+        # Spelled as code points, not as the characters themselves: a
+        # table about characters that are easy to confuse should not be
+        # written in characters that are easy to confuse.
+        # left/right/low-9/high-9 single quote, prime, acute, grave
+        **dict.fromkeys("\u2018\u2019\u201a\u201b\u2032\u00b4`", "'"),
+        # left/right/low-9/high-9 double quote, double prime, guillemets
+        **dict.fromkeys("\u201c\u201d\u201e\u201f\u2033\u00ab\u00bb", '"'),
+        # hyphen, non-breaking, figure, en, em, horizontal, minus
+        **dict.fromkeys("\u2010\u2011\u2012\u2013\u2014\u2015\u2212", "-"),
         # Zero-width characters are invisible by definition, so a reader
         # comparing the two strings by eye would call them identical.
-        **dict.fromkeys("​‌‍﻿", ""),
-        "…": "...",
+        # ZWSP, ZWNJ, ZWJ, byte-order mark
+        **dict.fromkeys("\u200b\u200c\u200d\ufeff", ""),
+        "\u2026": "...",  # ellipsis
     }
 )
 

@@ -620,12 +620,12 @@ def test_a_curly_apostrophe_is_not_a_fabricated_quotation():
     a document comes back curly, and a quotation is not fabricated because
     its apostrophe has a different code point — the fourth variant of a
     false positive that teaches readers to ignore this warning."""
-    _, warnings = _quoting(SOURCE, "recertified quarterly per the organization’s schedule")
+    _, warnings = _quoting(SOURCE, "recertified quarterly per the organization\u2019s schedule")
 
     assert warnings == []
 
 
-@pytest.mark.parametrize("dash", ["-", "‐", "–", "—", "−"])
+@pytest.mark.parametrize("dash", ["-", "\u2010", "\u2013", "\u2014", "\u2212"])
 def test_any_dash_matches_any_other(dash):
     _, warnings = _quoting(
         "Restore drills run twice a year - once per half.",
@@ -639,7 +639,7 @@ def test_any_dash_matches_any_other(dash):
 def test_a_zero_width_character_does_not_break_a_quotation():
     """Invisible by definition, so a reader comparing the two strings by eye
     would call them identical."""
-    _, warnings = _quoting(SOURCE, "recertified​ quarterly per the organization's schedule")
+    _, warnings = _quoting(SOURCE, "recertified\u200b quarterly per the organization's schedule")
 
     assert warnings == []
 
@@ -647,6 +647,6 @@ def test_a_zero_width_character_does_not_break_a_quotation():
 def test_folding_typography_does_not_let_a_real_fabrication_through():
     """The fold changes how characters are drawn, never which words are
     there. Swapping quarterly for monthly is still caught."""
-    _, warnings = _quoting(SOURCE, "recertified monthly per the organization’s schedule")
+    _, warnings = _quoting(SOURCE, "recertified monthly per the organization\u2019s schedule")
 
     assert any("appears in no passage" in w for w in warnings)

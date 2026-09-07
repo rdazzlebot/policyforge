@@ -295,6 +295,18 @@ def _cmd_sources(args: list[str], state: ShellState) -> str:
 #: that is split across a Standard and its Procedure, few enough to read.
 _PASSAGE_LIMIT = 4
 
+#: A result at or below this is thin enough to be worth a second look
+#: with guessed vocabulary. One passage is the shape that hides a
+#: contradiction: the document that disagrees is simply not there, and
+#: nothing in the answer can say so.
+_THIN_RESULT = 1
+
+#: ...and only while that result is at most this fraction of the corpus,
+#: written as its reciprocal. A quarter: enough that there is plainly more
+#: to look at, and not so lax that a small document set expands on every
+#: question it answers perfectly well.
+_THIN_SHARE = 4
+
 #: Characters of a passage shown inline. The whole chunk is available to
 #: whatever asks the index directly; this is what fits in a terminal without
 #: burying the next result.
@@ -435,18 +447,45 @@ def _answer(question: str, state: ShellState) -> str:
 
     passages = state.index.search(resolved, limit=_PASSAGE_LIMIT)
 
-    # Exact first, expansion only on a miss. While retrieval is finding
-    # passages on the user's own words there is nothing to gain by mixing in
-    # guessed vocabulary and precision to lose.
-    if not passages and state.provider is not None:
+    # Exact first, expansion on a miss — or on a thin result.
+    #
+    # "Only on a miss" was the original rule, on the reasoning that a search
+    # already finding passages has nothing to gain from guessed vocabulary
+    # and precision to lose. The precision half is handled elsewhere:
+    # expansion terms score at EXPANSION_WEIGHT and are reported apart, so
+    # a guess cannot outrank a word somebody typed.
+    #
+    # The other half was wrong, and it took measuring to see it. "Found
+    # something" is not "found everything", and the gap between them is the
+    # dangerous case rather than a cosmetic one: asked how often account
+    # recertification happens, retrieval returned the Procedure saying
+    # annually and never reached the Standard saying quarterly. Two
+    # documents contradicted each other, one was invisible, and because a
+    # passage *was* found the recovery path never ran. The answer was
+    # confident, cited, and half the truth.
+    #
+    # So a single passage is treated as thin. It is the shape that hides a
+    # disagreement, and the one where a second opinion on vocabulary costs
+    # nothing but a call.
+    # Judged against the corpus, never as a bare count. A fixed number of
+    # passages means something different at three chunks than at three
+    # hundred — the same mistake this project already made with an absolute
+    # score floor, which was structurally unreachable in a small corpus.
+    # One passage out of two is complete coverage and nothing is missing;
+    # one out of two hundred is a sliver.
+    thin = len(passages) <= _THIN_RESULT and len(passages) * _THIN_SHARE <= len(state.index)
+    if thin and state.provider is not None:
         from .paraphrase import expand_query
 
         expansion = expand_query(resolved, state.provider)
         if expansion:
-            passages = state.index.search(resolved, limit=_PASSAGE_LIMIT, expansion=expansion)
-            if passages:
+            widened = state.index.search(resolved, limit=_PASSAGE_LIMIT, expansion=expansion)
+            if len(widened) > len(passages):
+                found_nothing = not passages
+                passages = widened
                 preamble += [
-                    f"(nothing matched those words; searched also for: {expansion})",
+                    f"({'nothing matched those words' if found_nothing else 'that found little'}; "
+                    f"searched also for: {expansion})",
                     "",
                 ]
 

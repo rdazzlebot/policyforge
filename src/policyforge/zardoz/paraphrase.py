@@ -38,6 +38,13 @@ from __future__ import annotations
 #: Ceiling on how much vocabulary one expansion may add. Enough to name a
 #: phrase and its close variants, short enough that it cannot become a
 #: second query in its own right and drag the search somewhere new.
+#:
+#: The prompt asks for the same limit, and `parse_expansion` enforces it
+#: regardless of what comes back. That redundancy is deliberate rather than
+#: an oversight: the prompt saves generating forty terms to throw away
+#: twenty-eight, and the truncation is what makes the limit true. It does
+#: mean no eval case can observe the model exceeding it — the rule is not
+#: falsifiable, and is kept anyway.
 MAX_EXPANSION_TERMS = 12
 
 EXPANSION_SYSTEM_PROMPT = """You name the vocabulary an organization's \
@@ -55,13 +62,11 @@ Rules:
 2. Formal register. A question says "who has admin"; a Standard says
    "privileged access", "administrative accounts", "elevated entitlements".
    Give the Standard's words.
-3. Do not repeat words already in the question. They have been searched for
-   already; repeating them adds nothing and crowds out what would help.
-4. Never invent specifics. No control identifiers, no numbers, no
+3. Never invent specifics. No control identifiers, no numbers, no
    frequencies, no team or vendor names. You are naming vocabulary, not
    answering — and a frequency you supplied would be searched for and might
    well be found, which would attach this tool's guess to a real citation.
-5. At most twelve terms. If the question is already in the documents' own
+4. At most twelve terms. If the question is already in the documents' own
    register, return fewer, or nothing at all."""
 
 

@@ -1226,6 +1226,48 @@ route to an analysis, a follow-up that must *not* be rewritten, an expansion
 that must *not* supply a frequency, a question the passages cannot answer
 and must be refused.
 
+### Grading the grader
+
+A suite that passes tells you nothing until you know it *can* fail. So
+there is a second harness that measures the first one: delete a numbered
+rule from a prompt, rerun the cases, and see which ones notice.
+
+```
+python scripts/mutate_zardoz.py --suite routing --pairs
+python scripts/mutate_zardoz.py --dry-run
+```
+
+A rule no case notices is **unguarded** — either it does nothing and should
+go, or the cases have a hole exactly where their evidence should be. Both
+answers have come up.
+
+It found three cases that were decided in code before any model was called,
+each of which looked like evidence about a prompt and was not:
+
+- an answering case that retrieves zero passages, so `answer_question`
+  refuses without ever calling the provider. Stripping the grounding rules
+  out of the answering prompt entirely left it green.
+- a resolution case whose question `looks_like_a_follow_up` rejects, so the
+  rewriter is never asked
+- an expansion case asserting only what must *not* appear — which an empty
+  expansion satisfies, and `parse_expansion` returns nothing whenever the
+  model replies with prose, which is the exact failure the case was written
+  to catch. Empty output is now a failure by default in `grade_text`.
+
+All three are worth keeping; they cover the code that short-circuits. What
+they are not is evidence about a model, and a green mark does not say which
+kind it is. `tests/test_eval_harness.py` keeps an inventory so a fourth has
+to be added deliberately.
+
+It also found the opposite. Every routing rule survived its own deletion,
+which reads as four dead rules — until you delete "prefer `documents`" and
+"if unsure, say `documents`" *together*, and an ambiguous question
+("do we have anything covering media sanitization?") misroutes to the
+coverage analysis every time. Either rule alone holds the line. They are one
+rule written twice, jointly load-bearing, and single-rule mutation can only
+report them as dead weight; `--pairs` is what tells those two situations
+apart. That question is now a case.
+
 Deliberately outside `scripts/check.py`: these cost money and need network,
 and a gate people can't run offline is a gate people stop running.
 

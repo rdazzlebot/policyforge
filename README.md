@@ -759,13 +759,35 @@ zardoz> how often do we check who has admin?
    [via privileged, entitlements (guessed)]
 ```
 
-Exact first, expansion only on a miss. While retrieval is finding passages on
-the user's own words there is nothing to gain by mixing in guessed vocabulary
-and precision to lose. Guessed terms score at a discount, never count toward
-whether the question was covered, and are reported separately — "matched
-cadence" and "matched cadence, which we guessed you meant" are different
-claims about the evidence. A question the corpus genuinely doesn't cover is
-still refused: expansion can only find words that are actually in a document.
+Exact first, expansion on a miss — or on a thin result. Guessed terms score
+at a discount, never count toward whether the question was covered, and are
+reported separately — "matched cadence" and "matched cadence, which we
+guessed you meant" are different claims about the evidence. A question the
+corpus genuinely doesn't cover is still refused: expansion can only find
+words that are actually in a document.
+
+"Only on a miss" was the original rule, and half of it was wrong. Finding
+*something* is not finding everything, and the gap between them is where the
+damage is: asked how often account recertification happens, retrieval
+returned the Procedure saying annually and never reached the Standard saying
+quarterly. Two documents contradicted each other, one was invisible, and
+because a passage *was* found the recovery path never ran. The answer was
+confident, cited, and half the truth. A result that is a small share of the
+corpus now earns a second look — judged against corpus size, never as a bare
+count, since one passage out of two chunks is complete coverage and one out
+of two hundred is a sliver.
+
+**Terms are stemmed.** Folding plurals alone left every noun/verb pair in a
+compliance vocabulary failing to meet — "recertification" against a document
+that says "recertified", "approval" against "approved", "sanitization"
+against "sanitized". Eleven of eleven common pairs missed, which is how the
+contradiction above stayed hidden. Porter (1980), written out rather than
+depended on and checked in the tests against the vocabulary Porter published
+with it. It is aggressive: "security" and "secure" collapse to one stem, and
+so do "management" and "manage". That is the point. Matching happens on
+stems and the explanation is not — a passage that reported matching "restor"
+and "privileg" would have stopped explaining itself, and naming which terms
+hit is why this scorer was chosen over embeddings.
 
 **Not embeddings, deliberately.** A vector index would work, and it would need
 an embedding model: a local one is a multi-gigabyte dependency for a tool that

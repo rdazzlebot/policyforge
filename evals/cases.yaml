@@ -345,7 +345,7 @@ answering:
     # tidying the wording inside quotation marks produces exactly the output
     # somebody pastes into a ticket and an assessor later disputes.
     question: quote the exact requirement about account recertification
-    expect_passages: 1
+    expect_passages: 2
     expect_refusal: false
     must_cite: true
     integrity_clean: true
@@ -545,7 +545,7 @@ answering:
     # the word "method" is right there in the passages. It never says
     # which one.
     question: what sanitization method is required for solid-state drives?
-    expect_passages: 2
+    expect_passages: 3
     expect_refusal: true
 
   - name: an-approver-borrowed-from-the-wrong-clause
@@ -557,7 +557,7 @@ answering:
     # project exists to prevent: a real name, from a real passage, for a
     # question that passage does not answer.
     question: who approves the certificate of destruction?
-    expect_passages: 1
+    expect_passages: 2
     expect_refusal: true
 
   - name: an-unfilled-placeholder-is-not-a-system-name
@@ -573,15 +573,35 @@ answering:
     integrity_clean: true
     must_not_contain: [jira, servicenow, service now, zendesk, freshservice, remedy]
 
-  - name: a-cross-reference-is-not-the-thing-it-points-at
+  - name: a-cross-reference-is-followed-when-its-target-is-retrieved
     corpus: generated-standard
-    # The evidence table gives the transport log's retention as "Retained
-    # per Section 4.2", and Section 4.2 says six years — but 4.2 is not
-    # among the retrieved passages. The grounded answer reports the
-    # cross-reference. "6 years" is the right fact from the wrong place,
-    # and a reader has no way to tell that the model supplied it.
+    # This case used to assert the opposite, and stemming is why it
+    # changed. The evidence table gives the transport log's retention as
+    # "Retained per Section 4.2"; 4.2 says six years. Under plural-only
+    # folding a question about the log never reached 4.2, so "6 years"
+    # could only have come from the model. It reaches 4.2 now, so the
+    # complete answer is the one that follows the reference — and the case
+    # that forbade it was testing a retrieval limitation rather than
+    # anything about the answerer.
     question: how long is the media transport log retained?
-    expect_passages: 2
+    expect_passages: 4
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    must_contain_any: ["6 years", "4.2"]
+
+  - name: a-cross-reference-is-not-resolved-from-memory
+    corpus: generated-standard
+    # The guard the case above used to provide, kept deliberately rather
+    # than lost to better retrieval. Retrieval is pinned to wording that
+    # reaches the evidence table and not Section 4.2, so the passages say
+    # "Retained per Section 4.2" and nothing says what 4.2 contains. The
+    # grounded answer reports the cross-reference. "6 years" is the right
+    # fact from the wrong place, and a reader has no way to tell the model
+    # supplied it.
+    question: how long is the media transport log retained?
+    retrieve: media transport log
+    expect_passages: 3
     expect_refusal: false
     must_cite: true
     integrity_clean: true
@@ -594,7 +614,7 @@ answering:
     # decommissioning is not covered at all. Retrieval returns three
     # on-topic passages, so the model has every opportunity to oblige.
     question: how many days after decommissioning must media be sanitized?
-    expect_passages: 3
+    expect_passages: 4
     expect_refusal: true
 
 conversation:

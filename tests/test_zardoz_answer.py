@@ -586,3 +586,67 @@ def test_an_uncited_answer_that_does_make_claims_still_says_so():
     _, warnings = check_answer("Accounts are reviewed quarterly.", _passages())
 
     assert "makes claims without citing any passage" in warnings
+
+
+# --------------------------------------------------------------------------
+# Typography — the fourth variant of the same false positive
+# --------------------------------------------------------------------------
+
+
+def _quoting(source: str, quoted: str, query: str = "recertified accounts"):
+    """An answer quoting `quoted` from a passage that says `source`."""
+    corpus = Corpus(
+        documents=[
+            Doc(
+                doc_id="1",
+                title="Access Control Standard",
+                space="",
+                confidence=TRUSTED,
+                source="markdown",
+                body=f"# Access Control Standard\n\n## 4.1 Review\n\n{source}\n",
+            )
+        ]
+    )
+    passages = build_index(corpus).search(query, limit=4)
+    assert passages, "the probe retrieved nothing, so it tests nothing"
+    return check_answer(f'The Standard says "{quoted}" [1].', passages, "")
+
+
+SOURCE = "Accounts are recertified quarterly per the organization's schedule."
+
+
+def test_a_curly_apostrophe_is_not_a_fabricated_quotation():
+    """Models normalise punctuation constantly. An apostrophe copied out of
+    a document comes back curly, and a quotation is not fabricated because
+    its apostrophe has a different code point — the fourth variant of a
+    false positive that teaches readers to ignore this warning."""
+    _, warnings = _quoting(SOURCE, "recertified quarterly per the organization’s schedule")
+
+    assert warnings == []
+
+
+@pytest.mark.parametrize("dash", ["-", "‐", "–", "—", "−"])
+def test_any_dash_matches_any_other(dash):
+    _, warnings = _quoting(
+        "Restore drills run twice a year - once per half.",
+        f"Restore drills run twice a year {dash} once per half",
+        query="restore drills",
+    )
+
+    assert warnings == []
+
+
+def test_a_zero_width_character_does_not_break_a_quotation():
+    """Invisible by definition, so a reader comparing the two strings by eye
+    would call them identical."""
+    _, warnings = _quoting(SOURCE, "recertified​ quarterly per the organization's schedule")
+
+    assert warnings == []
+
+
+def test_folding_typography_does_not_let_a_real_fabrication_through():
+    """The fold changes how characters are drawn, never which words are
+    there. Swapping quarterly for monthly is still caught."""
+    _, warnings = _quoting(SOURCE, "recertified monthly per the organization’s schedule")
+
+    assert any("appears in no passage" in w for w in warnings)

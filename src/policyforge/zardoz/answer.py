@@ -168,14 +168,34 @@ def build_prompt(question: str, passages: list[Passage]) -> str:
 _MARKUP_RE = re.compile(r"\*\*|__|\*|`")
 
 
+#: Characters that differ from their plain equivalents only in how they are
+#: drawn. Models normalise punctuation constantly — an apostrophe copied out
+#: of a document comes back curly, a hyphen comes back as an en dash — and a
+#: quotation is not fabricated because its apostrophe has a different code
+#: point. Folded on both sides of the comparison, so a real fabrication is
+#: still caught: nothing here changes a word.
+_TYPOGRAPHY = str.maketrans(
+    {
+        **dict.fromkeys("‘’‚‛′´`", "'"),
+        **dict.fromkeys("“”„‟″«»", '"'),
+        **dict.fromkeys("‐‑‒–—―−", "-"),
+        # Zero-width characters are invisible by definition, so a reader
+        # comparing the two strings by eye would call them identical.
+        **dict.fromkeys("​‌‍﻿", ""),
+        "…": "...",
+    }
+)
+
+
 def _visible(text: str) -> str:
-    """The words a reader sees, with markup and line wrapping removed.
+    """The words a reader sees, with markup, typography and wrapping removed.
 
     Both sides of a quote comparison go through this, so a faithful quote
-    that drops `**` is recognised as faithful and a fabricated one still is
-    not.
+    that drops `**`, or comes back with a curly apostrophe where the source
+    had a straight one, is recognised as faithful — and a fabricated one
+    still is not.
     """
-    return " ".join(_MARKUP_RE.sub("", text).split())
+    return " ".join(_MARKUP_RE.sub("", text).translate(_TYPOGRAPHY).split())
 
 
 #: Concrete intervals and periods. Narrow on purpose: these are the values a

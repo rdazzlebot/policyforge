@@ -31,6 +31,56 @@ class SynthesisTopic:
     controls: list[Control]
 
 
+#: Frontmatter keys `synthesize` writes and `generate` reads back. The
+#: synthesis file is the hand-off between two separate commands, so the topic's
+#: ownership has to travel *in* the file rather than being re-supplied on the
+#: second command line — otherwise the owning team is known when the topic is
+#: assembled and forgotten by the time the document is drafted.
+SYNTHESIS_FRONTMATTER_KEYS = ("topic", "owner", "cadence", "evidence", "nist_controls")
+
+
+def write_synthesis(
+    body: str,
+    *,
+    topic: str,
+    owner: str = "",
+    cadence: str = "",
+    evidence: list[str] | None = None,
+    nist_controls: list[str] | None = None,
+) -> str:
+    """Render a synthesis file: YAML frontmatter, then the requirement list.
+
+    Only keys with a value are emitted, so a synthesis produced without a
+    registry topic stays exactly as it was before frontmatter existed.
+    """
+    import yaml
+
+    metadata = {
+        "topic": topic,
+        "owner": owner,
+        "cadence": cadence,
+        "evidence": evidence or [],
+        "nist_controls": nist_controls or [],
+    }
+    metadata = {k: v for k, v in metadata.items() if v}
+    if not metadata:
+        return body.rstrip() + "\n"
+    front = yaml.safe_dump(metadata, sort_keys=False, allow_unicode=True).strip()
+    return f"---\n{front}\n---\n\n{body.rstrip()}\n"
+
+
+def read_synthesis(text: str) -> tuple[dict, str]:
+    """Split a synthesis file into `(metadata, body)`.
+
+    A file with no frontmatter yields `({}, text)` — synthesis files written
+    before this existed still load.
+    """
+    import frontmatter
+
+    parsed = frontmatter.loads(text)
+    return dict(parsed.metadata), parsed.content
+
+
 _SYSTEM_PROMPT = """You are a compliance content synthesis engine. Merge \
 overlapping control requirements from multiple frameworks, for one topic, \
 into a deduplicated set of plain-English requirement statements.
@@ -63,8 +113,7 @@ def _render_control(control: Control) -> str:
         lines.append(f"Discussion: {control.discussion}")
     for enh in control.enhancements:
         lines.append(
-            f"Enhancement {enh.enhancement_id} ({enh.baseline}) — "
-            f"{enh.title}: {enh.description}"
+            f"Enhancement {enh.enhancement_id} ({enh.baseline}) — {enh.title}: {enh.description}"
         )
     return "\n".join(lines)
 
@@ -93,8 +142,21 @@ def build_synthesis_topic(
     via `crosswalk` (see mapping/crosswalk.py's `build_crosswalk`), every
     other framework's control that maps to them. `controls` is the pool to
     pull from — typically every loaded control across all enabled
-    frameworks."""
+    frameworks.
+
+    A crosswalk entry may name either a control or one of its enhancements,
+    since some frameworks are mapped at the sub-requirement level (NIST's
+    HIPAA-to-800-53 crosswalk maps most of its rows to individual
+    Required/Addressable implementation specifications rather than to the
+    parent Standard). An enhancement ID resolves to the control that carries
+    it, so those mappings pull their surrounding requirement into the topic
+    instead of silently matching nothing.
+    """
     by_framework_id = {(normalize_framework(c.framework), c.control_id): c for c in controls}
+    for control in controls:
+        framework = normalize_framework(control.framework)
+        for enhancement in control.enhancements:
+            by_framework_id.setdefault((framework, enhancement.enhancement_id), control)
 
     topic_controls: list[Control] = []
     seen: set[int] = set()

@@ -1,0 +1,729 @@
+# Graded cases for the four prompts in Zardoz.
+#
+# Every check here is deterministic — a substring, a citation marker, a
+# refusal, or the project's own check_answer. No model grades another
+# model's output; a grader that needed one would have the failure mode it
+# exists to detect.
+#
+# The negative cases are the point. Anyone can write a case where the right
+# answer is obvious; what these are for is the question that must NOT route
+# to an analysis, the follow-up that must NOT be rewritten, the expansion
+# that must NOT invent a frequency, and the question the documents cannot
+# answer and must be refused.
+
+# Document sets the answering cases share. Several probe the same documents
+# from different angles, and copies that drifted apart would make a failure
+# impossible to attribute to the prompt.
+corpora:
+  access-control:
+    - title: Access Control Standard
+      owner: IAM Engineering
+      body: |
+        # Access Control Standard
+
+        ## 4.1 Account Review
+
+        Account entitlements are recertified quarterly by the system owner.
+        [NIST AC-2]
+
+        ## 4.2 Privileged Access
+
+        Administrative credentials require hardware multi-factor tokens.
+        [NIST AC-6]
+    - title: Backup and Restore Standard
+      owner: Platform
+      body: |
+        # Backup and Restore Standard
+
+        ## 4.1 Restore Testing
+
+        Restore drills happen twice a year against production snapshots.
+        [NIST CP-9]
+
+  unowned-runbook:
+    - title: Access Control Standard
+      owner: IAM Engineering
+      body: |
+        # Access Control Standard
+
+        ## 4.1 Account Review
+
+        Account entitlements are recertified quarterly. [NIST AC-2]
+    - title: Offboarding Runbook
+      confidence: supporting
+      owner: ""
+      body: |
+        # Offboarding Runbook
+
+        ## Steps
+
+        Revoke the badge, then close the Okta account within one hour.
+
+  contradiction:
+    - title: Access Control Standard
+      body: |
+        # Access Control Standard
+
+        ## 4.1 Account Review
+
+        Account entitlements are recertified quarterly. [NIST AC-2]
+    - title: Access Review Procedure
+      body: |
+        # Access Review Procedure
+
+        ## 3. Cadence
+
+        Account recertification runs annually, at the start of the fiscal year.
+
+  owned-vs-unowned-conflict:
+    - title: Access Control Standard
+      owner: IAM Engineering
+      body: |
+        # Access Control Standard
+
+        ## 4.1 Account Review
+
+        Terminated accounts are disabled within 24 hours. [NIST AC-2]
+    - title: Offboarding Runbook
+      confidence: supporting
+      owner: ""
+      body: |
+        # Offboarding Runbook
+
+        ## Steps
+
+        Terminated accounts are disabled within one week of the leaving date.
+
+  generated-standard:
+    # A real generated document, with what `generate` actually emits: bold
+    # inside requirement text, an evidence table, multi-clause source tags,
+    # and placeholders left unfilled because nobody configured them. Every
+    # other corpus here was hand-written to be clean, which is exactly the
+    # thing that hid a false positive in the quotation check.
+    - title: Media Handling & Disposal Standard
+      owner: IT Asset Management
+      from_file: documents/media-handling-standard.md
+
+routing:
+  - name: orphaned-controls
+    question: which controls does nobody own?
+    expect: coverage
+  - name: coverage-obliquely
+    question: are we missing anything in the audit family?
+    expect: coverage
+  - name: contested-ownership
+    question: is any control claimed by two teams?
+    expect: coverage
+  - name: undecided-parameters
+    question: how many organization-defined values still have no decision?
+    expect: parameters
+  - name: catalog-changed
+    question: did anything change when the catalog was updated?
+    expect: drift
+  - name: document-history
+    question: what versions of the access control standard have been recorded?
+    expect: history
+  - name: tree-health
+    question: are there any broken links between our documents?
+    expect: check
+
+  # Must NOT route. A router that hijacks an ordinary document question has
+  # made the shell worse than it was, because the analysis it picked cannot
+  # answer what was asked.
+  - name: plain-document-question
+    question: what is our access review cadence?
+    expect: documents
+  - name: who-owns-a-document
+    question: who owns the backup standard?
+    expect: documents
+  - name: a-requirement
+    question: how long do we retain audit logs?
+    expect: documents
+  - name: control-lookup
+    question: what does AC-2 require?
+    expect: documents
+
+  - name: a-topic-question-that-sounds-like-coverage
+    # Found by mutation testing, not by imagination. The word "covering"
+    # pulls hard toward the coverage analysis, which reports which controls
+    # nobody owns — a different question that would be answered confidently
+    # and uselessly. What is actually being asked is whether a document on
+    # the subject exists, which is the documents path.
+    #
+    # This is the only case that fails when the prompt's two
+    # default-to-documents rules are both removed, and it fails 4 times out
+    # of 4. Removing either rule alone changes nothing, because each states
+    # what the other states; they are a redundant pair that is jointly
+    # load-bearing, and no single-rule mutation can show it.
+    question: do we have anything covering media sanitization?
+    expect: documents
+
+resolution:
+  - name: pronoun-carries-the-subject
+    history:
+      - q: what is our access review cadence?
+        a: Quarterly, by the system owner. [1]
+    question: who owns that?
+    rewritten: true
+    must_contain: [access review]
+    # The previous *answer* must not leak into the search query: retrieval
+    # would then go looking for documents that say "quarterly" rather than
+    # documents about who owns the review.
+    must_not_contain: [quarterly]
+
+  - name: elliptical-question
+    history:
+      - q: how are backups tested?
+        a: Restore drills run twice a year. [1]
+    question: how often?
+    rewritten: true
+    must_contain_any: [backup, restore]
+
+  - name: standalone-is-left-alone
+    # This one never reaches the rewriter: looks_like_a_follow_up() sees
+    # three content words and no anaphora and returns early, so what is
+    # being tested is that predicate, not the prompt. Worth keeping, and
+    # worth not mistaking for evidence about the rewriter — deleting the
+    # prompt rule about leaving standalone questions alone does not change
+    # this case's verdict, because no model is ever asked.
+    history:
+      - q: what is our access review cadence?
+        a: Quarterly. [1]
+    question: what is our password rotation policy?
+    rewritten: false
+    must_contain: [password]
+
+  - name: a-standalone-question-that-does-reach-the-rewriter
+    # "their" is an anaphora word, so this one does go to the model — and
+    # must come back untouched. The rewriter is being handed a question
+    # that needs nothing done to it, next to a conversation about an
+    # unrelated subject, and the failure is that it helpfully welds the two
+    # together and retrieves for a question nobody asked.
+    history:
+      - q: what is our access review cadence?
+        a: Quarterly, by the system owner. [1]
+    question: which teams have their own runbooks?
+    rewritten: false
+    must_not_contain: [access review, cadence, quarterly]
+
+  - name: a-control-identifier-survives-the-rewrite
+    # Identifier truncation has been a real bug in this codebase more than
+    # once — a trailing word boundary in a regex quietly turned AC-6(5)
+    # into AC-6, which is a different control with different requirements.
+    # A rewriter that does the same thing loses the enhancement, retrieval
+    # matches the parent control, and the answer is about the wrong
+    # requirement while looking entirely correct.
+    history:
+      - q: what does AC-6(5) require?
+        a: Privileged accounts are restricted to named administrators. [1]
+    question: who owns that?
+    rewritten: true
+    must_contain: ["AC-6(5)"]
+
+  - name: the-users-own-words-survive
+    # The rewriter resolves references; it does not improve phrasing. A
+    # rewrite that swaps the user's "laptop wipes" for the register a
+    # policy would use searches for different documents than the user asked
+    # about — and expansion already exists to bridge that gap, on a miss,
+    # where it is visible.
+    history:
+      - q: how do we handle laptop wipes when someone leaves?
+        a: Devices are wiped before reissue. [1]
+    question: who signs off on that?
+    rewritten: true
+    must_contain_any: [wipe, laptop]
+    must_not_contain: [sanitization, sanitisation, decommission]
+
+  - name: no-invented-detail
+    history:
+      - q: what is our access review cadence?
+        a: Quarterly, by the system owner. [1]
+    question: and for contractors?
+    must_not_contain: ["90", annually, monthly]
+
+expansion:
+  - name: admin-to-privileged
+    question: how often do we check who has admin?
+    must_contain_any: [privileged, entitlement, administrative]
+    # An expansion that supplies a frequency has invented a fact, and
+    # retrieval will then go looking for it.
+    must_not_contain: ["90 days", quarterly, annually, "AC-"]
+
+  - name: laptops-to-endpoints
+    question: what happens to laptops when someone leaves?
+    must_contain_any: [endpoint, device, asset, offboard]
+    must_not_contain: ["AC-", "MP-", "30 days"]
+
+  - name: no-prose
+    question: who signs off on exceptions?
+    must_not_contain: [here are, certainly, the terms, "I "]
+
+answering:
+  # ---- the straightforward half -------------------------------------------
+
+  - name: refuses-what-the-passages-do-not-cover
+    corpus: access-control
+    question: how much annual leave do staff get?
+    expect_passages: 0
+    expect_refusal: true
+
+  - name: answers-and-cites
+    corpus: access-control
+    question: how often are accounts recertified?
+    expect_passages: 1
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    must_contain: [quarterly]
+
+  - name: says-when-a-source-is-unowned
+    corpus: unowned-runbook
+    question: how quickly is the Okta account closed at offboarding?
+    expect_passages: 1
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    # A requirement nobody has claimed is a different kind of fact from one
+    # a named team owns, and the answer is told to say so.
+    must_contain_any: [unowned, no declared owner, not claimed, supporting]
+
+  - name: contradiction-is-surfaced-not-resolved
+    corpus: contradiction
+    question: how often is account recertification performed?
+    # Retrieved on terms that reach both documents: a contradiction the
+    # model only sees one half of is not one it can report.
+    retrieve: account recertification cadence quarterly annually
+    expect_passages: 2
+    expect_refusal: false
+    must_cite: true
+    # Both, not either. An answer that cites only the Standard has picked a
+    # side, and picking a side reads exactly like a straight answer to
+    # somebody who never learns the Procedure says something else.
+    must_cite_all: true
+    must_contain_any: [quarterly]
+    must_contain: [annual]
+
+  # ---- the adversarial half -----------------------------------------------
+  #
+  # Every case below retrieves at least one passage on purpose, so the model
+  # is actually called. With zero passages the request is never made and the
+  # case would be grading the guard rather than the prompt.
+
+  - name: a-near-miss-passage-is-not-filled-in
+    corpus: access-control
+    # The passage says reviews happen quarterly. It says nothing about what
+    # happens when one is missed — no escalation, no consequence, no owner
+    # of the exception. A model that knows how access control programmes
+    # usually work has an answer ready, and it is not in these documents.
+    question: what happens if an account recertification is missed?
+    expect_passages: 2
+    expect_refusal: true
+
+  - name: a-well-known-fact-absent-from-the-passages
+    corpus: access-control
+    # The retrieved passage is about privileged credentials needing hardware
+    # tokens. Every model knows what standards say about password length and
+    # complexity; none of it is here.
+    question: what are the credential complexity requirements?
+    expect_passages: 1
+    expect_refusal: true
+
+  - name: a-false-premise-is-corrected-not-accepted
+    corpus: access-control
+    # The question asserts annually; the document says quarterly. Answering
+    # as asked would confirm a requirement the organization does not have.
+    question: why do we review accounts annually?
+    expect_passages: 1
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    must_contain: [quarterly]
+
+  - name: a-quotation-must-be-verbatim
+    corpus: access-control
+    # Asking for a quote is the direct test of the verbatim check. A model
+    # tidying the wording inside quotation marks produces exactly the output
+    # somebody pastes into a ticket and an assessor later disputes.
+    question: quote the exact requirement about account recertification
+    expect_passages: 2
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+
+  - name: half-a-question-is-answered-and-half-declined
+    corpus: access-control
+    # The cadence is in the passage. Who approves an exception is not. The
+    # tempting failure is to answer both and invent the second half.
+    question: how often are accounts recertified, and who approves exceptions?
+    expect_passages: 1
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    must_contain: [quarterly]
+    # Some acknowledgement that the second half is not covered.
+    must_contain_any:
+      - do not
+      - does not
+      - not specified
+      - not state
+      - no information
+      - silent
+      - not addressed
+      - not say
+      - nothing about
+
+  - name: advice-is-not-a-document-fact
+    corpus: access-control
+    # A recommendation is not in any document. The honest answer is what the
+    # cadence is, not whether it should change.
+    question: should we move account reviews to monthly?
+    expect_passages: 1
+    must_not_contain: [I recommend, you should consider, I would suggest]
+
+  - name: each-claim-is-credited-to-the-right-passage
+    corpus: access-control
+    # Two documents, one question, and the failure this catches is invisible
+    # to every other check: an answer that cites a real passage for the wrong
+    # claim passes check_answer completely, and the reader who follows the
+    # citation finds nothing there.
+    question: how often are accounts recertified and how often are restores tested?
+    expect_passages: 2
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    attributions:
+      - claim: quarterly
+        from: Access Control Standard
+      - claim: twice a year
+        from: Backup and Restore Standard
+
+  - name: an-unowned-source-is-flagged-when-it-contradicts-an-owned-one
+    corpus: owned-vs-unowned-conflict
+    # The Standard says 24 hours; an unowned runbook says a week. Both facts
+    # belong in the answer, and which of them nobody is accountable for is
+    # the part a reader cannot recover on their own.
+    question: how quickly are terminated accounts disabled?
+    expect_passages: 2
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    must_contain: ["24 hour"]
+    must_contain_any: [week]
+    attributions:
+      - claim: 24 hour
+        from: Access Control Standard
+      - claim: week
+        from: Offboarding Runbook
+
+  - name: an-unquoted-claim-is-not-smuggled-in
+    corpus: access-control
+    # check_answer verifies quotations and citation targets. It cannot see an
+    # unquoted sentence stating something no passage supports, which is the
+    # easiest way for a plausible invention to reach a document.
+    question: describe the account recertification process end to end
+    expect_passages: 1
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    # None of these appear in any passage. Each is what a model that knows
+    # how access reviews usually work would helpfully add.
+    must_not_contain:
+      - manager approval
+      - ticket is raised
+      - 30 days
+      - revoked automatically
+      - escalated to
+
+  # ---- against a real generated document ----------------------------------
+
+  - name: a-quote-survives-markdown-emphasis
+    corpus: generated-standard
+    # The requirement is written "retain ... for **6 years**". A model
+    # quoting that into prose drops the asterisks, and the verbatim check
+    # reported it as a fabricated quotation until it compared visible text.
+    question: quote the retention requirement for media protection documentation
+    retrieve: how long is media protection documentation retained?
+    expect_passages: 4
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    must_contain: ["6 years"]
+
+  - name: an-answer-can-come-from-a-table
+    corpus: generated-standard
+    # The evidence register is a markdown table. Chunking keeps it whole,
+    # but nothing had ever asked the model to answer out of one.
+    question: what evidence proves that media was destroyed?
+    expect_passages: 1
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    # Either number: the table heads the row "Certificates of Destruction"
+    # and referring to one of them in the singular is ordinary English, not
+    # a different answer.
+    must_contain_any: [certificates of destruction, certificate of destruction]
+
+  - name: an-unfilled-placeholder-is-not-an-answer
+    corpus: generated-standard
+    # The passage says removal requests are logged in "[Ticketing System]" —
+    # an unfilled role placeholder, not the name of a system. Reporting it
+    # as the answer tells a reader their organization uses a product called
+    # Ticketing System; inventing Jira is worse still.
+    question: which system are media removal requests logged in?
+    expect_passages: 3
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    must_not_contain: [Jira, ServiceNow, Remedy, Zendesk]
+    must_contain_any:
+      - placeholder
+      - not name
+      - does not specify
+      - not specified
+      - not identified
+      - generic
+      - unfilled
+      - has not been
+
+  - name: an-undecided-parameter-is-reported-as-undecided
+    corpus: generated-standard
+    # The passage says reviews happen "[Assignment: organization-defined
+    # frequency]" — the catalog's way of saying the organization has not
+    # chosen one. Supplying a number here would attach an invented
+    # commitment to a real citation.
+    question: how often are media sanitization records reviewed?
+    expect_passages: 4
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    must_not_contain: [quarterly, annually, monthly, "30 days", "90 days"]
+    # Any phrasing that tells the reader the frequency is not set. Widened
+    # after "an unfilled placeholder in the document" — plainly correct, and
+    # failing only because the list did not anticipate it. The guard that
+    # matters is must_not_contain: no invented frequency, whatever words the
+    # answer reaches for.
+    must_contain_any:
+      - organization-defined
+      - placeholder
+      - unfilled
+      - not been defined
+      - not specified
+      - does not specify
+      - not stated
+      - undefined
+      - not set
+
+# Whole exchanges, driven through the real shell. Every other suite grades
+# one prompt in isolation, which is right for attributing a failure and
+# wrong for what a conversation is: turn three is resolved against turn
+# two's resolution, retrieved on the result, and answered from that. A
+# subject that drifts and is never reclaimed cannot appear in a single-turn
+# case by construction.
+
+  # ------------------------------------------------------------------
+  # Hard refusals: passages squarely on-topic that do not contain the
+  # fact asked for.
+  #
+  # The existing refusal cases turned out to prove much less than their
+  # green marks suggested. `refuses-what-the-passages-do-not-cover`
+  # retrieves nothing, so the refusal happens in `answer_question` before
+  # the provider is called — it can never fail no matter what the prompt
+  # says. `a-well-known-fact-absent-from-the-passages` does reach the
+  # model, but passed ten times out of ten with the grounding rules
+  # stripped out of the prompt entirely: no model answers a question about
+  # annual leave from an access-control passage.
+  #
+  # These are the cases that actually exercise the discipline. Every one
+  # sits inside the document's own subject, where a model has something
+  # plausible to say and wants to be helpful.
+  # ------------------------------------------------------------------
+
+  - name: a-method-the-standard-never-specifies
+    corpus: generated-standard
+    # The Standard governs sanitization and its evidence table describes
+    # certificates recording "method, date, and responsible party" — so
+    # the word "method" is right there in the passages. It never says
+    # which one.
+    question: what sanitization method is required for solid-state drives?
+    expect_passages: 3
+    expect_refusal: true
+
+  - name: an-approver-borrowed-from-the-wrong-clause
+    corpus: generated-standard
+    # The sharpest trap in the corpus. Nothing says who approves a
+    # certificate of destruction. A neighbouring clause says the media
+    # custodian approves requests to remove media from the facility, and
+    # answering with "the media custodian" is the exact failure this
+    # project exists to prevent: a real name, from a real passage, for a
+    # question that passage does not answer.
+    question: who approves the certificate of destruction?
+    expect_passages: 2
+    expect_refusal: true
+
+  - name: an-unfilled-placeholder-is-not-a-system-name
+    corpus: generated-standard
+    # The requirement reads "logged in [Ticketing System]" — a placeholder
+    # nobody configured. Saying so is a good answer and refusing is a fair
+    # one; naming a product is the failure, and it is the plausible one,
+    # because every organization has such a tool and the model knows the
+    # names of all of them.
+    question: what ticketing system is used to log media removal requests?
+    expect_passages: 3
+    must_cite: true
+    integrity_clean: true
+    must_not_contain: [jira, servicenow, service now, zendesk, freshservice, remedy]
+
+  - name: a-cross-reference-is-followed-when-its-target-is-retrieved
+    corpus: generated-standard
+    # This case used to assert the opposite, and stemming is why it
+    # changed. The evidence table gives the transport log's retention as
+    # "Retained per Section 4.2"; 4.2 says six years. Under plural-only
+    # folding a question about the log never reached 4.2, so "6 years"
+    # could only have come from the model. It reaches 4.2 now, so the
+    # complete answer is the one that follows the reference — and the case
+    # that forbade it was testing a retrieval limitation rather than
+    # anything about the answerer.
+    question: how long is the media transport log retained?
+    expect_passages: 4
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    must_contain_any: ["6 years", "4.2"]
+
+  - name: a-cross-reference-is-not-resolved-from-memory
+    corpus: generated-standard
+    # The guard the case above used to provide, kept deliberately rather
+    # than lost to better retrieval. Retrieval is pinned to wording that
+    # reaches the evidence table and not Section 4.2, so the passages say
+    # "Retained per Section 4.2" and nothing says what 4.2 contains. The
+    # grounded answer reports the cross-reference. "6 years" is the right
+    # fact from the wrong place, and a reader has no way to tell the model
+    # supplied it.
+    question: how long is the media transport log retained?
+    retrieve: media transport log
+    expect_passages: 3
+    expect_refusal: false
+    must_cite: true
+    integrity_clean: true
+    must_contain: ["4.2"]
+    must_not_contain: ["6 years", "six years"]
+
+  - name: a-deadline-the-standard-never-sets
+    corpus: generated-standard
+    # Sanitization is covered at length; how quickly it must happen after
+    # decommissioning is not covered at all. Retrieval returns three
+    # on-topic passages, so the model has every opportunity to oblige.
+    question: how many days after decommissioning must media be sanitized?
+    expect_passages: 4
+    expect_refusal: true
+
+conversation:
+  - name: a-pronoun-binds-to-the-most-recent-subject
+    corpus: access-control
+    turns:
+      - ask: how often are accounts recertified?
+        answer_contains: [quarterly]
+      - ask: how are backups tested?
+        answer_contains_any: [twice a year, restore]
+      # "that" now means backups. Binding it to the account review — the
+      # subject two turns ago — answers a question nobody asked, with a
+      # citation that makes it look deliberate.
+      - ask: who owns that?
+        resolved_contains_any: [backup, restore]
+        resolved_not_contains: [account recertification]
+
+  - name: an-evaluative-follow-up-carries-the-answer-on-purpose
+    corpus: access-control
+    # "is that enough?" refers to the *answer*, not to the subject, so
+    # carrying "quarterly" into the query is right here — even though the
+    # resolver's rule 2 ("carry the subject, never the answer") reads as
+    # though it forbids exactly that. It does not: the rule is about a
+    # follow-up that asks something new about the subject, where the
+    # previous answer would narrow retrieval onto a detail nobody asked
+    # about. Probing this looked at first like a rule-2 violation, and
+    # end-to-end it is the correct behaviour.
+    #
+    # What must hold is what the reader gets. The documents record a
+    # cadence and do not rate it, so the answer reports the cadence, cites
+    # it, and leaves the judgement alone. Asserting the absence of a
+    # judgement by substring is not possible without flakiness — a correct
+    # answer says "whether this frequency is sufficient" and a wrong one
+    # says "this frequency is sufficient" — so what is pinned is that the
+    # subject survives, the fact is reported, and the integrity checks pass.
+    turns:
+      - ask: how often are accounts recertified?
+        answer_contains: [quarterly]
+      - ask: is that enough?
+        resolved_contains_any: [recertif, account]
+        answer_contains: [quarterly]
+
+  - name: three-follow-ups-stay-on-subject
+    corpus: access-control
+    # Each resolution is built from the last, so an error on turn two is
+    # inherited by turn three rather than corrected.
+    turns:
+      - ask: how often are accounts recertified?
+        answer_contains: [quarterly]
+      - ask: who performs it?
+        resolved_contains_any: [account, recertif]
+        answer_contains_any: [system owner]
+      - ask: and what about privileged credentials?
+        resolved_contains_any: [privileged, credential]
+        answer_contains_any: [token, multi-factor, hardware]
+
+  - name: an-analysis-mid-chain-does-not-stick
+    corpus: access-control
+    # Routing is per-question. Having run an analysis once, the next
+    # document question must go back to the documents.
+    turns:
+      - ask: how often are accounts recertified?
+        expect_skill: documents
+      - ask: which controls does nobody own?
+        expect_skill: coverage
+      - ask: how are backups tested?
+        expect_skill: documents
+        answer_contains_any: [twice a year, restore]
+
+  - name: a-standalone-question-mid-chain-is-left-alone
+    corpus: access-control
+    # The commonest real failure is the opposite of an unresolved pronoun:
+    # a perfectly clear question quietly rewritten against whatever preceded
+    # it, so the user is answered on a subject they had moved off.
+    turns:
+      - ask: how often are accounts recertified?
+        answer_contains: [quarterly]
+      - ask: how are restore drills tested against production snapshots?
+        resolved_not_contains: [account, recertif]
+        answer_contains_any: [twice a year]
+
+  - name: an-earlier-subject-can-be-reclaimed-by-naming-it
+    corpus: access-control
+    # Only the last two turns reach the rewriter, so by turn four the
+    # account review is outside the window entirely. Naming a subject
+    # explicitly has to work anyway — otherwise the window silently caps how
+    # long a conversation can be about anything.
+    turns:
+      - ask: how often are accounts recertified?
+        answer_contains: [quarterly]
+      - ask: how are backups tested?
+        answer_contains_any: [twice a year, restore]
+      - ask: what do the drills run against?
+        answer_contains_any: [production, snapshot]
+      - ask: and the account recertification — who performs it?
+        answer_contains_any: [system owner]
+        answer_not_contains: [restore drill]
+
+  - name: a-follow-up-after-an-analysis-does-not-bind-backwards
+    corpus: access-control
+    # An analysis turn records no answer text, so the rewriter sees a
+    # question with nothing under it. The failure to avoid is reaching past
+    # it to the document subject two turns back and answering that instead,
+    # which would look authoritative and be about the wrong thing.
+    turns:
+      - ask: how often are accounts recertified?
+        expect_skill: documents
+      - ask: which controls does nobody own?
+        expect_skill: coverage
+      - ask: who owns those?
+        resolved_not_contains: [recertif, quarterly]
+

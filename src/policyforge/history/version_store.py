@@ -97,9 +97,7 @@ def record_version(
         return None
 
     previous_version = history[-1].version if history else 0
-    previous_content = (
-        load_version_content(history_dir, slug, previous_version) if history else ""
-    )
+    previous_content = load_version_content(history_dir, slug, previous_version) if history else ""
 
     diff_lines = list(
         difflib.unified_diff(

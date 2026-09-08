@@ -139,13 +139,20 @@ def _parse_section(section_id: str, head: str, body: str) -> list[Control]:
                 text = _strip_tags(remainder)
                 target = current_enh or current
                 if text and target is not None:
-                    field = "description" if isinstance(target, ControlEnhancement) else "control_statement"
+                    field = (
+                        "description"
+                        if isinstance(target, ControlEnhancement)
+                        else "control_statement"
+                    )
                     setattr(target, field, f"{getattr(target, field)} {text}".strip())
                 continue  # otherwise: framing prose before any item has opened
             italic_text = _strip_tags(italic_match.group("italic"))
             rest_text = _strip_tags(italic_match.group("rest"))
 
-            if italic_text.rstrip(":") in ("Implementation specifications", "Implementation specification"):
+            if italic_text.rstrip(":") in (
+                "Implementation specifications",
+                "Implementation specification",
+            ):
                 continue  # bare section-header label, not itself a requirement
 
             req_match = _REQUIRED_ADDRESSABLE_RE.search(italic_text)

@@ -45,7 +45,9 @@ def test_fetch_confluence_page_returns_page_on_match(monkeypatch):
     monkeypatch.setattr("requests.get", fake_get)
 
     page = confluence_importer.fetch_confluence_page(
-        space="ENG", title="Authenticator Management Standard", host="https://example.atlassian.net/wiki"
+        space="ENG",
+        title="Authenticator Management Standard",
+        host="https://example.atlassian.net/wiki",
     )
 
     assert page.id == "123"

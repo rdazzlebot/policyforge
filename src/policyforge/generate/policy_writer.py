@@ -45,6 +45,29 @@ class OrgContext:
     name: str
     industry: str
     vendors: list[str] = field(default_factory=list)
+    #: The role-keyed profile, when config supplied one. Present means the
+    #: generator is told what each tool is *for* rather than left to infer
+    #: it, and the placeholders it writes are role labels that a
+    #: deterministic pass can fill in afterwards.
+    profile: object | None = None
+
+
+@dataclass
+class TopicContext:
+    """Which topic a document is being drafted for, and who owns it.
+
+    Sourced from the topic registry (`topics/registry.py`) and carried into
+    the generated document through the synthesis file's frontmatter. Its
+    whole job is to remove one specific placeholder: without an owner, every
+    generator writes `[Responsible Team]` wherever the document has to name
+    who performs a step or answers for the outcome, which is precisely the
+    ownership question the "one topic, one team" model exists to settle.
+    """
+
+    name: str = ""
+    owner: str = ""
+    cadence: str = ""
+    evidence: list[str] = field(default_factory=list)
 
 
 _STANDARD_SYSTEM_PROMPT = """You are a compliance policy drafting engine. \
@@ -64,10 +87,12 @@ Rules:
 - Preserve each requirement's inline source tag (e.g. `[NIST IA-5 |
   GovRAMP IA-5]`) so the document stays traceable back to the frameworks it
   was drawn from.
-- Where a requirement is vendor/tool-specific: if the organization's vendor
-  list below names a plausible match, use that vendor's actual name. If not,
-  write a placeholder in the square-bracket form `[Square-Bracket Vendor]`
-  (e.g. `[Endpoint Protection Vendor]`) rather than naming a real product.
+- Where a requirement is vendor/tool-specific: if the tool list below fills
+  that role, use that tool's actual name. If not, write the role itself in
+  square brackets (`[Identity Provider]`, `[Ticketing System]`, `[Backup
+  System]`) rather than naming a product the organization has not said it
+  uses. Write the role exactly as it is worded in the list below where one
+  applies — those labels are substituted automatically afterwards.
 - Write in formal policy language ("must", "shall"), addressed to the
   security/IT staff who implement and audit against this document, not to
   a generic reader.
@@ -141,9 +166,9 @@ Rules:
   end of its subsection heading or its first step, so the document stays
   traceable back to the frameworks it was drawn from.
 - Where a step is vendor/tool-specific: if the organization's vendor list
-  below names a plausible match, use that vendor's actual name and its real
-  UI/CLI actions where you can reasonably infer them. If not, write a
-  placeholder in the square-bracket form `[Square-Bracket Vendor]` rather
+  below fills that role, use that tool's actual name and its real UI/CLI
+  actions where you can reasonably infer them. If not, write the role itself
+  in square brackets (`[Identity Provider]`, `[Ticketing System]`) rather
   than naming a real product or inventing specific UI steps for it.
 - Roles & Responsibilities: 1-2 sentences on who is authorized to perform
   these steps and who reviews/approves exceptions.
@@ -156,13 +181,56 @@ Rules:
 
 
 def _render_org(org: OrgContext) -> str:
+    """The organization block, from the role-keyed profile where there is one.
+
+    The legacy branch is what a flat `vendors:` list has always produced, and
+    it stays because config files in the wild use it.
+    """
+    if org.profile is not None:
+        from policyforge.org.context import render_for_prompt
+
+        return render_for_prompt(org.profile)
+
     lines = [f"Organization: {org.name}", f"Industry: {org.industry}"]
     if org.vendors:
         lines.append(f"Known vendors/tools: {', '.join(org.vendors)}")
     else:
         lines.append(
-            "Known vendors/tools: none supplied — use [Square-Bracket Vendor] "
-            "placeholders throughout."
+            "Known vendors/tools: none supplied — write the role in square "
+            "brackets ([Identity Provider], [Ticketing System]) wherever the "
+            "document needs to name a system."
+        )
+    return "\n".join(lines)
+
+
+def _render_context(org: OrgContext, topic: TopicContext | None) -> str:
+    """Org context, plus topic ownership when the registry supplied it."""
+    block = _render_org(org)
+    if topic is None or not topic.owner:
+        return block
+
+    lines = [block, ""]
+    if topic.name:
+        lines.append(f"Topic: {topic.name}")
+    lines.append(
+        f"Owning team: {topic.owner} — this team is accountable for this process end "
+        "to end. Name it wherever the document must say who performs a step, who "
+        "reviews, or who answers for the outcome. Do not write [Responsible Team], "
+        "[Owning Team] or similar placeholders for that role; you have the answer. "
+        "Other teams may appear as participants in individual steps, but "
+        f"{topic.owner} owns the process and its handoffs."
+    )
+    if topic.cadence:
+        lines.append(
+            f"Cadence: {topic.cadence} — use this where the document states how often "
+            "the process runs, instead of a placeholder frequency."
+        )
+    if topic.evidence:
+        lines.append(
+            "Evidence this process is expected to produce: "
+            + "; ".join(topic.evidence)
+            + ". Reference these artifacts where the document describes what is "
+            "recorded or retained."
         )
     return "\n".join(lines)
 
@@ -178,12 +246,18 @@ def extract_title(markdown_text: str) -> str:
     raise ValueError("No '# ' title heading found in markdown_text.")
 
 
-def generate_standard(topic_synthesis: str, org: OrgContext, provider: LLMProvider) -> str:
+def generate_standard(
+    topic_synthesis: str,
+    org: OrgContext,
+    provider: LLMProvider,
+    *,
+    topic: TopicContext | None = None,
+) -> str:
     if not topic_synthesis.strip():
         raise ValueError("topic_synthesis is empty — nothing to draft a document from.")
 
     prompt = (
-        f"{_render_org(org)}\n\n"
+        f"{_render_context(org, topic)}\n\n"
         f"Synthesized requirements:\n\n{topic_synthesis}\n\n"
         "Draft the Standard document per the rules above."
     )
@@ -194,7 +268,12 @@ def generate_standard(topic_synthesis: str, org: OrgContext, provider: LLMProvid
 
 
 def generate_policy(
-    topic_synthesis: str, org: OrgContext, provider: LLMProvider, *, standard_title: str
+    topic_synthesis: str,
+    org: OrgContext,
+    provider: LLMProvider,
+    *,
+    standard_title: str,
+    topic: TopicContext | None = None,
 ) -> str:
     if not topic_synthesis.strip():
         raise ValueError("topic_synthesis is empty — nothing to draft a document from.")
@@ -205,7 +284,7 @@ def generate_policy(
         )
 
     prompt = (
-        f"{_render_org(org)}\n\n"
+        f"{_render_context(org, topic)}\n\n"
         f"This policy's implementing Standard document is titled: "
         f"{standard_title!r}\n\n"
         "Synthesized requirements (the Standard above is built from these "
@@ -220,7 +299,12 @@ def generate_policy(
 
 
 def generate_procedure(
-    topic_synthesis: str, org: OrgContext, provider: LLMProvider, *, standard_title: str
+    topic_synthesis: str,
+    org: OrgContext,
+    provider: LLMProvider,
+    *,
+    standard_title: str,
+    topic: TopicContext | None = None,
 ) -> str:
     if not topic_synthesis.strip():
         raise ValueError("topic_synthesis is empty — nothing to draft a document from.")
@@ -231,7 +315,7 @@ def generate_procedure(
         )
 
     prompt = (
-        f"{_render_org(org)}\n\n"
+        f"{_render_context(org, topic)}\n\n"
         f"This procedure operationalizes the Standard document titled: "
         f"{standard_title!r}\n\n"
         "Synthesized requirements (turn each into ordered, concrete steps "

@@ -24,6 +24,11 @@ jobs:
         uses: github/codeql-action/init@42947a340483f03ba47bb1a039b2c519aab3df85  # v3
         with:
           languages: python
+          # The default suite is tuned for a low false-positive rate on huge
+          # codebases. This repo is small enough to absorb the extra noise,
+          # and it handles compliance data and API credentials, so the wider
+          # net is worth it.
+          queries: security-extended
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@42947a340483f03ba47bb1a039b2c519aab3df85  # v3

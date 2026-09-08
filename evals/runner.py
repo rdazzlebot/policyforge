@@ -1,0 +1,586 @@
+"""Grading Zardoz's prompts against a real model, repeatably.
+
+Everything else in this repository is tested against fixtures, which is
+right: fixtures are fast, free, and answer the same way every time. But four
+things here are prompts, and a prompt cannot be tested that way. Whether the
+answerer refuses when the passages do not support a claim, whether the
+router picks the right analysis, whether the rewriter invents a detail — all
+of that is a property of a model's behaviour, and the only way to know it is
+to ask the model.
+
+**One run is not evidence.** That is the lesson this harness is built
+around. A truncation bug in the routing budget was measured at one failure
+in eight, and the first two probes came back clean; had it been graded once
+per case it would have shipped. So every case runs `--repeat` times and the
+report is a *rate*, not a verdict. A case that passes seven times out of
+eight is not a passing case, and a harness that cannot tell the difference
+is worse than none.
+
+**Grading is deterministic.** No model judges another model's output. Every
+check is a substring, a citation marker, a refusal sentinel, or the
+project's own `check_answer` — the same integrity checks that run in
+production. A grader that itself needed a model would have the failure mode
+it exists to detect.
+
+Kept out of the test suite deliberately: these cost money and need network,
+and a suite people cannot run offline is a suite people stop running.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+
+DEFAULT_CASES = Path(__file__).parent / "cases.yaml"
+DEFAULT_PARAPHRASES = Path(__file__).parent / "paraphrases.yaml"
+DEFAULT_ANSWER_PARAPHRASES = Path(__file__).parent / "answer_paraphrases.yaml"
+
+_CITATION_RE = re.compile(r"\[(\d+)\]")
+
+
+#: Substrings identifying a failure of the API rather than of the prompt.
+#: A dead key, an exhausted balance and a rate limit are all "this did not
+#: run", and reporting them as graded failures says the model got the answer
+#: wrong when it was never asked the question.
+_INFRASTRUCTURE = (
+    "credit balance",
+    "rate limit",
+    "authentication",
+    "api key",
+    "overloaded",
+    "connection",
+    "timeout",
+)
+
+
+@dataclass
+class Outcome:
+    """What one graded run produced."""
+
+    passed: bool
+    detail: str = ""
+    output: str = ""
+    #: True when the request never reached a verdict. Counted apart from
+    #: failures: a run that could not happen is not evidence about the
+    #: prompt, and folding it in turns an expired card into what looks like
+    #: a regression.
+    errored: bool = False
+
+
+@dataclass
+class CaseResult:
+    """One case, run several times."""
+
+    suite: str
+    name: str
+    outcomes: list[Outcome] = field(default_factory=list)
+
+    @property
+    def runs(self) -> int:
+        return len(self.outcomes)
+
+    @property
+    def passes(self) -> int:
+        return sum(1 for o in self.outcomes if o.passed)
+
+    @property
+    def rate(self) -> float:
+        return self.passes / self.runs if self.runs else 0.0
+
+    @property
+    def flaky(self) -> bool:
+        """Sometimes right. The outcome a single run cannot distinguish from
+        either of the other two, and the one worth knowing about."""
+        return 0 < self.passes < self.runs
+
+    @property
+    def failures(self) -> list[Outcome]:
+        return [o for o in self.outcomes if not o.passed]
+
+    @property
+    def errors(self) -> list[Outcome]:
+        return [o for o in self.outcomes if o.errored]
+
+    @property
+    def graded(self) -> int:
+        """Runs that actually reached a verdict."""
+        return self.runs - len(self.errors)
+
+
+def _missing(text: str, required) -> list[str]:
+    lowered = text.lower()
+    return [term for term in required or [] if term.lower() not in lowered]
+
+
+def _present(text: str, forbidden) -> list[str]:
+    lowered = text.lower()
+    return [term for term in forbidden or [] if term.lower() in lowered]
+
+
+def grade_text(text: str, case: dict) -> Outcome:
+    """The shared substring checks every suite uses.
+
+    Empty output is a failure unless the case says otherwise, and that
+    default is the whole point. A case whose assertions are all negative
+    passes trivially on an empty string, so it cannot fail for the reason it
+    was written: `no-prose` forbids a prose expansion, but `parse_expansion`
+    already discards a prose reply and returns nothing, and nothing contains
+    no prose. Mutation testing found it — deleting the rule that forbids
+    prose changed the case's verdict not at all.
+    """
+    if not text.strip() and not case.get("allow_empty"):
+        return Outcome(False, "empty output — negative assertions pass on nothing", text)
+
+    missing = _missing(text, case.get("must_contain"))
+    if missing:
+        return Outcome(False, f"missing {missing}", text)
+
+    forbidden = _present(text, case.get("must_not_contain"))
+    if forbidden:
+        return Outcome(False, f"should not contain {forbidden}", text)
+
+    any_of = case.get("must_contain_any")
+    if any_of and not any(term.lower() in text.lower() for term in any_of):
+        return Outcome(False, f"none of {any_of} present", text)
+
+    return Outcome(True, output=text)
+
+
+# --------------------------------------------------------------------------
+# Suites
+# --------------------------------------------------------------------------
+
+
+def run_routing(case: dict, provider, corpora: dict | None = None) -> Outcome:
+    """Does the question reach the analysis that can answer it?
+
+    The negative cases matter as much as the positive ones: a router that
+    hijacks "what is our access review cadence?" into an analysis has made
+    the shell worse, not better.
+    """
+    from policyforge.zardoz.skills import route
+
+    chosen = route(case["question"], provider)
+    expected = case["expect"]
+    if chosen != expected:
+        return Outcome(False, f"routed to {chosen!r}, expected {expected!r}", chosen)
+    return Outcome(True, output=chosen)
+
+
+def run_resolution(case: dict, provider, corpora: dict | None = None) -> Outcome:
+    """Does a follow-up become the question it obviously means?"""
+    from policyforge.zardoz.conversation import Conversation, Turn, resolve_question
+
+    conversation = Conversation(
+        turns=[
+            Turn(question=t["q"], resolved=t["q"], answer=t.get("a", ""))
+            for t in case.get("history", [])
+        ]
+    )
+    resolved, rewritten = resolve_question(case["question"], conversation, provider)
+
+    if "rewritten" in case and bool(rewritten) != bool(case["rewritten"]):
+        state = "rewritten" if rewritten else "left alone"
+        return Outcome(False, f"{state}, expected the opposite", resolved)
+    return grade_text(resolved, case)
+
+
+def run_expansion(case: dict, provider, corpora: dict | None = None) -> Outcome:
+    """Does expansion name the document's vocabulary, and nothing else?
+
+    The forbidden list is the important half. An expansion that supplies a
+    frequency or a control identifier has invented a fact, and retrieval
+    would then go looking for it.
+    """
+    from policyforge.zardoz.paraphrase import expand_query
+
+    return grade_text(expand_query(case["question"], provider), case)
+
+
+def _corpus_of(case: dict, corpora: dict | None = None):
+    """The Corpus a case is about, before anything is retrieved from it.
+
+    Split out because a multi-turn case cannot pre-compute passages: each
+    turn asks a different question and must retrieve for itself, which is
+    the point of driving the real shell rather than the answering function.
+    """
+    from policyforge.zardoz.corpus import TRUSTED, Corpus
+    from policyforge.zardoz.corpus import CorpusDocument as Doc
+
+    if "corpus" in case:
+        case = {**case, "documents": (corpora or {})[case["corpus"]]}
+
+    documents = [
+        {**doc, "body": (Path(__file__).parent / doc["from_file"]).read_text(encoding="utf-8")}
+        if "from_file" in doc
+        else doc
+        for doc in case["documents"]
+    ]
+    return Corpus(
+        documents=[
+            Doc(
+                doc_id=str(n),
+                title=doc["title"],
+                space="",
+                confidence=doc.get("confidence", TRUSTED),
+                source="markdown",
+                path=doc.get("path", f"standards/{n}.md"),
+                owner=doc.get("owner", "IAM Engineering"),
+                body=doc["body"],
+            )
+            for n, doc in enumerate(documents)
+        ]
+    )
+
+
+def _passages(case: dict, corpora: dict | None = None):
+    """The passages a single-turn answering case is graded on.
+
+    Retrieval is deterministic, so these are the same every run and only the
+    answering varies. Grading two stochastic stages at once would make a
+    failure impossible to attribute.
+    """
+    from policyforge.zardoz.retrieve import build_index
+
+    corpus = _corpus_of(case, corpora)
+    return build_index(corpus).search(case.get("retrieve", case["question"]), limit=4)
+
+
+_SENTENCE_RE = re.compile(r"[^.!?]+(?:[.!?]+|$)")
+
+
+def check_attribution(text: str, passages, attributions) -> str:
+    """Verify each claim is credited to the passage that actually supports it.
+
+    `check_answer` already proves a citation *exists* and points at a real
+    passage. It cannot tell whether it points at the right one â€” an answer
+    that says "restores are tested twice a year [1]" while [1] is the access
+    control standard passes every integrity check and is wrong in the way
+    that matters, because the reader who follows the citation finds nothing.
+
+    Graded from the case rather than inferred: the case names the claim and
+    the document that should be credited for it, and this checks the
+    sentence carrying that claim cites a passage from that document. A claim
+    stated with no citation at all fails here too, which is the other half
+    of the same problem.
+    """
+    by_number = dict(enumerate(passages, start=1))
+
+    for rule in attributions or []:
+        claim, source = rule["claim"].lower(), rule["from"].lower()
+        sentences = [s for s in _SENTENCE_RE.findall(text) if claim in s.lower()]
+        if not sentences:
+            return f"never states {rule['claim']!r}"
+
+        cited_titles = {
+            by_number[int(n)].document.title.lower()
+            for sentence in sentences
+            for n in _CITATION_RE.findall(sentence)
+            if int(n) in by_number
+        }
+        if not cited_titles:
+            return f"states {rule['claim']!r} with no citation"
+        if source not in cited_titles:
+            return (
+                f"credits {rule['claim']!r} to {sorted(cited_titles)}, "
+                f"but it comes from {rule['from']!r}"
+            )
+    return ""
+
+
+def run_answering(case: dict, provider, corpora: dict | None = None) -> Outcome:
+    """Does the answer stay inside its passages, and refuse when it must?"""
+    from policyforge.zardoz.answer import answer_question, check_answer
+
+    passages = _passages(case, corpora)
+    if case.get("expect_passages") is not None and len(passages) != case["expect_passages"]:
+        return Outcome(
+            False,
+            f"retrieval found {len(passages)} passage(s), case expects "
+            f"{case['expect_passages']} — the case, not the model, is wrong",
+        )
+
+    answer = answer_question(case["question"], passages, provider)
+
+    if case.get("expect_refusal") and not answer.refused:
+        return Outcome(False, "answered, expected a refusal", answer.text)
+    if case.get("expect_refusal") is False and answer.refused:
+        return Outcome(False, "refused, expected an answer", answer.text)
+    if answer.refused:
+        return Outcome(True, "refused", answer.text)
+
+    if case.get("must_cite", True) and not _CITATION_RE.search(answer.text):
+        return Outcome(False, "no citation marker", answer.text)
+
+    # Some answers are only answers if they credit every passage. A
+    # contradiction reported from one of the two documents that disagree is
+    # not a contradiction reported — it is the model having quietly picked
+    # one, which reads exactly like a straight answer.
+    if case.get("must_cite_all"):
+        uncited = [n for n in range(1, len(passages) + 1) if f"[{n}]" not in answer.text]
+        if uncited:
+            return Outcome(
+                False,
+                f"cites no passage {', '.join(f'[{n}]' for n in uncited)} of "
+                f"{len(passages)} supplied",
+                answer.text,
+            )
+
+    # The project's own integrity checks, run as a grader. A fabricated
+    # citation or a quotation that is not in the source is a failure here
+    # for exactly the reason it is a warning in production.
+    if case.get("integrity_clean", True):
+        _, warnings = check_answer(answer.text, passages, case["question"])
+        if warnings:
+            return Outcome(False, f"integrity: {'; '.join(warnings)}", answer.text)
+
+    misattributed = check_attribution(answer.text, passages, case.get("attributions"))
+    if misattributed:
+        return Outcome(False, f"attribution: {misattributed}", answer.text)
+
+    return grade_text(answer.text, case)
+
+
+def run_conversation(case: dict, provider, corpora: dict | None = None) -> Outcome:
+    """Drive several turns through the real shell and grade each one.
+
+    Every other suite exercises one prompt in isolation, which is right for
+    attributing a failure and wrong for the thing a conversation actually
+    is. A chain compounds: turn three is resolved against turn two's
+    resolution, retrieved on the result, and answered from that. The
+    failures worth finding here — a subject that drifts and is never
+    reclaimed, a pronoun that binds to the wrong antecedent, an analysis
+    that hijacks the middle of a document conversation — cannot appear in a
+    single-turn case by construction.
+
+    Driven through `dispatch` rather than the underlying functions so that
+    resolution, routing and answering interact exactly as they do for a
+    person at the prompt.
+    """
+    from policyforge.zardoz.answer import check_answer
+    from policyforge.zardoz.shell import ShellState, dispatch
+
+    state = ShellState(
+        corpus=_corpus_of(case, corpora),
+        provider=provider,
+        config={},
+        topics=[],
+    )
+
+    for number, turn in enumerate(case["turns"], start=1):
+        output = dispatch(turn["ask"], state)
+        recorded = state.conversation.last
+        resolved = recorded.resolved if recorded else ""
+        where = f"turn {number} ({turn['ask']!r})"
+
+        if "expect_skill" in turn:
+            ran = f"(ran /{turn['expect_skill']})" in output
+            if turn["expect_skill"] == "documents":
+                if "(ran /" in output:
+                    return Outcome(False, f"{where}: routed to an analysis", output[:200])
+            elif not ran:
+                return Outcome(False, f"{where}: did not run /{turn['expect_skill']}", output[:200])
+
+        checks = {
+            "must_contain": turn.get("resolved_contains"),
+            "must_not_contain": turn.get("resolved_not_contains"),
+            "must_contain_any": turn.get("resolved_contains_any"),
+        }
+        if any(checks.values()):
+            graded = grade_text(resolved, {k: v for k, v in checks.items() if v})
+            if not graded.passed:
+                return Outcome(False, f"{where} resolved: {graded.detail}", resolved)
+
+        answer_checks = {
+            "must_contain": turn.get("answer_contains"),
+            "must_not_contain": turn.get("answer_not_contains"),
+            "must_contain_any": turn.get("answer_contains_any"),
+        }
+        if any(answer_checks.values()):
+            graded = grade_text(output, {k: v for k, v in answer_checks.items() if v})
+            if not graded.passed:
+                return Outcome(False, f"{where} answer: {graded.detail}", output[:220])
+
+        # The same integrity checks the single-turn suite runs. They were
+        # missing here, which left the chain — the one place a drifted
+        # subject produces a confident answer about the wrong thing —
+        # graded only on substrings. Skipped for a turn that ran an
+        # analysis, which has no passages and is printed verbatim.
+        # `recorded.answer` is empty on the no-provider path, where the
+        # shell prints the passages verbatim and no model wrote anything.
+        # There are no claims there to check.
+        if (
+            turn.get("integrity_clean", True)
+            and recorded
+            and recorded.passages
+            and recorded.answer.strip()
+        ):
+            _, warnings = check_answer(recorded.answer, recorded.passages, recorded.subject)
+            if warnings:
+                return Outcome(False, f"{where} integrity: {'; '.join(warnings)}", recorded.answer)
+
+    return Outcome(True, output=f"{len(case['turns'])} turns")
+
+
+SUITES = {
+    "routing": run_routing,
+    "resolution": run_resolution,
+    "expansion": run_expansion,
+    "answering": run_answering,
+    "conversation": run_conversation,
+    # Same grader as routing; a separate suite so the hand-written
+    # cases and the generated ones are reported apart. They measure
+    # different things: whether routing is right, and whether it is
+    # right only for the wording its author happened to think of.
+    "paraphrase": run_routing,
+    # Answering, asked in wordings its author did not choose. Same
+    # grader and same passages as the parent case; only the question
+    # text differs.
+    "answer_paraphrase": run_answering,
+}
+
+
+def load_cases(path: Path = DEFAULT_CASES) -> dict[str, list[dict]]:
+    import yaml
+
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    cases = {suite: list(rows or []) for suite, rows in data.items() if suite in SUITES}
+
+    paraphrases = load_paraphrases()
+    if paraphrases:
+        cases["paraphrase"] = paraphrases
+
+    reworded = load_answer_paraphrases(parents=cases.get("answering", []))
+    if reworded:
+        cases["answer_paraphrase"] = reworded
+    return cases
+
+
+def load_answer_paraphrases(
+    parents: list[dict], path: Path = DEFAULT_ANSWER_PARAPHRASES
+) -> list[dict]:
+    """Answering cases reworded, keeping their parent's expectations.
+
+    Retrieval is pinned to the parent's wording, so the passages are
+    identical across every phrasing and only the answering varies. A
+    paraphrase that drove retrieval too would change the passages *and* the
+    question at once, and a failure could not be attributed to either.
+    """
+    import yaml
+
+    if not Path(path).exists():
+        return []
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    by_name = {case["name"]: case for case in parents}
+
+    rows = []
+    for origin, entry in data.items():
+        parent = by_name.get(origin)
+        if parent is None:
+            continue
+        for n, phrasing in enumerate(entry.get("phrasings") or [], start=1):
+            rows.append(
+                {
+                    **parent,
+                    "name": f"{origin}#{n}",
+                    "question": phrasing,
+                    "retrieve": entry.get("retrieve", parent.get("question")),
+                }
+            )
+    return rows
+
+
+def load_paraphrases(path: Path = DEFAULT_PARAPHRASES) -> list[dict]:
+    """Generated rewordings of the routing cases, as routing cases.
+
+    The expected label is inherited from the case each was generated from,
+    so novel wording is graded against a fixed answer. What this measures is
+    paraphrase-invariance: a router that only works on the phrasings its
+    author happened to write is brittle, and no hand-written case can show
+    that, because the author writes those too.
+    """
+    import yaml
+
+    if not Path(path).exists():
+        return []
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+
+    rows = []
+    for origin, entry in data.items():
+        for n, phrasing in enumerate(entry.get("phrasings") or [], start=1):
+            rows.append({"name": f"{origin}#{n}", "question": phrasing, "expect": entry["expect"]})
+    return rows
+
+
+def load_corpora(path: Path = DEFAULT_CASES) -> dict[str, list[dict]]:
+    """Document sets several answering cases share."""
+    import yaml
+
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    return dict(data.get("corpora") or {})
+
+
+def run_case(
+    suite: str, case: dict, provider, *, repeat: int = 1, corpora: dict | None = None
+) -> CaseResult:
+    result = CaseResult(suite=suite, name=case.get("name") or case.get("question", "?"))
+    for _ in range(repeat):
+        try:
+            # Every runner takes the same three arguments, whether or not it
+            # uses the corpora. Dispatching on a list of suite names instead
+            # meant a new suite silently ran without its documents: the
+            # answering paraphrases were added and every one of them failed
+            # with a KeyError for a corpus that was loaded and sitting right
+            # there.
+            result.outcomes.append(SUITES[suite](case, provider, corpora))
+        except Exception as exc:  # noqa: BLE001 - one bad case must not end the run
+            detail = f"{type(exc).__name__}: {exc}"
+            infrastructure = any(hint in detail.lower() for hint in _INFRASTRUCTURE)
+            result.outcomes.append(Outcome(False, detail, errored=infrastructure))
+    return result
+
+
+def format_report(results: list[CaseResult], *, repeat: int) -> str:
+    lines = []
+    for suite in SUITES:
+        rows = [r for r in results if r.suite == suite]
+        if not rows:
+            continue
+        passes = sum(r.passes for r in rows)
+        runs = sum(r.runs for r in rows)
+        clean = sum(1 for r in rows if r.rate == 1.0)
+        lines.append(
+            f"{suite}: {clean}/{len(rows)} cases always pass "
+            f"({passes}/{runs} runs, {passes / runs:.0%})"
+        )
+        for row in rows:
+            if row.rate == 1.0:
+                continue
+            mark = "ERROR" if row.errors else ("FLAKY" if row.flaky else "FAIL ")
+            lines.append(f"  {mark} {row.passes}/{row.runs}  {row.name}")
+            for outcome in row.failures[:1]:
+                lines.append(f"        {outcome.detail}")
+                if outcome.output:
+                    lines.append(f"        got: {' '.join(outcome.output.split())[:150]}")
+
+    errored = [r for r in results if r.errors]
+    flaky = [r for r in results if r.flaky and not r.errors]
+    failed = [r for r in results if r.passes == 0 and not r.errors]
+    lines += ["", f"{len(results)} case(s) x {repeat} run(s)"]
+    if errored:
+        lines += [
+            f"  {len(errored)} could not run — the API refused the request, so "
+            "these say nothing about the prompts:",
+            f"    {errored[0].errors[0].detail[:130]}",
+        ]
+    if failed:
+        lines.append(f"  {len(failed)} never passed")
+    if flaky:
+        lines.append(
+            f"  {len(flaky)} flaky — right sometimes, which one run per case "
+            "cannot tell from right always"
+        )
+    if not failed and not flaky:
+        lines.append("  every case passed every run")
+    return "\n".join(lines)

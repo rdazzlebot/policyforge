@@ -2,6 +2,8 @@
 .env
 .env.*
 config/config.yaml
+# Topic registry — names your internal teams (see config/topics.example.yaml)
+config/topics.yaml
 
 # Licensed / BYOC content — never redistribute this
 local_content/*
@@ -9,6 +11,10 @@ local_content/*
 
 # Generated output (policies/standards/procedures drafted for a specific org)
 output/
+
+# Build artifact: derived entirely from the committed controls.json files by
+# `policyforge map`, so committing it would only invite drift against them.
+data/frameworks/crosswalk.json
 
 # Python
 __pycache__/

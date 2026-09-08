@@ -1,0 +1,660 @@
+"""The eval harness's own grading, tested without an API key.
+
+A harness whose scoring is wrong is worse than no harness: it produces
+numbers that look like evidence. So the grading logic is graded here, with
+scripted providers, and only the *running* of it needs a model.
+
+The property that matters most is that flaky is not passing. A case right
+seven times in eight is indistinguishable from a case right always if you
+only look once, and looking only once is the mistake that shipped a routing
+bug.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from evals.runner import (
+    CaseResult,
+    Outcome,
+    format_report,
+    grade_text,
+    load_cases,
+    run_case,
+)
+
+
+@dataclass
+class R:
+    text: str
+    model: str = "fake"
+
+
+class Scripted:
+    """Returns replies in order, cycling once exhausted."""
+
+    def __init__(self, *replies: str) -> None:
+        self.replies = list(replies) or [""]
+        self.n = 0
+
+    def generate(self, **kwargs):
+        reply = self.replies[min(self.n, len(self.replies) - 1)]
+        self.n += 1
+        return R(reply)
+
+
+# --------------------------------------------------------------------------
+# The shared checks
+# --------------------------------------------------------------------------
+
+
+def test_a_required_term_that_is_missing_fails():
+    result = grade_text("nothing relevant", {"must_contain": ["quarterly"]})
+
+    assert not result.passed
+    assert "quarterly" in result.detail
+
+
+def test_a_forbidden_term_that_is_present_fails():
+    """The negative checks are the ones that catch invention."""
+    result = grade_text("review every 90 days", {"must_not_contain": ["90"]})
+
+    assert not result.passed
+
+
+def test_any_of_needs_only_one():
+    case = {"must_contain_any": ["privileged", "entitlement"]}
+
+    assert grade_text("privileged access review", case).passed
+    assert not grade_text("something else entirely", case).passed
+
+
+def test_checks_are_case_insensitive():
+    assert grade_text("QUARTERLY", {"must_contain": ["quarterly"]}).passed
+
+
+# --------------------------------------------------------------------------
+# Counting runs
+# --------------------------------------------------------------------------
+
+
+def test_a_case_right_every_time_is_not_flaky():
+    result = CaseResult("routing", "x", [Outcome(True), Outcome(True)])
+
+    assert result.rate == 1.0
+    assert not result.flaky
+
+
+def test_a_case_right_sometimes_is_flaky_not_passing():
+    """The whole reason this harness exists. Seven of eight looks like a
+    pass if you only ever run once."""
+    result = CaseResult("routing", "x", [Outcome(True)] * 7 + [Outcome(False, "empty")])
+
+    assert result.flaky
+    assert result.rate < 1.0
+    assert result.passes == 7
+
+
+def test_a_case_never_right_is_not_flaky_either():
+    result = CaseResult("routing", "x", [Outcome(False), Outcome(False)])
+
+    assert not result.flaky
+    assert result.rate == 0.0
+
+
+def test_every_run_happens_even_when_one_raises():
+    class Exploding:
+        def generate(self, **kwargs):
+            raise RuntimeError("boom")
+
+    result = run_case("routing", {"question": "q", "expect": "coverage"}, Exploding(), repeat=3)
+
+    assert result.runs == 3, "one bad run must not abandon the rest"
+    assert result.passes == 0
+
+
+# --------------------------------------------------------------------------
+# The suites
+# --------------------------------------------------------------------------
+
+
+def test_routing_grades_the_chosen_skill():
+    passing = run_case("routing", {"question": "q", "expect": "coverage"}, Scripted("coverage"))
+    failing = run_case("routing", {"question": "q", "expect": "coverage"}, Scripted("drift"))
+
+    assert passing.rate == 1.0
+    assert failing.rate == 0.0
+    assert "expected 'coverage'" in failing.failures[0].detail
+
+
+def test_resolution_grades_whether_a_rewrite_happened():
+    case = {
+        "history": [{"q": "what is our access review cadence?", "a": "Quarterly."}],
+        "question": "who owns that?",
+        "rewritten": True,
+        "must_contain": ["access review"],
+    }
+
+    good = run_case("resolution", case, Scripted("who owns the access review cadence?"))
+    assert good.rate == 1.0
+
+    # Returned unchanged, so no rewrite happened.
+    bad = run_case("resolution", case, Scripted(""))
+    assert bad.rate == 0.0
+    assert "expected the opposite" in bad.failures[0].detail
+
+
+def test_expansion_fails_when_the_model_invents_a_frequency():
+    case = {
+        "question": "how often do we check who has admin?",
+        "must_contain_any": ["privileged"],
+        "must_not_contain": ["quarterly"],
+    }
+
+    assert run_case("expansion", case, Scripted("privileged access, entitlements")).rate == 1.0
+    assert run_case("expansion", case, Scripted("privileged access, quarterly")).rate == 0.0
+
+
+def test_answering_fails_an_answer_that_cites_nothing():
+    case = {
+        "documents": [
+            {
+                "title": "Access Control Standard",
+                "body": (
+                    "# A\n\n## 4.1 Account Review\n\n"
+                    "Account entitlements are recertified quarterly. [NIST AC-2]\n\n"
+                    "## 4.2 Privileged Access\n\nAdmin credentials need tokens.\n"
+                ),
+            }
+        ],
+        "question": "how often are accounts recertified?",
+        "expect_refusal": False,
+    }
+
+    assert run_case("answering", case, Scripted("Quarterly. [1]")).rate == 1.0
+
+    uncited = run_case("answering", case, Scripted("Quarterly."))
+    assert uncited.rate == 0.0
+    assert "no citation" in uncited.failures[0].detail
+
+
+def test_answering_runs_the_projects_own_integrity_checks():
+    """A fabricated citation is a failure here for exactly the reason it is
+    a warning in production."""
+    case = {
+        "documents": [
+            {
+                "title": "Access Control Standard",
+                "body": (
+                    "# A\n\n## 4.1 Account Review\n\n"
+                    "Account entitlements are recertified quarterly. [NIST AC-2]\n\n"
+                    "## 4.2 Privileged Access\n\nAdmin credentials need tokens.\n"
+                ),
+            }
+        ],
+        "question": "how often are accounts recertified?",
+        "expect_refusal": False,
+    }
+
+    result = run_case("answering", case, Scripted("Quarterly. [9]"))
+
+    assert result.rate == 0.0
+    assert "integrity" in result.failures[0].detail
+
+
+def test_a_case_whose_retrieval_does_not_match_blames_the_case():
+    """If the passages are not what the case assumed, the case is wrong and
+    should say so rather than reporting the model failed."""
+    case = {
+        "documents": [{"title": "T", "body": "# T\n\n## S\n\nText about backups.\n"}],
+        "question": "anything",
+        "expect_passages": 5,
+    }
+
+    result = run_case("answering", case, Scripted("x"))
+
+    assert "the case, not the model, is wrong" in result.failures[0].detail
+
+
+# --------------------------------------------------------------------------
+# The shipped cases
+# --------------------------------------------------------------------------
+
+
+def test_the_shipped_cases_load_and_are_well_formed():
+    cases = load_cases()
+
+    # The hand-written suites are required. The generated ones are present
+    # only when their file is, so they are permitted but not demanded.
+    assert {
+        "routing",
+        "resolution",
+        "expansion",
+        "answering",
+        "conversation",
+    } <= set(cases)
+    assert set(cases) <= {
+        "routing",
+        "resolution",
+        "expansion",
+        "answering",
+        "conversation",
+        "paraphrase",
+        "answer_paraphrase",
+    }
+    for suite, rows in cases.items():
+        assert rows, f"{suite} has no cases"
+        for case in rows:
+            assert case.get("name"), f"unnamed case in {suite}"
+            if suite == "conversation":
+                # A conversation is a list of turns rather than one question,
+                # and a single-turn one would be an answering case wearing a
+                # different hat.
+                assert len(case.get("turns", [])) > 1, f"{case['name']} is not a chain"
+                assert all(t.get("ask") for t in case["turns"]), case["name"]
+            else:
+                assert case.get("question"), f"{case.get('name')} asks nothing"
+
+
+def test_routing_cases_include_questions_that_must_not_route():
+    """A router that hijacks ordinary document questions has made the shell
+    worse, so the negative cases have to exist."""
+    negatives = [c for c in load_cases()["routing"] if c["expect"] == "documents"]
+
+    assert len(negatives) >= 3
+
+
+def test_the_report_calls_out_flaky_cases_separately_from_failures():
+    results = [
+        CaseResult("routing", "always", [Outcome(True), Outcome(True)]),
+        CaseResult("routing", "sometimes", [Outcome(True), Outcome(False, "empty")]),
+        CaseResult("routing", "never", [Outcome(False, "bad"), Outcome(False, "bad")]),
+    ]
+
+    report = format_report(results, repeat=2)
+
+    assert "FLAKY" in report
+    assert "1 never passed" in report
+    assert "1 flaky" in report
+
+
+# --------------------------------------------------------------------------
+# Attribution: the failure the integrity checks structurally cannot see
+# --------------------------------------------------------------------------
+
+
+def _two_passages():
+    from evals.runner import _passages
+
+    return _passages(
+        {
+            "documents": [
+                {
+                    "title": "Access Control Standard",
+                    "body": (
+                        "# A\n\n## 4.1 Account Review\n\n"
+                        "Account entitlements are recertified quarterly. [NIST AC-2]\n"
+                    ),
+                },
+                {
+                    "title": "Backup and Restore Standard",
+                    "body": (
+                        "# B\n\n## 4.1 Restore Testing\n\n"
+                        "Restore drills happen twice a year. [NIST CP-9]\n"
+                    ),
+                },
+            ],
+            "question": "x",
+            "retrieve": "account recertification and restore drill testing",
+        }
+    )
+
+
+def _rules(passages):
+    """Claims keyed to whichever passage number actually holds them."""
+    return [
+        {"claim": "quarterly", "from": "Access Control Standard"},
+        {"claim": "twice a year", "from": "Backup and Restore Standard"},
+    ]
+
+
+def _number_of(passages, title):
+    return next(n for n, p in enumerate(passages, start=1) if p.document.title == title)
+
+
+def test_a_correctly_attributed_answer_passes():
+    from evals.runner import check_attribution
+
+    passages = _two_passages()
+    access = _number_of(passages, "Access Control Standard")
+    backup = _number_of(passages, "Backup and Restore Standard")
+    text = f"Recertified quarterly [{access}]. Restores are tested twice a year [{backup}]."
+
+    assert check_attribution(text, passages, _rules(passages)) == ""
+
+
+def test_a_swapped_citation_is_caught():
+    """An answer that credits a real passage for the wrong claim passes every
+    integrity check and is wrong in the way that matters: the reader who
+    follows the citation finds nothing there."""
+    from evals.runner import check_attribution
+
+    passages = _two_passages()
+    access = _number_of(passages, "Access Control Standard")
+    backup = _number_of(passages, "Backup and Restore Standard")
+    text = f"Recertified quarterly [{backup}]. Restores are tested twice a year [{access}]."
+
+    detail = check_attribution(text, passages, _rules(passages))
+
+    assert "quarterly" in detail
+    assert "comes from" in detail
+
+
+def test_the_existing_integrity_checks_do_not_catch_a_swap():
+    """The reason this grader exists at all."""
+    from policyforge.zardoz.answer import check_answer
+
+    passages = _two_passages()
+    access = _number_of(passages, "Access Control Standard")
+    backup = _number_of(passages, "Backup and Restore Standard")
+    text = f"Recertified quarterly [{backup}]. Restores are tested twice a year [{access}]."
+
+    _, warnings = check_answer(text, passages)
+
+    assert warnings == [], "check_answer sees a valid citation and stops there"
+
+
+def test_a_claim_stated_with_no_citation_is_caught():
+    from evals.runner import check_attribution
+
+    passages = _two_passages()
+    backup = _number_of(passages, "Backup and Restore Standard")
+    text = f"Recertified quarterly. Restores are tested twice a year [{backup}]."
+
+    assert "no citation" in check_attribution(text, passages, _rules(passages))
+
+
+def test_a_claim_never_stated_is_caught():
+    from evals.runner import check_attribution
+
+    passages = _two_passages()
+
+    detail = check_attribution("Nothing relevant [1].", passages, _rules(passages))
+
+    assert "never states" in detail
+
+
+def test_no_attribution_rules_means_no_attribution_check():
+    from evals.runner import check_attribution
+
+    assert check_attribution("anything at all", _two_passages(), None) == ""
+
+
+# --------------------------------------------------------------------------
+# A run that could not happen is not evidence about the prompt
+# --------------------------------------------------------------------------
+
+
+class Broke:
+    def __init__(self, message):
+        self.message = message
+
+    def generate(self, **kwargs):
+        raise RuntimeError(self.message)
+
+
+def test_an_exhausted_api_balance_is_an_error_not_a_failure():
+    """Reported as a graded failure, an expired card reads as a regression:
+    "7 never passed" says the model got the answers wrong when it was never
+    asked the questions."""
+    # Resolution, not routing: route() catches provider failures by design
+    # and falls back to keyword matching, so the harness never sees the
+    # error. That is what the preflight probe exists to catch.
+    result = run_case(
+        "resolution",
+        {"history": [{"q": "cadence?", "a": "Quarterly."}], "question": "who owns that?"},
+        Broke("Your credit balance is too low to access the Anthropic API."),
+        repeat=3,
+    )
+
+    assert result.errors
+    assert result.graded == 0
+
+
+def test_a_rate_limit_is_also_an_error():
+    result = run_case(
+        "resolution",
+        {"history": [{"q": "cadence?", "a": "Quarterly."}], "question": "who owns that?"},
+        Broke("rate limit exceeded"),
+    )
+
+    assert result.errors
+
+
+def test_an_ordinary_bug_in_a_case_is_still_a_failure():
+    """Only infrastructure gets the benefit of the doubt."""
+    result = run_case(
+        "resolution",
+        {"history": [{"q": "cadence?", "a": "Quarterly."}], "question": "who owns that?"},
+        Broke("something else broke"),
+    )
+
+    assert not result.errors
+    assert result.rate == 0.0
+
+
+def test_the_report_says_the_run_did_not_happen():
+    from evals.runner import Outcome
+
+    results = [
+        CaseResult(
+            "routing",
+            "unreachable",
+            [Outcome(False, "RuntimeError: credit balance too low", errored=True)],
+        )
+    ]
+
+    report = format_report(results, repeat=1)
+
+    assert "could not run" in report
+    assert "say nothing about the prompts" in report
+    assert "never passed" not in report
+
+
+# --------------------------------------------------------------------------
+# Conversations: a suite that always passes may not be checking anything
+# --------------------------------------------------------------------------
+
+
+_CHAIN_CORPUS = [
+    {
+        "title": "Access Control Standard",
+        "owner": "IAM Engineering",
+        "body": (
+            "# Access Control Standard\n\n## 4.1 Account Review\n\n"
+            "Account entitlements are recertified quarterly by the system owner.\n\n"
+            "## 4.2 Privileged Access\n\nAdmin credentials need hardware tokens.\n"
+        ),
+    },
+    {
+        "title": "Backup Standard",
+        "owner": "Platform",
+        "body": (
+            "# Backup Standard\n\n## 4.1 Restore Testing\n\n"
+            "Restore drills happen twice a year against production snapshots.\n"
+        ),
+    },
+]
+
+
+def _chain(turns):
+    """Run a conversation offline — no provider, so no API and no cost."""
+    from evals.runner import run_conversation
+
+    return run_conversation({"documents": _CHAIN_CORPUS, "turns": turns}, None)
+
+
+def test_a_conversation_whose_expectations_hold_passes():
+    outcome = _chain(
+        [
+            {"ask": "how often are accounts recertified?", "answer_contains": ["quarterly"]},
+            {"ask": "how are restore drills tested?", "answer_contains": ["twice a year"]},
+        ]
+    )
+
+    assert outcome.passed, outcome.detail
+
+
+def test_a_wrong_answer_expectation_fails_and_names_the_turn():
+    outcome = _chain(
+        [
+            {"ask": "how often are accounts recertified?", "answer_contains": ["quarterly"]},
+            {"ask": "how are restore drills tested?", "answer_contains": ["every fortnight"]},
+        ]
+    )
+
+    assert not outcome.passed
+    assert "turn 2" in outcome.detail
+
+
+def test_a_forbidden_term_in_an_answer_fails():
+    outcome = _chain(
+        [
+            {"ask": "how often are accounts recertified?", "answer_not_contains": ["quarterly"]},
+        ]
+    )
+
+    assert not outcome.passed
+    assert "turn 1" in outcome.detail
+
+
+def test_a_resolution_expectation_is_graded_on_the_rewritten_question():
+    """Offline, a follow-up is resolved by carrying the previous subject, so
+    the rewritten text is checkable without a model."""
+    outcome = _chain(
+        [
+            {"ask": "how are restore drills tested?"},
+            {"ask": "who owns that?", "resolved_contains": ["restore"]},
+        ]
+    )
+
+    assert outcome.passed, outcome.detail
+
+    wrong = _chain(
+        [
+            {"ask": "how are restore drills tested?"},
+            {"ask": "who owns that?", "resolved_contains": ["payroll"]},
+        ]
+    )
+    assert not wrong.passed
+    assert "resolved" in wrong.detail
+
+
+def test_an_expected_skill_that_did_not_run_fails():
+    outcome = _chain([{"ask": "how often are accounts recertified?", "expect_skill": "coverage"}])
+
+    assert not outcome.passed
+    assert "did not run /coverage" in outcome.detail
+
+
+def test_every_suite_runner_takes_the_corpora():
+    """A new suite must not silently run without its documents.
+
+    `run_case` used to decide who got the corpora from a hardcoded list of
+    suite names. Adding a suite that needed them and forgetting the list
+    produced twenty-five cases failing with a KeyError for a corpus that was
+    loaded and sitting in the argument that was never passed.
+    """
+    import inspect
+
+    from evals.runner import SUITES
+
+    for name, runner in SUITES.items():
+        parameters = list(inspect.signature(runner).parameters)
+        assert parameters[:3] == ["case", "provider", "corpora"], name
+
+
+def test_every_case_names_a_corpus_that_exists():
+    """Catch a typo or an inherited corpus name offline, not mid-run."""
+    from evals.runner import load_cases, load_corpora
+
+    corpora = load_corpora()
+    for suite, cases in load_cases().items():
+        for case in cases:
+            if "corpus" in case:
+                assert case["corpus"] in corpora, f"{suite}/{case.get('name')}"
+            else:
+                assert "documents" in case or suite in {
+                    "routing",
+                    "resolution",
+                    "expansion",
+                    "paraphrase",
+                }, f"{suite}/{case.get('name')}"
+
+
+def test_the_cases_that_never_reach_a_model_are_the_ones_we_know_about():
+    """An inventory, so adding a fourth is a deliberate act.
+
+    Three cases turned out to be decided in code before any provider was
+    called, and each looked like evidence about a prompt until mutation
+    testing deleted the rule it was supposedly guarding and the verdict did
+    not move:
+
+    * an answering case retrieving zero passages, refused by
+      `answer_question` before the model is reached
+    * a resolution case whose question `looks_like_a_follow_up` rejects, so
+      `resolve_question` returns early
+    * an expansion case asserting only what must NOT appear, which an empty
+      expansion satisfies — now a failure by default in `grade_text`
+
+    They are all worth keeping; they cover the code that short-circuits.
+    What they are not is evidence about a model's behaviour, and a green
+    mark does not say which kind it is.
+    """
+    from policyforge.zardoz.conversation import looks_like_a_follow_up
+
+    cases = load_cases()
+
+    never_asked = {
+        case["name"] for case in cases["resolution"] if not looks_like_a_follow_up(case["question"])
+    }
+    assert never_asked == {"standalone-is-left-alone"}
+
+    no_passages = {case["name"] for case in cases["answering"] if case.get("expect_passages") == 0}
+    assert no_passages == {"refuses-what-the-passages-do-not-cover"}
+
+    vacuous = {
+        case["name"]
+        for suite in ("expansion", "resolution")
+        for case in cases[suite]
+        if case.get("allow_empty")
+        and not (case.get("must_contain") or case.get("must_contain_any"))
+    }
+    assert vacuous == set()
+
+
+def test_must_cite_all_fails_when_a_passage_is_left_uncited():
+    """A contradiction credited to one of the two documents that disagree is
+    the model having quietly picked a side, which reads exactly like a
+    straight answer."""
+    case = {
+        "documents": [
+            {"title": "Standard", "body": "# Standard\n\n## 4.1\n\nReviews are quarterly.\n"},
+            {"title": "Procedure", "body": "# Procedure\n\n## 3\n\nReviews are annual.\n"},
+        ],
+        "question": "how often are reviews?",
+        "retrieve": "reviews quarterly annual",
+        "must_cite_all": True,
+        "integrity_clean": False,
+    }
+
+    picked_one = run_case("answering", case, Scripted("Reviews are quarterly [1]."))
+    cited_both = run_case(
+        "answering",
+        case,
+        Scripted("The Standard says quarterly [1]; the Procedure says annual [2]."),
+    )
+
+    assert picked_one.rate == 0.0
+    assert "cites no passage [2]" in picked_one.failures[0].detail
+    assert cited_both.rate == 1.0, [f.detail for f in cited_both.failures]

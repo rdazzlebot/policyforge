@@ -72,7 +72,12 @@ def test_call_messages_api_sends_expected_request_and_parses_response():
     client = FakeAnthropicSdkClient(reply_text="ok")
 
     result = call_messages_api(
-        client, model="claude-x", system="sys prompt", prompt="hello", max_tokens=16, temperature=0.1
+        client,
+        model="claude-x",
+        system="sys prompt",
+        prompt="hello",
+        max_tokens=16,
+        temperature=0.1,
     )
 
     assert result.text == "ok"
@@ -191,7 +196,14 @@ def test_get_provider_dispatches_to_vertex(monkeypatch):
     monkeypatch.setattr("policyforge.llm.vertex_provider.VertexProvider", FakeVertexProvider)
 
     provider = get_provider(
-        {"llm": {"provider": "vertex", "model": "m", "project_id": "proj", "region": "europe-west4"}}
+        {
+            "llm": {
+                "provider": "vertex",
+                "model": "m",
+                "project_id": "proj",
+                "region": "europe-west4",
+            }
+        }
     )
 
     assert isinstance(provider, FakeVertexProvider)
@@ -287,9 +299,7 @@ def test_get_provider_dispatches_to_bedrock(monkeypatch):
             created["model"] = model
             created["region"] = region
 
-    monkeypatch.setattr(
-        "policyforge.llm.bedrock_provider.BedrockProvider", FakeBedrockProvider
-    )
+    monkeypatch.setattr("policyforge.llm.bedrock_provider.BedrockProvider", FakeBedrockProvider)
 
     provider = get_provider({"llm": {"provider": "bedrock", "model": "m", "region": "us-west-2"}})
 
@@ -306,3 +316,137 @@ def test_get_provider_rejects_unknown_provider():
         assert "not-a-real-provider" in str(exc)
     else:
         raise AssertionError("expected ValueError for an unknown provider")
+
+
+# --------------------------------------------------------------------------
+# Reasoning models: a thinking block can eat the whole token budget
+# --------------------------------------------------------------------------
+
+
+class ThinkingSdkClient:
+    """A model that emits a thinking block before any text.
+
+    Those tokens come out of `max_tokens`, so on a tight budget the reply
+    comes back with `stop_reason="max_tokens"` and no text block at all.
+    Measured against claude-sonnet-5, where a 12-token routing call returned
+    empty roughly one time in eight.
+    """
+
+    #: Tokens spent thinking before the model says anything.
+    THINKING_COST = 30
+
+    class _Messages:
+        def __init__(self, outer):
+            self._outer = outer
+
+        def create(self, **kwargs):
+            self._outer.calls.append(kwargs)
+            budget = kwargs["max_tokens"]
+            truncated = budget < self._outer.THINKING_COST
+
+            class Thinking:
+                type = "thinking"
+
+            class Text:
+                type = "text"
+                text = self._outer.reply_text
+
+            class Usage:
+                input_tokens = 9
+                output_tokens = budget if truncated else 40
+
+            class Response:
+                content = [Thinking()] if truncated else [Thinking(), Text()]
+                stop_reason = "max_tokens" if truncated else "end_turn"
+                usage = Usage()
+
+            return Response()
+
+    def __init__(self, reply_text="coverage"):
+        self.reply_text = reply_text
+        self.calls = []
+        self.messages = self._Messages(self)
+
+
+def test_a_truncated_thinking_block_is_retried_rather_than_returned_empty():
+    """Returning "" is the dangerous outcome: it is indistinguishable from
+    the model deliberately saying nothing, and callers read that as a
+    decision. Zardoz's router reads it as "not an analysis"."""
+    from policyforge.llm._anthropic_compat import call_messages_api
+
+    client = ThinkingSdkClient(reply_text="coverage")
+
+    response = call_messages_api(
+        client, model="m", system="s", prompt="p", max_tokens=12, temperature=0.0
+    )
+
+    assert response.text == "coverage"
+    assert len(client.calls) == 2, "the first was truncated, the second had room"
+    assert client.calls[1]["max_tokens"] > client.calls[0]["max_tokens"]
+
+
+def test_the_retry_floor_is_enough_for_a_reasoning_preamble():
+    from policyforge.llm._anthropic_compat import MIN_RETRY_TOKENS, call_messages_api
+
+    client = ThinkingSdkClient()
+
+    call_messages_api(client, model="m", system="s", prompt="p", max_tokens=1, temperature=0.0)
+
+    assert client.calls[1]["max_tokens"] >= MIN_RETRY_TOKENS
+
+
+def test_a_reply_that_fits_is_not_retried():
+    from policyforge.llm._anthropic_compat import call_messages_api
+
+    client = ThinkingSdkClient(reply_text="documents")
+
+    response = call_messages_api(
+        client, model="m", system="s", prompt="p", max_tokens=512, temperature=0.0
+    )
+
+    assert response.text == "documents"
+    assert len(client.calls) == 1, "no budget problem, so no second request"
+
+
+def test_a_thinking_block_is_never_mistaken_for_the_answer():
+    """It is reasoning, not a reply. Concatenating it would put the model's
+    working into a routing decision or a document citation."""
+    from policyforge.llm._anthropic_compat import call_messages_api
+
+    response = call_messages_api(
+        ThinkingSdkClient(reply_text="coverage"),
+        model="m",
+        system="s",
+        prompt="p",
+        max_tokens=512,
+        temperature=0.0,
+    )
+
+    assert response.text == "coverage"
+
+
+def test_the_temperature_retry_is_remembered_across_the_truncation_retry():
+    """A model that rejected temperature once will reject it again; paying
+    for that discovery twice in one call would double the request count."""
+    from policyforge.llm._anthropic_compat import call_messages_api
+
+    class Both(ThinkingSdkClient):
+        class _Messages(ThinkingSdkClient._Messages):
+            def create(self, **kwargs):
+                if "temperature" in kwargs:
+                    self._outer.calls.append(kwargs)
+                    raise _bad_request_error("`temperature` is deprecated for this model.")
+                return super().create(**kwargs)
+
+        def __init__(self, reply_text="coverage"):
+            super().__init__(reply_text)
+            self.messages = self._Messages(self)
+
+    client = Both()
+    response = call_messages_api(
+        client, model="m", system="s", prompt="p", max_tokens=12, temperature=0.0
+    )
+
+    assert response.text == "coverage"
+    with_temperature = [c for c in client.calls if "temperature" in c]
+    assert len(with_temperature) == 1, "temperature was only attempted once"

@@ -124,6 +124,18 @@ _B = 0.75
 _NIST_ID_RE = re.compile(r"\b([A-Za-z]{2}-\d+(?:\(\d+\))?)")
 _CFR_ID_RE = re.compile(r"\b(\d{3}\.\d+(?:\([A-Za-z0-9]+\))*)")
 
+# HITRUST control references (`01.a`, `09.aa`, `00.a`) and control
+# objectives (`01.01`). Digits and a dot in both, which is why they need
+# their own pattern rather than an extension of the CFR one: a CFR citation
+# opens with three digits and a HITRUST identifier with at most two, and
+# without that distinction `01.a` tokenizes to the term `01` and matches
+# every other identifier in the `01` category.
+#
+# Matched case-insensitively at the letter, because documents cite `01.A`
+# about as often as `01.a`, and `extract_control_ids` upper-cases what it
+# finds so the two forms land on one key.
+_HITRUST_ID_RE = re.compile(r"\b(\d{1,2}\.(?:[a-z]{1,2}|\d{2}))\b", re.IGNORECASE)
+
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _HEADING_RE = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<text>.+?)\s*$")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
@@ -353,7 +365,7 @@ def _strip_control_ids(text: str) -> str:
     document does not mention. Identifiers are scored by exact equality or
     not at all, which is the only reading of them that is ever correct.
     """
-    return _CFR_ID_RE.sub(" ", _NIST_ID_RE.sub(" ", text))
+    return _HITRUST_ID_RE.sub(" ", _CFR_ID_RE.sub(" ", _NIST_ID_RE.sub(" ", text)))
 
 
 #: Acronyms expanded to their spelled-out terms, and kept alongside them.
@@ -474,6 +486,14 @@ def extract_control_ids(text: str) -> list[str]:
             found.append(identifier)
     for match in _CFR_ID_RE.finditer(text):
         identifier = match.group(1)
+        if identifier not in found:
+            found.append(identifier)
+    # Last, so a CFR citation is claimed as one before its tail can be read
+    # as a HITRUST reference. Lower-cased rather than upper: HITRUST writes
+    # its references `01.a`, and upper-casing would make them collide with
+    # nothing while looking like a different scheme.
+    for match in _HITRUST_ID_RE.finditer(text):
+        identifier = match.group(1).lower()
         if identifier not in found:
             found.append(identifier)
     return found

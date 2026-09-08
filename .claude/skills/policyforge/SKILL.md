@@ -42,6 +42,13 @@ the org's framework data.
    HIPAA equivalents, also one-time: **`policyforge etl-hipaa`** then
    **`policyforge etl-hipaa-crosswalk`** (the second attaches NIST's
    HIPAA-to-800-53 mapping; without it `synthesize` won't pull HIPAA in).
+   HITRUST is bring-your-own: **`policyforge etl-hitrust --export <path>`**
+   parses the user's own MyCSF export (CSV/TSV/XLSX/HTML/MHTML) and prints
+   what it found. It writes nothing without `--out`, and `--out` refuses
+   `data/frameworks/` outright plus any non-gitignored path unless
+   `frameworks.allow_licensed_in_repo` is set. Prefer a CSV export: the
+   rendered HTML/MHTML of the same report carries far fewer
+   authoritative-source mappings.
 1. **`policyforge map --controls <path> [--controls <path> ...] [--out <path>]`**
    — build/refresh the cross-framework crosswalk
    (`data/frameworks/crosswalk.json`). **Pass every framework's controls.json**
@@ -251,12 +258,19 @@ Optional, after generating:
   purpose — generated policies are org-specific content, not engine code. If
   you're asked to commit changes, `git status` first and make sure nothing
   under those paths is staged.
+- **Try `etl-hitrust` before `generate-parser`.** HITRUST parsing is
+  implemented (`ingest/hitrust.py` for the framework's structure,
+  `ingest/hitrust_export.py` for the file formats and column detection), and
+  it handles the MyCSF renderings seen so far without any LLM call. Reach for
+  codegen only when `etl-hitrust` fails — it names the fields it could not
+  find.
 - **`generate-parser` sends real file content to the LLM API.** Before
   running `policyforge generate-parser --framework hitrust|govramp --sample <path>`
   against a *real* HITRUST/GovRAMP export, confirm with the user that their
   license actually permits sending that content to a third-party API
   processor — don't just proceed because they asked. A synthetic/dummy
-  sample needs no such confirmation.
+  sample needs no such confirmation. Trimming the sample to a dozen rows
+  with the header intact is usually enough and sends far less.
 - **BYOC frameworks (HITRUST, GovRAMP) never go in `data/frameworks/` or get
   committed *to this repository*.** They live in `local_content/` (gitignored).
   **In a user's own repository the answer is often different**: their MyCSF

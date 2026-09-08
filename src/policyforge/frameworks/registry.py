@@ -204,6 +204,39 @@ def is_tracked(path: Path) -> bool | None:
     return bool(result.stdout.strip())
 
 
+def is_ignored(path: Path) -> bool | None:
+    """Whether git would ignore `path`, so writing there cannot commit it.
+
+    The counterpart to `is_tracked`, and the question to ask *before* a
+    write rather than after. "May this repository hold licensed content"
+    has a cheaper answer than the config flag when the destination is
+    gitignored: a file git will never stage cannot be redistributed by
+    accident, whatever the repository has or has not declared.
+
+    Returns None when git cannot answer — no repository, no git binary — so
+    a caller can refuse rather than assume. `git check-ignore` exits 0 when
+    the path *is* ignored, 1 when it is not, and something else on error,
+    which is why the return code is read in three ways rather than two.
+    """
+    try:
+        # Fixed argv and no shell; the only variable part is a path the
+        # caller already has.
+        result = subprocess.run(  # nosec B603 B607
+            ["git", "check-ignore", "-q", "--no-index", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode == 0:
+        return True
+    if result.returncode == 1:
+        return False
+    return None
+
+
 @dataclass
 class LicenceFinding:
     framework: Framework

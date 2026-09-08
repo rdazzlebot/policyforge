@@ -152,6 +152,113 @@ def etl_hipaa(date: str | None, out: Path):
     click.echo(f"Parsed {len(controls)} HIPAA Security Rule requirements -> {out}")
 
 
+@cli.command("etl-hitrust")
+@click.option(
+    "--export",
+    "export_path",
+    required=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Your own MyCSF/HITRUST CSF export (.csv, .tsv, .xlsx, .html, .mhtml). "
+    "Keep it in local_content/, which is gitignored.",
+)
+@click.option(
+    "--version",
+    "version",
+    default="",
+    help='CSF release this export is of, e.g. "v11.7". Default: read from the '
+    "filename if it names one — a MyCSF export states its release nowhere inside.",
+)
+@click.option(
+    "--out",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Write the parsed catalog here as controls.json. Omit to parse and "
+    "report without writing anything, which is the safe default for licensed "
+    "content.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Write --out even though this repository has not declared "
+    "`frameworks.allow_licensed_in_repo`.",
+)
+def etl_hitrust(export_path: Path, version: str, out: Path | None, force: bool):
+    """Parse your own licensed HITRUST CSF export into this project's schema.
+
+    HITRUST CSF is licensed content. This project never bundles it and never
+    fetches it: you supply an export from your own MyCSF licence and it is
+    parsed locally, in memory. Nothing is written unless you pass --out.
+
+    Prefer a CSV export where you have the choice. The rendered HTML/MHTML of
+    the same report is more clearly labelled but carries markedly fewer
+    authoritative-source mappings, which is most of what makes a CSF export
+    worth ingesting.
+
+    See ingest/hitrust.py for the framework's structure and
+    ingest/hitrust_export.py for how the columns are identified. If detection
+    fails on your export, `policyforge generate-parser --framework hitrust`
+    drafts a loader for it from a sample.
+    """
+    import dataclasses
+    import json
+
+    from policyforge.frameworks.registry import frameworks_config, is_ignored
+    from policyforge.ingest.byoc_loader import load_hitrust_export
+    from policyforge.ingest.hitrust import summarize
+    from policyforge.ingest.hitrust_export import ExportFormatError
+
+    try:
+        controls = load_hitrust_export(export_path, version=version)
+    except ExportFormatError as exc:
+        raise click.ClickException(
+            f"{exc}\n\nIf this export's layout is one this project has not seen, "
+            "run:\n  policyforge generate-parser --framework hitrust --sample "
+            f"{export_path}"
+        ) from exc
+
+    click.echo(summarize(controls).format_report())
+
+    if out is None:
+        click.echo(
+            "\nNothing written. Pass --out <path> to save a controls.json - into "
+            "a repository whose licence permits holding HITRUST content."
+        )
+        return
+
+    # The bundled directory is this project's public, redistributable half.
+    # A licensed catalog written there would be committed and pushed.
+    if "data/frameworks" in out.as_posix():
+        raise click.ClickException(
+            f"{out} is inside data/frameworks/, which is this project's bundled "
+            "public content. A HITRUST export must never be written there. Use "
+            "local_content/ or your own repository's frameworks/ directory."
+        )
+
+    # Gitignored destinations need no permission: a file git will never
+    # stage cannot be redistributed by accident. Everywhere else, the
+    # repository has to have said it may hold licensed content.
+    config = load_config()
+    ignored = is_ignored(out)
+    permitted = bool(frameworks_config(config).get("allow_licensed_in_repo"))
+    if not ignored and not permitted and not force:
+        unknown = "" if ignored is False else " (and git could not confirm it is ignored)"
+        click.echo(
+            f"\n{out} is not gitignored{unknown}, and this repository has not "
+            "declared `frameworks.allow_licensed_in_repo`, so writing a licensed "
+            "catalog there is refused. Write it under local_content/, set that "
+            "flag in config.yaml if your MyCSF licence permits your repository to "
+            "carry the export, or pass --force."
+        )
+        raise SystemExit(1)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        json.dumps([dataclasses.asdict(c) for c in controls], indent=2),
+        encoding="utf-8",
+    )
+    click.echo(f"\nWrote {len(controls)} HITRUST control references -> {out}")
+
+
 @cli.command("etl-hipaa-crosswalk")
 @click.option(
     "--controls",

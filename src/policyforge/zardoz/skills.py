@@ -204,6 +204,84 @@ def _frameworks(state, args: list[str]) -> str:
     return report.format_report()
 
 
+def _hitrust(state, args: list[str]) -> str:
+    """What a loaded HITRUST catalog contains, and how far its crosswalk reaches.
+
+    Distinct from `frameworks`, which answers "is a catalog on disk and may
+    we hold it". This answers "what is in it" — how many control references
+    and requirement statements, which levels the library states them at, and
+    which of the eighty-odd authoritative sources HITRUST maps to are ones
+    this repository actually has a catalog for.
+
+    The last part is the useful one for planning. HITRUST has already
+    reconciled its requirements against NIST 800-53, the HIPAA Security
+    Rule, ARC-AMPE and FedRAMP; knowing how many edges that gives you is
+    what decides whether a mapping run is worth doing.
+    """
+    from policyforge.ingest.hitrust import FRAMEWORK, summarize
+    from policyforge.mapping.crosswalk import requirement_crosswalk
+
+    controls = _controls(state)
+    catalog = [c for c in controls if c.framework == FRAMEWORK or c.requirements]
+    if not catalog:
+        return (
+            "No HITRUST catalog on disk. HITRUST CSF is licensed content that "
+            "this project never bundles, so you supply your own MyCSF export:\n"
+            "  policyforge etl-hitrust --export local_content/hitrust/<export>.csv\n"
+            "That prints what the export contains. Add `--out` to write a "
+            "controls.json, but only into a repository whose licence permits "
+            "holding it."
+        )
+
+    lines = [summarize(catalog).format_report(), ""]
+
+    versions = sorted({c.framework_version for c in catalog if c.framework_version})
+    if versions:
+        lines.append(f"  catalog version: {', '.join(versions)}")
+
+    levels = summarize(catalog).levels
+    lines.append("")
+    lines.append("  most-stated levels:")
+    for level, count in levels.most_common(8):
+        lines.append(f"    {level[:38].ljust(38)}  {count}")
+
+    # Which mapped frameworks this repository can actually resolve against.
+    held = {f.id for f in _frameworks_on_disk(state)}
+    reach: dict[str, int] = {}
+    for mappings in requirement_crosswalk(catalog).values():
+        for framework, identifiers in mappings.items():
+            reach[framework] = reach.get(framework, 0) + len(identifiers)
+    matched = [(f, n) for f, n in sorted(reach.items(), key=lambda kv: -kv[1]) if _held(f, held)]
+    lines.append("")
+    if matched:
+        lines.append("  mapped to catalogs this repository holds:")
+        for framework, count in matched:
+            lines.append(f"    {framework.ljust(38)}  {count} identifiers")
+    else:
+        lines.append(
+            "  none of the mapped authoritative sources match a catalog on "
+            "disk, so no crosswalk can be resolved yet. Run `policyforge "
+            "etl-oscal` to bring in NIST 800-53."
+        )
+    return "\n".join(lines)
+
+
+def _frameworks_on_disk(state):
+    from policyforge.frameworks.registry import discover
+
+    return discover(state.config)
+
+
+def _held(framework: str, held: set[str]) -> bool:
+    """Whether a mapped framework key names a catalog on disk.
+
+    Matched loosely because the two vocabularies are written by different
+    people: HITRUST says "NIST SP 800-53 r5", which normalizes to `nist`,
+    while the directory is `nist-800-53-r5`.
+    """
+    return any(framework in identifier or identifier.startswith(framework) for identifier in held)
+
+
 def _roles(state, args: list[str]) -> str:
     from policyforge.org.roles import TEAM_ROLES, VENDOR_ROLES
 
@@ -275,6 +353,16 @@ SKILLS: dict[str, Skill] = {
         ),
         run=_frameworks,
     ),
+    "hitrust": Skill(
+        name="hitrust",
+        summary="What the loaded HITRUST catalog holds, and what it maps to.",
+        answers=(
+            "what is in our HITRUST catalog; how many CSF control references or "
+            "requirement statements; which HITRUST levels or regulatory overlays "
+            "apply; what HITRUST maps to in 800-53 or HIPAA; CSF crosswalk reach"
+        ),
+        run=_hitrust,
+    ),
     "roles": Skill(
         name="roles",
         summary="Tool and team roles config can assign.",
@@ -335,6 +423,20 @@ _ROUTING_HINTS: dict[str, tuple[str, ...]] = {
     ),
     "check": ("broken link", "content tree", "dangling"),
     "frameworks": ("which frameworks", "catalog version", "licence", "license"),
+    # "hitrust" alone is deliberately absent: most questions naming HITRUST
+    # are about what a document requires, and those belong to the documents.
+    # These fire only on questions about the catalog itself.
+    "hitrust": (
+        "hitrust catalog",
+        "csf catalog",
+        "hitrust level",
+        "csf level",
+        "requirement statement",
+        "control reference",
+        "hitrust overlay",
+        "hitrust map",
+        "csf map",
+    ),
     "roles": ("what roles", "role keys", "which placeholders"),
 }
 

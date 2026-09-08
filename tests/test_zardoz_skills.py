@@ -327,3 +327,85 @@ def test_no_skill_can_reach_the_publish_path():
     }
 
     assert not referenced & {"update_page_body", "export_to_confluence", "confluence_exporter"}
+
+
+# --------------------------------------------------------------------------
+# HITRUST
+# --------------------------------------------------------------------------
+
+
+def _only(path: Path) -> dict:
+    """A config whose framework search finds nothing but `path`."""
+    return {"frameworks": {"search_paths": [str(path)]}}
+
+
+def _hitrust_control():
+    """One control reference stated at two levels, mapped to 800-53."""
+    from policyforge.ingest.hitrust import Record, build_controls
+
+    def record(level, mapping):
+        return Record(
+            category="01.0 - Example Category",
+            objective="01.01 Example Objective",
+            reference="01.a Example Control",
+            specification="The organization shall do the example thing.",
+            factor_type="Organizational",
+            level=level,
+            statement=f"The example thing, at {level}.",
+            mapping=mapping,
+        )
+
+    return build_controls(
+        [
+            record("Level 1", "NIST SP 800-53 r5 AC-1\nNIST SP 800-53 r5 AC-2"),
+            record("Level FedRAMP", "NIST SP 800-53 r5 AC-3"),
+        ],
+        version="v11.7",
+    )
+
+
+def test_the_hitrust_skill_explains_how_to_get_a_catalog_when_there_is_none(tmp_path):
+    """HITRUST is never bundled, so an empty answer is the common case and
+    has to be actionable rather than blank.
+
+    Search paths are pinned at an empty directory because the defaults
+    include `local_content/`, and a developer with their own licensed export
+    parsed into it would otherwise see this test pass or fail depending on
+    what is on their disk.
+    """
+    output = run_skill("hitrust", _state(config=_only(tmp_path)))
+
+    assert "No HITRUST catalog on disk" in output
+    assert "etl-hitrust" in output
+
+
+def test_the_hitrust_skill_reports_levels_and_crosswalk_reach(tmp_path):
+    import dataclasses
+    import json
+
+    directory = tmp_path / "frameworks" / "hitrust-csf"
+    directory.mkdir(parents=True)
+    (directory / "framework.yaml").write_text(
+        "id: hitrust-csf\nlicence: licensed\n", encoding="utf-8"
+    )
+    (directory / "controls.json").write_text(
+        json.dumps([dataclasses.asdict(c) for c in _hitrust_control()]), encoding="utf-8"
+    )
+
+    state = _state(
+        controls_paths=[directory / "controls.json"],
+        config=_only(tmp_path / "frameworks"),
+    )
+    output = run_skill("hitrust", state)
+
+    assert "1 control references" in output
+    assert "2 requirement statements" in output
+    assert "Level FedRAMP" in output
+    assert "v11.7" in output
+
+
+def test_the_hitrust_router_hints_do_not_hijack_a_document_question():
+    """Most questions naming HITRUST are about what a policy requires, and
+    those belong to the documents."""
+    assert route_offline("what does our HITRUST policy say about passwords?") == NO_SKILL
+    assert route_offline("which hitrust levels apply to us?") == "hitrust"

@@ -313,8 +313,10 @@ The full pipeline is functional end-to-end: `etl-oscal` -> `map` ->
 separate output path. All three LLM providers (Anthropic, Bedrock, Vertex),
 the control loaders, crosswalk builder, LLM-driven synthesis/generation
 stages, Confluence export/import, and local version history are all wired up
-and tested. HITRUST/GovRAMP BYOC loaders remain stubs pending a sample export
-to parse against — see `ingest/byoc_loader.py` and
+and tested. HITRUST CSF is implemented as a bring-your-own-content loader —
+`etl-hitrust` reads your own MyCSF export (CSV, workbook, HTML or MHTML) and
+never bundles or commits any of it. The GovRAMP BYOC loader remains a stub
+pending a sample export to parse against — see `ingest/byoc_loader.py` and
 `policyforge generate-parser`.
 
 Bundled and populated from public-domain sources, each re-fetchable:
@@ -328,6 +330,69 @@ Bundled and populated from public-domain sources, each re-fetchable:
 Because the crosswalk is wired into `mapping/crosswalk.py`, `synthesize`
 pulls HIPAA requirements into a NIST-anchored topic alongside NIST/FedRAMP,
 and `ssp` shows each 800-53 control's HIPAA equivalents as a column.
+
+### The shape of HITRUST CSF
+
+Because the content can't be shipped, the *structure* has to be documented
+instead — that is what lets you point this at your own licensed copy and
+have it work. The long form is `ingest/hitrust.py`'s module docstring; this
+is the short one.
+
+**Four tiers, and the middle one is easy to miss:**
+
+```
+Control Category        14    "01.0 - Access Control"
+  Control Objective     49    "01.01 Business Requirement for Access Control"
+    Control Reference  156    "01.a Access Control Policy"
+      Requirement    ~1,200   one per (control reference x level)
+```
+
+Counts are from CSF v11.7 and grow between releases. A **Control Reference**
+is what maps to this project's `Control`: an id, a title, and a
+one-paragraph Control Specification that reads like a policy statement. It
+is not what an assessor grades you against.
+
+**Levels are alternatives, not enhancements.** Under each reference sit
+requirement statements, one per level, and "level" spans two different
+things written into one column:
+
+- **Maturity levels** — `Level 1`, `Level 2`, `Level 3`. An ordered ladder.
+  Every reference has a Level 1; roughly a third carry all three.
+- **Overlays** — `Level HIPAA`, `Level FedRAMP`, `Level CMS`, `Level FTI Custodians`, `Level GDPR`, and sixty-odd more. Unordered, named for the
+  authority that compels them, and switched on by a **scoping factor**
+  (organizational: bed count, covered lives; system: internet-accessible;
+  regulatory: do you handle federal tax information) rather than by ambition.
+
+That distinction is why the schema grew a `Requirement` type rather than
+reusing `ControlEnhancement`. An 800-53 enhancement *adds* rigour to a
+control everyone shares. A HITRUST overlay is a parallel statement selected
+by a scoping factor — two organizations assessed against the same control
+reference can be graded on entirely different sentences, and modelling that
+as extra credit on top of Level 1 would double-count every control that
+carries one.
+
+**The crosswalk is the valuable part.** Each requirement statement carries a
+Control Standard Mapping: a list of `<authoritative source> <identifier>`
+strings, ~30,000 of them across ~90 sources in a full v11.7 library. HITRUST
+has already done the reconciliation this project otherwise does by hand, and
+four of those sources — NIST SP 800-53, the HIPAA Security Rule, CMS
+ARC-AMPE, FedRAMP — are catalogs PolicyForge already bundles.
+
+The strings have no delimiter between the source and the identifier, and
+both halves contain spaces, digits and punctuation:
+
+```
+NIST SP 800-53 r5 PL-11
+ISO/IEC 27001:2022 4.3d
+NY DoH Title 10 Section 405.46 (d)(3)(x)
+The Joint Commission (v2016) TJC IM.02.01.03, EP 1
+```
+
+No regex splits those. The source vocabulary is **learned from your export**
+by branching frequency — a source name is a token prefix after which many
+different things follow — which means it works on next year's sources
+without anybody updating a list, and means no piece of HITRUST's own content
+has to live in this repository for the split to work.
 
 ### Why HITRUST is bring-your-own-content
 
@@ -356,10 +421,36 @@ This project's answer is to split the problem along the licence line:
   stricter prescribed value — is the language work the LLM does locally,
   against content you already hold a licence to.
 
-`policyforge generate-parser --framework hitrust --sample <path>` drafts the
-loader from a real export. `ingest/byoc_loader.py`'s `load_hitrust_export` is
-currently a stub, so today the pipeline reconciles HIPAA against 800-53 but
-not yet HITRUST against either — that's the next thing worth building. Read
+#### Reading your export
+
+```bash
+policyforge etl-hitrust --export local_content/hitrust/CSFLibraryReport.csv
+```
+
+That parses the export and prints what it found — control references,
+requirement statements, levels, and which authoritative sources its mappings
+reach. **Nothing is written** unless you pass `--out`, and `--out` refuses
+any path under `data/frameworks/` outright, plus any path git would not
+ignore unless your config declares `frameworks.allow_licensed_in_repo`.
+
+What the loader understands about the framework lives in
+`ingest/hitrust.py`; how it finds those things in a file lives in
+`ingest/hitrust_export.py`. Two properties of a MyCSF export are worth
+knowing before you pick a file to hand it:
+
+- **Prefer the CSV.** The rendered HTML/MHTML of the same report is more
+  clearly labelled, but carries markedly fewer authoritative-source
+  mappings — in a v11.7 library, 373 mapping blocks against the CSV's 1,219.
+  The mappings are most of why ingesting HITRUST is worth doing.
+- **A CSV export is a rendered report, not a dataset.** Its column headers
+  are SQL Server Reporting Services textbox names (`Textbox52`,
+  `Textbox105`) that identify nothing, and it repeats whole rows — 2,818 of
+  them for 1,219 real records. Columns are recognised by their caption
+  columns and value shapes, and the duplicates are collapsed on the way in.
+
+If detection fails on your export's shape,
+`policyforge generate-parser --framework hitrust --sample <path>` drafts a
+loader for that specific file. Read
 [Generating a BYOC parser](#generating-a-byoc-parser-from-a-sample-export)
 first: that command sends your export's contents to your LLM provider, and
 whether your licence permits that is a question to answer before running it,
@@ -377,7 +468,9 @@ generation, export) knows or cares which one produced the data.
 | `hipaa_loader.py`           | `etl-hipaa`           | eCFR's XML for 45 CFR 164 Subpart C                                                                                              |
 | `hipaa_crosswalk_loader.py` | `etl-hipaa-crosswalk` | NIST CPRT's HIPAA-to-800-53 OLIR catalog                                                                                         |
 | `nist_vault_loader.py`      | `etl-vault`           | Markdown notes in one specific shape (YAML frontmatter + `## headings` + `[[wikilinks]]`) — the format this project started from |
-| `byoc_loader.py`            | —                     | Your own licensed HITRUST/GovRAMP exports (stubbed; see `generate-parser`)                                                       |
+| `byoc_loader.py`            | `etl-hitrust`         | Your own licensed HITRUST CSF export (CSV/TSV/XLSX/HTML/MHTML). GovRAMP still stubbed; see `generate-parser`                     |
+| `hitrust.py`                | —                     | Not a loader: what HITRUST CSF *is* — the four-tier hierarchy, levels vs overlays, and the authoritative-source crosswalk        |
+| `hitrust_export.py`         | —                     | The MyCSF report renderings `byoc_loader` reads, and the column detection that survives SSRS textbox names                       |
 
 `nist_vault_loader.py` is the only one that touches Obsidian-flavoured
 markdown, and it's an *option*, not a dependency — `etl-oscal` needs nothing
@@ -1167,10 +1260,12 @@ government work, it goes in `local_content/` (gitignored), not `data/`.
 
 ### Generating a BYOC parser from a sample export
 
-`ingest/byoc_loader.py`'s `load_hitrust_export` / `load_govramp_export` are
-stubs — every org's MyCSF/GovRAMP export can differ, so there's no one
-column layout to hand-write a parser against ahead of time. Once you have a
-real sample export in hand:
+`load_hitrust_export` handles the MyCSF renderings that have actually been
+seen (see [Reading your export](#reading-your-export)), and
+`load_govramp_export` is still a stub. Every org's export can differ, so
+there is no one column layout to hand-write a parser against ahead of time.
+When detection fails — it names the fields it could not find — or for a
+framework with no loader at all:
 
 ```
 policyforge generate-parser --framework hitrust --sample path/to/sample-export.csv
@@ -1178,9 +1273,17 @@ policyforge generate-parser --framework hitrust --sample path/to/sample-export.c
 
 This sends the sample's **full content** to your configured LLM provider and
 asks it to draft a deterministic parser (stdlib/csv/pandas — no LLM calls at
-parse time) targeting the `Control`/`ControlEnhancement` schema, then writes
-it to `src/policyforge/ingest/hitrust_loader.py` for you to read, test, and
-commit like any other source file.
+parse time), then writes it to `src/policyforge/ingest/hitrust_loader.py`
+for you to read, test, and commit like any other source file.
+
+**For HITRUST the model is asked for less than it used to be.** Earlier
+versions asked for finished `Control` objects, which meant every generated
+loader re-implemented deduplication, level classification, mapping-string
+splitting and control assembly — properties of the framework rather than of
+the file, and subtly different every time a model wrote them. Now the model
+is asked only to fill in a `hitrust.Record` per row; `hitrust.build_controls`
+does the rest, identically for every export shape. The generated code
+shrinks to the part that genuinely varies.
 
 **Before running this against a real export**, confirm your HITRUST/GovRAMP
 license actually permits sending its content to a third-party API
@@ -1664,8 +1767,11 @@ content, org context, or exported policies to this public repo.
 - [x] `ingest/parser_codegen.py` + `policyforge generate-parser` — LLM-assisted codegen
   for a BYOC loader from a real sample export (see "Generating a BYOC parser from a
   sample export" above)
-- [ ] `ingest/byoc_loader.py` — HITRUST/GovRAMP export parsing itself still stubbed;
-  run `generate-parser` (or hand-write) against a real sample export once you have one
+- [x] `ingest/byoc_loader.py` — HITRUST CSF export parsing, via `ingest/hitrust.py`
+  (the framework's structure) and `ingest/hitrust_export.py` (CSV/TSV/XLSX/HTML/MHTML
+  readers and column detection). Run it with `policyforge etl-hitrust`
+- [ ] `ingest/byoc_loader.py` — GovRAMP export parsing still stubbed; run
+  `generate-parser` (or hand-write) against a real sample export once you have one
 - [ ] GovRAMP: follow up on redistribution permission; if granted, move from BYOC to bundled
 - [x] Google Cloud Vertex AI Model Garden LLM provider (`llm/vertex_provider.py`) —
   install with `pip install "policyforge[vertex]"`

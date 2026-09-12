@@ -1913,3 +1913,21 @@ declared, checkable data is where most of the remaining value is.
   of your topics, documents and recorded parameter decisions each one reaches, so
   review is scoped to what moved rather than restarting the document set. Compares
   against the committed catalog by default, so running the ETL is the whole setup.
+- [ ] **Verifier-gated model cascade** — answer with a cheap or local model first,
+  run `zardoz/answer.py`'s integrity checks on what comes back, and escalate to a
+  stronger model only when they fail. The usual difficulty with a cascade is knowing
+  when the cheap model was wrong; here `check_answer` already decides that
+  deterministically and for nothing. Measured against a local 14B (Qwen3, Ollama):
+  84% of answering runs passed, with routing at 92% and expansion at 100%, so the
+  escalation fraction looks small enough to be worth the second call. Two constraints
+  found while scoping it. It cannot live behind `LLMProvider`, because `generate()`
+  never receives the passages the verifier needs — so it belongs in
+  `answer_question`, the one place the question, the passages, the provider and the
+  verdict all exist at once. And an escalation has to be recorded on the `Answer`
+  rather than silently swapped in, for the reason `Answer.warnings` already gives:
+  a caller that hides a repair produces the same output while looking safer. Note
+  the scope — this applies only to the Zardoz answering path. `synthesize`,
+  `generate` and `ssp` have no equivalent verifier to gate on, and `ssp` is the
+  larger cost line, where the Batch API is the lever instead. The awkward part: the
+  one path with a verifier is also the only interactive one, so the cheap model's
+  latency is paid where it is most felt.

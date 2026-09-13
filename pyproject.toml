@@ -42,6 +42,19 @@ bedrock = [
 vertex = [
     "anthropic[vertex]>=0.40",
 ]
+# One dependency that reaches most vendors, for comparing models across
+# them. Heavier than the others on purpose — it pulls openai, boto3 and
+# tokenizers — which is why it is an extra and not a core dependency.
+litellm = [
+    "litellm>=1.40",
+    # LiteLLM reaches for tenacity on its retry path but does not declare
+    # it, and the failure is provider-specific: Anthropic and DeepSeek
+    # calls worked for hours before a Cohere model raised "tenacity import
+    # failed" on 47 of 114 calls. Worse, that message matches none of the
+    # substrings evals/runner.py treats as infrastructure, so a missing
+    # package was graded as the model getting 17 cases wrong.
+    "tenacity>=8.0",
+]
 
 [project.scripts]
 policyforge = "policyforge.cli:cli"

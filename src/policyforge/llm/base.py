@@ -1,7 +1,11 @@
 """Provider-agnostic LLM interface.
 
-Ships three concrete providers: Anthropic's API directly, Amazon Bedrock,
-and Google Cloud's Vertex AI Model Garden. Everything that calls an LLM in
+Ships six concrete providers: Anthropic's API directly, Amazon Bedrock,
+Google Cloud's Vertex AI Model Garden, any OpenAI-compatible
+chat-completions endpoint (a local Ollama/LM Studio/vLLM server, or a
+hosted open model), LiteLLM, which reaches most of the rest behind one
+model string, and a cascade that pairs two of the above. Everything that
+calls an LLM in
 this codebase should depend on this interface, not on `anthropic` or a
 cloud SDK directly — that's what makes it possible to add another provider
 later without touching mapping/, synthesis/, or generate/.
@@ -19,6 +23,12 @@ class LLMResponse:
     model: str
     input_tokens: int | None = None
     output_tokens: int | None = None
+    #: What the call cost, in USD, when the provider can say. Only
+    #: LiteLLMProvider populates it today — it prices the call from
+    #: LiteLLM's own tables — and a local model correctly reports 0.0
+    #: rather than None. Left None by every other provider, so a caller
+    #: must treat "unknown" and "free" as different answers.
+    cost_usd: float | None = None
 
 
 class LLMProvider(ABC):
@@ -40,6 +50,44 @@ class LLMProvider(ABC):
     def check(self) -> bool:
         """Cheap connectivity/auth check. Used by `policyforge llm-check`."""
         raise NotImplementedError
+
+    # ---- structured output, opt-in ------------------------------------
+    #
+    # Deliberately not part of `generate`'s signature. A provider that
+    # cannot enforce a schema would have to accept the argument and ignore
+    # it, and a caller would then parse JSON that was never guaranteed to
+    # be JSON — the silent failure this is supposed to remove. Asking first
+    # is the honest shape, and it keeps every existing provider working
+    # untouched.
+    #
+    # Worth having because three unrelated models have now failed the
+    # `INSUFFICIENT_CONTEXT` sentinel while being substantively correct,
+    # and `parse_expansion` discards a reply of the wrong shape, which is
+    # what made one model score 11% on expansion. A schema turns "did the
+    # model obey the format" from a graded risk into a guarantee.
+
+    def supports_schema(self) -> bool:
+        """Whether `generate_json` will actually constrain the reply."""
+        return False
+
+    def generate_json(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        schema: dict,
+        max_tokens: int = 4096,
+        temperature: float = 0.2,
+    ) -> LLMResponse:
+        """Like `generate`, but the reply is constrained to `schema`.
+
+        Only call this when `supports_schema()` is True; the default
+        refuses rather than quietly returning unconstrained prose.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} cannot constrain output to a schema. "
+            f"Check supports_schema() before calling generate_json()."
+        )
 
 
 def get_provider(config: dict) -> LLMProvider:
@@ -81,6 +129,61 @@ def get_provider(config: dict) -> LLMProvider:
             region=config["llm"].get("region", "us-central1"),
         )
 
+    if provider_name in ("openai-compat", "local"):
+        from .openai_compat_provider import OpenAICompatProvider
+
+        if "base_url" not in config["llm"]:
+            raise ValueError(
+                f"llm.base_url is required for the {provider_name} provider — set it to your "
+                "endpoint root, e.g. http://localhost:11434/v1 for Ollama."
+            )
+        return OpenAICompatProvider(
+            model=config["llm"]["model"],
+            base_url=config["llm"]["base_url"],
+            # Optional here, unlike the anthropic provider: a local server
+            # normally authenticates nothing, so absence is not an error.
+            api_key_env=config["llm"].get("api_key_env"),
+            timeout=config["llm"].get("timeout", 600),
+        )
+
+    if provider_name == "litellm":
+        from .litellm_provider import LiteLLMProvider
+
+        return LiteLLMProvider(
+            model=config["llm"]["model"],
+            # Optional: LiteLLM resolves each provider's credentials from
+            # its own environment conventions, so most model strings need
+            # neither of these.
+            api_base=config["llm"].get("api_base"),
+            api_key_env=config["llm"].get("api_key_env"),
+            timeout=config["llm"].get("timeout", 600),
+            num_retries=config["llm"].get("num_retries", 3),
+            min_interval_seconds=config["llm"].get("min_interval_seconds", 0.0),
+        )
+
+    if provider_name == "cascade":
+        from .cascade_provider import CascadeProvider
+
+        # Two nested provider blocks, each in the same shape as a top-level
+        # `llm:`. Recursing rather than inventing a second syntax means a
+        # cascade can pair anything this factory can already build, and a
+        # model string that works standalone works here unchanged.
+        for key in ("primary", "escalate_to"):
+            if key not in config["llm"]:
+                raise ValueError(
+                    f"llm.{key} is required for the cascade provider — give it a provider "
+                    "block of its own, e.g.\n"
+                    "  primary:\n"
+                    "    provider: litellm\n"
+                    "    model: openrouter/deepseek/deepseek-v4-flash"
+                )
+
+        return CascadeProvider(
+            primary=get_provider({"llm": config["llm"]["primary"]}),
+            escalate_to=get_provider({"llm": config["llm"]["escalate_to"]}),
+        )
+
     raise ValueError(
-        f"Unknown llm.provider '{provider_name}'. Supported: anthropic, bedrock, vertex."
+        f"Unknown llm.provider '{provider_name}'. Supported: anthropic, bedrock, "
+        "vertex, openai-compat (alias: local), litellm, cascade."
     )

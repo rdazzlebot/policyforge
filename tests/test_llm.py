@@ -450,3 +450,25 @@ def test_the_temperature_retry_is_remembered_across_the_truncation_retry():
     assert response.text == "coverage"
     with_temperature = [c for c in client.calls if "temperature" in c]
     assert len(with_temperature) == 1, "temperature was only attempted once"
+
+
+def test_a_provider_that_cannot_constrain_output_says_so():
+    """False by default, so a caller has to ask before relying on it."""
+    from policyforge.llm.bedrock_provider import BedrockProvider
+
+    provider = BedrockProvider(model="m", client=object())
+
+    assert provider.supports_schema() is False
+
+
+def test_generate_json_refuses_rather_than_returning_loose_prose():
+    """The default must not quietly answer without the constraint it was
+    asked for — that is the failure structured output exists to remove."""
+    import pytest
+
+    from policyforge.llm.bedrock_provider import BedrockProvider
+
+    provider = BedrockProvider(model="m", client=object())
+
+    with pytest.raises(NotImplementedError, match="supports_schema"):
+        provider.generate_json(system="s", prompt="p", schema={})

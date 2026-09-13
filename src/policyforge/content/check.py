@@ -26,6 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .deontic import NONE, weakened_citations
 from .tree import ContentDocument, load_content_tree
 
 ERROR = "error"
@@ -202,6 +203,45 @@ def _check_citations(documents: list[ContentDocument], synthesis_dir: Path) -> l
     return findings
 
 
+#: Tiers whose sentences are supposed to bind. A Policy states principles
+#: and may legitimately say "should"; a Standard is what an assessor asks
+#: for evidence against, and a Procedure is a set of steps somebody
+#: follows.
+_BINDING_TIERS = frozenset({"standard", "procedure"})
+
+
+def _check_requirement_strength(documents: list[ContentDocument]) -> list[Finding]:
+    """A cited requirement that does not bind.
+
+    Warnings rather than errors: the source controls are written in
+    obligation language, so rendering one as "teams should consider" or as
+    a bare statement of fact promises less than the framework the citation
+    claims to satisfy — but whether that is wrong is a judgement about the
+    document, not a breach of a rule, and blocking a publish over it would
+    be the wrong trade. See `content/deontic.py` for why only *cited*
+    sentences are reported.
+    """
+    findings: list[Finding] = []
+    for doc in documents:
+        if doc.tier not in _BINDING_TIERS:
+            continue
+        for statement in weakened_citations(doc.body):
+            how = (
+                f"as a {statement.modality}"
+                if statement.modality != NONE
+                else "as a statement of fact, with no obligation"
+            )
+            findings.append(
+                Finding(
+                    doc.relative_path,
+                    f"line {statement.line}: states a cited requirement {how} "
+                    f'— "{statement.text[:70]}"',
+                    WARNING,
+                )
+            )
+    return findings
+
+
 def check_tree(root: Path, *, synthesis_dir: Path | None = None) -> CheckReport:
     """Run every local check over a content tree."""
     documents, problems = load_content_tree(root)
@@ -211,6 +251,7 @@ def check_tree(root: Path, *, synthesis_dir: Path | None = None) -> CheckReport:
     report.findings.extend(_check_page_claims(documents))
     report.findings.extend(_check_references(documents, root))
     report.findings.extend(_check_publishable(documents))
+    report.findings.extend(_check_requirement_strength(documents))
     if synthesis_dir is not None:
         report.findings.extend(_check_citations(documents, synthesis_dir))
 

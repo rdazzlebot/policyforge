@@ -32,6 +32,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from .budgets import RESOLUTION_TOKENS
 from .retrieve import Passage, tokenize
 
 #: Words that point at something said earlier rather than naming it. Checked
@@ -90,7 +91,15 @@ Rules:
    search query, and a detail you supplied rather than the user is a detail
    the documents will be searched for and may well contain — giving a
    confident answer to a question nobody asked.
-6. Keep control identifiers (AC-2, 164.312(a)(1)) exactly as written."""
+6. Keep control identifiers (AC-2, 164.312(a)(1)) exactly as written. This
+   applies when the identifier is what you are carrying forward, not only
+   when it is already in the new question: "who owns that?", after a
+   question about AC-6(5), becomes "who owns AC-6(5)?". AC-6(5) must not
+   become AC-6, and must not be dropped — retrieval scores these by exact
+   equality, so a lost or truncated identifier searches for the wrong
+   control while the answer still looks right.
+7. Never return a fragment. The result is a question somebody could have
+   typed; "who owns" is not one."""
 
 
 @dataclass
@@ -208,7 +217,7 @@ def resolve_question(question: str, conversation: Conversation, provider=None) -
         "Rewrite the new question so it stands alone."
     )
     response = provider.generate(
-        system=RESOLVE_SYSTEM_PROMPT, prompt=prompt, temperature=0.0, max_tokens=200
+        system=RESOLVE_SYSTEM_PROMPT, prompt=prompt, temperature=0.0, max_tokens=RESOLUTION_TOKENS
     )
     resolved = response.text.strip().strip('"').strip()
 

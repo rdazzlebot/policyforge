@@ -34,6 +34,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .budgets import ROUTING_TOKENS
+
 #: What a router returns when the question is about the documents rather
 #: than about the programme. The common case, and the default.
 NO_SKILL = "documents"
@@ -302,7 +304,9 @@ SKILLS: dict[str, Skill] = {
         answers=(
             "which controls nobody owns or is responsible for; orphaned controls; "
             "controls claimed by two teams; gaps in the programme; whether a "
-            "baseline is fully covered"
+            "baseline is fully covered. Not for whether a document on some "
+            'subject exists — "do we have anything covering X" asks what is '
+            "written down, which is a question for the documents."
         ),
         run=_coverage,
     ),
@@ -329,7 +333,10 @@ SKILLS: dict[str, Skill] = {
         summary="Recorded versions of one document.",
         answers=(
             "what changed in a specific document over time; a document's version "
-            "history; when a policy was last revised"
+            "history; which versions of a document exist, are recorded, or have "
+            "been published; when a policy was last revised. Asking what a "
+            "named document *says* is a documents question; asking which "
+            "versions of that same document exist is this one."
         ),
         run=_history,
     ),
@@ -449,6 +456,44 @@ def route_offline(question: str) -> str:
     return NO_SKILL
 
 
+def _route_with_schema(question: str, catalog: str, provider) -> str | None:
+    """The routing decision as a constrained enum, or None to fall back.
+
+    Returns None rather than raising, so this stays a pure optimisation:
+    any failure leaves the caller exactly where it would have been.
+    """
+    import json
+
+    schema = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "routing",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {"analysis": {"type": "string", "enum": [NO_SKILL, *SKILLS]}},
+                "required": ["analysis"],
+                "additionalProperties": False,
+            },
+        },
+    }
+    try:
+        response = provider.generate_json(
+            system=ROUTER_SYSTEM_PROMPT,
+            prompt=f"ANALYSES\n\n{catalog}\n\nQUESTION\n\n{question.strip()}",
+            schema=schema,
+            temperature=0.0,
+            max_tokens=ROUTING_TOKENS,
+        )
+        choice = json.loads(response.text).get("analysis")
+    except Exception:  # noqa: BLE001 - a failed optimisation is not a failed route
+        return None
+    # Belt and braces. `strict` should make an off-enum value impossible,
+    # and a schema nobody actually enforced is precisely the case this
+    # cannot detect from the inside.
+    return choice if choice in SKILLS else NO_SKILL
+
+
 def route(question: str, provider=None) -> str:
     """Which skill answers this, or `documents`.
 
@@ -459,6 +504,21 @@ def route(question: str, provider=None) -> str:
         return route_offline(question)
 
     catalog = "\n".join(f"{name}: {skill.answers}" for name, skill in SKILLS.items())
+
+    # A schema turns "did the model reply with exactly one word" from
+    # something the prompt asks for into something the API guarantees.
+    # Rule 2 of ROUTER_SYSTEM_PROMPT — never explain, never add
+    # punctuation — exists only because that guarantee was unavailable;
+    # where it is available the rule stops being load-bearing.
+    #
+    # Falls through to the prose path on any failure. Most local models
+    # cannot enforce a schema, and a router that worked only on hosted
+    # ones would be a worse router than the one already here.
+    if provider is not None and getattr(provider, "supports_schema", lambda: False)():
+        routed = _route_with_schema(question, catalog, provider)
+        if routed is not None:
+            return routed
+
     try:
         response = provider.generate(
             system=ROUTER_SYSTEM_PROMPT,
@@ -466,7 +526,9 @@ def route(question: str, provider=None) -> str:
             temperature=0.0,
             # Room for a reasoning preamble plus one word. The shim retries a
             # truncation, but paying for that on every call would be silly.
-            max_tokens=64,
+            # See zardoz/budgets.py: how much preamble is enough depends on
+            # the model, so this is tunable per run.
+            max_tokens=ROUTING_TOKENS,
         )
     except Exception:  # noqa: BLE001 - a routing failure is not a session failure
         return route_offline(question)

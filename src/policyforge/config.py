@@ -1,13 +1,36 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import yaml
 
 DEFAULT_CONFIG_PATH = Path("config/config.yaml")
 
+#: Names a config file to use instead of DEFAULT_CONFIG_PATH. Exists so a
+#: second provider — a different model, or the same model on another
+#: platform — can be run against this working tree without editing
+#: config.yaml and then having to remember to put it back. Comparing two
+#: models is the normal reason to want that, and a comparison that depends
+#: on hand-editing one file is one crashed run away from silently grading
+#: the wrong model.
+CONFIG_PATH_ENV = "POLICYFORGE_CONFIG"
 
-def load_config(path: Path = DEFAULT_CONFIG_PATH) -> dict:
+
+def resolve_config_path() -> Path:
+    """The config file this process should read.
+
+    Read at call time rather than captured at import, so that setting the
+    variable inside a test (or between two runs in one session) takes
+    effect rather than depending on import order.
+    """
+    override = os.environ.get(CONFIG_PATH_ENV)
+    return Path(override) if override else DEFAULT_CONFIG_PATH
+
+
+def load_config(path: Path | None = None) -> dict:
+    if path is None:
+        path = resolve_config_path()
     if not path.exists():
         raise FileNotFoundError(
             f"{path} not found. Copy config/config.example.yaml to "

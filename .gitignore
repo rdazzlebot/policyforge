@@ -2,6 +2,11 @@
 .env
 .env.*
 config/config.yaml
+# Extra local provider configs, e.g. config.vertex.yaml for a second model
+# you test against via POLICYFORGE_CONFIG. Same reason as above: these name
+# your GCP project and your org, and only the *.example.yaml files are shared.
+config/config.*.yaml
+!config/config.example.yaml
 # Topic registry — names your internal teams (see config/topics.example.yaml)
 config/topics.yaml
 

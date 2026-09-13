@@ -1775,6 +1775,21 @@ content, org context, or exported policies to this public repo.
 - [ ] GovRAMP: follow up on redistribution permission; if granted, move from BYOC to bundled
 - [x] Google Cloud Vertex AI Model Garden LLM provider (`llm/vertex_provider.py`) —
   install with `pip install "policyforge[vertex]"`
+- [x] OpenAI-compatible endpoint provider (`llm/openai_compat_provider.py`) — a model
+  running on your own machine (Ollama, LM Studio, llama.cpp's server, vLLM) or any
+  hosted endpoint speaking `/v1/chat/completions`, including a LiteLLM proxy. Needs no
+  extra: it is built on `requests`, already a dependency. `provider: local` is an alias.
+  Running locally is not only cheaper — a licensed HITRUST or GovRAMP export handed to a
+  model on localhost never reaches a third-party processor, which is a different answer
+  to the licensing question rather than a cheaper one
+- [x] LiteLLM provider (`llm/litellm_provider.py`) — most other vendors behind one model
+  string (`anthropic/claude-opus-5`, `gemini/gemini-2.0-flash`, `ollama_chat/qwen3:14b`),
+  so comparing models across vendors is a one-line config edit. Reports per-call cost in
+  `LLMResponse.cost_usd`, which is what makes a quality comparison also a cost one.
+  Install with `pip install "policyforge[litellm]"`
+- [x] `POLICYFORGE_CONFIG` — names a config file to use instead of `config/config.yaml`,
+  so a second provider can be run against the same working tree without editing, and
+  forgetting to restore, the first one
 - [x] `ingest/hipaa_loader.py` + `policyforge etl-hipaa` — HIPAA Security Rule (45 CFR
   164 Subpart C), bundled and populated, sourced from eCFR's public API
 - [x] HIPAA-to-NIST-800-53 crosswalk (`ingest/hipaa_crosswalk_loader.py` +

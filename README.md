@@ -1790,6 +1790,44 @@ content, org context, or exported policies to this public repo.
 - [x] `POLICYFORGE_CONFIG` — names a config file to use instead of `config/config.yaml`,
   so a second provider can be run against the same working tree without editing, and
   forgetting to restore, the first one
+- [x] Cheap-first cascade (`llm/cascade_provider.py`) — runs one model and escalates to
+  a stronger one when the first demonstrably could not finish. The trigger is narrow on
+  purpose: only `ReasoningBudgetExhausted`, the one failure the provider layer can see
+  for itself. A wrong answer does not escalate, because `generate()` never receives the
+  passages a verifier would need
+- [x] Tunable short-call budgets (`zardoz/budgets.py`) — routing, expansion and
+  resolution were sized for a model that starts answering immediately. A reasoning model
+  spends the budget deliberating and returns nothing, and a truncation bills a retry at
+  eight times the ceiling, so the original figures scored reasoning models as worse at
+  the task *and* cost more. See `MEASUREMENTS.md`
+- [x] Deontic strength analysis (`content/deontic.py`) — reports a sentence that carries
+  a framework citation and does not bind. The source controls are written in obligation
+  language, so a Standard rendering a cited requirement as "teams should consider" has
+  downgraded a control while still displaying its citation. Wired into
+  `policyforge check` as warnings
+- [x] Structured output as an opt-in provider capability (`LLMProvider.generate_json`) —
+  routing is constrained by an enum schema where the model supports one, falling back to
+  prose where it does not. Turns "did the model reply with exactly one word" from
+  something the prompt asks for into something the API guarantees
+- [ ] Dense retrieval and hybrid fusion (`embed/`) — **built, off by default.** BM25
+  cannot see a passage whose words differ from the question's, which is a recall failure
+  nothing downstream can fix: measured on a real generated Standard, it returned zero
+  passages for two questions the document plainly answers, and dense retrieval found
+  both. What blocks it becoming default is `MIN_SIMILARITY`, the floor that keeps an
+  honest refusal possible. It is measured rather than guessed, but from one document,
+  and the margin between noise and signal is thin. Needs calibration across several real
+  corpora with the refusal cases confirmed still empty
+- [ ] Cross-encoder reranking (`rerank/`) — **built, off by default and called by
+  nothing.** Parked on evidence rather than doubt: retrieval gates hard on specificity so
+  that an honest refusal stays possible, which means it does not produce the wide
+  candidate set reranking depends on. A reranker improves ordering and cannot improve
+  recall, so this waits on dense retrieval rather than on a looser gate
+- [ ] Entailment checking (`entail/`) — **built, off by default.** Asks whether the cited
+  passage actually carries the claim, which no deterministic check can: a sentence citing
+  correctly, quoting nothing and inventing no interval can still name the wrong actor.
+  This is a model judging a model, so three lines are drawn and written into the module —
+  `check_answer` is untouched and its warnings remain facts, these findings are opinions
+  and are labelled as such, and this is never an eval grader
 - [x] `ingest/hipaa_loader.py` + `policyforge etl-hipaa` — HIPAA Security Rule (45 CFR
   164 Subpart C), bundled and populated, sourced from eCFR's public API
 - [x] HIPAA-to-NIST-800-53 crosswalk (`ingest/hipaa_crosswalk_loader.py` +
@@ -1946,3 +1984,30 @@ declared, checkable data is where most of the remaining value is.
   larger cost line, where the Batch API is the lever instead. The awkward part: the
   one path with a verifier is also the only interactive one, so the cheap model's
   latency is paid where it is most felt.
+- [ ] **Prompt portability** — the prompts here were authored and iterated against
+  Anthropic models, and a change that helps the model you are testing with while harming
+  others is currently invisible. Measured: moving one rule earlier in the answering
+  prompt gained one model three points and cost two others five and six, and only a
+  three-model before-and-after revealed it. Worth a script that runs a suite across a
+  configured panel and reports the deltas side by side. Related: the placeholder rule is
+  missed by six of nine models measured, which points at the prompt rather than at the
+  models
+- [ ] **Vagueness and agentless obligations** — the deontic module's natural siblings,
+  same deterministic style. "as appropriate" and "where feasible" make a requirement
+  unauditable while looking like one; "accounts must be recertified" hides who must do
+  it, and `org.teams` already knows the legitimate actors
+- [ ] **Interval normalisation** — parse "quarterly", "within 24 hours", "6 years" into
+  structured durations rather than matching them as text. Enables the conflict log,
+  checking documents against the parameter ledger, and comparing values rather than
+  their spelling. Not hypothetical: a narrow no-break space inside "6 years" once made a
+  correctly grounded figure read as invented
+- [ ] **Table-aware chunking** — `an-answer-can-come-from-a-table` produced a fabricated
+  quotation from both `claude-sonnet-5` and `deepseek-v4-flash`, in different runs. The
+  quote check caught both and was right to; the cause looks structural, since retrieval
+  chunks at headings and tables get flattened
+- [ ] **The tool's own AI use as an auditable control** — PolicyForge writes security
+  policy, so it should be able to evidence how it uses models the way it evidences an
+  organization's controls. Classify providers and content and enforce the pairing; record
+  which model saw which document; stamp generated documents with their model provenance,
+  so the day a model is found to have a flaw the question "which documents did it write"
+  has an answer. See `ISSUES.md`

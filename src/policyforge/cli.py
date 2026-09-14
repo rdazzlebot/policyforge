@@ -4,7 +4,7 @@ from pathlib import Path
 
 import click
 
-from policyforge.config import load_config
+from policyforge.config import load_config, resolve_config_path
 from policyforge.llm.base import get_provider
 from policyforge.org.context import load_org_profile
 
@@ -23,11 +23,19 @@ def cli():
 @cli.command("llm-check")
 def llm_check():
     """Confirm your configured API key + model actually work."""
+    # Named explicitly because the whole point of POLICYFORGE_CONFIG is
+    # running two providers against one working tree, and "which model did
+    # that number come from" is the question a comparison has to answer.
+    path = resolve_config_path()
     config = load_config()
     provider = get_provider(config)
     ok = provider.check()
     if ok:
-        click.echo(f"OK — {config['llm']['provider']} / {config['llm']['model']} responded.")
+        # Asked of the provider rather than read out of config: a cascade
+        # has no top-level `model` at all, only two nested blocks, and
+        # every provider can already say what it is.
+        model = getattr(provider, "model", config["llm"].get("model", "?"))
+        click.echo(f"OK — {config['llm']['provider']} / {model} responded (config: {path}).")
     else:
         click.echo("Provider responded, but the sanity check didn't match expected output.")
         raise SystemExit(1)

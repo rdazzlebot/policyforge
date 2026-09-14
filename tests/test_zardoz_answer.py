@@ -18,9 +18,12 @@ import pytest
 
 from policyforge.zardoz.answer import (
     REFUSAL_SENTINEL,
+    _visible,
     answer_question,
     build_prompt,
     check_answer,
+    undisclosed_placeholders,
+    ungrounded_values,
 )
 from policyforge.zardoz.corpus import SUPPORTING, TRUSTED, Corpus
 from policyforge.zardoz.corpus import CorpusDocument as Doc
@@ -650,3 +653,286 @@ def test_folding_typography_does_not_let_a_real_fabrication_through():
     _, warnings = _quoting(SOURCE, "recertified monthly per the organization\u2019s schedule")
 
     assert any("appears in no passage" in w for w in warnings)
+
+
+# --------------------------------------------------------------------------
+# True, cited, and still misleading
+#
+# Every check above compares an answer against its sources and passes
+# anything faithful to them. These two ask what the answer failed to say
+# *about* its sources — the gap a local 14B walked straight into, producing
+# "Media removal requests are logged in the [Ticketing System] [1]" and an
+# unowned-source answer with no provenance, both of which passed every
+# other check in the module.
+# --------------------------------------------------------------------------
+
+
+def _unowned_passages():
+    """Passages where at least one comes from the document nobody owns."""
+    passages = _passages("revoke badge okta account")
+    assert any(not p.document.is_trusted for p in passages), "fixture no longer has an unowned doc"
+    return passages
+
+
+def _number_of_unowned(passages):
+    return next(n for n, p in enumerate(passages, start=1) if not p.document.is_trusted)
+
+
+def test_a_reproduced_placeholder_is_not_an_answer():
+    """`generate` leaves an unfilled role as `[Ticketing System]` on
+    purpose. Copied into an answer it names a system that does not exist,
+    while being verbatim and correctly cited."""
+    passages = _passages()
+
+    _, warnings = check_answer("Requests are logged in the [Ticketing System]. [1]", passages)
+
+    assert any("placeholder" in w for w in warnings)
+
+
+def test_an_undecided_parameter_reproduced_verbatim_is_caught():
+    passages = _passages()
+
+    _, warnings = check_answer(
+        "Reviews happen [Assignment: organization-defined frequency]. [1]", passages
+    )
+
+    assert any("placeholder" in w for w in warnings)
+
+
+def test_a_placeholder_the_answer_calls_a_placeholder_is_not_flagged():
+    """The false positive this module keeps guarding against. An answer that
+    already says the value is unfilled has done the right thing, and warning
+    on it teaches the reader to scroll past the warning that matters."""
+    passages = _passages()
+
+    _, warnings = check_answer(
+        "The documents name only a generic [Ticketing System] placeholder, "
+        "not a specific system. [1]",
+        passages,
+    )
+
+    assert warnings == []
+
+
+def test_a_citation_marker_is_not_mistaken_for_a_placeholder():
+    passages = _passages()
+
+    _, warnings = check_answer("Entitlements are recertified quarterly. [1]", passages)
+
+    assert warnings == []
+
+
+def test_a_markdown_link_is_not_mistaken_for_a_placeholder():
+    passages = _passages()
+
+    _, warnings = check_answer(
+        "Entitlements are recertified quarterly, per [the standard](https://example.test/ac). [1]",
+        passages,
+    )
+
+    assert warnings == []
+
+
+def test_a_lowercase_aside_is_not_mistaken_for_a_placeholder():
+    passages = _passages()
+
+    _, warnings = check_answer("Entitlements are recertified quarterly [see below]. [1]", passages)
+
+    assert warnings == []
+
+
+def test_an_answer_built_on_unowned_content_must_say_so():
+    """A supporting document is real content nobody has declared ownership
+    of. Answers may draw on it; presented without that, the claim reads as
+    governed policy somebody is accountable for."""
+    passages = _unowned_passages()
+    n = _number_of_unowned(passages)
+
+    _, warnings = check_answer(f"The Okta account is closed during offboarding. [{n}]", passages)
+
+    assert any("unowned" in w for w in warnings)
+
+
+def test_an_answer_that_credits_the_unowned_source_passes():
+    passages = _unowned_passages()
+    n = _number_of_unowned(passages)
+
+    _, warnings = check_answer(
+        f"A supporting runbook nobody owns says the Okta account is closed "
+        f"during offboarding. [{n}]",
+        passages,
+    )
+
+    assert not any("unowned" in w for w in warnings)
+
+
+def test_citing_only_owned_documents_needs_no_provenance_note():
+    passages = _passages()
+    owned = [n for n, p in enumerate(passages, start=1) if p.document.is_trusted]
+
+    _, warnings = check_answer(f"Entitlements are recertified quarterly. [{owned[0]}]", passages)
+
+    assert warnings == []
+
+
+# --------------------------------------------------------------------------
+# Real answers, from real models, that this check got wrong
+#
+# The placeholder rule shipped with a vocabulary of exact phrases and
+# promptly flagged three correct answers across two models: it carried
+# "does not specify" and met "The documents **do** not specify", and it had
+# no word for an answer that explains the brackets instead of naming them.
+# Those false positives inflated two eval runs before anyone read the
+# output. The strings below are what the models actually wrote.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        # deepseek-v4-pro, explaining the brackets rather than naming them.
+        'Requests are logged in "[Ticketing System]" [1], but the brackets '
+        "indicate the organization has not assigned one.",
+        'Reviewed at an "[Assignment: organization-defined frequency]" [1], '
+        "meaning the organization has not set one.",
+        # deepseek-v4-flash, plural subject: "documents DO not specify".
+        "The documents do not specify a frequency for reviewing media "
+        "sanitization records. Passage [1] states they are reviewed "
+        '"[Assignment: organization-defined frequency]".',
+        "The documents do not specify how often media sanitization records "
+        "are reviewed. Passage [1] states the review occurs at an "
+        '"[Assignment: organization-defined frequency]".',
+    ],
+)
+def test_an_answer_that_explains_the_placeholder_is_not_flagged(answer):
+    assert undisclosed_placeholders(answer) == []
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Media removal requests are logged in the [Ticketing System] [1].",
+        "Reviews happen [Assignment: organization-defined frequency]. [1]",
+    ],
+)
+def test_a_placeholder_presented_as_the_answer_is_still_flagged(answer):
+    """Widening the vocabulary must not blunt the check it belongs to."""
+    assert undisclosed_placeholders(answer) != []
+
+
+# --------------------------------------------------------------------------
+# Two false positives that were depressing every model's answering score
+#
+# Neither was a model error. Both were found by reading the failures of a
+# run rather than its rate, which is the only way this kind of bug surfaces:
+# the score simply looks a few points lower than it should, on every model
+# at once, and nothing points at the checker.
+# --------------------------------------------------------------------------
+
+
+def test_a_narrow_no_break_space_is_not_an_invented_figure():
+    """A model writing "6 years" with U+202F was reported as inventing a
+    figure the passage states in so many words — the check firing hardest
+    on the output that took most care over its typography."""
+    haystack = "documentation shall be retained for 6 years"
+
+    # Spelled as a code point for the reason _TYPOGRAPHY gives: a test
+    # about a character nobody can see should not be written in it.
+    assert ungrounded_values("Retained for 6\u202fyears. [1]", haystack) == []
+
+
+def test_a_real_invention_is_still_caught_after_normalising():
+    haystack = "documentation shall be retained for 6 years"
+
+    assert ungrounded_values("Reviewed quarterly. [1]", haystack) == ["quarterly"]
+
+
+def test_a_bracketed_case_marker_is_not_a_fabricated_quotation():
+    """ "[t]erminated accounts..." quotes a source that opens "Terminated".
+    Altering the case and marking it is the convention for quoting into a
+    sentence; reading it as invention punishes careful quoting."""
+    passages = _passages()
+    quoted = passages[0].chunk.text.strip().split(".")[0]
+    answer = f'The Standard says "[{quoted[0].lower()}]{quoted[1:]}". [1]'
+
+    _, warnings = check_answer(answer, passages)
+
+    assert not [w for w in warnings if "appears in no passage" in w]
+
+
+def test_a_case_marker_does_not_swallow_a_placeholder():
+    """One letter only. "[Ticketing System]" is several words and must
+    survive, or the placeholder check goes blind."""
+    assert _visible("logged in [Ticketing System]") == "logged in [Ticketing System]"
+
+
+def test_a_case_marker_does_not_eat_citation_markers():
+    assert _visible("recertified quarterly [1]") == "recertified quarterly [1]"
+
+
+# --------------------------------------------------------------------------
+# Routing through a schema, where one can be enforced
+# --------------------------------------------------------------------------
+
+
+class _SchemaRouter:
+    """A provider whose schema path returns a fixed analysis."""
+
+    def __init__(self, analysis="history", can=True, fail=False):
+        self.analysis = analysis
+        self.can = can
+        self.fail = fail
+        self.json_calls = 0
+        self.prose_calls = 0
+
+    def supports_schema(self):
+        return self.can
+
+    def generate_json(self, **kwargs):
+        import json
+
+        self.json_calls += 1
+        if self.fail:
+            raise RuntimeError("no schema for you")
+        from policyforge.llm.base import LLMResponse
+
+        return LLMResponse(text=json.dumps({"analysis": self.analysis}), model="fake")
+
+    def generate(self, **kwargs):
+        self.prose_calls += 1
+        from policyforge.llm.base import LLMResponse
+
+        return LLMResponse(text="documents", model="fake")
+
+    def check(self):
+        return True
+
+
+def test_routing_uses_a_schema_when_the_model_can_be_held_to_one():
+    from policyforge.zardoz.skills import route
+
+    provider = _SchemaRouter(analysis="history")
+
+    assert route("what versions have been recorded?", provider) == "history"
+    assert (provider.json_calls, provider.prose_calls) == (1, 0)
+
+
+def test_routing_falls_back_to_prose_when_the_model_cannot():
+    """Most local models cannot enforce a schema, and a router that only
+    worked on hosted ones would be worse than the one already here."""
+    from policyforge.zardoz.skills import route
+
+    provider = _SchemaRouter(can=False)
+
+    assert route("anything", provider) == "documents"
+    assert (provider.json_calls, provider.prose_calls) == (0, 1)
+
+
+def test_a_failed_schema_call_falls_through_rather_than_failing_the_route():
+    """A failed optimisation must leave the caller where it started."""
+    from policyforge.zardoz.skills import route
+
+    provider = _SchemaRouter(fail=True)
+
+    assert route("anything", provider) == "documents"
+    assert (provider.json_calls, provider.prose_calls) == (1, 1)

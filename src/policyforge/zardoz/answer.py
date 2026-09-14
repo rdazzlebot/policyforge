@@ -205,6 +205,15 @@ _TYPOGRAPHY = str.maketrans(
 )
 
 
+#: A single letter in brackets is the convention for altering a quotation's
+#: case to fit the sentence carrying it — "[t]erminated accounts are
+#: disabled" quotes a source that opens "Terminated". It is a mark of care,
+#: not of invention, and reading it as fabrication punishes the models that
+#: quote most carefully. Restricted to one letter so it cannot swallow a
+#: real placeholder: "[Ticketing System]" is several words and stays.
+_CASE_MARKER_RE = re.compile(r"\[([A-Za-z])\]")
+
+
 def _visible(text: str) -> str:
     """The words a reader sees, with markup, typography and wrapping removed.
 
@@ -213,7 +222,8 @@ def _visible(text: str) -> str:
     had a straight one, is recognised as faithful — and a fabricated one
     still is not.
     """
-    return " ".join(_MARKUP_RE.sub("", text).translate(_TYPOGRAPHY).split())
+    unmarked = _CASE_MARKER_RE.sub(r"\1", _MARKUP_RE.sub("", text))
+    return " ".join(unmarked.translate(_TYPOGRAPHY).split())
 
 
 #: Concrete intervals and periods. Narrow on purpose: these are the values a
@@ -232,6 +242,71 @@ _VALUE_RE = re.compile(
 )
 
 
+#: Bracketed spans that are not citation markers. `generate` deliberately
+#: leaves an unfilled role as `[Identity Provider]` and an undecided
+#: parameter as `[Assignment: organization-defined frequency]` — see the
+#: README on `org.vendors` and `policyforge parameters`. Both are correct
+#: output. Reproduced into an answer, they read as the name of a system or
+#: the text of a requirement.
+#:
+#: Anchored on an initial capital because that is the shape every generated
+#: placeholder has, and a lowercase aside like "[see below]" is not one.
+#: Citation markers are digits, so they fall out for free; the trailing
+#: lookahead keeps a markdown link's `[label](url)` from matching.
+_PLACEHOLDER_RE = re.compile(r"\[(?!\d)([A-Z][^\[\]\n]{1,59})\](?!\()")
+
+#: Words that say a placeholder is a placeholder. An answer that already
+#: characterises one needs no warning, and warning anyway would be the
+#: false positive this module keeps guarding against — a check that fires
+#: on the correct answer teaches the reader to scroll past it.
+#: Matched on stems rather than whole phrases, because whole phrases are
+#: how this check first went wrong: it carried "does not specify" and
+#: missed "The documents **do** not specify", flagging three correct
+#: answers across two models. A vocabulary of exact wordings is a list of
+#: the ways the author happened to imagine a model phrasing something.
+_UNFILLED_RE = re.compile(
+    r"placeholder|unfilled|not filled|generic|bracket|left blank|undecided|"
+    r"not specif|no specific|not stat|not name|not identif|not assign|"
+    r"not set|no value|has not|have not|to be determined",
+    re.IGNORECASE,
+)
+
+#: Phrases that credit an answer's source as unowned. A *supporting*
+#: document is real content nobody has declared ownership of; answers may
+#: draw on it and must say when they did. Presented without that, a claim
+#: from unowned content reads as governed policy.
+_PROVENANCE_RE = re.compile(
+    r"supporting|unowned|no declared owner|not claimed|unclaimed|no owner|"
+    r"nobody has claimed|does not name an owner",
+    re.IGNORECASE,
+)
+
+
+def undisclosed_placeholders(text: str) -> list[str]:
+    """Placeholders the answer reproduces without saying they are unfilled.
+
+    The other checks in this module all ask whether the answer matches its
+    sources. This one asks what the answer failed to say *about* them,
+    because `[Ticketing System]` copied out of a passage is verbatim,
+    correctly cited, and still tells the reader the system is called
+    "[Ticketing System]".
+    """
+    found = list(dict.fromkeys(match.group(0) for match in _PLACEHOLDER_RE.finditer(text)))
+    return [] if not found or _UNFILLED_RE.search(text) else found
+
+
+def undisclosed_unowned(text: str, passages: list[Passage], cited: list[int]) -> list[str]:
+    """Unowned documents the answer cites without saying they are unowned."""
+    unowned = list(
+        dict.fromkeys(
+            passages[n - 1].document.label
+            for n in cited
+            if 1 <= n <= len(passages) and not passages[n - 1].document.is_trusted
+        )
+    )
+    return [] if not unowned or _PROVENANCE_RE.search(text) else unowned
+
+
 def ungrounded_values(text: str, haystack: str, question: str = "") -> list[str]:
     """Intervals stated in the answer that appear in no passage.
 
@@ -243,6 +318,12 @@ def ungrounded_values(text: str, haystack: str, question: str = "") -> list[str]
     in roughly one run in six even after being told not to, which is what
     turned this from a prompt rule into a check.
     """
+    # Matched against the *normalised* answer, because the haystack it is
+    # compared with is normalised too. Left raw, a model writing "6 years"
+    # with a narrow no-break space reports as inventing a figure the passage
+    # states in so many words — the check firing hardest on the output that
+    # took the most care over its typography.
+    text = _visible(text)
     asked = question.casefold()
     found: list[str] = []
     for match in _VALUE_RE.finditer(text):
@@ -326,6 +407,27 @@ def check_answer(
     if invented:
         warnings.append(
             "states " + ", ".join(f"{v!r}" for v in invented[:4]) + " — no passage says so"
+        )
+
+    # The two ways an answer can be true, correctly cited, and still
+    # mislead. Everything above compares the answer against its sources and
+    # passes anything faithful to them; these ask what the answer failed to
+    # disclose about what it was reading. Measured, not theorised: a local
+    # 14B produced "Media removal requests are logged in the [Ticketing
+    # System] [1]" and an unowned-source answer with no provenance, and
+    # every check above passed both.
+    reproduced = undisclosed_placeholders(text)
+    if reproduced:
+        warnings.append(
+            "reproduces "
+            + ", ".join(f"{p!r}" for p in reproduced[:4])
+            + " without saying it is an unfilled placeholder"
+        )
+
+    unowned = undisclosed_unowned(text, passages, cited)
+    if unowned:
+        warnings.append(
+            "draws on unowned supporting content (" + ", ".join(unowned[:4]) + ") without saying so"
         )
 
     return cited, warnings

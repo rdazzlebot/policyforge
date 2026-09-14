@@ -10,7 +10,12 @@ from __future__ import annotations
 
 import pytest
 
-from policyforge.config import load_config
+from policyforge.config import (
+    CONFIG_PATH_ENV,
+    DEFAULT_CONFIG_PATH,
+    load_config,
+    resolve_config_path,
+)
 
 
 def _config(tmp_path, text):
@@ -60,3 +65,47 @@ def test_the_error_names_the_type_that_was_found(tmp_path):
         load_config(_config(tmp_path, "- one\n"))
 
     assert "list" in str(caught.value)
+
+
+def test_without_the_env_var_the_default_path_is_used(monkeypatch):
+    monkeypatch.delenv(CONFIG_PATH_ENV, raising=False)
+
+    assert resolve_config_path() == DEFAULT_CONFIG_PATH
+
+
+def test_the_env_var_selects_a_different_config(monkeypatch, tmp_path):
+    """Comparing two models is the reason this exists.
+
+    Editing config.yaml back and forth works right up until a run dies
+    half way and leaves the other provider's config in place, after which
+    the next run grades a model nobody chose and says nothing about it.
+    """
+    path = _config(tmp_path, "llm:\n  provider: vertex\n  model: claude-opus-5\n")
+    monkeypatch.setenv(CONFIG_PATH_ENV, str(path))
+
+    assert resolve_config_path() == path
+    assert load_config()["llm"]["provider"] == "vertex"
+
+
+def test_the_env_var_is_read_per_call_not_at_import(monkeypatch, tmp_path):
+    """Set between two runs in one process, it must still take effect."""
+    first = _config(tmp_path, "llm:\n  model: one\n")
+    second = tmp_path / "other.yaml"
+    second.write_text("llm:\n  model: two\n", encoding="utf-8")
+
+    monkeypatch.setenv(CONFIG_PATH_ENV, str(first))
+    assert load_config()["llm"]["model"] == "one"
+
+    monkeypatch.setenv(CONFIG_PATH_ENV, str(second))
+    assert load_config()["llm"]["model"] == "two"
+
+
+def test_an_explicit_path_still_wins_over_the_env_var(monkeypatch, tmp_path):
+    """Every existing caller passes a path; none of them should start
+    silently following an env var somebody exported for a different run."""
+    explicit = _config(tmp_path, "llm:\n  model: explicit\n")
+    ignored = tmp_path / "ignored.yaml"
+    ignored.write_text("llm:\n  model: ignored\n", encoding="utf-8")
+    monkeypatch.setenv(CONFIG_PATH_ENV, str(ignored))
+
+    assert load_config(explicit)["llm"]["model"] == "explicit"

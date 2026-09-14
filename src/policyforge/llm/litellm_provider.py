@@ -1,0 +1,315 @@
+"""Calls any model LiteLLM can reach, which is most of them: Anthropic,
+OpenAI, Gemini, Bedrock, Vertex, Azure, Groq, Together, a local Ollama, and
+a long tail besides. One config string picks the provider *and* the model —
+`anthropic/claude-opus-5`, `ollama_chat/qwen3:14b`, `gemini/gemini-2.0-flash` —
+so comparing two models across two vendors is a one-line edit rather than a
+second provider class.
+
+This exists alongside OpenAICompatProvider rather than replacing it,
+because they answer different questions. OpenAICompatProvider needs no
+dependency beyond `requests` and talks to anything exposing
+`/v1/chat/completions` — including a LiteLLM *proxy*, which means the proxy
+route already worked before this file existed. This provider is the SDK
+route: no gateway process to run, and per-call cost comes back from
+LiteLLM's own pricing tables, which is what makes a quality comparison
+across models also a cost comparison.
+
+Auth is deliberately not an `api_key_env` by default. LiteLLM resolves
+credentials per provider from its own conventions (ANTHROPIC_API_KEY,
+GEMINI_API_KEY, AWS's chain, GCP ADC), so naming one variable here would be
+wrong for every model string but one. `api_key_env` stays available for the
+endpoints that need an explicit key, such as a proxy.
+"""
+
+from __future__ import annotations
+
+import os
+import time
+
+from ._inline_thinking import answer_of, exhausted, needs_more_room, retry_budget
+from .base import LLMProvider, LLMResponse
+
+
+class LiteLLMProvider(LLMProvider):
+    """Calls a model through LiteLLM's unified completion interface.
+
+    Requires the `litellm` package — install with
+    `pip install "policyforge[litellm]"`. `model` uses LiteLLM's
+    `<provider>/<model>` form; `api_base` overrides the endpoint for a
+    local server or a proxy.
+    """
+
+    def __init__(
+        self,
+        *,
+        model: str,
+        api_base: str | None = None,
+        api_key_env: str | None = None,
+        timeout: int = 600,
+        num_retries: int = 3,
+        min_interval_seconds: float = 0.0,
+        completion=None,
+        sleep=time.sleep,
+        clock=time.monotonic,
+    ):
+        self.model = model
+        self.api_base = api_base
+        self.api_key_env = api_key_env
+        #: Handed to LiteLLM, which retries 429s and 5xx with exponential
+        #: backoff. Worth having because a refused request is not a result:
+        #: `evals/runner.py` correctly grades a rate limit as "this says
+        #: nothing about the prompt", so without retries a busy vendor
+        #: silently shrinks the sample a comparison is drawn from. A new
+        #: account's per-minute cap did exactly that to three models.
+        self.num_retries = num_retries
+
+        #: Shortest gap between requests, in seconds. Zero means no
+        #: throttling, which is right for almost every endpoint.
+        #:
+        #: Retries alone are not always enough. A per-model cap can be low
+        #: enough that backing off three times still lands inside the same
+        #: window: `cohere/command-a` refused 16 of 23 cases that way while
+        #: DeepSeek and GLM ran unthrottled all day. Probed empirically it
+        #: serves 30 requests a minute without complaint, and the eval was
+        #: firing nearer 150. Spacing requests is the difference between a
+        #: measurement and a void run; two seconds a call costs about two
+        #: minutes across a suite.
+        self.min_interval_seconds = min_interval_seconds
+        self._sleep = sleep
+        self._clock = clock
+        self._last_request_at: float | None = None
+        # Generous for the same reason as OpenAICompatProvider: a local
+        # model on a consumer GPU can take minutes over a long synthesis
+        # prompt, and a short timeout kills a run mid-document.
+        self.timeout = timeout
+
+        self._api_key = None
+        if api_key_env:
+            self._api_key = os.environ.get(api_key_env)
+            if not self._api_key:
+                raise RuntimeError(
+                    f"Environment variable {api_key_env} is not set. Either export it, "
+                    f"or drop llm.api_key_env — LiteLLM resolves most providers' "
+                    f"credentials from their own environment variables without it."
+                )
+
+        #: Cleared the first time a model rejects `temperature`, so the rest
+        #: of the run stops sending it. See `_create`.
+        self._send_temperature = True
+
+        if completion is not None:
+            # Dependency injection point for tests, matching the other
+            # providers, so the request/response handling below is
+            # exercisable without litellm installed or any model reachable.
+            self._completion = completion
+            return
+        try:
+            import litellm
+        except ImportError as exc:
+            raise RuntimeError(
+                "The 'litellm' package is required for the litellm provider. "
+                'Install it with: pip install "policyforge[litellm]"'
+            ) from exc
+        # LiteLLM prints a vendor banner and update notices on first call,
+        # which corrupts the eval harness's one-character-per-case progress
+        # output and any piped command.
+        litellm.suppress_debug_info = True
+        self._completion = litellm.completion
+
+    def _wait_turn(self) -> None:
+        """Hold off until `min_interval_seconds` has passed since the last send.
+
+        Measured from the moment the previous request *started*, so time the
+        request itself spent counts towards the gap. Sleeping a full interval
+        on top of a slow call would halve the throughput of exactly the
+        endpoint that can least afford it.
+        """
+        if not self.min_interval_seconds:
+            return
+        if self._last_request_at is not None:
+            overdue = self.min_interval_seconds - (self._clock() - self._last_request_at)
+            if overdue > 0:
+                self._sleep(overdue)
+        self._last_request_at = self._clock()
+
+    def _create(self, payload: dict, temperature: float):
+        """One request, remembering whether this model tolerates temperature."""
+        import litellm
+
+        # Before the request, and inside `_create` rather than `generate`, so
+        # that a truncation retry is spaced too — both halves go to the same
+        # capped endpoint.
+        self._wait_turn()
+
+        if not self._send_temperature:
+            return self._completion(**payload)
+        try:
+            return self._completion(temperature=temperature, **payload)
+        except litellm.BadRequestError as exc:
+            # Belt to `drop_params`' braces. LiteLLM refuses a parameter it
+            # knows the model rejects before sending anything, and
+            # `drop_params` in the payload handles that case. This catches
+            # the other one: a model whose restriction LiteLLM does not know
+            # about yet, where the rejection comes back from the API. New
+            # models ship faster than metadata about them.
+            #
+            # Both spellings are matched because the two paths word it
+            # differently — "is deprecated" from Anthropic's API,
+            # "does not support temperature=0.2" from LiteLLM itself.
+            message = str(exc)
+            if "temperature" in message and (
+                "deprecated" in message or "does not support" in message
+            ):
+                self._send_temperature = False
+                return self._completion(**payload)
+            raise
+
+    @staticmethod
+    def _read(response) -> tuple[str, str | None, float | None]:
+        """Text, finish reason, and cost from a LiteLLM ModelResponse.
+
+        `answer_of` still runs even though LiteLLM normalises reasoning into
+        a separate `reasoning_content` field: normalisation depends on
+        LiteLLM recognising the model, and an unrecognised one falls back to
+        whatever the endpoint sent — which for a local reasoning model is an
+        inline <think> block.
+        """
+        choice = response.choices[0]
+        text = answer_of(getattr(choice.message, "content", ""))
+        cost = (getattr(response, "_hidden_params", None) or {}).get("response_cost")
+        return text, getattr(choice, "finish_reason", None), cost
+
+    def generate(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        max_tokens: int = 4096,
+        temperature: float = 0.2,
+        _response_format: dict | None = None,
+    ) -> LLMResponse:
+        # Private, and not on the LLMProvider interface: callers ask for a
+        # schema through `generate_json`, which is the method that also
+        # checks the reply. This only carries it to LiteLLM.
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": max_tokens,
+            "timeout": self.timeout,
+            # Let LiteLLM strip parameters the target model does not accept,
+            # rather than hard-failing the call. Reaching many vendors means
+            # meeting many restrictions — claude-sonnet-5 permits only
+            # temperature=1, other models refuse top_p, and the list moves —
+            # and catching each one by hand is a losing game.
+            #
+            # Worth knowing what this costs: on a model that refuses
+            # temperature, this project's `temperature=0.0` is dropped and
+            # the model runs at its own default. `answer_question` sets zero
+            # so that the same question over the same documents cannot give
+            # two accounts of what the organization requires, and on those
+            # models that guarantee comes from the model, not from us. The
+            # Anthropic provider has always behaved this way for the same
+            # reason; this only makes it true across more vendors.
+            "drop_params": True,
+            "num_retries": self.num_retries,
+        }
+        if _response_format is not None:
+            payload["response_format"] = _response_format
+        if self.api_base:
+            payload["api_base"] = self.api_base
+        if self._api_key:
+            payload["api_key"] = self._api_key
+
+        response = self._create(payload, temperature)
+        text, finish_reason, cost = self._read(response)
+
+        if needs_more_room(text, finish_reason):
+            second = retry_budget(max_tokens)
+            response = self._create({**payload, "max_tokens": second}, temperature)
+            text, finish_reason, retry_cost = self._read(response)
+            if needs_more_room(text, finish_reason):
+                raise exhausted(self.model, max_tokens, second)
+            # Both calls are billed, so both are reported. Charging a
+            # comparison only for the successful attempt would make a model
+            # that needs the retry look cheaper than one that does not,
+            # which inverts the thing being measured.
+            #
+            # Summed over what was actually *reported* rather than over what
+            # is truthy: a local model prices both attempts at 0.0, and
+            # `0.0 or None` is None — which would turn "this was free" into
+            # "nobody knows", the one distinction cost_usd exists to keep.
+            reported = [c for c in (cost, retry_cost) if c is not None]
+            cost = sum(reported) if reported else None
+
+        usage = getattr(response, "usage", None)
+        return LLMResponse(
+            text=text,
+            model=getattr(response, "model", None) or self.model,
+            input_tokens=getattr(usage, "prompt_tokens", None),
+            output_tokens=getattr(usage, "completion_tokens", None),
+            cost_usd=cost,
+        )
+
+    def supports_schema(self) -> bool:
+        """Whether LiteLLM believes this model can be held to a schema.
+
+        A belief, not a guarantee — LiteLLM's metadata claimed
+        claude-sonnet-5 accepted `temperature`, which it does not. So
+        `generate_json` still verifies that what came back parses, rather
+        than trusting the capability table that said it would.
+        """
+        try:
+            import litellm
+
+            return bool(litellm.supports_response_schema(model=self.model))
+        except Exception:  # noqa: BLE001 - an unmapped model is simply unknown
+            return False
+
+    def generate_json(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        schema: dict,
+        max_tokens: int = 4096,
+        temperature: float = 0.2,
+    ) -> LLMResponse:
+        """A reply constrained to `schema`, parsed and checked.
+
+        `max_tokens` matters more here than anywhere else. A reasoning
+        model spends the budget deliberating and emits its JSON last, so a
+        tight ceiling returns truncated prose that is not JSON at all —
+        measured three separate times while building this. The same
+        truncation retry as `generate` applies, and the parse failure below
+        says which of the two went wrong.
+        """
+        import json
+
+        response = self.generate(
+            system=system,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            _response_format=schema,
+        )
+        try:
+            json.loads(response.text)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"{self.model} was asked for JSON matching a schema and returned "
+                f"something else: {response.text[:160]!r}"
+            ) from exc
+        return response
+
+    def check(self) -> bool:
+        """Cheap round-trip to confirm credentials + model actually work."""
+        result = self.generate(
+            system="Reply with exactly one word.",
+            prompt="Reply with the word: ok",
+            max_tokens=8,
+            temperature=0,
+        )
+        return "ok" in result.text.lower()

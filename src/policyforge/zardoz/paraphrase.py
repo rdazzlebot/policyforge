@@ -35,6 +35,8 @@ separable in the result.
 
 from __future__ import annotations
 
+from .budgets import EXPANSION_TOKENS
+
 #: Ceiling on how much vocabulary one expansion may add. Enough to name a
 #: phrase and its close variants, short enough that it cannot become a
 #: second query in its own right and drag the search somewhere new.
@@ -86,7 +88,7 @@ def expand_query(question: str, provider, *, max_terms: int = MAX_EXPANSION_TERM
             system=EXPANSION_SYSTEM_PROMPT,
             prompt=f"QUESTION\n\n{question.strip()}\n\nName the documents' vocabulary.",
             temperature=0.0,
-            max_tokens=150,
+            max_tokens=EXPANSION_TOKENS,
         )
     except Exception:  # noqa: BLE001 - any provider failure just means no expansion
         return ""

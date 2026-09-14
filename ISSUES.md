@@ -12,15 +12,16 @@ mechanical rather than advisory.
 
 After `gh auth login`, split on the markers and file them:
 
-````bash
+```bash
 python - <<'PY'
-import re, subprocess, pathlib
+import subprocess, pathlib
 
 MARK = "<!" + "-- issue: "          # split, not spelled, so this snippet
 CLOSE = "--" + ">"                  # is not parsed as an issue itself
 
 text = pathlib.Path("ISSUES.md").read_text(encoding="utf-8")
-text = re.sub(r"```.*?```", "", text, flags=re.S)   # drop fenced blocks
+text = text[text.index(MARK):]      # drop this preamble, not every fenced
+                                    # block: issue bodies contain them too
 
 for part in text.split(MARK)[1:]:
     marker, body = part.split(CLOSE, 1)
@@ -31,7 +32,7 @@ for part in text.split(MARK)[1:]:
         check=True,
     )
 PY
-````
+```
 
 Labels used: `security`, `cost`, `prompts`, `retrieval`, `analysis`,
 `measurement`. Create them first, or drop `--label`.
@@ -356,3 +357,64 @@ which every model passes.
 
 Should note the date and the harness revision, since both the models and
 the prompts move.
+
+<!-- issue: Extract requirements as structured tuples | analysis -->
+
+Everything downstream of generation treats documents as prose, which is the
+ceiling on what can be checked mechanically.
+
+Parse a requirement into its parts:
+
+```
+"IT Asset Management shall retain such documentation for 6 years
+ from the date of its creation."
+
+ -> actor     = IT Asset Management
+    modality  = obligation
+    action    = retain
+    object    = such documentation
+    interval  = 6 years
+    condition = from the date of its creation
+```
+
+With requirements as structure rather than sentences:
+
+- **Cross-document comparison.** Does the Standard cover what the Policy
+  promises? Nobody can answer that mechanically today.
+- **The conflict log**, already on the roadmap. `synthesis/merge.py` keeps
+  both statements where frameworks disagree rather than silently choosing.
+  Tuples turn "both are present" into "these assert different intervals for
+  the same action", which is a decision queue rather than a reading
+  exercise.
+- **Reverse view for assessors**, also on the roadmap: given a procedure,
+  list every framework requirement it satisfies.
+- **Semantic drift.** `policyforge drift` compares catalogs and
+  `policyforge history` diffs text. Neither can say a requirement changed
+  meaning.
+
+Start from `content/deontic.py`, which already ships the modality half:
+sentence segmentation, obligation/prohibition/recommendation/permission
+classification, framework-citation detection, and the false-positive
+handling that took several iterations — headings, trailing citations,
+markdown emphasis, strongest-modality-wins.
+
+Suggested order, each step useful on its own:
+
+1. **Actor.** Passive voice hides it, so an agentless-obligation check is a
+   shippable deliverable by itself. `org.teams` knows the legitimate actors,
+   so candidates can be validated rather than guessed.
+1. **Interval**, via the normalisation issue above.
+1. **Action and object.** The hard part. Evaluate whether a dependency such
+   as spaCy earns its place before reaching for one.
+1. **The tuple type, a store, then diffing and conflict detection.**
+
+House rules that are not negotiable here: deterministic first, since a
+checker needing a model has the failure mode it exists to detect; false
+positives are the enemy, because a check that fires on correct output
+teaches people to ignore the one that matters; and an undecided parameter
+stays `[Assignment: ...]` rather than being resolved, because a frequency is
+a commitment defended to an assessor.
+
+A good first branch is actor plus modality plus interval, an
+agentless-obligation check wired into `policyforge check` as warnings, and
+tests heavy on false-positive cases. Action and object should not gate it.

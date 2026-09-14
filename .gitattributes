@@ -1,0 +1,12 @@
+# Markdown is checked out with LF on every platform.
+#
+# Not a style preference. `mdformat` rejects any file containing CR, and
+# `scripts/check.py` runs it over every .md in the repository - so with
+# Git for Windows' default core.autocrlf=true, a fresh clone fails the
+# gate on files nobody has touched. The failure looks like a formatting
+# problem and is a line-ending one, which cost a while to work out.
+#
+# Scoped to *.md deliberately: Python files carry CRLF here without
+# trouble, since ruff does not care, and changing that would rewrite far
+# more of the working tree than this problem justifies.
+*.md text eol=lf

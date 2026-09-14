@@ -1258,6 +1258,81 @@ right files by someone qualified to answer it.
 **Rule of thumb:** if you're not certain a document is a public-domain
 government work, it goes in `local_content/` (gitignored), not `data/`.
 
+### Which content may reach which model
+
+The rules above decide which *repository* may hold a file. A second question
+has the same shape and a different answer: which *model* may be sent one.
+Committing a HITRUST export and pasting it into a hosted API are both
+redistribution, and only one of them used to be checked.
+
+`llm/boundary.py` classifies both sides and enforces the pairing before a
+call rather than describing it here. Providers are classified by where the
+bytes end up:
+
+| Class         | What it means                                 | How it's recognised                            |
+| ------------- | --------------------------------------------- | ---------------------------------------------- |
+| `local`       | A model on this machine. Nothing leaves.      | A loopback `base_url` — Ollama, llama-server   |
+| `self-hosted` | A model you run, over your own network        | An RFC 1918 address, or an `.internal` name    |
+| `third-party` | Somebody else's processor                     | Anthropic, Bedrock, Vertex, LiteLLM, any public host |
+
+Content is classified by who may hold it — `public-domain` (NIST, HIPAA),
+`organization-internal` (your generated documents, your topic registry), or
+`licensed` (a MyCSF or GovRAMP export, and anything under `local_content/`).
+The rule is a ceiling per content class, and only one class is restricted:
+
+```
+content                local        self-hosted  third-party
+public-domain          yes          yes          yes
+organization-internal  yes          yes          yes
+licensed               yes          no           no
+```
+
+`policyforge boundary` prints that table for your configuration, says what
+your provider was classified as and why, and with `--path` classifies
+specific files — exiting non-zero on a refusal, so it can gate a pipeline:
+
+```
+$ policyforge boundary --path local_content/CSFLibraryReport.csv
+Configured provider: third-party (inferred: anthropic is a hosted API)
+
+local_content/CSFLibraryReport.csv
+  REFUSED: licensed content -> third-party provider (the ceiling for licensed is local)
+  content:  licensed (under local_content, which is kept out of git)
+  provider: third-party (inferred: anthropic is a hosted API)
+```
+
+**It fails closed in three places.** A provider nobody can classify is
+third-party — `provider: local` names the protocol, not the network, so
+pointing it at a hosted vLLM endpoint classifies as third-party and the
+alias buys you nothing. A cascade is as exposed as its most exposed half,
+because which half answers depends on a runtime failure. And a framework
+directory with no manifest is licensed, which is the registry's existing
+rule.
+
+The inference is inference, and there is one honest case it gets wrong: a
+model you host behind a public DNS name. Say so, and the declaration
+outranks the guess:
+
+```yaml
+llm:
+  provider: openai-compat
+  base_url: https://llm.internal.example.com/v1
+  classification: self-hosted    # ours, despite the public name
+```
+
+Ceilings can be tightened in config and cannot be loosened:
+
+```yaml
+llm:
+  boundary:
+    organization-internal: self-hosted    # our own drafts stay inside
+```
+
+Loosening is refused deliberately. A line of YAML is the wrong weight for
+"our HITRUST export may go to OpenRouter"; declaring the provider says the
+same thing in a place where it reads as a claim about your network, which is
+what it is.
+
 ### Generating a BYOC parser from a sample export
 
 `load_hitrust_export` handles the MyCSF renderings that have actually been
@@ -1285,12 +1360,19 @@ is asked only to fill in a `hitrust.Record` per row; `hitrust.build_controls`
 does the rest, identically for every export shape. The generated code
 shrinks to the part that genuinely varies.
 
-**Before running this against a real export**, confirm your HITRUST/GovRAMP
-license actually permits sending its content to a third-party API
-processor — the same IP-boundary concern as the "note on using this at
-work" section below, just in the other direction. This command exists for
-public-repo maintainers building the parsing logic itself (which contains
-no licensed content once written); it is not a way around that license
+**The boundary check runs before the file is read.** A sample export under
+`local_content/`, or from a catalog whose manifest says `licence: licensed`,
+is licensed content — so this command refuses to run it against a hosted
+provider, and `--yes` does not get past the refusal. Point `llm:` at a local
+model for the run, or declare the provider as inside your boundary. See
+[Which content may reach which model](#which-content-may-reach-which-model).
+
+What the check cannot decide is whether your MyCSF or GovRAMP licence
+permits this particular use at all, even locally — the same IP-boundary
+concern as the "note on using this at work" section below, in the other
+direction. That one is still yours, and the command still asks. This exists
+for public-repo maintainers building the parsing logic itself (which contains
+no licensed content once written); it is not a way around the licence
 question.
 
 ## Grading the prompts
@@ -1775,20 +1857,19 @@ also makes it a good place to try AI-engineering techniques against something
 with a real cost line, a real eval suite, and a real reason to care about the
 answer.
 
-- [ ] **Classify providers and content, and enforce the pairing** — providers as
-  local (Ollama, llama-server), self-hosted, or third-party API; content as
-  public domain (NIST, HIPAA), organization-internal (generated documents, the
-  topic registry), or licensed (BYOC exports). Then a matrix saying which may
-  meet which, checked before a call rather than described in a README. One case
-  is live today and only advisory: sending a licensed HITRUST or GovRAMP export
-  to a third-party processor is a licence question, currently answered by a human
-  confirming it before `generate-parser` runs. Content from a framework whose
-  manifest says `licence: licensed`, or that lives under `local_content/`, should
-  only be sendable to a provider classified as local. The classification has a
-  natural home now that providers are pluggable and the config already
-  distinguishes a local Ollama from a hosted vendor. Fails closed, needs no
-  model, and makes "can this run offline" a property of the configuration rather
-  than a matter of recollection
+- [x] **Classify providers and content, and enforce the pairing** — done, in
+  `llm/boundary.py`. Providers are classified as local, self-hosted or
+  third-party from their config block; content as public-domain,
+  organization-internal or licensed from the framework manifest that declares
+  it or from living under `local_content/`. The pairing is a ceiling per
+  content class, checked before the call and not after, and `generate-parser`
+  — the one case that was live and advisory — now refuses rather than asking a
+  human at 11pm whether their MyCSF licence covers a hosted API. `policyforge
+  boundary` prints the matrix and classifies named paths, exiting non-zero on a
+  refusal so it can gate a pipeline. What is not yet wired: `synthesize`,
+  `generate` and `ssp` read controls that could in principle be licensed, and
+  none of them call `enforce` yet. See
+  [Which content may reach which model](#which-content-may-reach-which-model)
 - [ ] **Record which model saw which document** — nothing persists what was sent
   where, when, or at what cost. `LLMResponse` carries model and cost, and
   `_Metered` in `scripts/eval_zardoz.py` shows the shape of the accounting, but

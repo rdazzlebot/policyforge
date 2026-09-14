@@ -16,6 +16,21 @@ llm:
                                  # Application Default Credentials
                                  # (`gcloud auth application-default login`).
 
+  # Where this provider sends its bytes: local, self-hosted, or third-party.
+  # Normally inferred — a hosted API is third-party, a loopback base_url is
+  # local, an RFC 1918 one is self-hosted — and `policyforge boundary` shows
+  # what was inferred and why. Declare it when the inference is wrong, which
+  # is usually a self-hosted model behind a public DNS name.
+  # classification: self-hosted
+
+  # Tighten what may be sent where. Each entry is the most exposed provider
+  # class that class of content may reach. Defaults: licensed content may
+  # only reach a local model; everything else may reach a third party.
+  # These tighten only — declaring a provider is how you say a hosted model
+  # is inside your boundary, because that is a claim about your network.
+  # boundary:
+  #   organization-internal: self-hosted   # our own drafts stay inside
+
 frameworks:
   # Where to look for framework catalogs, in order. The first match for an
   # id wins, so your own newer export shadows a bundled one without deleting

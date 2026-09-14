@@ -36,6 +36,12 @@ def llm_check():
         # every provider can already say what it is.
         model = getattr(provider, "model", config["llm"].get("model", "?"))
         click.echo(f"OK — {config['llm']['provider']} / {model} responded (config: {path}).")
+        # Where this provider sends its bytes decides what may be sent to
+        # it, so it belongs in the one command people run to find out what
+        # they are pointed at. `policyforge boundary` has the whole table.
+        from policyforge.llm.boundary import classify_provider
+
+        click.echo(f"Boundary class: {classify_provider(config['llm'])}")
     else:
         click.echo("Provider responded, but the sanity check didn't match expected output.")
         raise SystemExit(1)
@@ -608,6 +614,21 @@ def synthesize_cmd(
             "--topic and --nist-controls."
         )
 
+    config = load_config()
+
+    # Synthesis sends control statements to a model, so every catalog named
+    # here is content leaving for the provider. A repository holding a
+    # licensed HITRUST export under `local_content/` — which this project
+    # tells people to do — can pass it to `--controls` as easily as it can
+    # pass 800-53, and until this check the two were indistinguishable.
+    from policyforge.llm.boundary import BoundaryViolation, enforce
+
+    for path in controls_paths:
+        try:
+            enforce(path, config)
+        except BoundaryViolation as exc:
+            raise click.ClickException(str(exc)) from exc
+
     controls = []
     for path in controls_paths:
         controls.extend(load_controls(path))
@@ -629,7 +650,6 @@ def synthesize_cmd(
         click.echo(f"No controls found for topic {topic!r} — check its anchors and --controls.")
         raise SystemExit(1)
 
-    config = load_config()
     provider = get_provider(config)
     result = synthesize_topic(synthesis_topic, provider)
 
@@ -1009,21 +1029,35 @@ def generate_parser_cmd(
     import ast
 
     from policyforge.ingest.parser_codegen import generate_byoc_parser
+    from policyforge.llm.boundary import BoundaryViolation, enforce
 
     out_path = out or Path(f"src/policyforge/ingest/{framework}_loader.py")
     if out_path.exists() and not force:
         raise click.UsageError(f"{out_path} already exists. Pass --force to overwrite.")
 
+    config = load_config()
+
+    # Before the file is read, not after. This used to be a paragraph asking
+    # the operator to confirm their own licence permitted sending a MyCSF
+    # export to a hosted API, which put the one licence question this tool
+    # can actually answer in front of the person least able to answer it at
+    # 11pm. `enforce` answers it from the configuration instead.
+    try:
+        decision = enforce(sample_path, config)
+    except BoundaryViolation as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(f"Boundary: {decision.explain()}")
     click.echo(
         f"This sends the full contents of {sample_path} to your configured LLM "
-        "provider's API. Confirm your license for this export actually permits "
-        "sending it to a third-party API processor before continuing."
+        "provider. The boundary check above says the pairing is permitted; whether "
+        "your licence permits this particular use of this particular export is "
+        "still yours to confirm."
     )
     if not yes:
         click.confirm("Continue?", abort=True)
 
     sample_text = sample_path.read_text(encoding="utf-8", errors="replace")
-    config = load_config()
     provider = get_provider(config)
 
     source = generate_byoc_parser(
@@ -1924,6 +1958,65 @@ def frameworks_cmd():
             "statement about your licence, not a check of it."
         )
     if not report.ok:
+        raise SystemExit(1)
+
+
+@cli.command("boundary")
+@click.option(
+    "--path",
+    "paths",
+    multiple=True,
+    type=click.Path(path_type=Path),
+    help="Classify these files or directories too, and say whether the configured "
+    "provider may receive them. Repeatable.",
+)
+def boundary_cmd(paths: tuple[Path, ...]):
+    """Show what may be sent to the configured model, and why.
+
+    Providers are classified by where the bytes end up — local, self-hosted,
+    or a third-party processor — and content by who may hold it. The table is
+    the pairing between them, and it is checked before a call rather than
+    described in a README.
+
+    Run it to answer "can this configuration work offline" without having to
+    remember, and to see a refusal's reasoning before a command hits it.
+    """
+    from policyforge.llm import boundary
+
+    try:
+        config = load_config()
+    except FileNotFoundError:
+        config = {}
+
+    provider = boundary.classify_provider(config.get("llm") or {})
+    click.echo(f"Configured provider: {provider}")
+    click.echo("")
+    click.echo(boundary.matrix(config))
+
+    tightened = {
+        content_class: ceiling
+        for content_class, ceiling in boundary.ceilings(config).items()
+        if ceiling != boundary.DEFAULT_CEILINGS[content_class]
+    }
+    if tightened:
+        click.echo("")
+        click.echo("Tightened by config (llm.boundary):")
+        for content_class, ceiling in tightened.items():
+            click.echo(f"  {content_class} -> at most {ceiling}")
+
+    if not paths:
+        return
+
+    click.echo("")
+    refused = 0
+    for path in paths:
+        decision = boundary.check(boundary.classify_path(path, config), provider, config)
+        refused += not decision.allowed
+        click.echo(f"{path}")
+        click.echo(f"  {decision.explain()}")
+
+    if refused:
+        # Exits non-zero so this can gate a pipeline, not only inform a human.
         raise SystemExit(1)
 
 

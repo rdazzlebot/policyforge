@@ -533,3 +533,110 @@ def test_export_confluence_dry_run_prints_storage_format(tmp_path):
 
     assert result.exit_code == 0
     assert "<h1>Title</h1>" in result.output
+
+
+def test_generate_parser_refuses_licensed_content_to_a_hosted_model(tmp_path, monkeypatch):
+    """The one live boundary case, and the reason the module exists.
+
+    A MyCSF export under local_content/ is licensed content; the configured
+    provider is a hosted API. This used to be a paragraph asking the operator
+    to confirm their licence and a confirm prompt they could pass --yes to.
+    Now the run stops, and --yes does not get past it.
+    """
+    import policyforge.cli as cli_mod
+
+    export_dir = tmp_path / "local_content"
+    export_dir.mkdir()
+    sample_path = export_dir / "CSFLibraryReport.csv"
+    sample_path.write_text("control_id,title\n01.c,Access Control\n", encoding="utf-8")
+
+    fake = FakeProvider(text="def load_hitrust_export(p):\n    return []\n")
+    config = {
+        "llm": {"provider": "anthropic", "model": "claude-sonnet-5"},
+        "frameworks": {"search_paths": [str(export_dir)]},
+    }
+    monkeypatch.setattr(cli_mod, "load_config", lambda: config)
+    monkeypatch.setattr(cli_mod, "get_provider", lambda config: fake)
+
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        [
+            "generate-parser",
+            "--framework",
+            "hitrust",
+            "--sample",
+            str(sample_path),
+            "--out",
+            str(tmp_path / "hitrust_loader.py"),
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "REFUSED" in result.output
+    # Nothing was sent and nothing was written.
+    assert fake.calls == []
+    assert not (tmp_path / "hitrust_loader.py").exists()
+
+
+def test_generate_parser_allows_licensed_content_to_a_local_model(tmp_path, monkeypatch):
+    """The same export against Ollama on loopback. This is the point: the
+    restriction is on the pairing, not on the content."""
+    import policyforge.cli as cli_mod
+
+    export_dir = tmp_path / "local_content"
+    export_dir.mkdir()
+    sample_path = export_dir / "CSFLibraryReport.csv"
+    sample_path.write_text("control_id,title\n01.c,Access Control\n", encoding="utf-8")
+    out_path = tmp_path / "hitrust_loader.py"
+
+    fake = FakeProvider(text="def load_hitrust_export(p):\n    return []\n")
+    config = {
+        "llm": {"provider": "local", "base_url": "http://localhost:11434/v1", "model": "qwen3"},
+        "frameworks": {"search_paths": [str(export_dir)]},
+    }
+    monkeypatch.setattr(cli_mod, "load_config", lambda: config)
+    monkeypatch.setattr(cli_mod, "get_provider", lambda config: fake)
+
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        [
+            "generate-parser",
+            "--framework",
+            "hitrust",
+            "--sample",
+            str(sample_path),
+            "--out",
+            str(out_path),
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "allowed" in result.output
+    assert out_path.exists()
+
+
+def test_boundary_command_exits_nonzero_on_a_refused_path(tmp_path, monkeypatch):
+    """So it can gate a pipeline rather than only inform a human."""
+    import policyforge.cli as cli_mod
+
+    export_dir = tmp_path / "local_content"
+    export_dir.mkdir()
+    export = export_dir / "export.csv"
+    export.write_text("a,b\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        cli_mod,
+        "load_config",
+        lambda: {
+            "llm": {"provider": "anthropic", "model": "claude-sonnet-5"},
+            "frameworks": {"search_paths": [str(export_dir)]},
+        },
+    )
+
+    result = CliRunner().invoke(cli_mod.cli, ["boundary", "--path", str(export)])
+
+    assert result.exit_code != 0
+    assert "REFUSED" in result.output
+    assert "licensed" in result.output

@@ -61,7 +61,10 @@ class FakeCompletion:
 
 
 def _temperature_deprecated_error():
-    import litellm
+    # These three tests assert against litellm's own exception types, so
+    # they need the extra. Everything else in this file drives an injected
+    # fake and must run without it — CI installs only `.[dev]`.
+    litellm = pytest.importorskip("litellm")
 
     return litellm.BadRequestError(
         message="`temperature` is deprecated for this model.",
@@ -153,7 +156,7 @@ def test_a_client_side_unsupported_param_is_also_retried_without_temperature():
     """The second wording. LiteLLM raises UnsupportedParamsError (a
     BadRequestError subclass) saying "does not support temperature=0.2",
     where Anthropic's own API says "is deprecated"."""
-    import litellm
+    litellm = pytest.importorskip("litellm")
 
     completion = FakeCompletion(
         [FakeResponse("ok")],
@@ -191,7 +194,7 @@ def test_temperature_is_dropped_for_the_rest_of_the_run():
 
 
 def test_an_unrelated_bad_request_is_not_swallowed():
-    import litellm
+    litellm = pytest.importorskip("litellm")
 
     completion = FakeCompletion(
         raise_on_temperature=litellm.BadRequestError(

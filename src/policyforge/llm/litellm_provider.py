@@ -30,6 +30,24 @@ from ._inline_thinking import answer_of, exhausted, needs_more_room, retry_budge
 from .base import LLMProvider, LLMResponse
 
 
+class _NeverRaised(Exception):
+    """Stands in for litellm's error type when litellm is not installed.
+
+    Nothing raises it, so the `temperature` retry simply cannot fire — which
+    is correct: without litellm there is no real call to be rejected, and an
+    injected fake client raises whatever the test tells it to.
+    """
+
+
+def _bad_request_error() -> type[BaseException]:
+    try:
+        import litellm
+
+        return litellm.BadRequestError
+    except ImportError:
+        return _NeverRaised
+
+
 class LiteLLMProvider(LLMProvider):
     """Calls a model through LiteLLM's unified completion interface.
 
@@ -97,6 +115,17 @@ class LiteLLMProvider(LLMProvider):
         #: of the run stops sending it. See `_create`.
         self._send_temperature = True
 
+        #: The exception `_create` retries on, resolved once here rather
+        #: than imported per call.
+        #:
+        #: Importing litellm inside `_create` made the *injected* client
+        #: path require the extra too, which defeats the point of injecting
+        #: one: every test that called `generate()` failed wherever litellm
+        #: was absent, and CI installs only `.[dev]`. BedrockProvider and
+        #: VertexProvider reach for their SDK only when building a real
+        #: client, and this now matches them.
+        self._bad_request = _bad_request_error()
+
         if completion is not None:
             # Dependency injection point for tests, matching the other
             # providers, so the request/response handling below is
@@ -134,8 +163,6 @@ class LiteLLMProvider(LLMProvider):
 
     def _create(self, payload: dict, temperature: float):
         """One request, remembering whether this model tolerates temperature."""
-        import litellm
-
         # Before the request, and inside `_create` rather than `generate`, so
         # that a truncation retry is spaced too — both halves go to the same
         # capped endpoint.
@@ -145,7 +172,7 @@ class LiteLLMProvider(LLMProvider):
             return self._completion(**payload)
         try:
             return self._completion(temperature=temperature, **payload)
-        except litellm.BadRequestError as exc:
+        except self._bad_request as exc:
             # Belt to `drop_params`' braces. LiteLLM refuses a parameter it
             # knows the model rejects before sending anything, and
             # `drop_params` in the payload handles that case. This catches

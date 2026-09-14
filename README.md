@@ -1753,6 +1753,331 @@ content, org context, or exported policies to this public repo.
 
 ## Roadmap
 
+Open work is grouped into three themes, followed by the record of what is
+already built. The themes are kinds of work rather than priorities — this is
+a hobby project, and which kind is interesting on a given evening is the real
+scheduler.
+
+1. [How this project uses models](#1-how-this-project-uses-models) — the
+   AI-engineering surface: provider and content classification, cost levers,
+   evaluation, and the provenance record.
+1. [The engine and the policy manager](#2-the-engine-and-the-policy-manager) —
+   the deterministic core: what a requirement is parsed into, what can be
+   checked without a model, and what gets generated.
+1. [Zardoz and the chatbot's skills](#3-zardoz-and-the-chatbots-skills) —
+   retrieval, the answering contract, and what you can ask the shell to do.
+
+### 1. How this project uses models
+
+PolicyForge writes security policy, so it should be able to evidence how it
+uses models the way it expects an organization to evidence a control. That
+also makes it a good place to try AI-engineering techniques against something
+with a real cost line, a real eval suite, and a real reason to care about the
+answer.
+
+- [ ] **Classify providers and content, and enforce the pairing** — providers as
+  local (Ollama, llama-server), self-hosted, or third-party API; content as
+  public domain (NIST, HIPAA), organization-internal (generated documents, the
+  topic registry), or licensed (BYOC exports). Then a matrix saying which may
+  meet which, checked before a call rather than described in a README. One case
+  is live today and only advisory: sending a licensed HITRUST or GovRAMP export
+  to a third-party processor is a licence question, currently answered by a human
+  confirming it before `generate-parser` runs. Content from a framework whose
+  manifest says `licence: licensed`, or that lives under `local_content/`, should
+  only be sendable to a provider classified as local. The classification has a
+  natural home now that providers are pluggable and the config already
+  distinguishes a local Ollama from a hosted vendor. Fails closed, needs no
+  model, and makes "can this run offline" a property of the configuration rather
+  than a matter of recollection
+- [ ] **Record which model saw which document** — nothing persists what was sent
+  where, when, or at what cost. `LLMResponse` carries model and cost, and
+  `_Metered` in `scripts/eval_zardoz.py` shows the shape of the accounting, but
+  the record ends with the run. Here that record is itself an auditable control:
+  it is what evidences that licensed content never left the boundary, and what
+  identifies every document a given model touched. Provider, model string,
+  document or control, token counts, cost. `history/version_store.py` is the
+  closest existing home, though this is a different kind of record and may want
+  its own
+- [ ] **Stamp generated documents with their model provenance** — `generate`
+  records each document into local version history, but not which model wrote it.
+  The day a model is found to systematically weaken cited requirements — the
+  failure `content/deontic.py` now detects — the question is which documents it
+  touched, and today that cannot be answered. Model, model version and a hash of
+  the prompt, recorded alongside the document, at no cost at generation time
+- [ ] **Cost levers on the SSP path** — `ssp` makes one model call per in-scope
+  control, several hundred for a moderate baseline. That makes it the largest
+  volume path in the project and the one nobody waits on, which is exactly the
+  Batch API's shape: a flat 50% reduction for latency that is not needed.
+  `--no-narratives` is already the zero-call option, so this is the middle
+  ground. Separately, every narrative call sends the same system prompt and the
+  same organization context with only the control changing, which is the textbook
+  prompt-caching shape. Measure rather than assume — a short system prompt can
+  fall under the minimum cacheable prefix and silently fail to cache, so confirm
+  `usage.cache_read_input_tokens` is non-zero across repeated calls
+- [ ] **Set effort per call site** — no call in the project passes
+  `output_config.effort`, so every request runs at the provider default,
+  including a routing call that wants a single word. The call sites are already
+  tiered by budget after `zardoz/budgets.py`: routing, expansion and resolution
+  are short and decisive, while `synthesize` and `generate` are long-form
+  judgement. Effort should follow that split
+- [ ] **Refuse a run that would cost more than a ceiling** — `ssp` prompts before
+  spending because it calls once per control. Nothing else estimates cost, and
+  `eval_zardoz.py` can issue several hundred calls from one command. Now that
+  `LLMResponse` carries cost and the eval runner totals it, a projected ceiling
+  is tractable: estimate from the planned call count and the model's rates, and
+  refuse to start above a configured limit. The mis-scoped `ssp` run against the
+  wrong baseline is the expensive mistake available today
+- [ ] **Cache eval responses so `--repeat` is affordable** — `evals/runner.py`
+  argues at length that one run is not evidence: a truncation bug measured at one
+  failure in eight came back clean on its first two probes, which is why the
+  harness reports a rate rather than a verdict. In practice runs happen at
+  `--repeat 3` because more costs more. A response cache keyed on (model, system,
+  prompt, budget, temperature) would make `--repeat 20` nearly free for the
+  unchanged cases, which is what the harness's own thesis asks for. Needs care:
+  the cache must be invalidated by any prompt change, or it will cheerfully
+  report yesterday's behaviour
+- [ ] **Prompt portability** — the prompts here were authored and iterated against
+  Anthropic models, visible in `config.example.yaml` and the `_anthropic_compat`
+  lineage, and a change that helps the model you are testing with while harming
+  others is currently invisible. Measured: moving one rule earlier in the
+  answering prompt gained one model three points and cost two others five and
+  six, and only a three-model before-and-after revealed it — the change was
+  reverted. Worth writing down as a practice, and worth a script that runs a
+  suite across a configured panel and reports the deltas side by side. Models are
+  now cheap enough that a full sweep is a couple of cents
+- [ ] **The placeholder rule is missed by six of nine models** — rule 10 of the
+  answering prompt (never present an unfilled placeholder as an answer, never
+  guess what belongs there, never illustrate it with example values) is the most
+  compliance-relevant rule in it, since a frequency is a commitment defended to
+  an assessor. `an-undecided-parameter-is-reported-as-undecided` failed or flaked
+  on six of the nine models in `MEASUREMENTS.md` — both Gemini models, both
+  DeepSeek models, gpt-oss-120b and a local Qwen — leaving only `claude-sonnet-5`
+  and `glm-5.3-flash` reliable. When two thirds of models across five vendors
+  miss the same rule, the prompt is the likelier explanation than the models.
+  Moving it earlier was tried and reverted; restating it at both ends, or making
+  it a procedure rather than a prohibition, are the untried options
+- [ ] **Verifier-gated model cascade** — answer with a cheap or local model first,
+  run `zardoz/answer.py`'s integrity checks on what comes back, and escalate to a
+  stronger model only when they fail. The usual difficulty with a cascade is
+  knowing when the cheap model was wrong; here `check_answer` already decides
+  that deterministically and for nothing. Measured against a local 14B (Qwen3,
+  Ollama): 84% of answering runs passed, with routing at 92% and expansion at
+  100%, so the escalation fraction looks small enough to be worth the second
+  call. Two constraints found while scoping it. It cannot live behind
+  `LLMProvider`, because `generate()` never receives the passages the verifier
+  needs — so it belongs in `answer_question`, the one place the question, the
+  passages, the provider and the verdict all exist at once. And an escalation has
+  to be recorded on the `Answer` rather than silently swapped in, for the reason
+  `Answer.warnings` already gives: a caller that hides a repair produces the same
+  output while looking safer. Note the scope — this applies only to the Zardoz
+  answering path. `synthesize`, `generate` and `ssp` have no equivalent verifier
+  to gate on, and `ssp` is the larger cost line, where the Batch API is the lever
+  instead. The awkward part: the one path with a verifier is also the only
+  interactive one, so the cheap model's latency is paid where it is most felt
+
+### 2. The engine and the policy manager
+
+The deterministic core. Three house rules govern everything in this theme, and
+none of them are negotiable: deterministic first, since a checker that needs a
+model has the failure mode it exists to detect; false positives are the enemy,
+because a check that fires on correct output teaches people to ignore the one
+that matters; and an undecided parameter stays `[Assignment: ...]` rather than
+being resolved, because a frequency is a commitment defended to an assessor.
+
+#### Requirements as structure
+
+Everything downstream of generation currently treats documents as prose, which
+is the ceiling on what can be checked mechanically. Lifting that ceiling is
+where most of the remaining value is.
+
+- [ ] **Extract requirements as structured tuples** — parse a requirement into
+  its parts:
+
+  ```
+  "IT Asset Management shall retain such documentation for 6 years
+   from the date of its creation."
+
+   -> actor     = IT Asset Management
+      modality  = obligation
+      action    = retain
+      object    = such documentation
+      interval  = 6 years
+      condition = from the date of its creation
+  ```
+
+  With requirements as structure rather than sentences, four things become
+  possible that are not today: **cross-document comparison** (does the Standard
+  cover what the Policy promises?); the **conflict log** below, where
+  `synthesis/merge.py` already keeps both statements and tuples turn "both are
+  present" into "these assert different intervals for the same action", a
+  decision queue rather than a reading exercise; the **reverse view for
+  assessors**, also below; and **semantic drift**, since neither `history` nor
+  `drift` can currently say a requirement changed meaning.
+
+  Start from `content/deontic.py`, which already ships the modality half —
+  sentence segmentation, obligation/prohibition/recommendation/permission
+  classification, framework-citation detection, and the false-positive handling
+  that took several iterations (headings, trailing citations, markdown emphasis,
+  strongest-modality-wins). Suggested order, each step useful on its own:
+
+  1. **Actor**, which is the agentless-obligation check below and is shippable
+     by itself.
+  1. **Interval**, via interval normalisation below.
+  1. **Action and object.** The hard part — evaluate whether a dependency such
+     as spaCy earns its place before reaching for one.
+  1. **The tuple type, a store, then diffing and conflict detection.**
+
+  A good first branch is actor plus modality plus interval, the
+  agentless-obligation check wired into `policyforge check` as warnings, and
+  tests heavy on false-positive cases. Action and object should not gate it
+
+- [ ] **Vagueness and agentless obligations** — the deontic module's natural
+  siblings, in the same module and the same deterministic style. "As
+  appropriate", "where feasible", "commercially reasonable efforts" and
+  "periodically" make a requirement unauditable while looking like one, and the
+  generated Standard in `evals/documents/` already contains one; the lexicon
+  needs `deontic.py`'s care about context, since hedging in a Purpose section is
+  not hedging in a requirement. And "accounts must be recertified quarterly"
+  hides who must do it — an assessor's next question after *must* is *who*, and
+  passive voice conceals it. `org.teams` already knows the legitimate actors, so
+  a candidate can be validated rather than guessed. A Standard where a large
+  share of obligations name no actor is a real finding
+
+- [ ] **Interval normalisation** — parse "quarterly", "within 24 hours", "6
+  years" and "annually" into structured durations rather than matching them as
+  text, which is what `zardoz/answer.py`'s `ungrounded_values` does by pattern
+  today. Enables the conflict log, checking documents against the parameter
+  ledger, and comparing values rather than their spelling. Not hypothetical: a
+  narrow no-break space inside "6 years" once made a correctly grounded figure
+  read as invented
+
+- [ ] **Diff requirements by modality across versions** — `history` diffs
+  document text and `drift` compares catalogs; neither can say a requirement
+  changed meaning. Now that `content/deontic.py` classifies modality, a revision
+  that turned a `must` into a `should` is detectable, and that is a compliance
+  regression arriving inside what looks like an ordinary wording change.
+  Shippable on modality alone, before the full tuple
+
+- [ ] **Flag terminology drift across the corpus** — a corpus saying "privileged
+  account" in one document and "administrative account" in another is confusing
+  to an assessor, and it is also the condition `zardoz/paraphrase.py` exists to
+  work around at query time. Fixing it at the source would make that subsystem
+  less necessary. Needs a glossary or controlled vocabulary to check against;
+  `policyforge roles` is the precedent for fixed, checkable keys
+
+#### Documents, evidence and the framework set
+
+- [ ] **Conflict log** — where frameworks genuinely disagree, `synthesis/merge.py`
+  already keeps both statements rather than silently picking. The next step is to
+  surface those as an explicit decision queue rather than leaving them for a
+  reader to notice. Password rotation is the standing example: some frameworks
+  still expect periodic expiry, NIST SP 800-63B advises against it
+- [ ] **Per-team bundles** — generate one packet per owning team (its procedures,
+  the requirements underneath them, the evidence it owes, its review cadence)
+  instead of one document per topic. This is the artifact a team lead can
+  actually be handed
+- [ ] **Evidence-artifact modelling** — let a procedure step declare what it
+  produces (an export, a dashboard link, a ticket query). Collect once, satisfy
+  many: the bridge between a procedure and a HITRUST assessment's evidence
+  demands
+- [ ] **Reverse view for assessors** — given a generated procedure, list every
+  framework requirement it satisfies. Inverse of the crosswalk, and the view an
+  assessor actually asks for
+- [ ] **Scan generated documents for secrets** — `gitleaks` runs over the
+  repository; nothing scans what the generator writes. A passage can contain a
+  credential, and an answer or a generated Standard can reproduce it —
+  `check_answer` verifies that a quotation is *faithful*, which is precisely the
+  wrong property here. Publishing then puts it in Confluence. Wanted before
+  `export-confluence` and `publish`, and as a warning in `policyforge check`
+- [ ] **SSP round-trip** — read an edited workbook back in, so implementation
+  status and narratives survive a catalog refresh instead of being re-drafted
+  from scratch
+- [ ] **OSCAL SSP export** — NIST's machine-readable SSP model is what FedRAMP is
+  moving to; the same data assembled by `ssp/` could emit it
+- [ ] **GovRAMP export parsing** — `ingest/byoc_loader.py` is still stubbed for
+  GovRAMP; run `generate-parser` (or hand-write) against a real sample export
+  once you have one. Separately, follow up on redistribution permission — if
+  granted, GovRAMP moves from BYOC to bundled
+- [ ] **Other healthcare-relevant frameworks worth considering** — HITRUST CSF
+  (already stubbed as BYOC, and now that `generate-parser` exists, buildable
+  against a real MyCSF export), MARS-E (CMS, NIST-800-53-based, same
+  public-domain lineage as ARC-AMPE)
+
+### 3. Zardoz and the chatbot's skills
+
+The read side: retrieval, the answering contract, and what the shell can be
+asked to do.
+
+- [ ] **Treat retrieved passages as data, not as instructions** — Zardoz answers
+  from passages retrieved out of a document corpus, and
+  `zardoz.supporting_space` deliberately admits content nobody has declared
+  ownership of. Text arriving that way is currently placed into the prompt
+  alongside the instructions governing how it should be used. For a tool whose
+  output an assessor may rely on, a passage read as instruction rather than as
+  evidence means somebody is told something false about their own control
+  posture. Several existing properties already narrow this, and are worth keeping
+  in view when designing the fix: every claim carries a citation verified against
+  the passages actually supplied, quotations are checked verbatim, and unowned
+  sources must be disclosed in the answer. Worth considering: a structural
+  boundary between instruction and evidence in `build_prompt` rather than
+  headings alone; a restatement of the grounding rules *after* the passages, so
+  the last thing read is the contract rather than the content; a check that
+  reports passages containing imperative text addressed at the reader, as a
+  warning on the corpus rather than on the answer; and extending `zardoz sync`'s
+  report, which already surfaces ownership problems, to cover it
+- [ ] **Dense retrieval and hybrid fusion** (`embed/`) — **built, off by
+  default.** BM25 cannot see a passage whose words differ from the question's,
+  which is a recall failure nothing downstream can fix: measured on a real
+  generated Standard, it returned zero passages for two questions the document
+  plainly answers, and dense retrieval found both. What blocks it becoming
+  default is `MIN_SIMILARITY`, the floor that keeps an honest refusal possible.
+  It is measured rather than guessed — questions the document answers in other
+  words scored 0.646, 0.557 and 0.521, and questions it does not answer scored
+  0.458 and 0.410 — but the margin between noise and signal is thin and comes
+  from one document. Too high and the recall failure returns; too low and
+  "nothing in the synced documents appears to bear on that" stops being a
+  possible answer. Needs calibration across several real corpora, with the
+  refusal cases confirmed still empty
+- [ ] **Cross-encoder reranking** (`rerank/`) — **built, off by default and called
+  by nothing.** Parked on evidence rather than doubt: retrieval gates hard on
+  specificity so that an honest refusal stays possible, which means it does not
+  produce the wide candidate set reranking depends on — in testing it returned a
+  single candidate twice. A reranker improves ordering and cannot improve recall,
+  so it cannot rescue a passage the gate filtered out. Revisit after dense
+  retrieval widens the candidate set; loosening the specificity gate to feed a
+  reranker would trade a measured strength for a speculative gain
+- [ ] **Entailment checking** (`entail/`) — **built, off by default.** Asks
+  whether the cited passage actually carries the claim, which no deterministic
+  check can: a sentence citing correctly, quoting nothing and inventing no
+  interval can still name the wrong actor. This is a model judging a model, so
+  three lines are drawn and written into the module — `check_answer` is untouched
+  and its warnings remain facts, these findings are opinions and are labelled as
+  such, and this is never an eval grader
+- [ ] **Table-aware chunking** — `an-answer-can-come-from-a-table` produced a
+  fabricated quotation from both `claude-sonnet-5` and `deepseek-v4-flash`, in
+  different runs. Both put non-verbatim text in quotation marks while citing
+  correctly, and the quote rule in `check_answer` caught both and was right to —
+  the passages do not contain those words. The cause looks structural: retrieval
+  chunks at headings, tables get flattened, and models reflow cells into prose.
+  Worth investigating whether table content should be chunked, or quoted,
+  differently
+- [ ] **More skills on the shell** — `zardoz/skills.py` currently routes to eight
+  deterministic reports (coverage, parameters, drift, history, check, frameworks,
+  hitrust, roles), each printed verbatim so that a number in a Zardoz answer is
+  worth the same as a number from the CLI. Several natural ones are missing.
+  **Crosswalk lookup** is the largest gap: `policyforge map` has no skill, and
+  "what HITRUST requirement maps to AC-2?" is the most assessor-shaped question
+  there is. **Topic registry lookup** — owner, cadence, anchors and evidence
+  artifacts for a named topic — is deterministic data that retrieval currently
+  has to answer from prose. And the **reverse view** and **conflict log** above
+  should each arrive with a skill rather than only a command, since both answer
+  questions people ask in sentences. Each new skill widens the routing catalog,
+  so each one is also a new routing eval case
+
+### Shipped
+
+What already exists, kept as the record of what the prose above refers to.
+
 - [x] `mapping/crosswalk.py` — cross-framework control correspondence
 - [x] `synthesis/merge.py` — the dedupe/merge-to-prose engine
 - [x] `generate/policy_writer.py` — Standard tier (`generate_standard`), Policy tier
@@ -1770,9 +2095,6 @@ content, org context, or exported policies to this public repo.
 - [x] `ingest/byoc_loader.py` — HITRUST CSF export parsing, via `ingest/hitrust.py`
   (the framework's structure) and `ingest/hitrust_export.py` (CSV/TSV/XLSX/HTML/MHTML
   readers and column detection). Run it with `policyforge etl-hitrust`
-- [ ] `ingest/byoc_loader.py` — GovRAMP export parsing still stubbed; run
-  `generate-parser` (or hand-write) against a real sample export once you have one
-- [ ] GovRAMP: follow up on redistribution permission; if granted, move from BYOC to bundled
 - [x] Google Cloud Vertex AI Model Garden LLM provider (`llm/vertex_provider.py`) —
   install with `pip install "policyforge[vertex]"`
 - [x] OpenAI-compatible endpoint provider (`llm/openai_compat_provider.py`) — a model
@@ -1809,25 +2131,6 @@ content, org context, or exported policies to this public repo.
   routing is constrained by an enum schema where the model supports one, falling back to
   prose where it does not. Turns "did the model reply with exactly one word" from
   something the prompt asks for into something the API guarantees
-- [ ] Dense retrieval and hybrid fusion (`embed/`) — **built, off by default.** BM25
-  cannot see a passage whose words differ from the question's, which is a recall failure
-  nothing downstream can fix: measured on a real generated Standard, it returned zero
-  passages for two questions the document plainly answers, and dense retrieval found
-  both. What blocks it becoming default is `MIN_SIMILARITY`, the floor that keeps an
-  honest refusal possible. It is measured rather than guessed, but from one document,
-  and the margin between noise and signal is thin. Needs calibration across several real
-  corpora with the refusal cases confirmed still empty
-- [ ] Cross-encoder reranking (`rerank/`) — **built, off by default and called by
-  nothing.** Parked on evidence rather than doubt: retrieval gates hard on specificity so
-  that an honest refusal stays possible, which means it does not produce the wide
-  candidate set reranking depends on. A reranker improves ordering and cannot improve
-  recall, so this waits on dense retrieval rather than on a looser gate
-- [ ] Entailment checking (`entail/`) — **built, off by default.** Asks whether the cited
-  passage actually carries the claim, which no deterministic check can: a sentence citing
-  correctly, quoting nothing and inventing no interval can still name the wrong actor.
-  This is a model judging a model, so three lines are drawn and written into the module —
-  `check_answer` is untouched and its warnings remain facts, these findings are opinions
-  and are labelled as such, and this is never an eval grader
 - [x] `ingest/hipaa_loader.py` + `policyforge etl-hipaa` — HIPAA Security Rule (45 CFR
   164 Subpart C), bundled and populated, sourced from eCFR's public API
 - [x] HIPAA-to-NIST-800-53 crosswalk (`ingest/hipaa_crosswalk_loader.py` +
@@ -1840,20 +2143,14 @@ content, org context, or exported policies to this public repo.
 - [x] `ssp/` + `policyforge ssp` — NIST 800-53 System Security Plan as a LibreOffice-
   compatible .xlsx workbook, with FedRAMP's CIS vocabularies and LLM-drafted
   implementation narratives (see "System Security Plan" above)
-- [ ] SSP round-trip: read an edited workbook back in, so implementation status and
-  narratives survive a catalog refresh instead of being re-drafted from scratch
-- [ ] OSCAL SSP export — NIST's machine-readable SSP model is what FedRAMP is moving
-  to; the same data assembled by `ssp/` could emit it
-- [ ] Other healthcare-relevant frameworks worth considering: HITRUST CSF (already
-  stubbed as BYOC, and now that `generate-parser` exists, buildable against a real
-  MyCSF export), MARS-E (CMS, NIST-800-53-based, same public-domain lineage as ARC-AMPE)
 
-### Making "one topic, one team" first-class
+#### Making "one topic, one team" first-class
 
-The ownership model above is currently a convention you hold in your head:
-`synthesize` takes `--topic "Access Review" --nist-controls AC-2,AC-6` and
-nothing records which team owns it or what it's for. Turning that into
-declared, checkable data is where most of the remaining value is.
+Ownership started as a convention you held in your head: `synthesize` took
+`--topic "Access Review" --nist-controls AC-2,AC-6` and nothing recorded which
+team owned it or what it was for. These turned that into declared, checkable
+data. What remains of the idea — per-team bundles, evidence artifacts and the
+reverse view — is in theme 2 above.
 
 - [x] **Topic registry** (`config/topics.yaml` + `topics/registry.py`) — topic name,
   owner, cadence, NIST anchors, evidence artifacts, with a 20-topic starter set in
@@ -1947,67 +2244,8 @@ declared, checkable data is where most of the remaining value is.
   Substituted into control text *before* synthesis, so every document drawn from a
   control agrees and so does the SSP. An undecided parameter stays visibly
   `[Assignment: ...]` rather than becoming a number nobody chose
-- [ ] **Conflict log** — where frameworks genuinely disagree, `synthesis/merge.py`
-  already keeps both statements rather than silently picking. The next step is to
-  surface those as an explicit decision queue rather than leaving them for a reader to
-  notice. Password rotation is the standing example: some frameworks still expect
-  periodic expiry, NIST SP 800-63B advises against it.
-- [ ] **Per-team bundles** — generate one packet per owning team (its procedures, the
-  requirements underneath them, the evidence it owes, its review cadence) instead of
-  one document per topic. This is the artifact a team lead can actually be handed.
-- [ ] **Evidence-artifact modelling** — let a procedure step declare what it produces
-  (an export, a dashboard link, a ticket query). Collect once, satisfy many: the
-  bridge between a procedure and a HITRUST assessment's evidence demands.
-- [ ] **Reverse view for assessors** — given a generated procedure, list every
-  framework requirement it satisfies. Inverse of the crosswalk, and the view an
-  assessor actually asks for.
 - [x] **Framework-version drift** (`frameworks/drift.py` + `policyforge drift`) —
   when a catalog bumps version, reports which controls actually changed and which
   of your topics, documents and recorded parameter decisions each one reaches, so
   review is scoped to what moved rather than restarting the document set. Compares
   against the committed catalog by default, so running the ETL is the whole setup.
-- [ ] **Verifier-gated model cascade** — answer with a cheap or local model first,
-  run `zardoz/answer.py`'s integrity checks on what comes back, and escalate to a
-  stronger model only when they fail. The usual difficulty with a cascade is knowing
-  when the cheap model was wrong; here `check_answer` already decides that
-  deterministically and for nothing. Measured against a local 14B (Qwen3, Ollama):
-  84% of answering runs passed, with routing at 92% and expansion at 100%, so the
-  escalation fraction looks small enough to be worth the second call. Two constraints
-  found while scoping it. It cannot live behind `LLMProvider`, because `generate()`
-  never receives the passages the verifier needs — so it belongs in
-  `answer_question`, the one place the question, the passages, the provider and the
-  verdict all exist at once. And an escalation has to be recorded on the `Answer`
-  rather than silently swapped in, for the reason `Answer.warnings` already gives:
-  a caller that hides a repair produces the same output while looking safer. Note
-  the scope — this applies only to the Zardoz answering path. `synthesize`,
-  `generate` and `ssp` have no equivalent verifier to gate on, and `ssp` is the
-  larger cost line, where the Batch API is the lever instead. The awkward part: the
-  one path with a verifier is also the only interactive one, so the cheap model's
-  latency is paid where it is most felt.
-- [ ] **Prompt portability** — the prompts here were authored and iterated against
-  Anthropic models, and a change that helps the model you are testing with while harming
-  others is currently invisible. Measured: moving one rule earlier in the answering
-  prompt gained one model three points and cost two others five and six, and only a
-  three-model before-and-after revealed it. Worth a script that runs a suite across a
-  configured panel and reports the deltas side by side. Related: the placeholder rule is
-  missed by six of nine models measured, which points at the prompt rather than at the
-  models
-- [ ] **Vagueness and agentless obligations** — the deontic module's natural siblings,
-  same deterministic style. "as appropriate" and "where feasible" make a requirement
-  unauditable while looking like one; "accounts must be recertified" hides who must do
-  it, and `org.teams` already knows the legitimate actors
-- [ ] **Interval normalisation** — parse "quarterly", "within 24 hours", "6 years" into
-  structured durations rather than matching them as text. Enables the conflict log,
-  checking documents against the parameter ledger, and comparing values rather than
-  their spelling. Not hypothetical: a narrow no-break space inside "6 years" once made a
-  correctly grounded figure read as invented
-- [ ] **Table-aware chunking** — `an-answer-can-come-from-a-table` produced a fabricated
-  quotation from both `claude-sonnet-5` and `deepseek-v4-flash`, in different runs. The
-  quote check caught both and was right to; the cause looks structural, since retrieval
-  chunks at headings and tables get flattened
-- [ ] **The tool's own AI use as an auditable control** — PolicyForge writes security
-  policy, so it should be able to evidence how it uses models the way it evidences an
-  organization's controls. Classify providers and content and enforce the pairing; record
-  which model saw which document; stamp generated documents with their model provenance,
-  so the day a model is found to have a flaw the question "which documents did it write"
-  has an answer. See `ISSUES.md`

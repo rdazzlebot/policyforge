@@ -116,6 +116,74 @@ def test_etl_hipaa_fetches_and_parses(tmp_path, monkeypatch):
     assert any(c["control_id"] == "164.308(a)(1)(i)" for c in controls)
 
 
+def test_etl_govramp_reports_without_writing_by_default(tmp_path):
+    """Licensed content parses in memory and stays there. --out is the only
+    thing that puts a GovRAMP catalog on disk, which is the safe default for
+    a framework this repository has no redistribution rights to."""
+    from policyforge.cli import cli
+    from tests.test_govramp import build_workbook
+
+    matrix = build_workbook(tmp_path / "GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx")
+
+    result = CliRunner().invoke(cli, ["etl-govramp", "--export", str(matrix)])
+
+    assert result.exit_code == 0
+    assert "3 controls, 3 enhancements" in result.output
+    assert "Nothing written" in result.output
+    assert not list(tmp_path.glob("*.json"))
+
+
+def test_etl_govramp_writes_a_catalog_to_a_permitted_path(tmp_path, monkeypatch):
+    import policyforge.cli as cli_mod
+    from policyforge.cli import cli
+    from tests.test_govramp import build_workbook
+
+    # The only one of these that reaches --out's write gate, which reads
+    # config. Faked like every other CLI test here: config/config.yaml is
+    # gitignored, so on a fresh clone — CI, or anyone who has not made one —
+    # the real loader raises and this fails for a reason that has nothing to
+    # do with GovRAMP.
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+
+    matrix = build_workbook(tmp_path / "GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx")
+    out_path = tmp_path / "controls.json"
+
+    result = CliRunner().invoke(
+        cli,
+        ["etl-govramp", "--export", str(matrix), "--out", str(out_path), "--force"],
+    )
+
+    assert result.exit_code == 0
+    controls = json.loads(out_path.read_text(encoding="utf-8"))
+    assert [c["control_id"] for c in controls] == ["AC-1", "AC-2", "SR-11"]
+    # The profile's own two additions survive the write, which is the point
+    # of ingesting a profile rather than reading 800-53 directly.
+    assert controls[0]["parameter_values"]["AC-1 (c) (1)"] == "every other harvest"
+
+
+def test_etl_govramp_refuses_to_write_into_the_bundled_directory(tmp_path):
+    """data/frameworks/ is this project's public, redistributable half. A
+    licensed catalog written there gets committed and pushed."""
+    from policyforge.cli import cli
+    from tests.test_govramp import build_workbook
+
+    matrix = build_workbook(tmp_path / "GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx")
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "etl-govramp",
+            "--export",
+            str(matrix),
+            "--out",
+            "data/frameworks/govramp/controls.json",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "never be written there" in result.output
+
+
 def test_map_builds_crosswalk_from_controls_json(tmp_path):
     from policyforge.cli import cli
 

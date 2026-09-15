@@ -49,6 +49,18 @@ the org's framework data.
    `frameworks.allow_licensed_in_repo` is set. Prefer a CSV export: the
    rendered HTML/MHTML of the same report carries far fewer
    authoritative-source mappings.
+   GovRAMP is bring-your-own on the same terms:
+   **`policyforge etl-govramp --export <path>`** reads the published controls
+   matrix workbook (`.xlsx`/`.xlsm`) whole — hand it the file as GovRAMP
+   ships it, not an extract, because the controls sheet is found among the
+   template's other thirteen by its header captions. Same `--out` gate.
+   **Its Core/Ready/Authorized columns are verification tiers, not impact
+   levels** — one Moderate matrix holds all three (60, 80 and 319 controls of
+   the same 319-control baseline). If the user asks "how many controls do we
+   need", ask which tier they are pursuing; answering with the Authorized
+   count when they are going for Ready overstates the work by 239 controls.
+   Its real value over the bundled 800-53 data is the parameter values
+   GovRAMP has already decided — see the `parameters` note below.
 1. **`policyforge map --controls <path> [--controls <path> ...] [--out <path>]`**
    — build/refresh the cross-framework crosswalk
    (`data/frameworks/crosswalk.json`). **Pass every framework's controls.json**
@@ -241,6 +253,12 @@ Optional, after generating:
   reasoning in `rationale`/`source`. A parameter left blank stays as
   `[Assignment: ...]` in the output, which is the correct outcome for an
   undecided value — not a bug to paper over.
+  The one exception is a value a *framework* has already decided. A GovRAMP
+  matrix ingested with `etl-govramp` carries a few hundred of them, and they
+  reach synthesis automatically — that is the framework's answer with a
+  citation behind it, not a guess. Still say so when it happens: the user is
+  committing to GovRAMP's cadence, and they should know that is where it came
+  from.
 
 - **`policyforge roles`** — list the tool and team roles config can assign.
   Run it before editing `org.vendors`/`org.teams`: the keys are fixed, and a
@@ -258,12 +276,14 @@ Optional, after generating:
   purpose — generated policies are org-specific content, not engine code. If
   you're asked to commit changes, `git status` first and make sure nothing
   under those paths is staged.
+
 - **Try `etl-hitrust` before `generate-parser`.** HITRUST parsing is
   implemented (`ingest/hitrust.py` for the framework's structure,
   `ingest/hitrust_export.py` for the file formats and column detection), and
   it handles the MyCSF renderings seen so far without any LLM call. Reach for
   codegen only when `etl-hitrust` fails — it names the fields it could not
   find.
+
 - **`generate-parser` sends real file content to the LLM API.** Before
   running `policyforge generate-parser --framework hitrust|govramp --sample <path>`
   against a *real* HITRUST/GovRAMP export, confirm with the user that their
@@ -271,6 +291,7 @@ Optional, after generating:
   processor — don't just proceed because they asked. A synthetic/dummy
   sample needs no such confirmation. Trimming the sample to a dozen rows
   with the header intact is usually enough and sends far less.
+
 - **BYOC frameworks (HITRUST, GovRAMP) never go in `data/frameworks/` or get
   committed *to this repository*.** They live in `local_content/` (gitignored).
   **In a user's own repository the answer is often different**: their MyCSF
@@ -279,10 +300,12 @@ Optional, after generating:
   flag on their behalf — it is a statement about their licence, and only they
   can make it. If `check` reports a breach, explain what it means and let them
   decide. See README's licensing section.
+
 - **Org context (`config.yaml`'s `org:` block) drives placeholders.** If
   `vendors` is empty, generated docs use `[Square-Bracket Vendor]`
   placeholders rather than inventing product names — that's correct
   behavior, not a bug to fix.
+
 - **Local version history (`output/.history/`) is a convenience, not the
   system of record.** Don't present it as an authoritative changelog if the
   user's actual system of record is Confluence/Git/Drata — it's a

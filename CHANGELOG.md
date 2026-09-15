@@ -1,5 +1,67 @@
 # Changelog
 
+## Unreleased
+
+### GovRAMP controls matrix ingestion
+
+`policyforge etl-govramp` reads a GovRAMP (formerly StateRAMP) controls
+matrix as published — the workbook, not an extract of it — and parses it
+into the same `Control` schema every other loader produces. GovRAMP was the
+last BYOC stub; `ingest/byoc_loader.py` now has no unimplemented loaders.
+
+GovRAMP is a profile over 800-53 rather than a catalog of its own, and what
+makes it worth ingesting is the two things it adds to the controls it
+quotes:
+
+- **Parameter values it has already decided.** Where 800-53 writes
+  `[Assignment: organization-defined frequency]`, GovRAMP writes
+  `AC-1 (c) (1) [at least every 3 years]`. The Rev 5 Moderate matrix carries
+  211 of them. These now reach `synthesize`, which is the difference between
+  a generated Standard citing a decided value and a model filling in the
+  placeholder by guessing — the failure `policyforge parameters` exists to
+  prevent.
+- **Additional requirements and guidance** layered on a control, which
+  appear nowhere in 800-53. Eighty controls in the Moderate matrix carry a
+  block, and they are handed to synthesis as normative text.
+
+Both are carried on new `Control.parameter_values` and
+`Control.additional_requirements` fields (and their `ControlEnhancement`
+counterparts), named for the concept rather than the framework because
+FedRAMP publishes the same two things. Catalogs written before these fields
+existed still load.
+
+Because a profile's identifiers *are* the identifiers of the catalog it
+profiles, GovRAMP crosses with NIST automatically: `policyforge map` reports
+`govramp` among its mapped frameworks with no crosswalk file to maintain.
+From there `coverage`, `parameters` and `ssp` treat it like any other
+catalog.
+
+Two things the loader is careful about, both because the failure would
+otherwise be silent:
+
+- **Tiers are not impact levels.** A Moderate workbook holds all three of
+  GovRAMP's Core/Ready/Authorized verification tiers — 60, 80 and 319
+  controls of the same 319-control Moderate matrix. Read the tier as a
+  baseline and a service offering appears to have 319 controls to implement
+  when 80 stand between it and the tier it is pursuing. `Control.baseline`
+  carries both axes (`Moderate; Core, Ready, Authorized`), and the tiers'
+  nesting is checked against the file rather than assumed.
+- **The sheet is found by its header captions, not its name.** The matrix
+  arrives as a fourteen-sheet SSP template whose controls sheet is
+  `12_Mod Controls` — a number that is a position in a template GovRAMP
+  renumbers. Scoring every sheet on its two-row header means the Low and
+  High workbooks need no special case.
+
+Licensing is unchanged and unchanged on purpose: GovRAMP's Terms &
+Conditions claim ownership of their published documents with no
+redistribution grant found, so the matrix stays bring-your-own-content.
+`etl-govramp` parses in memory, writes nothing without `--out`, and `--out`
+refuses `data/frameworks/` outright plus any non-gitignored path unless
+`frameworks.allow_licensed_in_repo` is declared — the same gate as
+`etl-hitrust`. `tests/test_byoc_boundary.py` now walks the new modules' ASTs
+too, so the no-write/no-network rule fails a test run rather than somebody's
+licence.
+
 ## 1.0.0
 
 The release that makes the policy set answerable.
@@ -124,4 +186,3 @@ than half-read; and test coverage extended to the modules no test imported.
 - The version was `0.1.0` and is now `1.0.0`. This is the first tagged
   release; there is no upgrade path to document.
 - HITRUST CSF and GovRAMP remain content you supply under your own licence.
-  GovRAMP's loader is still a stub — see `policyforge generate-parser`.

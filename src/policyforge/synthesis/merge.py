@@ -92,6 +92,14 @@ Rules:
   frequency), do not invent one.
 - Merge requirements that say the same thing across frameworks into one
   statement rather than repeating it once per framework.
+- Where a "Framework-defined parameter value" is given, use it in place of
+  the matching `[Assignment: ...]` or `[Selection: ...]` placeholder in the
+  control text. That value is the framework's own decision, not a guess —
+  it is the one case where filling in a placeholder is correct. Leave any
+  placeholder with no such value as it stands.
+- Treat "Additional framework requirements" as normative: they are
+  requirements that framework adds on top of the base control, so they earn
+  their own statement or extend an existing one.
 - Where frameworks genuinely disagree (e.g. different minimums), keep them
   as separate statements rather than silently picking one.
 - Output a markdown bullet list, one requirement per bullet, and nothing
@@ -103,6 +111,30 @@ Rules:
 """
 
 
+def _render_profile_additions(item, prefix: str = "") -> list[str]:
+    """The two things a profile (GovRAMP, FedRAMP) adds to a base control.
+
+    Worth handing to the model rather than dropping, because both change
+    what the merged requirement should say. A profile that has already
+    decided "at least every 3 years" turns `[Assignment:
+    organization-defined frequency]` from a placeholder the model would
+    otherwise fill in by guessing into a value with a citation behind it —
+    which is the same reason `parameters/ledger.py` exists. The added
+    requirements are normative sentences that appear in no base catalog, so
+    a synthesis drawn only from 800-53 would silently omit them.
+    """
+    lines = []
+    if item.parameter_values:
+        values = "; ".join(
+            f"{citation} = {value}" for citation, value in item.parameter_values.items()
+        )
+        lines.append(f"{prefix}Framework-defined parameter values: {values}")
+    if item.additional_requirements:
+        flattened = " ".join(item.additional_requirements.split())
+        lines.append(f"{prefix}Additional framework requirements: {flattened}")
+    return lines
+
+
 def _render_control(control: Control) -> str:
     lines = [f"### {control.framework} {control.control_id} — {control.title}"]
     if control.baseline:
@@ -111,10 +143,12 @@ def _render_control(control: Control) -> str:
         lines.append(f"Control statement: {control.control_statement}")
     if control.discussion:
         lines.append(f"Discussion: {control.discussion}")
+    lines.extend(_render_profile_additions(control))
     for enh in control.enhancements:
         lines.append(
             f"Enhancement {enh.enhancement_id} ({enh.baseline}) — {enh.title}: {enh.description}"
         )
+        lines.extend(_render_profile_additions(enh, prefix="  "))
     return "\n".join(lines)
 
 

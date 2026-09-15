@@ -313,11 +313,11 @@ The full pipeline is functional end-to-end: `etl-oscal` -> `map` ->
 separate output path. All three LLM providers (Anthropic, Bedrock, Vertex),
 the control loaders, crosswalk builder, LLM-driven synthesis/generation
 stages, Confluence export/import, and local version history are all wired up
-and tested. HITRUST CSF is implemented as a bring-your-own-content loader —
-`etl-hitrust` reads your own MyCSF export (CSV, workbook, HTML or MHTML) and
-never bundles or commits any of it. The GovRAMP BYOC loader remains a stub
-pending a sample export to parse against — see `ingest/byoc_loader.py` and
-`policyforge generate-parser`.
+and tested. HITRUST CSF and GovRAMP are both implemented as
+bring-your-own-content loaders: `etl-hitrust` reads your own MyCSF export
+(CSV, workbook, HTML or MHTML), and `etl-govramp` reads your own GovRAMP
+controls matrix workbook. Neither is bundled or committed, and both parse in
+memory and write nothing unless you ask them to.
 
 Bundled and populated from public-domain sources, each re-fetchable:
 
@@ -456,21 +456,156 @@ first: that command sends your export's contents to your LLM provider, and
 whether your licence permits that is a question to answer before running it,
 not after.
 
+### The shape of a GovRAMP controls matrix
+
+GovRAMP (formerly StateRAMP) publishes no control catalog of its own. It is
+a **profile over NIST SP 800-53 Rev 5**: it selects which 800-53 controls a
+cloud service offering must meet, reproduces their text verbatim, and adds
+two things the base catalog deliberately leaves open.
+
+- **Parameter values.** Where 800-53 writes `[Assignment: organization-defined frequency]`, GovRAMP writes
+  `AC-1 (c) (1) [at least every 3 years]`. For anyone pursuing a GovRAMP
+  authorization these are not suggestions — they are the answer, already
+  decided, with a citation. The Rev 5 Moderate matrix carries 211 of them.
+  [`policyforge parameters`](#organization-defined-parameters)
+  exists because 800-53 leaves roughly 1,200 such values to you; a profile
+  answers a few hundred outright.
+- **Additional requirements and guidance.** Normative sentences layered on
+  top of a control — "the service provider defines the time period for
+  non-user accounts" — that appear nowhere in 800-53. Eighty controls in the
+  Moderate matrix carry one.
+
+And one axis 800-53 does not have: the **verification tier**.
+
+#### Tiers are not impact levels
+
+A GovRAMP matrix is published *per impact level* — a Low, a Moderate and a
+High workbook, matching the FIPS 199 categorisation of the system. Within
+one workbook, three columns then say which controls are required to reach
+each of GovRAMP's three verification tiers:
+
+| Tier           | Controls required (Rev 5 Moderate) |
+| -------------- | ---------------------------------- |
+| **Core**       | 60                                 |
+| **Ready**      | 80                                 |
+| **Authorized** | 319                                |
+
+Each tier's set contains the one before it, and the file is the only place
+that nesting is stated — so `etl-govramp` checks it rather than assuming it.
+A break means the three columns were misidentified, which is the kind of
+failure where every count still looks plausible and every scope built on
+them is wrong.
+
+The two axes multiply, and conflating them is the mistake worth naming:
+"Moderate Ready" and "Moderate Authorized" are different obligations over
+the same catalog. Read the tier as a baseline and you conclude a service
+offering has 319 controls to implement when 80 stand between it and the tier
+it is actually pursuing. `Control.baseline` therefore carries both, impact
+level first — `Moderate; Core, Ready, Authorized` — so that
+`--baseline moderate` and a filter for `core` both land correctly.
+
+### Why GovRAMP is bring-your-own-content
+
+The same licence split as HITRUST, for a different reason. GovRAMP's Terms &
+Conditions claim ownership of the "documents, downloadable files" published
+on their site, and no redistribution grant was found. That is a weaker
+position than HITRUST's explicit licensing — it may well be that GovRAMP
+would grant permission if asked, and
+[emailing info@govramp.org](#licensing-model-per-framework)
+is on the roadmap — but "nobody said we couldn't" is not a licence, and
+assuming content is redistributable because nobody said otherwise is the
+failure mode with consequences.
+
+So: you bring your own matrix, it lives in `local_content/` (gitignored), it
+is parsed locally, and nothing is written unless you ask.
+
+#### Reading your matrix
+
+```bash
+policyforge etl-govramp --export local_content/govramp/GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx
+```
+
+That parses the workbook and prints what it found:
+
+```
+GovRAMP Rev 5 (V1.06) Moderate
+  181 controls, 138 enhancements, 18 families
+  Required per tier (controls and enhancements):
+    Core        60
+    Ready       80
+    Authorized  319
+  211 GovRAMP-defined parameter values across 135 controls/enhancements
+  80 additional requirement/guidance blocks
+```
+
+**Nothing is written** unless you pass `--out`, and `--out` refuses any path
+under `data/frameworks/` outright, plus any path git would not ignore unless
+your config declares `frameworks.allow_licensed_in_repo`. Same gate as
+`etl-hitrust`.
+
+Pass the workbook as GovRAMP publishes it, not an extract of it. What
+arrives is a working SSP template — fourteen sheets, of which one holds the
+controls and the rest are a cover page, instructions, dashboards, an
+inventory workbook and blank grids for a service provider to fill in. Three
+things about that layout are worth knowing:
+
+- **The sheet is found by its header captions, not its name.** It is
+  `12_Mod Controls` in the Moderate workbook, and the number is a position
+  in a template GovRAMP renumbers between revisions. Scoring every sheet on
+  its captions means the Low and High workbooks need no special case.
+- **The header spans two rows.** Row 1 spans group titles across merged
+  cells; row 2 holds the captions that name columns. They are merged into
+  one caption per column before anything is matched.
+- **Identifiers are normalized to the catalog's spelling.** The matrix
+  writes `AC-2 (1)` in one column and `AC-02 (01)` in another; both become
+  `AC-2(1)`, which is what the OSCAL loader produces. That is not cosmetic:
+  a profile's identifiers *are* the identifiers of the catalog it profiles,
+  so they are the crosswalk's join key, and `AC-2 (1)` joins to nothing.
+
+What the loader understands about the framework lives in
+`ingest/govramp.py`; how it finds those things in a workbook lives in
+`ingest/govramp_export.py`. If detection fails on your workbook's shape,
+`policyforge generate-parser --framework govramp --sample <path>` drafts a
+loader for that specific file — read
+[Generating a BYOC parser](#generating-a-byoc-parser-from-a-sample-export)
+first, for the same reason as HITRUST: that command sends your file's
+contents to your LLM provider.
+
+#### Crossing it with the rest
+
+Because GovRAMP shares 800-53's identifiers, it crosses automatically:
+
+```bash
+policyforge etl-govramp --export local_content/govramp/GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx \
+  --out local_content/govramp/controls.json
+policyforge map --controls data/frameworks/nist-800-53-r5/controls.json \
+  --controls local_content/govramp/controls.json \
+  --controls data/frameworks/hipaa-security-rule/controls.json
+```
+
+From there `coverage`, `synthesize`, `parameters` and `ssp` treat it like
+any other catalog. The profile's two additions ride along into synthesis:
+where GovRAMP has already decided a value, the model is given it rather than
+left to fill in `[Assignment: ...]` by guessing, and the added requirements
+are handed over as normative text rather than dropped.
+
 ## Input adapters
 
 Ingestion is pluggable: every loader in `ingest/` parses one source format
 into the same `Control` schema, and nothing downstream (mapping, synthesis,
 generation, export) knows or cares which one produced the data.
 
-| Loader                      | Command               | Reads                                                                                                                            |
-| --------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `oscal_loader.py`           | `etl-oscal`           | NIST's OSCAL release of SP 800-53 — the default way to populate 800-53 data                                                      |
-| `hipaa_loader.py`           | `etl-hipaa`           | eCFR's XML for 45 CFR 164 Subpart C                                                                                              |
-| `hipaa_crosswalk_loader.py` | `etl-hipaa-crosswalk` | NIST CPRT's HIPAA-to-800-53 OLIR catalog                                                                                         |
-| `nist_vault_loader.py`      | `etl-vault`           | Markdown notes in one specific shape (YAML frontmatter + `## headings` + `[[wikilinks]]`) — the format this project started from |
-| `byoc_loader.py`            | `etl-hitrust`         | Your own licensed HITRUST CSF export (CSV/TSV/XLSX/HTML/MHTML). GovRAMP still stubbed; see `generate-parser`                     |
-| `hitrust.py`                | —                     | Not a loader: what HITRUST CSF *is* — the four-tier hierarchy, levels vs overlays, and the authoritative-source crosswalk        |
-| `hitrust_export.py`         | —                     | The MyCSF report renderings `byoc_loader` reads, and the column detection that survives SSRS textbox names                       |
+| Loader                      | Command                      | Reads                                                                                                                                     |
+| --------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `oscal_loader.py`           | `etl-oscal`                  | NIST's OSCAL release of SP 800-53 — the default way to populate 800-53 data                                                               |
+| `hipaa_loader.py`           | `etl-hipaa`                  | eCFR's XML for 45 CFR 164 Subpart C                                                                                                       |
+| `hipaa_crosswalk_loader.py` | `etl-hipaa-crosswalk`        | NIST CPRT's HIPAA-to-800-53 OLIR catalog                                                                                                  |
+| `nist_vault_loader.py`      | `etl-vault`                  | Markdown notes in one specific shape (YAML frontmatter + `## headings` + `[[wikilinks]]`) — the format this project started from          |
+| `byoc_loader.py`            | `etl-hitrust`, `etl-govramp` | Your own licensed HITRUST CSF export (CSV/TSV/XLSX/HTML/MHTML), or your own GovRAMP controls matrix (XLSX/XLSM)                           |
+| `govramp.py`                | —                            | Not a loader: what GovRAMP *is* — a profile over 800-53, its parameter values and added requirements, and the Core/Ready/Authorized tiers |
+| `govramp_export.py`         | —                            | The controls sheet inside the fourteen-sheet SSP template, found by header caption rather than sheet name                                 |
+| `hitrust.py`                | —                            | Not a loader: what HITRUST CSF *is* — the four-tier hierarchy, levels vs overlays, and the authoritative-source crosswalk                 |
+| `hitrust_export.py`         | —                            | The MyCSF report renderings `byoc_loader` reads, and the column detection that survives SSRS textbox names                                |
 
 `nist_vault_loader.py` is the only one that touches Obsidian-flavoured
 markdown, and it's an *option*, not a dependency — `etl-oscal` needs nothing
@@ -2138,14 +2273,19 @@ where most of the remaining value is.
   from scratch
 - [ ] **OSCAL SSP export** — NIST's machine-readable SSP model is what FedRAMP is
   moving to; the same data assembled by `ssp/` could emit it
-- [ ] **GovRAMP export parsing** — `ingest/byoc_loader.py` is still stubbed for
-  GovRAMP; run `generate-parser` (or hand-write) against a real sample export
-  once you have one. Separately, follow up on redistribution permission — if
-  granted, GovRAMP moves from BYOC to bundled
-- [ ] **Other healthcare-relevant frameworks worth considering** — HITRUST CSF
-  (already stubbed as BYOC, and now that `generate-parser` exists, buildable
-  against a real MyCSF export), MARS-E (CMS, NIST-800-53-based, same
-  public-domain lineage as ARC-AMPE)
+- [ ] **GovRAMP redistribution permission** — parsing is done (`etl-govramp`
+  reads the published controls matrix); what is left is the licence question.
+  Follow up with info@govramp.org — if permission is granted, GovRAMP moves
+  from BYOC to bundled and the matrix can ship in `data/frameworks/`
+- [ ] **GovRAMP parameter values into the ledger** — `etl-govramp` already
+  captures the few hundred organization-defined values GovRAMP has decided
+  ("at least every 3 years"), and they reach synthesis. Feeding them into
+  `policyforge parameters --init` as pre-recorded decisions, cited to the
+  matrix, would close most of the ledger for anyone pursuing a GovRAMP
+  authorization
+- [ ] **Other healthcare-relevant frameworks worth considering** — MARS-E
+  (CMS, NIST-800-53-based, same public-domain lineage as ARC-AMPE). HITRUST
+  CSF and GovRAMP are both done, as BYOC loaders
 
 ### 3. Zardoz and the chatbot's skills
 

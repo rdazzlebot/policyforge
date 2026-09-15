@@ -3,15 +3,14 @@
 `byoc_loader` reads framework content its user is licensed for and this
 repository is not — HITRUST CSF, GovRAMP, anything without redistribution
 rights. Its docstring states the rule plainly: read BYOC in, never write
-BYOC to a bundled or public path. Until now that rule existed only as
-prose, in a module whose two functions were stubs waiting to be filled in
-against a real export.
+BYOC to a bundled or public path. That rule once existed only as prose, in
+a module whose two functions were stubs waiting to be filled in against a
+real export.
 
-`load_hitrust_export` is now implemented, which is exactly when the rule
-starts to matter: there is real parsed HITRUST content in memory for the
-first time. So the checks run over the whole BYOC read path -- the entry
-point and the two HITRUST modules behind it -- rather than over the entry
-point alone.
+Both loaders are now implemented, which is exactly when the rule starts to
+matter: there is real parsed licensed content in memory. So the checks run
+over the whole BYOC read path -- the entry point and the four framework
+modules behind it -- rather than over the entry point alone.
 
 Prose is the wrong form for it. The moment somebody implements
 `load_hitrust_export` against their own MyCSF file, the tempting shortcut
@@ -33,6 +32,8 @@ from pathlib import Path
 import pytest
 
 import policyforge.ingest.byoc_loader as byoc
+import policyforge.ingest.govramp as govramp
+import policyforge.ingest.govramp_export as govramp_export
 import policyforge.ingest.hitrust as hitrust
 import policyforge.ingest.hitrust_export as hitrust_export
 
@@ -41,7 +42,7 @@ SOURCE = Path(byoc.__file__)
 #: Every module that touches licensed content on its way in. Named rather
 #: than discovered so that adding a loader is a deliberate act that has to
 #: come past this list.
-BYOC_MODULES = (byoc, hitrust, hitrust_export)
+BYOC_MODULES = (byoc, hitrust, hitrust_export, govramp, govramp_export)
 
 
 def _tree(module=byoc):
@@ -145,10 +146,10 @@ def test_no_bundled_path_is_ever_turned_into_a_file_handle(module):
     licensed catalog written there gets committed and pushed.
 
     Scoped to paths the module actually opens or constructs, not to the
-    string appearing anywhere: the module names `data/frameworks/` in the
-    error text of both stubs, precisely in order to warn the next
-    implementer off it. Failing on that would punish the module for saying
-    the thing this test exists to enforce.
+    string appearing anywhere: these modules name `data/frameworks/` in
+    their prose, precisely in order to warn the next implementer off it.
+    Failing on that would punish a module for saying the thing this test
+    exists to enforce.
     """
     for node in ast.walk(_tree(module)):
         if not isinstance(node, ast.Call):
@@ -163,12 +164,43 @@ def test_no_bundled_path_is_ever_turned_into_a_file_handle(module):
                 )
 
 
-def test_an_unimplemented_loader_refuses_loudly():
-    """A stub that returned [] would look like a framework with no controls,
-    and every coverage report built on it would say the organization has
-    nothing to do."""
-    with pytest.raises(NotImplementedError):
-        byoc.load_govramp_export(Path("anything.csv"))
+def test_a_govramp_loader_refuses_a_workbook_it_cannot_read(tmp_path):
+    """The rule that replaced this module's NotImplementedError check.
+
+    While `load_govramp_export` was a stub, the thing worth asserting was
+    that it raised rather than returning `[]` -- a stub that returned an
+    empty list looks like a framework with no controls, and every coverage
+    report built on it says the organization has nothing to do. Now that it
+    parses, the same hazard arrives by a different route: a workbook whose
+    columns are unrecognisable. A short catalog would be read as a smaller
+    baseline, which for GovRAMP is a plausible answer (Low really is
+    smaller than Moderate) and therefore the more dangerous one.
+    """
+    from openpyxl import Workbook
+
+    from policyforge.ingest.govramp_export import ExportFormatError
+
+    book = Workbook()
+    sheet = book.active
+    sheet.append(["alpha", "beta"])
+    sheet.append(["1", "2"])
+    export = tmp_path / "not-really-govramp.xlsx"
+    book.save(export)
+
+    with pytest.raises(ExportFormatError) as raised:
+        byoc.load_govramp_export(export)
+    assert "GovRAMP controls matrix" in str(raised.value)
+
+
+def test_a_govramp_loader_refuses_a_format_it_has_no_reader_for(tmp_path):
+    from policyforge.ingest.govramp_export import ExportFormatError
+
+    export = tmp_path / "matrix.csv"
+    export.write_text("ID,Control Name\nAC-1,Policy\n", encoding="utf-8")
+
+    with pytest.raises(ExportFormatError) as raised:
+        byoc.load_govramp_export(export)
+    assert ".xlsx" in str(raised.value)
 
 
 def test_an_implemented_loader_refuses_a_file_it_cannot_read(tmp_path):

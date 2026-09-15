@@ -9,7 +9,11 @@ bundled/public path" boundary. `tests/test_byoc_boundary.py` walks this
 module's AST to enforce it, so the invariant fails a test run rather than
 somebody's licence.
 
-HITRUST is implemented. `ingest/hitrust.py` holds what the framework *is*
+HITRUST and GovRAMP are both implemented, each as a pair of modules on
+the same split: one holding what the framework *is*, one holding how to
+find it in the file it arrives in.
+
+`ingest/hitrust.py` holds what HITRUST is
 -- the Category / Objective / Control Reference / Requirement hierarchy,
 the split between maturity levels and regulatory overlays, and the
 authoritative-source crosswalk -- and `ingest/hitrust_export.py` knows how
@@ -18,19 +22,26 @@ headers in a MyCSF CSV are SQL Server Reporting Services textbox names
 (`Textbox52`, `Textbox105`) and identify nothing, so fields are recognised
 by their caption columns and by the shape of their values instead.
 
-That covers the exports people have. It cannot cover the export nobody has
-seen yet, which is why `policyforge generate-parser --framework hitrust
---sample <path>` still exists: when detection cannot find the fields, it
-says which ones are missing, and the codegen path drafts a loader for that
-specific file from a sample (see `ingest/parser_codegen.py`).
+`ingest/govramp.py` holds what GovRAMP is -- a profile over 800-53 rather
+than a catalog, carrying the parameter values and added requirements the
+base catalog leaves open, across three verification tiers that are not
+impact levels -- and `ingest/govramp_export.py` knows how to find the one
+controls sheet inside a fourteen-sheet SSP template whose header spans two
+rows.
 
-GovRAMP remains a stub pending a sample export.
+That covers the exports people have. It cannot cover the export nobody has
+seen yet, which is why `policyforge generate-parser --framework
+hitrust|govramp --sample <path>` still exists: when detection cannot find
+the fields, it says which ones are missing, and the codegen path drafts a
+loader for that specific file from a sample (see
+`ingest/parser_codegen.py`).
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from .govramp_export import load as _load_govramp
 from .hitrust_export import load as _load_hitrust
 from .schema import Control
 
@@ -55,13 +66,25 @@ def load_hitrust_export(export_path: Path, *, version: str = "") -> list[Control
     return _load_hitrust(Path(export_path), version=version)
 
 
-def load_govramp_export(export_path: Path) -> list[Control]:
-    raise NotImplementedError(
-        "Point this at your GovRAMP baseline export and implement parsing. "
-        "Note: as of writing, GovRAMP's Terms & Conditions claim ownership "
-        "of their published documents with no redistribution grant found -- "
-        "treat this as BYOC (like HITRUST) unless/until GovRAMP grants "
-        "permission. See README's licensing table. If your export is a "
-        "table, `ingest/hitrust_export.py`'s column detection is a working "
-        "model to copy."
-    )
+def load_govramp_export(
+    export_path: Path, *, version: str = "", impact_level: str = ""
+) -> list[Control]:
+    """Parse a GovRAMP controls matrix into `Control` objects, in memory.
+
+    Takes the published workbook (`.xlsx`/`.xlsm`) as GovRAMP ships it --
+    the SSP template, not an extract of it. The controls sheet is found
+    among the template's other thirteen by its header captions, so the Low,
+    Moderate and High workbooks all read without being told which they are.
+
+    `version` and `impact_level` override what the file says about itself,
+    which is worth doing on a workbook somebody has already been working
+    in: the cover sheet that states both is usually the first thing edited.
+
+    GovRAMP's Terms & Conditions claim ownership of the documents published
+    on their site and no redistribution grant was found, so this is BYOC on
+    the same footing as HITRUST: you supply the workbook, it is parsed
+    locally, and -- as with every function here -- nothing is written.
+    Returning controls and taking no output path is the point, not an
+    oversight.
+    """
+    return _load_govramp(Path(export_path), version=version, impact_level=impact_level)

@@ -273,6 +273,135 @@ def etl_hitrust(export_path: Path, version: str, out: Path | None, force: bool):
     click.echo(f"\nWrote {len(controls)} HITRUST control references -> {out}")
 
 
+@cli.command("etl-govramp")
+@click.option(
+    "--export",
+    "export_path",
+    required=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Your own GovRAMP controls matrix workbook (.xlsx/.xlsm), as published. "
+    "Keep it in local_content/, which is gitignored.",
+)
+@click.option(
+    "--impact-level",
+    type=click.Choice(["Low", "Moderate", "High"], case_sensitive=False),
+    default=None,
+    help="FIPS 199 level this matrix is for. Default: read from the workbook's "
+    "cover sheet, then from the filename. Worth setting on a template somebody "
+    "has been working in, where the cover sheet is the first thing edited.",
+)
+@click.option(
+    "--version",
+    "version",
+    default="",
+    help='Revision and template version to stamp, e.g. "Rev 5 (V1.06)". '
+    "Default: the revision from the cover sheet plus the version in the filename.",
+)
+@click.option(
+    "--out",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Write the parsed catalog here as controls.json. Omit to parse and "
+    "report without writing anything, which is the safe default for licensed "
+    "content.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Write --out even though this repository has not declared "
+    "`frameworks.allow_licensed_in_repo`.",
+)
+def etl_govramp(export_path: Path, impact_level: str | None, version: str, out: Path | None, force):
+    """Parse your own GovRAMP controls matrix into this project's schema.
+
+    GovRAMP's Terms & Conditions claim ownership of the documents published
+    on their site, and no redistribution grant was found — so, like HITRUST,
+    this project never bundles the matrix and never fetches it. You supply
+    the workbook and it is parsed locally, in memory. Nothing is written
+    unless you pass --out.
+
+    Pass the workbook as GovRAMP publishes it rather than an extract of it:
+    the controls sheet is found among the template's other thirteen by its
+    header captions, so the Low, Moderate and High workbooks all read
+    without being told which they are.
+
+    What this gives you that the 800-53 catalog does not is the profile's
+    own two additions — the parameter values GovRAMP has already decided
+    ("at least every 3 years"), which `policyforge parameters` would
+    otherwise leave open for you to answer, and the requirements it layers
+    on top of a control — across the Core/Ready/Authorized tiers. Those
+    tiers are *not* impact levels: one Moderate matrix holds all three, and
+    60 of its 319 controls stand between a service offering and Core.
+
+    See ingest/govramp.py for the framework's structure and
+    ingest/govramp_export.py for how the sheet and its two-row header are
+    found. If detection fails on your workbook, `policyforge generate-parser
+    --framework govramp` drafts a loader for it from a sample.
+    """
+    import dataclasses
+    import json
+
+    from policyforge.frameworks.registry import frameworks_config, is_ignored
+    from policyforge.ingest.govramp import summarize
+    from policyforge.ingest.govramp_export import ExportFormatError, load_with_rows
+
+    try:
+        controls, rows = load_with_rows(
+            export_path,
+            version=version,
+            impact_level=(impact_level or "").title(),
+        )
+    except ExportFormatError as exc:
+        raise click.ClickException(
+            f"{exc}\n\nIf this workbook's layout is one this project has not seen, "
+            "run:\n  policyforge generate-parser --framework govramp --sample "
+            f"{export_path}"
+        ) from exc
+
+    click.echo(summarize(controls, rows=rows).format_report())
+
+    if out is None:
+        click.echo(
+            "\nNothing written. Pass --out <path> to save a controls.json - into "
+            "a repository whose licence permits holding GovRAMP content."
+        )
+        return
+
+    # The bundled directory is this project's public, redistributable half.
+    # A licensed catalog written there would be committed and pushed.
+    if "data/frameworks" in out.as_posix():
+        raise click.ClickException(
+            f"{out} is inside data/frameworks/, which is this project's bundled "
+            "public content. A GovRAMP matrix must never be written there. Use "
+            "local_content/ or your own repository's frameworks/ directory."
+        )
+
+    # Gitignored destinations need no permission: a file git will never
+    # stage cannot be redistributed by accident. Everywhere else, the
+    # repository has to have said it may hold licensed content.
+    config = load_config()
+    ignored = is_ignored(out)
+    permitted = bool(frameworks_config(config).get("allow_licensed_in_repo"))
+    if not ignored and not permitted and not force:
+        unknown = "" if ignored is False else " (and git could not confirm it is ignored)"
+        click.echo(
+            f"\n{out} is not gitignored{unknown}, and this repository has not "
+            "declared `frameworks.allow_licensed_in_repo`, so writing a licensed "
+            "catalog there is refused. Write it under local_content/, set that "
+            "flag in config.yaml if your GovRAMP licence permits your repository "
+            "to carry the matrix, or pass --force."
+        )
+        raise SystemExit(1)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        json.dumps([dataclasses.asdict(c) for c in controls], indent=2),
+        encoding="utf-8",
+    )
+    enhancements = sum(len(c.enhancements) for c in controls)
+    click.echo(f"\nWrote {len(controls)} GovRAMP controls ({enhancements} enhancements) -> {out}")
+
+
 @cli.command("etl-hipaa-crosswalk")
 @click.option(
     "--controls",

@@ -46,6 +46,13 @@ class ControlEnhancement:
     title: str
     baseline: str
     description: str
+    #: Same meaning as `Control.parameter_values`, at the sub-requirement
+    #: level. An enhancement carries its own organization-defined values and
+    #: a profile answers them separately from the parent's, so folding these
+    #: upward would attribute AC-2(3)'s ninety days to AC-2.
+    parameter_values: dict[str, str] = field(default_factory=dict)
+    #: Same meaning as `Control.additional_requirements`.
+    additional_requirements: str = ""
     # Same role as `Control.source_crosswalk` below, but at the
     # sub-requirement level. Some frameworks publish their crosswalk at both
     # levels — NIST's HIPAA-to-800-53 crosswalk, for instance, maps each
@@ -106,6 +113,28 @@ class Control:
     # that produced it.
     source_crosswalk: dict[str, str] = field(default_factory=dict)
     source_path: str | None = None
+
+    # --- Frameworks that profile another framework -------------------------
+    # A profile (GovRAMP, FedRAMP) does not write its own catalog. It selects
+    # controls from 800-53, reproduces their text, and adds two things the
+    # base catalog deliberately leaves open. Both are the reason to ingest a
+    # profile at all, so neither is folded into `control_statement`, where it
+    # would become indistinguishable from the text NIST wrote.
+    #
+    #: The organization-defined values the profile has already decided,
+    #: keyed by the citation it writes them against: `{"AC-1 (c) (1)": "at
+    #: least every 3 years"}`. A dict rather than prose because
+    #: `parameters/ledger.py` asks exactly this question — what is this
+    #: control's frequency — and an assessor-defensible answer with a
+    #: citation already exists here. The key is the profile's own wording,
+    #: not a slug: it points at a sub-paragraph (`(c) (1)`) that only the
+    #: source document numbers.
+    parameter_values: dict[str, str] = field(default_factory=dict)
+    #: Requirements and guidance the profile adds on top of the base control
+    #: — "the service provider defines the time period for non-user
+    #: accounts". Verbatim, line breaks kept, because these are normative
+    #: sentences an assessor reads and not a summary.
+    additional_requirements: str = ""
 
     # --- Frameworks with a tier between family and control -----------------
     # HITRUST nests Category > Objective > Control Reference, and the middle

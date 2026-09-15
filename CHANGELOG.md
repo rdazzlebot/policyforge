@@ -336,6 +336,32 @@ building a provider directly: an embedder, reranker or entailer constructed
 without the factory still gets a channel or a wrap from its own settings,
 and the only unguarded path is a test injecting a fake on purpose.
 
+### The content class survives the hand-off to generate
+
+`synthesize` refused to send a licensed catalog to a hosted model and
+recorded the class on its own ledger entry — then wrote the merged
+requirement text to `output/synthesis/` with no class at all. `classify_path`
+reads a file there as the organization's own, so `generate` sent a
+restatement of HITRUST requirement text to whatever provider was configured,
+one command after `synthesize` had refused to send the HITRUST text itself.
+The README said `generate` had no licensed path to check. It had one; the
+class was dropped at the hand-off.
+
+The synthesis frontmatter now carries `content_class` and `derived_from`
+(the catalog's framework id where it declares one, its file name
+otherwise), and `generate` runs the same ceiling check against them before
+any provider is built. A refusal names the catalogs the text came from. A
+synthesis written before the class travelled is classified by path as it
+always was, and a `content_class` that is not a class is refused rather than
+guessed at. The class also goes on `generate`'s ledger scope, so each call
+records what it carried and the version-history provenance says what the
+document was drawn from.
+
+Found on the way: `synthesize` and `ssp` labelled a multi-catalog run with
+"licensed if any input is, otherwise the first input's class", so 800-53
+listed ahead of an organization-internal catalog marked the whole synthesis
+public domain. Both now take the most restrictive class of their inputs.
+
 ## 1.0.0
 
 The release that makes the policy set answerable.

@@ -2155,9 +2155,13 @@ answer.
   refusal so it can gate a pipeline. `ssp` checks too, and was nearly missed on
   the wrong grounds — it was assumed to read synthesis output, when it takes
   `--controls` and drafts one narrative per control from the control text
-  itself, making it the highest-volume model path there is. Not wired:
-  `generate`, which genuinely does read synthesis output, so it has no licensed
-  path to check today. See
+  itself, making it the highest-volume model path there is. `generate` was
+  left out on the belief that reading synthesis output meant it had no
+  licensed path to check. It had one: a synthesis drawn from a HITRUST export
+  is a restatement of HITRUST text, and the class was dropped when the file
+  was written. `synthesize` now records `content_class` and `derived_from` in
+  the synthesis frontmatter, and `generate` runs the same ceiling check
+  against them before any model call. See
   [Which content may reach which model](#which-content-may-reach-which-model)
 - [x] **Record which model saw which document** — done, in `llm/ledger.py`.
   Every call is appended to `output/.model-log/calls.jsonl`: provider,

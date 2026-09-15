@@ -786,12 +786,26 @@ def synthesize_cmd(
 
     slug = re.sub(r"[^a-z0-9]+", "-", topic.lower()).strip("-")
 
-    # The most exposed content class among the catalogs that fed this topic.
-    # A synthesis drawn from a licensed catalog is licensed-derived, and the
-    # ledger should say so about the call rather than leaving it to be
-    # re-derived later from paths that may have moved.
-    classes = [classify_path(path, config).klass for path in controls_paths]
-    content_class = "licensed" if "licensed" in classes else (classes[0] if classes else None)
+    # The most restrictive content class among the catalogs that fed this
+    # topic. A synthesis drawn from a licensed catalog is licensed-derived,
+    # and the ledger should say so about the call rather than leaving it to
+    # be re-derived later from paths that may have moved.
+    #
+    # Most restrictive, not first-named: this read "licensed if any input is,
+    # otherwise the first input's class", so 800-53 listed ahead of an
+    # organization-internal catalog labelled the whole synthesis public
+    # domain. The order in CONTENT_CLASSES runs from least to most guarded.
+    from policyforge.llm.boundary import CONTENT_CLASSES
+
+    classified = [classify_path(path, config) for path in controls_paths]
+    content_class = (
+        max((c.klass for c in classified), key=CONTENT_CLASSES.index) if classified else None
+    )
+    # Named by framework where the catalog declares one, by file otherwise,
+    # so a refusal in `generate` can say which input made the text licensed.
+    derived_from = [
+        c.framework_id or path.name for c, path in zip(classified, controls_paths, strict=True)
+    ]
 
     with ledger.about(f"synthesis/{slug}", site="synthesize", content_class=content_class):
         result = synthesize_topic(synthesis_topic, provider)
@@ -806,6 +820,10 @@ def synthesize_cmd(
             cadence=cadence,
             evidence=evidence,
             nist_controls=nist_ids,
+            # Travels in the file, because `generate` is a separate command
+            # and classify_path will read this file as the organization's own.
+            content_class=content_class,
+            derived_from=derived_from,
         ),
         encoding="utf-8",
     )
@@ -925,8 +943,13 @@ def ssp_cmd(
                     f"{exc}\n  Or pass --no-narratives, which builds the workbook "
                     "with no model calls at all."
                 ) from exc
+        # Most restrictive, for the reason given in `synthesize`: the first
+        # catalog's class understated a set whose later entries were
+        # organization-internal.
+        from policyforge.llm.boundary import CONTENT_CLASSES
+
         classes = [classify_path(path, config).klass for path in controls_paths]
-        content_class = "licensed" if "licensed" in classes else (classes[0] if classes else None)
+        content_class = max(classes, key=CONTENT_CLASSES.index) if classes else None
 
     all_controls = []
     for path in controls_paths:
@@ -1088,6 +1111,40 @@ def generate_cmd(
             "[Responsible Team]. Re-run `synthesize --topic-name` to record one."
         )
 
+    # The class the synthesis was drawn from, checked before any provider is
+    # built. `classify_path` would call this file the organization's own —
+    # it is a file under output/ — and that is exactly how a restatement of
+    # HITRUST requirement text used to reach a hosted model one command after
+    # `synthesize` had refused to send the HITRUST text itself.
+    from policyforge.llm import boundary
+
+    recorded = metadata.get("content_class")
+    if recorded is not None:
+        klass = str(recorded).strip().lower()
+        if klass not in boundary.CONTENT_CLASSES:
+            raise click.ClickException(
+                f"{synthesis_path} says its content_class is {recorded!r}, which is not a "
+                f"content class ({', '.join(boundary.CONTENT_CLASSES)}). Refusing rather "
+                "than guessing — re-run `synthesize` to write it again."
+            )
+        sources = ", ".join(str(s) for s in metadata.get("derived_from") or []) or "not recorded"
+        content = boundary.ContentClassification(
+            klass, f"the synthesis frontmatter says so (derived from: {sources})"
+        )
+    else:
+        # Written before the class travelled. Classified as it always was,
+        # which is the most this file can say about itself.
+        content = boundary.classify_path(synthesis_path, config)
+    decision = boundary.check(content, boundary.classify_provider(config.get("llm") or {}), config)
+    if not decision.allowed:
+        raise click.ClickException(
+            f"Refusing to draft from {synthesis_path} with the configured provider.\n"
+            f"{decision.explain()}\n"
+            "  Point `llm:` at a local model for this run, or — if this provider really "
+            "is inside your boundary — declare that with `llm.classification`."
+        )
+    content_class = content.klass
+
     provider = get_provider(config)
 
     from policyforge.llm import ledger
@@ -1099,7 +1156,10 @@ def generate_cmd(
     out_path = out or Path(f"output/{tier}s") / synthesis_path.name
     slug = f"{tier}/{out_path.stem}"
 
-    with ledger.about(slug, site="generate") as scope:
+    # The class goes on the scope as well as through the check above, so each
+    # call's ledger record says what it carried and the provenance stamped
+    # into the version history says what the document was drawn from.
+    with ledger.about(slug, site="generate", content_class=content_class) as scope:
         if tier in ("policy", "procedure"):
             if standard_path is None:
                 raise click.UsageError(

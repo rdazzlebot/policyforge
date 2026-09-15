@@ -36,7 +36,22 @@ class SynthesisTopic:
 #: ownership has to travel *in* the file rather than being re-supplied on the
 #: second command line — otherwise the owning team is known when the topic is
 #: assembled and forgotten by the time the document is drafted.
-SYNTHESIS_FRONTMATTER_KEYS = ("topic", "owner", "cadence", "evidence", "nist_controls")
+#:
+#: `content_class` and `derived_from` travel for the same reason and matter
+#: more. A synthesis drawn from a HITRUST export is a restatement of HITRUST
+#: requirement text, but once written it is an ordinary file under `output/`,
+#: and `classify_path` reads an ordinary file as the organization's own. The
+#: class `synthesize` worked out was dropped at the hand-off, and `generate`
+#: sent licensed-derived text to whatever provider was configured.
+SYNTHESIS_FRONTMATTER_KEYS = (
+    "topic",
+    "owner",
+    "cadence",
+    "evidence",
+    "nist_controls",
+    "content_class",
+    "derived_from",
+)
 
 
 def write_synthesis(
@@ -47,11 +62,14 @@ def write_synthesis(
     cadence: str = "",
     evidence: list[str] | None = None,
     nist_controls: list[str] | None = None,
+    content_class: str | None = None,
+    derived_from: list[str] | None = None,
 ) -> str:
     """Render a synthesis file: YAML frontmatter, then the requirement list.
 
-    Only keys with a value are emitted, so a synthesis produced without a
-    registry topic stays exactly as it was before frontmatter existed.
+    Only keys with a value are emitted, so a call with none of them writes
+    the requirement list alone. `synthesize` always passes a content class,
+    so every synthesis it writes says what it was drawn from.
     """
     import yaml
 
@@ -61,6 +79,8 @@ def write_synthesis(
         "cadence": cadence,
         "evidence": evidence or [],
         "nist_controls": nist_controls or [],
+        "content_class": content_class or "",
+        "derived_from": derived_from or [],
     }
     metadata = {k: v for k, v in metadata.items() if v}
     if not metadata:

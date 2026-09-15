@@ -291,6 +291,43 @@ the fence-escape page those lines are in the source, and a correct revision
 keeps them, so pro's first run reported 0/3 for doing the right thing. It
 now counts markers against the source, and the re-run is the 1/3 above.
 
+### 8. Refusal read by equality, identifiers need a cue — 2026-09-15
+
+No prompt changed. Two changes to how Zardoz reads its inputs and outputs:
+a reply is a refusal only when it *is* `INSUFFICIENT_CONTEXT` (S-07), and a
+HITRUST- or CFR-shaped token gates retrieval only when it is cued or cited
+(A-02). Measured against a same-day baseline from the commit before them,
+because today's baseline and epoch 6's are not the same day.
+
+`--repeat 3`, answering suite:
+
+| Model                        | before (`2d27253`) | after              |
+| ---------------------------- | ------------------ | ------------------ |
+| `z-ai/glm-5.3-flash`         | 24/26 (73/78 runs) | 24/26 (74/78 runs) |
+| `deepseek/deepseek-v4-flash` | 23/26 (75/78 runs) | 24/26 (72/78 runs) |
+
+Cost: glm $0.0171 before, $0.0192 after; deepseek $0.0078 and $0.0080.
+
+**Neither change moved an outcome, and that was checked rather than
+assumed.** All 26 cases retrieve identical passages before and after A-02.
+Every failing reply was read raw: glm's two failures contain no sentinel —
+they are honest "the passages do not say" answers with a cited neighbouring
+fact, and they fail the same way on the old code — and deepseek's two are a
+bare `INSUFFICIENT_CONTEXT`, which both rules read as a refusal. Its move
+from 2/3 to 0/3 on those two cases is variance. glm's epoch-6 25/26 against
+today's same-code 24/26 is the day, not the code.
+
+**The failure S-07 guards against did not occur.** A half-answerable question
+— the passages give the recertification cadence and not who approves
+emergency access — was asked five times of each model and every reply read
+under both rules. 10 of 10 answered the supported half with a citation and
+named the gap in words; none put the sentinel inside prose, so the two rules
+agreed on every reply. The fix is defensive: it costs nothing while models
+behave, and it still covers the other route the review named, a passage
+carrying the token. The question is now an answering case, which makes the
+suite 27 cases and totals after this epoch not comparable with the ones
+above.
+
 ______________________________________________________________________
 
 ## Two ways a run can lie, found the hard way

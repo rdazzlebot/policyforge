@@ -553,7 +553,12 @@ def answer_question(
     )
     text = response.text.strip()
 
-    if REFUSAL_SENTINEL in text:
+    # Only a reply that *is* the sentinel is a refusal. Rule 4 asks for the
+    # supported half of a question to be answered and the gap named, and a
+    # model that named the gap with the sentinel itself used to have its
+    # whole reply discarded as a refusal — the cited half with it. So did a
+    # reply quoting a passage that happened to carry the token.
+    if _is_refusal(text):
         return Answer(
             text=(
                 "The documents I have do not answer that. The passages below came "
@@ -564,4 +569,21 @@ def answer_question(
         )
 
     cited, warnings = check_answer(text, passages, question)
+    if REFUSAL_SENTINEL in text:
+        # Reported rather than removed, like every other warning here: the
+        # reader sees the token and is told what it may mean.
+        warnings.append(
+            f"contains {REFUSAL_SENTINEL} inside an answer — part of the question may "
+            "be unanswered, or a passage carries the token"
+        )
     return Answer(text=text, passages=passages, cited=cited, warnings=warnings)
+
+
+#: What a model may wrap a bare sentinel in. Stripped from the ends only, so a
+#: sentinel with prose on either side is never mistaken for one alone.
+_SENTINEL_WRAPPING = " \t\r\n`*_\"'."
+
+
+def _is_refusal(text: str) -> bool:
+    """True when the whole reply is the sentinel, give or take its wrapping."""
+    return text.strip(_SENTINEL_WRAPPING) == REFUSAL_SENTINEL

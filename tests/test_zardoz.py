@@ -308,3 +308,68 @@ def test_the_flags_do_not_change_the_exit_path(flag, tmp_path):
     result = _invoke(flag, "--topics", "config/topics.example.yaml", stdin="/quit\n")
 
     assert result.exit_code == 0, result.output
+
+
+# ---- A-09: the ledger knows which question each call answered -------------
+
+
+class _AnsweringProvider:
+    """Answers every call with one cited sentence; cannot be held to a schema."""
+
+    def generate(self, *, system, prompt, max_tokens=4096, temperature=0.2):
+        from policyforge.llm.base import LLMResponse
+
+        return LLMResponse(text="Accounts are recertified quarterly. [1]", model="fake")
+
+    def supports_schema(self):
+        return False
+
+    def check(self):
+        return True
+
+
+def _answering_state():
+    from policyforge.llm import ledger
+    from policyforge.zardoz.corpus import TRUSTED, Corpus
+    from policyforge.zardoz.corpus import CorpusDocument as Doc
+
+    corpus = Corpus(
+        documents=[
+            Doc(
+                doc_id="acs",
+                title="Access Control Standard",
+                space="",
+                confidence=TRUSTED,
+                body=(
+                    "# Access Control Standard\n\n## 4.1 Account Review\n\n"
+                    "Accounts are recertified quarterly. [NIST AC-2]\n"
+                ),
+            )
+        ]
+    )
+    return ShellState(plain=True, corpus=corpus, provider=ledger.wrap(_AnsweringProvider(), {}))
+
+
+def test_every_call_a_turn_makes_is_recorded_against_its_question(tmp_path):
+    """A challenged answer used to have a ledger record naming the model and
+    nothing about what it was asked."""
+    from policyforge.llm import ledger
+    from policyforge.zardoz.shell import question_digest
+
+    state = _answering_state()
+    question = "how often are accounts recertified?"
+
+    dispatch(question, state)
+
+    records = ledger.load(tmp_path / "calls.jsonl")
+    assert records, "the turn made model calls"
+    assert all(r.site == "zardoz.answer" for r in records)
+    assert all(r.subject.startswith(f"zardoz/{state.session_id}") for r in records)
+    resolved = state.conversation.turns[-1].resolved
+    assert records[-1].subject == f"zardoz/{state.session_id}/q-{question_digest(resolved)}"
+    # A digest, never the question: the ledger records what was sent, not the text.
+    assert question not in (tmp_path / "calls.jsonl").read_text(encoding="utf-8")
+
+
+def test_each_session_has_its_own_id():
+    assert ShellState().session_id != ShellState().session_id

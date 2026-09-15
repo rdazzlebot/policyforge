@@ -720,6 +720,31 @@ class RetrievalIndex:
         total = len(self._entries)
         return self._document_frequency.get(term, 0) / total if total else 1.0
 
+    #: Words that mark a digits-and-dot token as a citation rather than a
+    #: section number, an amount or part of an address. Looked for just
+    #: before the token, not anywhere in the question.
+    _CITATION_CUE = re.compile(r"(?:\b(?:hitrust|csf|cfr|hipaa)\b|§|\[)[^\]\n]{0,12}$", re.I)
+
+    def _names_a_control(self, query: str, identifier: str) -> bool:
+        """Whether an identifier in the question is a control, or only looks like one.
+
+        A NIST identifier cannot be anything else. A HITRUST- or CFR-shaped
+        one can: "section 4.12", "1.06", "100.00" and "192.168" all match,
+        and naming a control nothing cites is an immediate empty result — so
+        any generated Standard with ten or more subsections could not be
+        asked about its own section 4.12. Such a token counts as a control
+        only when a cue sits just before it, or when the corpus actually
+        cites it. Otherwise it is left out of the gate, and the words around
+        it do the retrieving.
+        """
+        if _NIST_ID_RE.fullmatch(identifier):
+            return True
+        for match in re.finditer(re.escape(identifier), query, re.IGNORECASE):
+            if self._CITATION_CUE.search(query[: match.start()]):
+                return True
+        upper = identifier.upper()
+        return any(_matching_controls({upper}, entry.control_ids) for entry in self._entries)
+
     def search(
         self,
         query: str,
@@ -753,7 +778,9 @@ class RetrievalIndex:
         surface = surface_forms(query)
         surface.update(surface_forms(expansion))
         expansion_terms -= query_terms
-        query_controls = {c.upper() for c in extract_control_ids(query)}
+        query_controls = {
+            c.upper() for c in extract_control_ids(query) if self._names_a_control(query, c)
+        }
         if not query_terms and not query_controls:
             return []
 

@@ -362,6 +362,45 @@ Found on the way: `synthesize` and `ssp` labelled a multi-catalog run with
 listed ahead of an organization-internal catalog marked the whole synthesis
 public domain. Both now take the most restrictive class of their inputs.
 
+### Four smaller findings from the same review
+
+**A refusal is the whole reply, not a token found in it.** Zardoz treated any
+reply containing `INSUFFICIENT_CONTEXT` as a refusal, so a model that
+answered the supported half of a question and named the gap with the token
+had the cited half thrown away, and so would a reply quoting a passage that
+carried it. Now only a reply that *is* the token — give or take backticks,
+quotes or a full stop — refuses; the token inside prose keeps the answer
+and adds a warning. Measured before keeping it: no answering outcome moved
+on either model tested, and a half-answerable question asked ten times drew
+no sentinel inside prose at all, so this guards a failure that is rare
+rather than one that was seen. `MEASUREMENTS.md` epoch 8 has the numbers.
+
+**A section number is not a control.** "What does section 4.2 say?" worked
+and "section 4.12" returned nothing: `4.12` has the shape of a HITRUST
+objective, no document cited it, and naming a control nothing cites is an
+immediate empty result — so any generated Standard with ten or more
+subsections could not be asked about its later ones. `192.168`, `1.06` and
+`100.00` were read the same way. A HITRUST- or CFR-shaped token now gates
+retrieval only when a cue sits just before it (`HITRUST`, `CSF`, `CFR`,
+`HIPAA`, `§`, a source tag) or the corpus actually cites it. NIST
+identifiers keep the gate, and a cued identifier nothing cites is still an
+honest empty result.
+
+**The ledger knows which question a Zardoz call answered.** Zardoz calls were
+recorded with no subject, so a challenged answer's record named the model
+and nothing about what it was asked. Every call a turn makes now shares one
+scope, `site: zardoz.answer`, named for the session and, once the question
+is resolved, a digest of it — never its text.
+
+**CI runs with the least privilege it needs.** `ci.yml` had no `permissions`
+block, unlike the other workflows, so it ran with the repository default.
+It now declares `contents: read` and `pull-requests: read`, and gitleaks'
+PR comments — the only thing that needed write access — are off; a leak
+still fails the job. The other half of that finding, a hashed lockfile
+installed with `--require-hashes`, is not done: resolving one for CI's
+Linux and Python 3.12 from here needs a cross-platform resolver this
+repository does not yet use.
+
 ## 1.0.0
 
 The release that makes the policy set answerable.

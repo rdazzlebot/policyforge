@@ -307,6 +307,17 @@ answering:
     integrity_clean: true
     must_contain: [quarterly]
 
+  - name: a-half-answerable-question-keeps-the-half-it-can-answer
+    corpus: access-control
+    question: how often are account entitlements recertified, and who approves emergency access?
+    # Rule 4: answer the supported part and name the gap. A model that named
+    # the gap with the refusal token itself used to have its whole reply
+    # read as a refusal, the cited half with it. Graded on the half that is
+    # there, not on how the gap is phrased.
+    expect_refusal: false
+    must_cite: true
+    must_contain: [quarterly]
+
   - name: says-when-a-source-is-unowned
     corpus: unowned-runbook
     question: how quickly is the Okta account closed at offboarding?

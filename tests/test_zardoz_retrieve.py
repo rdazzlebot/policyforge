@@ -288,6 +288,81 @@ def test_a_control_the_corpus_does_not_cite_is_not_answered_from_a_neighbour():
     assert results == []
 
 
+# ---- A-02: digits-and-dot tokens that only look like identifiers ----------
+
+NUMBERED_STANDARD = """# Backup and Restore Standard
+
+## 4. Policy
+
+### 4.2 Privileged Access
+
+Administrative credentials require hardware multi-factor authentication.
+[NIST AC-6(5)]
+
+### 4.12 Restore Testing
+
+Restore drills happen twice a year against production snapshots.
+[NIST CP-9]
+"""
+
+
+def _numbered():
+    return build_index(
+        Corpus(
+            documents=[
+                Doc(
+                    doc_id="standards-backup",
+                    title="Backup and Restore Standard",
+                    space="",
+                    confidence=TRUSTED,
+                    body=NUMBERED_STANDARD,
+                )
+            ]
+        )
+    )
+
+
+def test_a_two_digit_section_number_is_not_a_hitrust_gate():
+    """ "section 4.2" worked and "section 4.12" returned nothing: 4.12 is
+    HITRUST-shaped, nothing cites it, and naming an uncited control was an
+    immediate empty result. Any generated Standard with ten or more
+    subsections could not be asked about its own later sections."""
+    results = _numbered().search("what does section 4.12 say about restore testing?")
+
+    assert results
+    assert "4.12 Restore Testing" in results[0].chunk.section
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "restore testing from 192.168.1.10",
+        "restore testing since version 1.06",
+        "restore testing budget of 100.00",
+    ],
+)
+def test_addresses_versions_and_amounts_are_not_gates_either(question):
+    """The three other strings the review found extracted as identifiers."""
+    results = _numbered().search(question)
+
+    assert results
+    assert "Restore Testing" in results[0].chunk.section
+
+
+def test_a_cued_identifier_nothing_cites_is_still_an_honest_empty_result():
+    """The gate is kept where it was right: somebody who writes HITRUST
+    01.a is naming a control, and a corpus that never cites it has nothing
+    to say about it."""
+    assert _numbered().search("what does HITRUST 01.a require for restore testing?") == []
+
+
+def test_an_identifier_the_corpus_cites_still_counts_without_a_cue():
+    results = _numbered().search("what does CP-9 require?")
+
+    assert results
+    assert results[0].matched_controls == ["CP-9"]
+
+
 def test_a_question_the_documents_do_not_cover_returns_nothing():
     index = build_index(_corpus())
 

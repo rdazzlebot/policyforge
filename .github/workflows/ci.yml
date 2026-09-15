@@ -4,6 +4,16 @@ on:
   push:
   pull_request:
 
+# Least privilege, as content.yml and codeql.yml already declare. Without a
+# block this job ran with whatever default the repository grants. Nothing
+# here writes: tests and scanners read the checkout, and gitleaks reads a
+# pull request's commits — its PR comments are switched off below, since
+# they were the only thing that needed write access and a leak still fails
+# the job.
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   scan-and-test:
     runs-on: ubuntu-latest
@@ -32,6 +42,7 @@ jobs:
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e  # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: false
 
       - name: pip-audit (dependency CVEs)
         run: pip-audit

@@ -88,6 +88,9 @@ class ShellState:
     #: "who owns that?" is only answerable in the light of what was asked
     #: before it, and that context lives here rather than in the model.
     conversation: Conversation = field(default_factory=Conversation)
+    #: One id per session, so the ledger can gather a session's turns and a
+    #: challenged answer can be traced to the question that produced it.
+    session_id: str = field(default_factory=lambda: _new_session_id())
 
     # Everything below is what the analyses need. Half the questions people
     # have about a compliance programme are not answerable from any
@@ -385,7 +388,42 @@ def dispatch(line: str, state: ShellState) -> str:
     return command.handler(rest.split() if rest else [], state)
 
 
+def _new_session_id() -> str:
+    """A short id for one shell session, so its turns can be found together."""
+    import secrets
+
+    return secrets.token_hex(6)
+
+
+def question_digest(question: str) -> str:
+    """A short fingerprint of a question, for the ledger.
+
+    The ledger records what was sent without recording the text, and a
+    question is text an organization may not want written down. The digest
+    is enough to match a challenged answer to the turn that produced it.
+    """
+    import hashlib
+
+    return hashlib.sha256(question.strip().encode()).hexdigest()[:12]
+
+
 def _answer(question: str, state: ShellState) -> str:
+    """One turn, attributed in the ledger.
+
+    Zardoz calls went into the ledger with no subject, so the day an answer
+    was challenged the record could say which model answered but not which
+    question it was answering. Every model call a turn makes — resolving,
+    routing, expanding, answering — now shares one scope: the session at
+    first, and the session plus a digest of the resolved question as soon
+    as there is one.
+    """
+    from policyforge.llm import ledger
+
+    with ledger.about(f"zardoz/{state.session_id}", site="zardoz.answer") as scope:
+        return _answer_turn(question, state, scope)
+
+
+def _answer_turn(question: str, state: ShellState, scope) -> str:
     """Answer a question from the synced corpus.
 
     Without a synced corpus there is nothing to answer *from*, and saying so
@@ -410,6 +448,11 @@ def _answer(question: str, state: ShellState) -> str:
         resolved, rewritten = resolve_question(question, state.conversation, state.provider)
     except Exception:  # noqa: BLE001 - a failed rewrite must not lose the question
         resolved, rewritten = question, False
+
+    # Now there is a question to name. Every call the turn makes from here on
+    # is recorded against it; the rewrite above, made before there was a
+    # resolved question, stays under the session alone.
+    scope.subject = f"zardoz/{state.session_id}/q-{question_digest(resolved)}"
 
     preamble = [f"(reading that as: {resolved})", ""] if rewritten else []
 

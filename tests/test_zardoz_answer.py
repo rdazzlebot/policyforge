@@ -141,6 +141,39 @@ def test_the_refusal_token_becomes_a_plain_refusal():
     assert answer.passages, "the closest passages are still offered"
 
 
+@pytest.mark.parametrize(
+    "reply",
+    [
+        f"`{REFUSAL_SENTINEL}`",
+        f"{REFUSAL_SENTINEL}.",
+        f'"{REFUSAL_SENTINEL}"',
+        f"\n{REFUSAL_SENTINEL}\n",
+    ],
+)
+def test_the_sentinel_in_its_usual_wrapping_is_still_a_refusal(reply):
+    """Models return the bare token in backticks or with a full stop often
+    enough that treating those as answers would show a reader the token."""
+    answer = answer_question("what is the RTO?", _passages(), FakeProvider(reply))
+
+    assert answer.refused
+
+
+def test_a_partial_answer_that_names_its_gap_keeps_the_part_it_answered():
+    """Rule 4 asks for the supported half to be answered and the gap named.
+    A model naming the gap with the sentinel used to have the whole reply
+    thrown away as a refusal — the cited half with it."""
+    reply = (
+        "Account entitlements are recertified quarterly by the system owner [1]. "
+        f"Who approves exceptions: {REFUSAL_SENTINEL}."
+    )
+    answer = answer_question("how often, and who approves?", _passages(), FakeProvider(reply))
+
+    assert not answer.refused
+    assert "quarterly" in answer.text
+    assert answer.cited == [1]
+    assert any(REFUSAL_SENTINEL in w for w in answer.warnings), "the gap is reported, not hidden"
+
+
 def test_answering_is_deterministic():
     """The same question over the same documents must not give two accounts
     of what the organization requires."""

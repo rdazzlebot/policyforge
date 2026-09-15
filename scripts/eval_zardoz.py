@@ -40,6 +40,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from evals.runner import SUITES, format_report, load_cases, load_corpora, run_case
 
+# The report quotes what the model said, and models return characters a
+# Windows console cannot encode — a non-breaking hyphen is enough. Printing
+# one raised UnicodeEncodeError *after* every call had been made and billed,
+# destroying the report of a run that had completed: 78 requests spent, one
+# traceback, no numbers. This project keeps a list of runs that say nothing;
+# losing one to a console codec does not belong on it.
+#
+# Reconfigured rather than left to PYTHONIOENCODING, because the person who
+# needs it is the one who has not hit this yet.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 
 class _Metered:
     """Wraps a provider and counts what the run spent.

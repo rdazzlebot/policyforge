@@ -1174,6 +1174,17 @@ def generate_cmd(
         )
 
 
+#: Where a generated parser is written, checked and trial-run. Outside the
+#: package on purpose: a file here is never imported by anything until a
+#: person promotes it, and `output/` is gitignored.
+_PARSER_CANDIDATE_DIR = Path("output/parsers")
+
+#: Where a promoted parser goes, and where the candidate used to be written
+#: directly — importable on the next run with nothing between the model's
+#: output and the interpreter but `ast.parse`.
+_PARSER_PACKAGE_DIR = Path("src/policyforge/ingest")
+
+
 @cli.command("generate-parser")
 @click.option(
     "--framework",
@@ -1194,32 +1205,46 @@ def generate_cmd(
     "--out",
     default=None,
     type=click.Path(path_type=Path),
-    help="Where to write the generated parser "
-    "(default: src/policyforge/ingest/<framework>_loader.py).",
+    help="Where to write the candidate parser (default: output/parsers/<framework>_loader.py). "
+    "It is checked and trial-run there, and not imported by anything until promoted.",
 )
-@click.option("--force", is_flag=True, help="Overwrite --out if it already exists.")
+@click.option(
+    "--force", is_flag=True, help="Overwrite --out, or the promoted module, if it exists."
+)
 @click.option(
     "--yes",
     is_flag=True,
     help="Skip the confirmation prompt before sending --sample's content to the LLM provider.",
 )
+@click.option(
+    "--promote",
+    is_flag=True,
+    help="Copy the candidate into src/policyforge/ingest/ once it passes the static check "
+    "and its trial run returns records. Without this it stays in output/ for review.",
+)
 def generate_parser_cmd(
-    framework: str, sample_path: Path, out: Path | None, force: bool, yes: bool
+    framework: str,
+    sample_path: Path,
+    out: Path | None,
+    force: bool,
+    yes: bool,
+    promote: bool,
 ):
     """Generate a deterministic ETL parser for a BYOC framework export via your
     configured LLM, from a real sample export file.
 
-    This is a one-time codegen step: it writes a plain Python module to disk,
-    which you should read, test, and commit like any other source file.
-    Nothing under ingest/*_loader.py calls the LLM at parse time — only this
-    command does, and only when you run it.
+    The sample is part of the prompt, so the code that comes back was written
+    under the influence of a file this tool did not write — and it is about
+    to run over a licensed one. So it is checked before it runs, run once
+    under watch, and kept out of the package until you promote it. Nothing
+    under ingest/*_loader.py calls the LLM at parse time — only this command
+    does, and only when you run it.
     """
-    import ast
-
     from policyforge.ingest.parser_codegen import generate_byoc_parser
+    from policyforge.ingest.parser_gate import check_generated_parser, trial_run
     from policyforge.llm.boundary import BoundaryViolation, enforce
 
-    out_path = out or Path(f"src/policyforge/ingest/{framework}_loader.py")
+    out_path = out or _PARSER_CANDIDATE_DIR / f"{framework}_loader.py"
     if out_path.exists() and not force:
         raise click.UsageError(f"{out_path} already exists. Pass --force to overwrite.")
 
@@ -1255,18 +1280,53 @@ def generate_parser_cmd(
         provider=provider,
     )
 
-    try:
-        ast.parse(source)
-    except SyntaxError as exc:
-        click.echo(f"Generated code failed to parse as valid Python: {exc}")
-        raise SystemExit(1) from exc
-
     out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Before it runs, not after. `ast.parse` used to be the only check, and
+    # it proves the output is Python rather than anything about what the
+    # Python does.
+    violations = check_generated_parser(source, framework_slug=framework)
+    if violations:
+        rejected = out_path.with_name(f"{out_path.stem}.rejected.py")
+        rejected.write_text(source, encoding="utf-8")
+        click.echo("Generated parser refused before running it:")
+        for violation in violations:
+            click.echo(f"  {violation}")
+        click.echo(
+            f"The code is at {rejected} so you can judge the refusal; it was not run "
+            "and nothing imports it."
+        )
+        raise SystemExit(1)
+
     out_path.write_text(source, encoding="utf-8")
+    click.echo(f"Wrote candidate parser -> {out_path}")
+
+    trial = trial_run(out_path, sample_path, framework_slug=framework)
+    if not trial.ok:
+        click.echo(f"Trial run against {sample_path} failed: {trial.detail}")
+        raise SystemExit(1)
+    click.echo(f"Trial run against {sample_path}: {trial.records} record(s), nothing refused.")
+
+    if trial.records == 0:
+        click.echo(
+            "A parser that returns nothing reads as a framework with no controls, and "
+            "every report built on it would say there is nothing to do. Not promoting."
+        )
+        return
+
+    target = _PARSER_PACKAGE_DIR / f"{framework}_loader.py"
+    if not promote:
+        click.echo(
+            f"Read it before trusting it. Copy it to {target} once you have, or pass "
+            "--promote to have this command do that step when both checks pass."
+        )
+        return
+    if target.exists() and not force:
+        raise click.UsageError(f"{target} already exists. Pass --force to replace it.")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(source, encoding="utf-8")
     click.echo(
-        f"Wrote generated parser -> {out_path}\n"
-        "Review it, run it against your sample, add it to your test suite, and "
-        "commit like any other source file before relying on it."
+        f"Promoted -> {target}. Add it to your test suite and commit it like any other source file."
     )
 
 

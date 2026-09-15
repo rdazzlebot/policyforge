@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import re
 
+from policyforge.ingest.parser_gate import ALLOWED_IMPORTS
 from policyforge.llm.base import LLMProvider
 
 # Kept in sync with schema.py by hand (not imported) so the prompt shows the
@@ -152,10 +153,10 @@ Rules:
   export format shown in the sample and returns a list of objects matching
   the target schema given below exactly (field names, types, defaults) —
   do not invent new fields.
-- Parsing must be fully deterministic: use only the standard library plus
-  packages already common for this kind of ETL (csv, json, openpyxl,
-  pandas, re) — never call an LLM, network, or any nondeterministic API
-  from inside the generated function.
+- Parsing must be fully deterministic, and the module may import only
+  these: ALLOWED_IMPORTS — plus the relative imports named below. Anything
+  else, pandas included, is refused before the parser is ever run. Never
+  call an LLM, the network, a subprocess, or any nondeterministic API.
 - Start with `from __future__ import annotations`, then only the imports
   the function actually uses, then the relative imports named below — the
   generated module lives inside the same `ingest/` package.
@@ -168,7 +169,13 @@ Rules:
   format this loader was derived from, so a future maintainer knows why
   the parsing logic looks the way it does. No other comments unless a
   parsing decision is genuinely non-obvious.
-"""
+""".replace(
+    # Read from the gate rather than written out, so the prompt can never
+    # offer an import `check_generated_parser` would then refuse. It did
+    # once: pandas was offered here and is not a dependency of this project.
+    "ALLOWED_IMPORTS",
+    ", ".join(sorted(ALLOWED_IMPORTS - {"__future__"})),
+)
 
 _HITRUST_RULES = """\
 - Import `from .hitrust import Record, build_controls`.
@@ -221,8 +228,10 @@ def generate_byoc_parser(
     """Ask `provider` to write a deterministic parser for `sample_text`
     (the content of a BYOC sample export) targeting this project's schema.
 
-    Returns raw Python source — the caller is responsible for validating it
-    (e.g. `ast.parse`) and writing it to disk."""
+    Returns raw Python source, unchecked. The sample is part of the prompt,
+    so this is code written under the influence of an untrusted file: the
+    caller runs `parser_gate.check_generated_parser` on it before writing it
+    anywhere importable, and `parser_gate.trial_run` before trusting it."""
     if not sample_text.strip():
         raise ValueError("sample_text is empty — nothing to derive a parser from.")
 

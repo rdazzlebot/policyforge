@@ -60,6 +60,19 @@ def test_generate_byoc_parser_strips_markdown_code_fence():
     assert result == "from __future__ import annotations\n\nx = 1\n"
 
 
+def test_the_prompt_offers_exactly_the_imports_the_gate_allows():
+    """The prompt used to offer pandas, which is not a dependency, so a
+    parser following it failed on first run. Now the list is read from the
+    gate itself, and the two cannot drift apart."""
+    from policyforge.ingest.parser_codegen import _SYSTEM_PROMPT
+    from policyforge.ingest.parser_gate import ALLOWED_IMPORTS
+
+    assert "ALLOWED_IMPORTS" not in _SYSTEM_PROMPT, "placeholder was never filled in"
+    for module in ALLOWED_IMPORTS - {"__future__"}:
+        assert module in _SYSTEM_PROMPT
+    assert "pandas, re" not in _SYSTEM_PROMPT
+
+
 def test_generate_byoc_parser_rejects_empty_sample():
     from policyforge.ingest.parser_codegen import generate_byoc_parser
 

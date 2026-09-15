@@ -1613,9 +1613,28 @@ policyforge generate-parser --framework hitrust --sample path/to/sample-export.c
 ```
 
 This sends the sample's **full content** to your configured LLM provider and
-asks it to draft a deterministic parser (stdlib/csv/pandas — no LLM calls at
-parse time), then writes it to `src/policyforge/ingest/hitrust_loader.py`
-for you to read, test, and commit like any other source file.
+asks it to draft a deterministic parser — no LLM calls at parse time, and
+only the imports a parser needs (`csv`, `openpyxl`, `pathlib`, `re` and a
+few more standard modules). The candidate is written to
+`output/parsers/hitrust_loader.py`, outside the package, where nothing
+imports it.
+
+**The candidate is checked before it runs, and run once under watch.** The
+sample is part of the prompt, so the code that comes back was written under
+the influence of a file this tool did not write — and it is about to run
+over a licensed one. `ingest/parser_gate.py` refuses it before it runs if it
+imports anything off that list, turns strings into code, reaches through
+dunder attributes, or writes anything; a refused candidate is saved as
+`*.rejected.py` for you to read and is never executed. A candidate that
+passes is run once against the sample in a child process, under an audit
+hook that refuses sockets, subprocesses and write-mode opens, and the
+command reports how many records it returned. Neither check is a sandbox.
+What they change is the default: model output used to be written into
+`src/` and imported on the next run; now it is a candidate you promote.
+`--promote` copies one that passed both checks into `src/policyforge/ingest/`
+— never one that returned nothing, because an empty catalog reads as a
+framework with no controls. Read it first either way, then test and commit
+it like any other source file.
 
 **For HITRUST the model is asked for less than it used to be.** Earlier
 versions asked for finished `Control` objects, which meant every generated

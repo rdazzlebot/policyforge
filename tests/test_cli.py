@@ -453,6 +453,114 @@ def test_generate_parser_rejects_syntactically_invalid_output(tmp_path, monkeypa
     assert not out_path.exists()
 
 
+# ---- generate-parser: S-02, model-written code gated before it runs --------
+
+#: A candidate that reads the sample and returns one record per row.
+_READS_THE_SAMPLE = (
+    "import csv\n\n"
+    "def load_hitrust_export(export_path):\n"
+    "    with open(export_path, newline='', encoding='utf-8') as handle:\n"
+    "        return list(csv.DictReader(handle))\n"
+)
+
+
+def _generate(monkeypatch, tmp_path, source, *extra):
+    import policyforge.cli as cli_mod
+
+    sample_path = tmp_path / "sample.csv"
+    sample_path.write_text("control_id,title\nAC-1,Access Control Policy\n", encoding="utf-8")
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    monkeypatch.setattr(cli_mod, "get_provider", lambda config: FakeProvider(text=source))
+    # Never the real package: a promotion in a test must not land in src/.
+    monkeypatch.setattr(cli_mod, "_PARSER_PACKAGE_DIR", tmp_path / "package")
+    candidate = tmp_path / "candidate" / "hitrust_loader.py"
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        [
+            "generate-parser",
+            "--framework",
+            "hitrust",
+            "--sample",
+            str(sample_path),
+            "--out",
+            str(candidate),
+            "--yes",
+            *extra,
+        ],
+    )
+    return result, candidate, tmp_path / "package" / "hitrust_loader.py"
+
+
+def test_the_candidate_is_written_outside_the_package_by_default():
+    """Model output used to land in src/ and be importable on the next run."""
+    from pathlib import Path
+
+    import policyforge.cli as cli_mod
+
+    assert Path("output/parsers") == cli_mod._PARSER_CANDIDATE_DIR
+
+
+def test_code_that_reaches_the_network_is_refused_and_never_run(tmp_path, monkeypatch):
+    ran = []
+    monkeypatch.setattr("policyforge.ingest.parser_gate.trial_run", lambda *a, **k: ran.append(a))
+    source = "import socket\n\ndef load_hitrust_export(export_path):\n    return []\n"
+    result, candidate, target = _generate(monkeypatch, tmp_path, source)
+
+    assert result.exit_code != 0
+    assert "refused before running it" in result.output
+    assert "imports 'socket'" in result.output
+    assert ran == [], "a refused candidate must never reach the trial run"
+    assert not candidate.exists()
+    # Kept where a person can read it and judge whether the refusal was right.
+    assert candidate.with_name("hitrust_loader.rejected.py").exists()
+    assert not target.exists()
+
+
+def test_a_write_the_static_check_cannot_see_is_caught_in_the_trial(tmp_path, monkeypatch):
+    """Aliasing `open` walks past the AST check; the audit hook catches it
+    at the moment it happens, and the file is never created."""
+    source = (
+        "def load_hitrust_export(export_path):\n"
+        "    handle = open\n"
+        "    handle(str(export_path) + '.leak', 'w')\n"
+        "    return []\n"
+    )
+    result, _, target = _generate(monkeypatch, tmp_path, source)
+
+    assert result.exit_code != 0
+    assert "tried to" in result.output
+    assert not (tmp_path / "sample.csv.leak").exists()
+    assert not target.exists()
+
+
+def test_the_trial_reports_what_it_found_and_nothing_is_promoted_unasked(tmp_path, monkeypatch):
+    result, candidate, target = _generate(monkeypatch, tmp_path, _READS_THE_SAMPLE)
+
+    assert result.exit_code == 0, result.output
+    assert "1 record(s)" in result.output
+    assert candidate.exists()
+    assert not target.exists()
+    assert "--promote" in result.output
+
+
+def test_promote_installs_a_parser_that_passed_both_checks(tmp_path, monkeypatch):
+    result, _, target = _generate(monkeypatch, tmp_path, _READS_THE_SAMPLE, "--promote")
+
+    assert result.exit_code == 0, result.output
+    assert target.read_text(encoding="utf-8") == _READS_THE_SAMPLE
+
+
+def test_a_parser_that_found_nothing_is_never_promoted(tmp_path, monkeypatch):
+    """An empty catalog reads as a framework with no controls, and every
+    report built on it says there is nothing to do."""
+    source = "def load_hitrust_export(export_path):\n    return []\n"
+    result, _, target = _generate(monkeypatch, tmp_path, source, "--promote")
+
+    assert result.exit_code == 0, result.output
+    assert "Not promoting" in result.output
+    assert not target.exists()
+
+
 def test_import_confluence_writes_markdown_and_records_history(tmp_path, monkeypatch):
     from policyforge.cli import cli
 

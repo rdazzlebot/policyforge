@@ -265,6 +265,46 @@ list; on a page it misses, only the model stands in the way, which is why
 the edit path should run on the recommended default and not on
 `deepseek-v4-flash`. `MEASUREMENTS.md` epoch 7 has the numbers.
 
+### A generated parser is a candidate, checked before it runs
+
+`generate-parser` sends a sample export to a model and asks for a loader,
+which makes the sample untrusted input to a prompt whose output is code —
+code that then runs over the very licensed file it parses. A tampered CSV,
+or one a colleague pasted a chat transcript into, can steer the model toward
+a loader that sends the export somewhere. The only check was `ast.parse`,
+which proves the output is Python, and the result was written straight into
+`src/policyforge/ingest/`, importable on the next run.
+
+`ingest/parser_gate.py` replaces that with two checks. The static one walks
+the AST against an import *allowlist* rather than a denylist — a parser
+needs to read a CSV or a workbook and nothing more, so what it may import is
+short and what it must not is unbounded — and refuses string evaluation,
+`getattr`, dunder attribute access and anything that writes. The dynamic one
+runs a candidate that passed once against the sample, in a child
+interpreter, under a PEP 578 audit hook that refuses sockets, subprocesses
+and write-mode opens; an attempt the candidate catches and swallows still
+fails the trial. Neither is a sandbox and neither is described as one.
+
+The candidate now goes to `output/parsers/`, a refused one is saved as
+`*.rejected.py` for a person to read and is never executed, and `--promote`
+copies one into the package only after both checks pass — never one that
+returned no records, since an empty catalog reads as a framework with no
+controls.
+
+The codegen prompt offered pandas, which is not a dependency, so a parser
+following its own instructions failed on first run anywhere else. The
+prompt's import list is now read from the gate's allowlist, so the two
+cannot drift apart.
+
+**Checked against real output.** Parsers written by `glm-5.3-flash` and
+`deepseek-v4-flash` from a synthetic sample all passed the gate unchanged
+and trial-ran to the right record count, so it does not refuse what a model
+ordinarily writes. With a row planted in the sample telling the code
+generator to upload the export with `urllib`, neither model obeyed, in one
+run each — too few to call a rate. What stands between a model that does
+and a running loader is the allowlist refusing the import, which is
+deterministic and tested.
+
 ## 1.0.0
 
 The release that makes the policy set answerable.

@@ -328,6 +328,15 @@ Optional, after generating:
   Trimming the sample to a dozen rows with the header intact is usually
   enough and sends far less.
 
+- **`generate-parser` output is a candidate, not a module.** It lands in
+  `output/parsers/`, is refused before it runs if it imports anything off
+  the allowlist or tries to write, and what passes is trial-run once under
+  an audit hook with the record count reported. **Do not pass `--promote`
+  on the user's behalf** unless they have read the candidate: the checks are
+  not a sandbox, and promotion is the step that puts model-written code on
+  the package's import path. When a candidate is refused, show the lines the
+  refusal names — do not edit the candidate to get past them.
+
 - **BYOC frameworks (HITRUST, GovRAMP) never go in `data/frameworks/` or get
   committed *to this repository*.** They live in `local_content/` (gitignored).
   **In a user's own repository the answer is often different**: their MyCSF

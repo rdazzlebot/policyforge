@@ -139,7 +139,15 @@ def pull_pages(
             {
                 "title": title,
                 "tier": tier,
-                "confluence": {"space": space, "title": title, "page_id": page.id},
+                # The version travels too: it is how `publish` knows a
+                # person has already pulled and reviewed this edit, and so
+                # may overwrite the page without destroying anything unseen.
+                "confluence": {
+                    "space": space,
+                    "title": title,
+                    "page_id": page.id,
+                    "version": page.version,
+                },
             },
             body,
         )

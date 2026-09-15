@@ -2634,13 +2634,30 @@ def check_cmd(content_dir: Path | None, synthesis_dir: Path, strict: bool):
     help="Publish over pages using macros this tool cannot round-trip. This "
     "flattens them; do not pass it to get past a skip you haven't read.",
 )
-def publish_cmd(content_dir: Path | None, host: str, only: str, apply_: bool, allow_macros: bool):
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Overwrite pages changed on the wiki since this tool last wrote them. That "
+    "destroys the change; pull it and review instead unless you have decided otherwise.",
+)
+def publish_cmd(
+    content_dir: Path | None,
+    host: str,
+    only: str,
+    apply_: bool,
+    allow_macros: bool,
+    force: bool,
+):
     """Publish the content tree to the pages its frontmatter declares.
 
     Each document names its own destination, so the file-to-page mapping
     lives in the repository under review rather than in a workflow argument.
     A document with no `confluence:` block is not published, which is how a
     draft stays a draft.
+
+    A page somebody edited on the wiki since this tool last wrote it is not
+    overwritten: it is reported as moved and the run exits non-zero, so a CI
+    job fails where it would otherwise have destroyed the edit in silence.
 
     Plans by default and writes nothing; pass --apply once you have read it.
     """
@@ -2662,9 +2679,14 @@ def publish_cmd(content_dir: Path | None, host: str, only: str, apply_: bool, al
             "      host: https://yourorg.atlassian.net/wiki"
         )
 
-    report = publish_tree(root, host=host, dry_run=not apply_, allow_macros=allow_macros, only=only)
+    report = publish_tree(
+        root, host=host, dry_run=not apply_, allow_macros=allow_macros, only=only, force=force
+    )
     click.echo(report.format_report())
-    if report.skipped and not report.published:
+    # A moved page fails the run even when others published. Exiting 0 would
+    # let a CI job go green while an edit sat on the wiki unpulled — the
+    # silent case this check exists to end.
+    if report.moved or (report.skipped and not report.published):
         raise SystemExit(1)
 
 

@@ -55,6 +55,10 @@ class ConfluencePage:
     #: Page labels. Teams that already label their space have effectively
     #: pre-classified it; asking costs nothing on the same request.
     labels: list[str] = field(default_factory=list)
+    #: The message on the latest version. `publish` reads it to tell this
+    #: tool's own last write — stamped with `PUBLISH_MARKER` — from somebody's
+    #: hand edit, which a bare version number cannot distinguish.
+    version_message: str = ""
 
 
 #: Everything worth having from one page request. `ancestors` and
@@ -74,10 +78,12 @@ def _parse_page(page: dict, *, base: str) -> ConfluencePage:
     metadata = page.get("metadata") or {}
     labels = (metadata.get("labels") or {}).get("results") or []
     body = (page.get("body") or {}).get("storage") or {}
+    version = page.get("version") or {}
     return ConfluencePage(
         id=page["id"],
         title=page["title"],
-        version=(page.get("version") or {}).get("number", 0),
+        version_message=str(version.get("message") or ""),
+        version=version.get("number", 0),
         storage_body=body.get("value", ""),
         webui_url=f"{base}{(page.get('_links') or {}).get('webui', '')}",
         ancestors=[a["title"] for a in page.get("ancestors") or [] if a.get("title")],

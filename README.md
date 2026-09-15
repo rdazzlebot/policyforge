@@ -780,9 +780,14 @@ so the defaults are conservative:
 - **Version-guarded writes.** The page version read at fetch time is checked
   at publish time, so an edit made while you were planning fails loudly
   instead of being silently overwritten. This is why editing uses
-  `update_page_body` rather than `export_to_confluence` — the latter re-reads
-  the version and always wins, which is right for publishing a generated
-  document and wrong for editing what's already there.
+  `update_page_body` rather than `export_to_confluence`, which re-reads the
+  version at write time. `publish` used to win unconditionally for the same
+  reason, which was wrong for publishing too: an edit somebody made on the
+  wiki last week was destroyed the next time an unrelated document merged.
+  It now overwrites only a page whose latest version this tool wrote — every
+  write is stamped in its version message — or whose version `pull` has
+  already brought into the repository; anything else is reported as moved,
+  not published, and fails the run.
 
 - **Macro refusal.** The edit path is storage format → markdown → edit →
   storage format, which is lossless only for the `code` macro this project's
@@ -2600,7 +2605,9 @@ reverse view — is in theme 2 above.
 - [x] **`policyforge publish`** — walks the content tree and pushes each document
   to the page its own frontmatter declares, so the file-to-page mapping lives in
   the repo under review rather than in a workflow argument. Plans by default;
-  refuses to publish over a page whose macros it cannot round-trip
+  refuses to publish over a page whose macros it cannot round-trip, or one
+  edited on the wiki since this tool last wrote it and not yet pulled — that
+  page is reported as moved and fails the run
 - [x] **`policyforge pull`** — the way back. Fetches live pages into the tree as
   markdown with the binding written into frontmatter, so a page somebody
   hand-edited becomes a reviewable diff instead of a surprise. Refuses pages that

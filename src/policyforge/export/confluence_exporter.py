@@ -70,6 +70,13 @@ def markdown_to_confluence(markdown_text: str) -> str:
     return md.render(markdown_text)
 
 
+#: Stamped into the version message of every page this tool writes. It is how
+#: `publish` tells its own last write from somebody's hand edit without having
+#: to store the page version in the repository — which a CI job, running on a
+#: checkout it cannot commit to, could never keep current.
+PUBLISH_MARKER = "Published by policyforge"
+
+
 def export_to_confluence(
     markdown_text: str,
     *,
@@ -116,7 +123,10 @@ def export_to_confluence(
             "title": title,
             "space": {"key": space},
             "body": body_payload,
-            "version": {"number": page["version"]["number"] + 1},
+            # Stamped, so the next publish can tell this write from a hand
+            # edit made after it. `publish_tree` refuses to overwrite a page
+            # whose latest version lacks the stamp.
+            "version": {"number": page["version"]["number"] + 1, "message": PUBLISH_MARKER},
         }
         if ancestors:
             payload["ancestors"] = ancestors
@@ -128,7 +138,13 @@ def export_to_confluence(
             timeout=30,
         )
     else:
-        payload = {"type": "page", "title": title, "space": {"key": space}, "body": body_payload}
+        payload = {
+            "type": "page",
+            "title": title,
+            "space": {"key": space},
+            "body": body_payload,
+            "version": {"number": 1, "message": PUBLISH_MARKER},
+        }
         if ancestors:
             payload["ancestors"] = ancestors
         response = requests.post(
@@ -201,7 +217,9 @@ def update_page_body(
         "body": {
             "storage": {"value": markdown_to_confluence(markdown_text), "representation": "storage"}
         },
-        "version": {"number": expected_version + 1},
+        # Stamped like a publish, so the edit a person approved here is not
+        # mistaken for a hand edit by the next `publish` from the repository.
+        "version": {"number": expected_version + 1, "message": PUBLISH_MARKER},
     }
     response = requests.put(
         f"{base}/{API_CONTENT_PATH}/{page_id}",

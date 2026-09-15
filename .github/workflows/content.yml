@@ -86,6 +86,11 @@ jobs:
       # round-trip is skipped and named in the log; publishing over it would
       # flatten work nobody agreed to lose, and that decision belongs to a
       # person looking at the page rather than to a workflow default.
+      #
+      # No --force either, for the same reason. A page somebody edited on the
+      # wiki since this tool last wrote it is not overwritten: it is reported
+      # as moved and fails this job. A red run is the prompt to `policyforge
+      # pull` the page, review the edit as a diff, and merge it.
       - name: Publish
         env:
           CONFLUENCE_USERNAME: ${{ secrets.CONFLUENCE_USERNAME }}

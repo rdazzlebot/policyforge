@@ -19,7 +19,8 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from policyforge.content.check import check_tree
-from policyforge.export.publish import CREATED, SKIPPED, UPDATED, publish_tree
+from policyforge.export.confluence_exporter import PUBLISH_MARKER
+from policyforge.export.publish import CREATED, MOVED, SKIPPED, UPDATED, publish_tree
 from policyforge.export.pull import REFUSED, UNCHANGED, WRITTEN, pull_pages, target_path
 
 MACRO_PAGE = (
@@ -38,6 +39,9 @@ class FakePage:
     webui_url: str = "https://x/wiki/page"
     labels: list = field(default_factory=list)
     ancestors: list = field(default_factory=list)
+    #: Stamped by default: an existing page in these tests is one this tool
+    #: last published, unless a test says somebody edited it since.
+    version_message: str = PUBLISH_MARKER
 
 
 def _write(root: Path, relative: str, text: str) -> Path:
@@ -47,22 +51,29 @@ def _write(root: Path, relative: str, text: str) -> Path:
     return path
 
 
-def _bound(title, space="SEC", page_title=None, body="Reviews happen quarterly."):
+def _bound(title, space="SEC", page_title=None, body="Reviews happen quarterly.", version=None):
     page_title = page_title or title
+    pulled = f"  version: {version}\n" if version is not None else ""
     return (
         f"---\ntitle: {title}\nowner: IAM Engineering\n"
-        f"confluence:\n  space: {space}\n  title: {page_title}\n---\n\n"
+        f"confluence:\n  space: {space}\n  title: {page_title}\n{pulled}---\n\n"
         f"# {title}\n\n{body}\n"
     )
 
 
 def _patch_confluence(monkeypatch, *, pages=None, exported=None):
-    """Fake the three network functions publish/pull reach for."""
+    """Fake the three network functions publish/pull reach for.
+
+    A page is given as its storage body, or as a whole FakePage when a test
+    needs to say who wrote the latest version.
+    """
     store = pages or {}
 
     def _fetch(*, space, title, host, **kwargs):
         if title not in store:
             raise LookupError(f"No Confluence page titled {title!r} in space {space!r}.")
+        if isinstance(store[title], FakePage):
+            return store[title]
         return FakePage(id=f"id-{title}", title=title, storage_body=store[title])
 
     def _export(markdown_text, *, space, title, host, **kwargs):
@@ -381,3 +392,153 @@ def test_a_pulled_page_can_be_published_straight_back(tmp_path, monkeypatch):
 
     assert [r.action for r in report.results] == [UPDATED]
     assert exported and exported[0][1] == "Access Control Standard"
+
+
+# --------------------------------------------------------------------------
+# S-05: an edit made on the wiki is not destroyed by the next publish
+# --------------------------------------------------------------------------
+
+#: Somebody tidied the page in Confluence after this tool last wrote it.
+HAND_EDITED = FakePage(
+    id="id-acs",
+    title="Access Control Standard",
+    storage_body=PLAIN_PAGE,
+    version=5,
+    version_message="Tidied the wording",
+)
+
+
+def test_a_page_edited_on_the_wiki_is_reported_not_overwritten(tmp_path, monkeypatch):
+    """A publish used to read the live version and increment it, so it always
+    won — and an edit somebody made last week was gone the next time any
+    document merged, with nothing to say so."""
+    exported = []
+    _patch_confluence(
+        monkeypatch, pages={"Access Control Standard": HAND_EDITED}, exported=exported
+    )
+    _write(tmp_path, "standards/a.md", _bound("Access Control Standard"))
+
+    report = publish_tree(tmp_path, host="https://x", dry_run=False)
+
+    assert exported == [], "the hand edit must survive"
+    assert [r.action for r in report.results] == [MOVED]
+    text = report.format_report()
+    assert "Changed on the wiki" in text
+    assert "version 5" in text
+    assert "Pull them" in text
+
+
+def test_force_overwrites_a_moved_page(tmp_path, monkeypatch):
+    exported = []
+    _patch_confluence(
+        monkeypatch, pages={"Access Control Standard": HAND_EDITED}, exported=exported
+    )
+    _write(tmp_path, "standards/a.md", _bound("Access Control Standard"))
+
+    report = publish_tree(tmp_path, host="https://x", dry_run=False, force=True)
+
+    assert len(exported) == 1
+    assert [r.action for r in report.results] == [UPDATED]
+
+
+def test_a_hand_edit_the_repository_has_pulled_may_be_overwritten(tmp_path, monkeypatch):
+    """Once the edit is pulled into the repo it has been seen and reviewed as
+    a diff, so publishing the repo's version destroys nothing unseen."""
+    exported = []
+    _patch_confluence(
+        monkeypatch, pages={"Access Control Standard": HAND_EDITED}, exported=exported
+    )
+    _write(tmp_path, "standards/a.md", _bound("Access Control Standard", version=5))
+
+    report = publish_tree(tmp_path, host="https://x", dry_run=False)
+
+    assert [r.action for r in report.results] == [UPDATED]
+    assert len(exported) == 1
+
+
+def test_a_pulled_version_that_is_behind_the_page_is_still_moved(tmp_path, monkeypatch):
+    """Pulled at 4, edited again to 5: the second edit is unseen."""
+    _patch_confluence(monkeypatch, pages={"Access Control Standard": HAND_EDITED})
+    _write(tmp_path, "standards/a.md", _bound("Access Control Standard", version=4))
+
+    report = publish_tree(tmp_path, host="https://x")
+
+    assert [r.action for r in report.results] == [MOVED]
+    assert "last pulled version 4" in report.moved[0].reason
+
+
+def test_a_new_page_is_created_without_asking(tmp_path, monkeypatch):
+    """Nothing is on the wiki, so nothing can be lost."""
+    _patch_confluence(monkeypatch)
+    _write(tmp_path, "standards/a.md", _bound("Access Control Standard"))
+
+    report = publish_tree(tmp_path, host="https://x")
+
+    assert [r.action for r in report.results] == [CREATED]
+
+
+def test_a_pull_records_the_version_it_brought_in(tmp_path, monkeypatch):
+    _patch_confluence(monkeypatch, pages={"Access Control Standard": HAND_EDITED})
+
+    pull_pages(
+        [("SEC", "Access Control Standard", "standard")],
+        root=tmp_path,
+        host="https://x",
+        dry_run=False,
+    )
+
+    text = (tmp_path / "standards" / "access-control-standard.md").read_text(encoding="utf-8")
+    assert "version: 5" in text
+
+
+def test_pull_then_publish_closes_the_loop_for_a_hand_edit(tmp_path, monkeypatch):
+    """The workflow the moved report asks for: pull, review, publish."""
+    exported = []
+    _patch_confluence(
+        monkeypatch, pages={"Access Control Standard": HAND_EDITED}, exported=exported
+    )
+    targets = [("SEC", "Access Control Standard", "standard")]
+
+    pull_pages(targets, root=tmp_path, host="https://x", dry_run=False)
+    report = publish_tree(tmp_path, host="https://x", dry_run=False)
+
+    assert [r.action for r in report.results] == [UPDATED]
+
+
+def test_the_version_message_is_read_from_the_page():
+    from policyforge.export.confluence_importer import _parse_page
+
+    page = _parse_page(
+        {
+            "id": "1",
+            "title": "T",
+            "version": {"number": 7, "message": PUBLISH_MARKER},
+            "_links": {"webui": "/x"},
+        },
+        base="https://x",
+    )
+
+    assert page.version == 7
+    assert page.version_message == PUBLISH_MARKER
+
+
+def test_the_publish_command_fails_the_run_when_a_page_has_moved(tmp_path, monkeypatch):
+    """Even alongside pages that did publish: a green CI job with an edit
+    sitting unpulled on the wiki is the silent case this check ends."""
+    import policyforge.cli as cli_mod
+
+    _patch_confluence(
+        monkeypatch,
+        pages={"Access Control Standard": HAND_EDITED, "Backup Standard": PLAIN_PAGE},
+    )
+    _write(tmp_path, "standards/a.md", _bound("Access Control Standard"))
+    _write(tmp_path, "standards/b.md", _bound("Backup Standard"))
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+
+    result = CliRunner().invoke(
+        cli_mod.cli, ["publish", "--content-dir", str(tmp_path), "--host", "https://x"]
+    )
+
+    assert result.exit_code != 0
+    assert "Changed on the wiki" in result.output
+    assert "Backup Standard" in result.output

@@ -401,6 +401,33 @@ installed with `--require-hashes`, is not done: resolving one for CI's
 Linux and Python 3.12 from here needs a cross-platform resolver this
 repository does not yet use.
 
+### A publish no longer destroys an edit made on the wiki
+
+`export_to_confluence` read the live version and incremented it, so a
+publish always won. With `publish --apply` running in CI on every merge, an
+edit somebody made on the wiki last week was overwritten the next time an
+unrelated document changed, and nothing reported it.
+
+The review's suggested fix — record the page version in frontmatter at
+publish time and compare — does not survive CI: the publish job runs on a
+checkout it cannot commit to, so the recorded number would fall one behind
+after every publish and the next would refuse forever. Every write this
+tool makes is now stamped instead, with a marker in the Confluence version
+message, and `pull` records the version it brought in. `publish` overwrites
+a page only when its latest version carries the stamp — nothing has touched
+it since this tool wrote it — or equals the version the repository pulled,
+so a person has already reviewed that edit as a diff. Anything else is a new
+outcome, *moved*: reported in its own section, not overwritten, and failing
+the run even when other pages published, so a CI job goes red where it used
+to go green over the damage. `--force` overwrites anyway. The edit path's
+`update_page_body` stamps its writes too, so an approved edit is not later
+mistaken for a hand one.
+
+**Pages published before this change carry no stamp.** Until each is pulled
+once or published with `--force`, a publish reports it as moved rather than
+overwriting it — the safe direction, but it means the first CI run after
+upgrading will fail on every existing page.
+
 ## 1.0.0
 
 The release that makes the policy set answerable.

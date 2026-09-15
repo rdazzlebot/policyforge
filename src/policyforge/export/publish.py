@@ -14,11 +14,27 @@ published at all, which is how a draft stays a draft.
 page. The interesting output is the plan: which pages would be created,
 which updated, and which skipped and why.
 
-The guard that matters is macros. A page somebody hand-wrote in Confluence
-may use `info`, `expand`, `status` or page-properties macros, and this
-project's markdown conversion cannot round-trip them — publishing over such
-a page flattens work nobody agreed to lose. Those pages are skipped and
-named, rather than published with a warning printed after the damage.
+Two guards stand between a merge and a live page:
+
+* **Macros.** A page somebody hand-wrote in Confluence may use `info`,
+  `expand`, `status` or page-properties macros, and this project's markdown
+  conversion cannot round-trip them — publishing over such a page flattens
+  work nobody agreed to lose. Those pages are skipped and named, rather
+  than published with a warning printed after the damage.
+* **Hand edits.** A publish used to read the live version and increment it,
+  so it always won: an edit somebody made on the wiki last week was
+  destroyed the next time an unrelated document merged, and nothing said
+  so. Now a page is overwritten only when its latest version was written by
+  this tool, or is the version a person has already pulled into the
+  repository. Anything else has *moved*, and a moved page is reported on its
+  own and fails the run — so the pull-and-review loop is triggered rather
+  than bypassed. `--force` is there for the decision to overwrite anyway.
+
+The obvious design — store the page version in frontmatter at publish time
+and compare — does not work from CI. A publish job runs on a checkout and
+cannot commit the new version back, so the recorded number would fall one
+behind after every publish and the next one would refuse forever. The
+version message this tool stamps on its own writes needs no write-back.
 """
 
 from __future__ import annotations
@@ -29,6 +45,10 @@ from pathlib import Path
 CREATED = "created"
 UPDATED = "updated"
 SKIPPED = "skipped"
+#: Changed on the wiki since this tool last wrote it, by somebody the
+#: repository has not heard from. Kept apart from SKIPPED because it asks
+#: for a different action: not "read the reason", but "pull and review".
+MOVED = "moved"
 
 
 @dataclass
@@ -60,6 +80,10 @@ class PublishReport:
         return self._of(SKIPPED)
 
     @property
+    def moved(self) -> list[PublishResult]:
+        return self._of(MOVED)
+
+    @property
     def published(self) -> list[PublishResult]:
         return self._of(CREATED) + self._of(UPDATED)
 
@@ -74,6 +98,14 @@ class PublishReport:
             lines.append(f"  {mark} {result.path} -> {result.space}/{result.title}")
             if result.url:
                 lines.append(f"      {result.url}")
+
+        if self.moved:
+            lines += [
+                "",
+                f"Changed on the wiki since this tool last published them ({len(self.moved)}) "
+                "— not overwritten. Pull them, review the change, then publish:",
+            ]
+            lines += [f"  {r.path}: {r.reason}" for r in self.moved]
 
         if self.skipped:
             lines += ["", f"Skipped {len(self.skipped)}:"]
@@ -91,6 +123,38 @@ class PublishReport:
         return "\n".join(lines)
 
 
+def moved_since_last_publish(doc, live) -> str:
+    """Why the live page may hold an edit the repository has not seen, or "".
+
+    Safe to overwrite in two cases. The latest version carries this tool's
+    stamp, so nothing has touched the page since it was last published from
+    here. Or its version is the one `pull` recorded in the document's
+    frontmatter, so a person has already brought that edit into the
+    repository and reviewed it as a diff.
+    """
+    from policyforge.export.confluence_exporter import PUBLISH_MARKER
+
+    if PUBLISH_MARKER in (live.version_message or ""):
+        return ""
+    recorded = doc.confluence.get("version")
+    try:
+        recorded = int(recorded) if recorded is not None else None
+    except (TypeError, ValueError):
+        recorded = None
+    if recorded is not None and recorded == live.version:
+        return ""
+
+    known = (
+        f"the repository last pulled version {recorded}"
+        if recorded is not None
+        else "the repository has no pulled version on record"
+    )
+    return (
+        f"the live page is at version {live.version}, last written by someone other "
+        f"than this tool, and {known}"
+    )
+
+
 def publish_tree(
     root: Path,
     *,
@@ -98,12 +162,14 @@ def publish_tree(
     dry_run: bool = True,
     allow_macros: bool = False,
     only: str = "",
+    force: bool = False,
 ) -> PublishReport:
     """Publish every document in the tree that declares a destination.
 
     `only` restricts the run to paths containing that substring, which is
     what makes it usable from a CI job that knows which files a merge
-    touched rather than republishing the whole set every time.
+    touched rather than republishing the whole set every time. `force`
+    overwrites pages that have moved since this tool last wrote them.
     """
     from policyforge.content.tree import load_content_tree
     from policyforge.edit.apply import detect_unsupported_macros
@@ -142,6 +208,21 @@ def publish_tree(
                             f"the live page uses macros this tool cannot round-trip "
                             f"({', '.join(macros)}); publishing would flatten them"
                         ),
+                    )
+                )
+                continue
+
+        if live is not None and not force:
+            moved = moved_since_last_publish(doc, live)
+            if moved:
+                report.results.append(
+                    PublishResult(
+                        path=doc.relative_path,
+                        space=doc.space,
+                        title=doc.page_title,
+                        action=MOVED,
+                        reason=moved,
+                        url=live.webui_url,
                     )
                 )
                 continue

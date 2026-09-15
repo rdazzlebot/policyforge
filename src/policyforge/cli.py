@@ -906,6 +906,28 @@ def ssp_cmd(
         )
     system = SystemProfile(**system_cfg)
 
+    # Checked before the catalogs are read, like `synthesize`. This path was
+    # missed on the grounds that it works from synthesis output, which is
+    # simply wrong: `ssp` takes `--controls` and drafts one narrative per
+    # control from the control text itself. It is also the highest-volume
+    # model path in the project, so an unguarded run against a licensed
+    # GovRAMP or HITRUST catalog would send several hundred requests of it
+    # rather than one.
+    from policyforge.llm.boundary import BoundaryViolation, classify_path, enforce
+
+    content_class = None
+    if narratives:
+        for path in controls_paths:
+            try:
+                enforce(path, config)
+            except BoundaryViolation as exc:
+                raise click.ClickException(
+                    f"{exc}\n  Or pass --no-narratives, which builds the workbook "
+                    "with no model calls at all."
+                ) from exc
+        classes = [classify_path(path, config).klass for path in controls_paths]
+        content_class = "licensed" if "licensed" in classes else (classes[0] if classes else None)
+
     all_controls = []
     for path in controls_paths:
         all_controls.extend(load_controls(path))
@@ -945,7 +967,7 @@ def ssp_cmd(
                 # highest-volume path in the project, and "which controls did
                 # that model write narratives for" is the question somebody
                 # asks about a baseline of several hundred.
-                with ledger.about(control.control_id, site="ssp"):
+                with ledger.about(control.control_id, site="ssp", content_class=content_class):
                     drafted[control.control_id] = draft_implementation_narrative(
                         control, org, system, provider
                     )

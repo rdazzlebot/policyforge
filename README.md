@@ -1529,10 +1529,11 @@ would be neither, so a write it cannot make raises instead.
 
 `load_hitrust_export` handles the MyCSF renderings that have actually been
 seen (see [Reading your export](#reading-your-export)), and
-`load_govramp_export` is still a stub. Every org's export can differ, so
-there is no one column layout to hand-write a parser against ahead of time.
-When detection fails — it names the fields it could not find — or for a
-framework with no loader at all:
+`load_govramp_export` reads the controls matrix workbook as GovRAMP ships
+it. Both cover the exports somebody has had in hand; every org's can differ,
+and there is no one column layout to hand-write a parser against ahead of
+time. When detection fails — it names the fields or columns it could not
+find — or for a framework with no loader at all:
 
 ```
 policyforge generate-parser --framework hitrust --sample path/to/sample-export.csv
@@ -2059,9 +2060,12 @@ answer.
   human at 11pm whether their MyCSF licence covers a hosted API. `synthesize`
   checks every `--controls` path before reading any of them. The `boundary`
   command prints the matrix and classifies named paths, exiting non-zero on a
-  refusal so it can gate a pipeline. Not yet wired: `generate` and `ssp`, which
-  read synthesis output rather than catalogs, so neither has a licensed path
-  today and neither is checked. See
+  refusal so it can gate a pipeline. `ssp` checks too, and was nearly missed on
+  the wrong grounds — it was assumed to read synthesis output, when it takes
+  `--controls` and drafts one narrative per control from the control text
+  itself, making it the highest-volume model path there is. Not wired:
+  `generate`, which genuinely does read synthesis output, so it has no licensed
+  path to check today. See
   [Which content may reach which model](#which-content-may-reach-which-model)
 - [x] **Record which model saw which document** — done, in `llm/ledger.py`.
   Every call is appended to `output/.model-log/calls.jsonl`: provider,

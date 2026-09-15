@@ -270,6 +270,21 @@ Optional, after generating:
   position. Exits 1 if licensed content is committed to a repository that has
   not declared `frameworks.allow_licensed_in_repo: true`.
 
+- **`policyforge boundary [--path <file>...]`** — what may be sent to the
+  configured model. Prints how the provider was classified (local /
+  self-hosted / third-party) and the content-class ceiling table; with
+  `--path`, classifies specific files and exits 1 on a refusal. Run it when a
+  command refuses, or before a run against a licensed catalog, rather than
+  guessing why.
+
+- **`policyforge model-log [--by model|subject|site|provider|content_class]`**
+  — what was sent to which model, when, and at what cost. Every call is
+  recorded (provider, the model that *answered*, the document or control,
+  tokens, cost, a prompt hash — never the prompt or the reply). Filter with
+  `--subject`, `--model`, `--since`. This is how you answer "which documents
+  did that model touch". `$0.0000` and `unpriced` mean different things: a
+  local model is free, an unpriced provider is unknown.
+
 ## Guardrails — do not skip these
 
 - **Never commit `output/` or `config/config.yaml`.** Both are gitignored on
@@ -277,20 +292,41 @@ Optional, after generating:
   you're asked to commit changes, `git status` first and make sure nothing
   under those paths is staged.
 
-- **Try `etl-hitrust` before `generate-parser`.** HITRUST parsing is
-  implemented (`ingest/hitrust.py` for the framework's structure,
-  `ingest/hitrust_export.py` for the file formats and column detection), and
-  it handles the MyCSF renderings seen so far without any LLM call. Reach for
-  codegen only when `etl-hitrust` fails — it names the fields it could not
-  find.
+- **Try `etl-hitrust`/`etl-govramp` before `generate-parser`.** Both are
+  implemented and neither makes an LLM call: `ingest/hitrust.py` and
+  `ingest/govramp.py` hold each framework's structure,
+  `ingest/hitrust_export.py` and `ingest/govramp_export.py` the file formats
+  and column detection. They handle the exports seen so far. Reach for
+  codegen only when the ETL command fails — it names the fields or columns it
+  could not find.
 
-- **`generate-parser` sends real file content to the LLM API.** Before
-  running `policyforge generate-parser --framework hitrust|govramp --sample <path>`
-  against a *real* HITRUST/GovRAMP export, confirm with the user that their
-  license actually permits sending that content to a third-party API
-  processor — don't just proceed because they asked. A synthetic/dummy
-  sample needs no such confirmation. Trimming the sample to a dozen rows
-  with the header intact is usually enough and sends far less.
+- **Licensed content may only reach a local model, and this is enforced.**
+  A catalog whose `framework.yaml` says `licence: licensed`, one with no
+  manifest at all, or anything under `local_content/` is licensed content.
+  `synthesize` checks every `--controls` path before reading any of them, and
+  `generate-parser` checks its `--sample`; against a hosted provider
+  (Anthropic, Bedrock, Vertex, LiteLLM) both refuse and `--yes` does not get
+  past it. **This bites the ordinary case**: the "pass every framework's
+  controls.json" advice above sends a HITRUST or GovRAMP catalog to the
+  model, so on a hosted provider it refuses.
+
+  When it does, do not work around it. Show the user the refusal — it names
+  the content class, the provider class and the reason — and offer the two
+  real options: point `llm:` at a local model (Ollama, `base_url: http://localhost:11434/v1`) for that run, or synthesize from the
+  public-domain catalogs alone. A third exists and is theirs to choose, not
+  yours: if the provider genuinely is inside their boundary (a self-hosted
+  model behind a public DNS name is the honest case), they declare it with
+  `llm.classification`. Do not set that on their behalf, for the same reason
+  you do not set `allow_licensed_in_repo`. `policyforge boundary` explains
+  any refusal in full.
+
+- **`generate-parser` sends real file content to the LLM API.** The boundary
+  check above already refuses a licensed `--sample` on a hosted provider.
+  What it cannot decide is whether the user's licence permits this use at
+  all, even locally — so still confirm that with them rather than proceeding
+  because they asked. A synthetic/dummy sample needs no such confirmation.
+  Trimming the sample to a dozen rows with the header intact is usually
+  enough and sends far less.
 
 - **BYOC frameworks (HITRUST, GovRAMP) never go in `data/frameworks/` or get
   committed *to this repository*.** They live in `local_content/` (gitignored).

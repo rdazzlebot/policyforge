@@ -62,6 +62,83 @@ refuses `data/frameworks/` outright plus any non-gitignored path unless
 too, so the no-write/no-network rule fails a test run rather than somebody's
 licence.
 
+### Which content may reach which model, and a record of what did
+
+Two halves of one thing: a rule about where content may go, and evidence
+that the rule operated. PolicyForge writes security policy, so both should
+be things it can show rather than things it says.
+
+`llm/boundary.py` classifies providers by where the bytes end up — `local`
+(a loopback endpoint), `self-hosted` (an RFC 1918 address or an internal
+name), `third-party` (Anthropic, Bedrock, Vertex, LiteLLM, any public host)
+— and content by who may hold it: `public-domain`, `organization-internal`,
+or `licensed`. Licensed content may reach a local model and nothing else;
+everything else may reach a third party, because that is what the tool does
+every working day.
+
+The one case that was live was advisory. `generate-parser` printed a
+paragraph asking the operator to confirm their MyCSF licence permitted
+sending an export to a hosted API, then trusted the answer and sent the
+file. It now refuses, and `--yes` does not get past it. `synthesize` and
+`ssp` check every `--controls` path before reading any of them, which is
+what matters most now that `etl-govramp` and `etl-hitrust` both produce real
+licensed catalogs. `ssp` matters most of all: it drafts one narrative per
+control from the control text itself, so an unguarded run against a licensed
+catalog sends several hundred requests of it rather than one. Its refusal
+names `--no-narratives`, which was already the zero-call option and is a
+complete answer here rather than a workaround. `policyforge boundary` prints the matrix, says how the
+configured provider was classified and why, and with `--path` classifies
+named files, exiting non-zero so it can gate a pipeline.
+
+It fails closed in three places. `provider: local` names the protocol and
+not the network, so an OpenAI-compatible block pointed at a hosted endpoint
+classifies as third-party and the alias buys nothing. A cascade is as
+exposed as its most exposed half, because which half answers depends on a
+runtime failure nobody can predict at configuration time. And a framework
+directory with no manifest is licensed, which is `frameworks/registry.py`'s
+existing rule.
+
+Config tightens and cannot loosen. A line of YAML is the wrong weight for
+"our HITRUST export may go to OpenRouter"; `llm.classification` says the
+same thing as a claim about your own network, which is what it is, and is
+the honest fix for the one case the inference gets wrong — a model you host
+behind a public DNS name.
+
+`llm/ledger.py` records every call to `output/.model-log/calls.jsonl`:
+provider, provider class, the model that *answered*, the document or
+control, token counts, cost, and a SHA-256 prefix of the prompt. Never the
+prompt and never the reply — a record that quoted what it saw would copy a
+licensed export into a file under `output/`, recreating in the audit trail
+precisely the leak the audit trail exists to disprove.
+
+The wrapper goes on in `get_provider`, so no call site can forget it, and a
+subject is a `ledger.about(...)` scope rather than an argument, because
+`generate()` has never been told which document it is working on. `generate`
+scopes the draft, `synthesize` the topic, and `ssp` each control separately.
+Calls outside a scope record as unattributed, which is true where an
+invented attribution would be indistinguishable from a real one later.
+
+Three details decide whether the record is worth having. The model recorded
+is the one that answered, not the one in config, because a cascade that
+escalated wrote that document with its stronger half. A failed call is
+recorded too: it reached the vendor, was billed, and carried its content
+there, which a spend-only meter misses. And a write that cannot be made
+raises rather than being swallowed — a ledger reporting a clean history of a
+run it did not observe is worse than none. `llm.ledger.enabled: false` turns
+it off, which is a decision visible in a file.
+
+Generated documents carry the stamp. `generate` recorded `model` into
+version history by reading it out of config, which answers what was
+configured most recently rather than what wrote the file — different answers
+whenever a cascade escalated. The version-history entry now carries the
+models that actually answered, the prompt hashes, the provider and its
+class, and the cost, at no extra cost since the ledger already had it.
+
+`policyforge model-log` reads it back, grouped by model, subject, site,
+provider or content class and filtered by any of them. `$0.0000` and
+`unpriced` print differently: a local model is free, and a provider that
+does not price its calls is unknown.
+
 ## 1.0.0
 
 The release that makes the policy set answerable.

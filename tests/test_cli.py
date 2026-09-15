@@ -850,3 +850,74 @@ def test_model_log_summarizes_what_was_sent_where(tmp_path, monkeypatch):
     )
     assert "standard/a" in filtered.output
     assert "standard/b" not in filtered.output
+
+
+def test_ssp_refuses_licensed_controls_when_it_would_draft_narratives(tmp_path, monkeypatch):
+    """The highest-volume model path in the project.
+
+    `ssp` takes `--controls` and drafts one narrative per control from the
+    control text itself, so an unguarded run against a licensed GovRAMP or
+    HITRUST catalog sends several hundred requests of it rather than one.
+    """
+    import policyforge.cli as cli_mod
+
+    catalog_dir = tmp_path / "local_content" / "govramp"
+    catalog_dir.mkdir(parents=True)
+    controls_path = catalog_dir / "controls.json"
+    _write_controls_json(controls_path, [_control()])
+
+    fake = FakeProvider()
+    config = {
+        "llm": {"provider": "anthropic", "model": "claude-sonnet-5"},
+        "frameworks": {"search_paths": [str(tmp_path / "local_content")]},
+    }
+    monkeypatch.setattr(cli_mod, "load_config", lambda: config)
+    monkeypatch.setattr(cli_mod, "get_provider", lambda config: fake)
+
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        ["ssp", "--controls", str(controls_path), "--out", str(tmp_path / "ssp.xlsx"), "--yes"],
+    )
+
+    assert result.exit_code != 0
+    assert "REFUSED" in result.output
+    # The refusal names the zero-call escape hatch, which for this command is
+    # a real answer rather than a workaround.
+    assert "--no-narratives" in result.output
+    assert fake.calls == []
+
+
+def test_ssp_builds_the_workbook_from_licensed_controls_without_narratives(tmp_path, monkeypatch):
+    """No model call, so nothing leaves and nothing is refused.
+
+    The boundary is about what reaches a provider, not about what may be read
+    off disk — `--no-narratives` was always the zero-call option and stays a
+    complete answer for a licensed catalog.
+    """
+    import policyforge.cli as cli_mod
+
+    catalog_dir = tmp_path / "local_content" / "govramp"
+    catalog_dir.mkdir(parents=True)
+    controls_path = catalog_dir / "controls.json"
+    _write_controls_json(controls_path, [_control()])
+    out_path = tmp_path / "ssp.xlsx"
+
+    fake = FakeProvider()
+    monkeypatch.setattr(
+        cli_mod,
+        "load_config",
+        lambda: {
+            "llm": {"provider": "anthropic", "model": "claude-sonnet-5"},
+            "frameworks": {"search_paths": [str(tmp_path / "local_content")]},
+        },
+    )
+    monkeypatch.setattr(cli_mod, "get_provider", lambda config: fake)
+
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        ["ssp", "--controls", str(controls_path), "--out", str(out_path), "--no-narratives"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert out_path.exists()
+    assert fake.calls == []

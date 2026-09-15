@@ -185,6 +185,22 @@ class CorpusDocument:
         """
         return self.path if self.source == MARKDOWN else self.webui_url
 
+    def reader_directed(self) -> list:
+        """Stretches of this document that address their reader, not the org.
+
+        Computed rather than stored. `body` is deliberately the only large
+        field and the manifest is deliberately small, so a cached list of
+        findings would be a third copy of text this can derive in a
+        millisecond — and one that goes stale the moment the page is edited.
+
+        See `zardoz/injection.py` for what counts and, more importantly, for
+        what does not: a policy set is imperative from end to end, so
+        commanding language is the content rather than the signal.
+        """
+        from .injection import scan_document
+
+        return scan_document(self.title, self.body)
+
     @property
     def is_editable(self) -> bool:
         """Whether a change to this document can be made safely.
@@ -314,6 +330,35 @@ class SyncReport:
             lines += [f"  {doc.title}: {', '.join(doc.unsupported_macros)}" for doc in brittle[:10]]
             if len(brittle) > 10:
                 lines.append(f"  ... and {len(brittle) - 10} more")
+
+        # Reported here rather than on the answer, and that is the whole
+        # design. A warning at sync time reaches somebody who can still open
+        # the page and look; the same warning stapled to an answer arrives
+        # after the fact and teaches its reader to click past warnings.
+        directed = [(doc, doc.reader_directed()) for doc in self.synced]
+        directed = [(doc, findings) for doc, findings in directed if findings]
+        if directed:
+            count = sum(len(findings) for _, findings in directed)
+            lines += [
+                "",
+                f"{count} passage(s) in {len(directed)} document(s) read as instructions to "
+                "whoever is answering, rather than as policy:",
+            ]
+            for doc, findings in directed[:10]:
+                where = doc.location or doc.title
+                lines.append(f"  {doc.title} ({where})")
+                for finding in findings[:3]:
+                    lines.append(f"    {finding}")
+                if len(findings) > 3:
+                    lines.append(f"    ... and {len(findings) - 3} more in this document")
+            if len(directed) > 10:
+                lines.append(f"  ... and {len(directed) - 10} more document(s)")
+            lines += [
+                "  Zardoz fences passage text so it cannot be read as instruction, so this "
+                "is not an outage.",
+                "  It is worth looking at anyway: usually a page somebody pasted a chat "
+                "transcript into, occasionally not.",
+            ]
 
         return "\n".join(lines)
 

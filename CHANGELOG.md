@@ -139,6 +139,76 @@ provider or content class and filtered by any of them. `$0.0000` and
 `unpriced` print differently: a local model is free, and a provider that
 does not price its calls is unknown.
 
+### Passages are evidence, not instructions
+
+Zardoz answers from text retrieved out of a document corpus, and
+`zardoz.supporting_space` deliberately admits pages nobody has declared
+ownership of. That text went into the same request as the rules governing
+how it should be used, separated from them by a `---` rule and a heading —
+both of which a document can simply write. A page containing a horizontal
+rule closed the fence it was inside, and everything after it read as prompt
+rather than as quoted material.
+
+`build_prompt` now wraps each passage in a delimiter generated per request.
+The token is chosen after the passages are known and checked against them,
+so a document cannot contain a value that did not exist when it was written.
+Everything a document wrote sits inside the markers — its title, section and
+owner as well as its text, because a page title carries exactly the same
+trust as a page body and leaving it outside would be half a boundary.
+Metadata is collapsed to one line each so a newline in a title cannot draw a
+convincing `[2] Some Document` header and invite a citation at a passage
+that was never supplied. The passage text itself is never altered:
+`check_answer` compares quotations against it, and normalising it here would
+trade an injection risk for the single most damaging output this tool can
+produce, a faithful quote reported as a fabrication.
+
+The contract naming the fence is stated before the passages and again after
+them, so the last thing read is the contract rather than the content. It is
+phrased as a fact about the corpus rather than a warning about attack — a
+page that tells its reader what to do is usually a runbook somebody pasted a
+chat transcript into, and a model told it is under attack starts refusing
+honest pages.
+
+`zardoz/injection.py` is the reporting half, and it reports on the corpus
+rather than on the answer. At sync time somebody can still open the page; the
+same warning stapled to an answer arrives too late to act on and teaches its
+reader to click past warnings. `zardoz sync` now names the documents and the
+lines.
+
+It is deliberately not an imperative detector. A policy set is imperative
+from end to end — "Accounts must be recertified quarterly", "Do not share
+credentials", "Revoke the badge" — so flagging commanding language would
+report every document in the corpus, which is the same as reporting nothing.
+What separates an injected instruction from a requirement is audience rather
+than mood: a requirement addresses the organization's staff, an injection has
+to address whoever is reading the prompt, and to do that it reaches for
+vocabulary a policy document has no use for.
+
+Getting that distinction right took sweeping the rules over every markdown
+document in this repository and paring back whatever fired. `the instructions` became `your instructions`, because "follow the instructions in
+the offboarding runbook" is ordinary prose. `your training` and `your configuration` came out entirely: annual security awareness training and a
+device configuration baseline are two of the most common things a policy set
+addresses staff about. "Staff should never cite internal ticket numbers in
+public postmortems" forced the citation-suppression rule to require an
+imperative or second-person subject. And a rule matching a forged passage
+header was dropped rather than tuned — the fence now contains any such line,
+`check_answer` already rejects a citation pointing past the passages
+supplied, and a numbered reference list at the foot of a policy document
+matches it exactly; a rule that fires on real documents to catch something
+covered twice elsewhere is the trade these checks are supposed to refuse.
+
+`tests/test_zardoz_injection.py` keeps every attack case paired with policy
+prose sharing its vocabulary, because the pair is the claim. Three eval cases
+cover the half no unit test can reach: whether a model actually declines to
+follow a rider planted in a retrieved passage, whether it still cites when
+that rider tells it not to, and whether a contradiction planted on purpose is
+still surfaced rather than resolved silently.
+
+**The model-side half is unmeasured.** The fence and the contract sentence
+change the answering prompt, and this project's own evidence is that a prompt
+change helping one model can cost others five and six points. The eval cases
+exist so that sweep is a command rather than a project; it has not been run.
+
 ## 1.0.0
 
 The release that makes the policy set answerable.

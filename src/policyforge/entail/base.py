@@ -176,8 +176,15 @@ def get_entailer(config: dict) -> Entailer | None:
 
     provider = block.get("provider", "llm")
     if provider == "llm":
-        from .llm_entailer import LLMEntailer
+        from .llm_entailer import LLMEntailer, entailment_provider
 
-        return LLMEntailer(model=block.get("model"), max_tokens=block.get("max_tokens", 2000))
+        model = block.get("model")
+        return LLMEntailer(
+            model=model,
+            max_tokens=block.get("max_tokens", 2000),
+            # Left to LLMEntailer to refuse a missing model, with the reason
+            # it has to be a different one from the answerer's.
+            provider=entailment_provider(block, config) if model else None,
+        )
 
     raise ValueError(f"Unknown entail.provider '{provider}'. Supported: llm.")

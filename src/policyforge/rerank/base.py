@@ -113,6 +113,10 @@ def get_reranker(config: dict) -> Reranker | None:
 
     None is the normal case and not an error: reranking is an addition, and
     a project that has not asked for it should not be made to run a server.
+
+    Classified here, like the embedder: a reranker is sent the question and
+    every candidate passage, so it is held to the same boundary and recorded
+    in the same ledger as a model call.
     """
     block = config.get("rerank")
     if not block:
@@ -120,11 +124,20 @@ def get_reranker(config: dict) -> Reranker | None:
 
     provider = block.get("provider", "llamacpp")
     if provider == "llamacpp":
-        from .llamacpp_provider import LlamaCppReranker
+        from ..llm.channel import Channel
+        from .llamacpp_provider import DEFAULT_URL, LlamaCppReranker
 
         return LlamaCppReranker(
-            base_url=block.get("base_url", "http://127.0.0.1:8090"),
+            base_url=block.get("base_url", DEFAULT_URL),
             timeout=block.get("timeout", 60),
+            channel=Channel.from_block(
+                "rerank",
+                block,
+                provider="llamacpp",
+                model=block.get("model", "rerank"),
+                default_url=DEFAULT_URL,
+                config=config,
+            ),
         )
 
     raise ValueError(f"Unknown rerank.provider '{provider}'. Supported: llamacpp.")

@@ -88,6 +88,10 @@ class CallRecord:
     #: though nothing came back, and a ledger that omitted those would
     #: undercount both the spend and the exposure.
     error: str | None = None
+    #: How many texts one embedding or rerank batch carried; None for a
+    #: model call. Those channels send a batch rather than a prompt, and the
+    #: count is what says how much of the corpus a request exposed.
+    items: int | None = None
 
     def as_json(self) -> str:
         return json.dumps(dataclasses.asdict(self))

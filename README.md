@@ -2419,7 +2419,11 @@ asked to do.
   from one document. Too high and the recall failure returns; too low and
   "nothing in the synced documents appears to bear on that" stops being a
   possible answer. Needs calibration across several real corpora, with the
-  refusal cases confirmed still empty
+  refusal cases confirmed still empty. Already held to the boundary: the
+  endpoint is classified by host (`embed.classification` overrides, as
+  `llm.classification` does), a batch the content ceiling forbids is refused
+  before it is sent, and every batch writes a ledger record — the count and a
+  hash, never the text
 - [ ] **Cross-encoder reranking** (`rerank/`) — **built, off by default and called
   by nothing.** Parked on evidence rather than doubt: retrieval gates hard on
   specificity so that an honest refusal stays possible, which means it does not
@@ -2427,14 +2431,18 @@ asked to do.
   single candidate twice. A reranker improves ordering and cannot improve recall,
   so it cannot rescue a passage the gate filtered out. Revisit after dense
   retrieval widens the candidate set; loosening the specificity gate to feed a
-  reranker would trade a measured strength for a speculative gain
+  reranker would trade a measured strength for a speculative gain. Classified,
+  gated and recorded the same way as the embedder, with the question counted as
+  part of what is sent
 - [ ] **Entailment checking** (`entail/`) — **built, off by default.** Asks
   whether the cited passage actually carries the claim, which no deterministic
   check can: a sentence citing correctly, quoting nothing and inventing no
   interval can still name the wrong actor. This is a model judging a model, so
   three lines are drawn and written into the module — `check_answer` is untouched
   and its warnings remain facts, these findings are opinions and are labelled as
-  such, and this is never an eval grader
+  such, and this is never an eval grader. Its calls go through the same ledger
+  wrap as every other model call, classified by `entail.api_base` or
+  `entail.classification`
 - [ ] **Table-aware chunking** — `an-answer-can-come-from-a-table` produced a
   fabricated quotation from both `claude-sonnet-5` and `deepseek-v4-flash`, in
   different runs. Both put non-verbatim text in quotation marks while citing

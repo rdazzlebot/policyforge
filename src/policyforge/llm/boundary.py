@@ -263,6 +263,28 @@ def classify_provider(llm_config: dict) -> ProviderClassification:
     )
 
 
+def classify_endpoint(block: dict, *, default_url: str, key: str) -> ProviderClassification:
+    """Where an `embed:` or `rerank:` block sends its bytes.
+
+    The rule `classify_provider` applies to a URL-addressed `llm:` block,
+    for the two channels addressed by URL alone: a declared `classification`
+    wins, otherwise the host decides. `default_url` is the one the factory
+    would use, so an unset `base_url` is classified as what it actually is —
+    this machine — rather than as unknown and therefore exposed.
+    """
+    declared = block.get("classification")
+    if declared is not None:
+        declared = str(declared).strip().lower()
+        if declared not in PROVIDER_CLASSES:
+            raise ValueError(
+                f"{key}.classification is {declared!r}, which is not a provider class. "
+                f"Use one of: {', '.join(PROVIDER_CLASSES)}."
+            )
+        return ProviderClassification(declared, f"{key}.classification in config", declared=True)
+    klass, reason = _host_class(block.get("base_url") or default_url)
+    return ProviderClassification(klass, reason)
+
+
 # ---- classifying content --------------------------------------------------
 
 

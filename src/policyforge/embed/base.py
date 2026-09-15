@@ -63,6 +63,11 @@ def get_embedder(config: dict) -> Embedder | None:
 
     None is the normal case and not an error: a project that has not asked
     for dense retrieval keeps the lexical retriever it already had.
+
+    The endpoint is classified here, before anything is built, so a
+    `classification` that is not a provider class fails at startup rather
+    than on the first batch — and every batch after that is checked against
+    the boundary and recorded in the ledger, like every model call.
     """
     block = config.get("embed")
     if not block:
@@ -70,12 +75,22 @@ def get_embedder(config: dict) -> Embedder | None:
 
     provider = block.get("provider", "ollama")
     if provider == "ollama":
-        from .ollama_provider import OllamaEmbedder
+        from ..llm.channel import Channel
+        from .ollama_provider import DEFAULT_URL, OllamaEmbedder
 
+        model = block.get("model", "bge-m3")
         return OllamaEmbedder(
-            model=block.get("model", "bge-m3"),
-            base_url=block.get("base_url", "http://localhost:11434"),
+            model=model,
+            base_url=block.get("base_url", DEFAULT_URL),
             timeout=block.get("timeout", 300),
+            channel=Channel.from_block(
+                "embed",
+                block,
+                provider="ollama",
+                model=model,
+                default_url=DEFAULT_URL,
+                config=config,
+            ),
         )
 
     raise ValueError(f"Unknown embed.provider '{provider}'. Supported: ollama.")

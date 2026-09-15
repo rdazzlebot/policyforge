@@ -78,6 +78,31 @@ SCHEMA = {
 }
 
 
+def entailment_provider(block: dict, config: dict | None = None):
+    """The judge's provider, classified and recorded like every other model call.
+
+    It was a bare `LiteLLMProvider`, which made the entailer the one model
+    call in the project that never reached the ledger and was never
+    classified — sending cited passages and the claims made about them to a
+    hosted vendor with no record that it had. An `llm:`-shaped block is
+    built from `entail:` so `ledger.wrap` can classify it by the same rules
+    (`entail.api_base` and `entail.classification` count, exactly as their
+    `llm.` counterparts do), and the ledger settings are the project's own.
+    """
+    from ..llm.ledger import wrap
+    from ..llm.litellm_provider import LiteLLMProvider
+
+    model = block["model"]
+    llm_block: dict = {"provider": "litellm", "model": model}
+    for key in ("api_base", "classification"):
+        if block.get(key) is not None:
+            llm_block[key] = block[key]
+    ledger = ((config or {}).get("llm") or {}).get("ledger")
+    if ledger is not None:
+        llm_block["ledger"] = ledger
+    return wrap(LiteLLMProvider(model=model, api_base=block.get("api_base")), {"llm": llm_block})
+
+
 class LLMEntailer(Entailer):
     """Judges entailment with a schema-constrained model call."""
 
@@ -98,9 +123,10 @@ class LLMEntailer(Entailer):
                 "entail.model is required: name a model *other* than the one writing "
                 "the answers, since a model checking its own work shares its blind spots."
             )
-        from ..llm.litellm_provider import LiteLLMProvider
-
-        self._provider = LiteLLMProvider(model=model)
+        # Through the ledger even when built directly, so there is no way to
+        # construct a judge whose calls go unrecorded short of injecting a
+        # provider on purpose.
+        self._provider = entailment_provider({"model": model})
 
     def entails(self, premise: str, hypothesis: str) -> Verdict:
         prompt = f"PASSAGE\n\n{premise.strip()}\n\nCLAIM\n\n{hypothesis.strip()}"

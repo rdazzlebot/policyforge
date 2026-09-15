@@ -19,20 +19,44 @@ Two things learned setting this up, both worth not rediscovering:
 - **`/health` returns OK while the model is still loading**, and calls made
   in that window come back `503 Loading model`. Loading takes a few seconds;
   `check()` below treats a 503 as "not ready" rather than as failure.
+
+Every request goes through a `Channel`, like the embedder's: the question and
+every candidate passage are checked against the boundary before they are
+sent, and the batch is recorded in the ledger once it has been.
 """
 
 from __future__ import annotations
 
 from .base import Reranker, Scored
 
+#: Where llama-server listens unless told otherwise, as the module docstring
+#: starts it. Named so the factory classifies the URL this class calls.
+DEFAULT_URL = "http://127.0.0.1:8090"
+
 
 class LlamaCppReranker(Reranker):
     """Calls `POST {base_url}/v1/rerank` on a llama-server run with --reranking."""
 
-    def __init__(self, *, base_url: str = "http://127.0.0.1:8090", timeout: int = 60, session=None):
+    def __init__(
+        self, *, base_url: str = DEFAULT_URL, timeout: int = 60, session=None, channel=None
+    ):
         # Tolerate a trailing slash rather than producing a doubled one.
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+
+        # As in OllamaEmbedder: built directly, it still gets a channel from
+        # its own URL, so only a test injecting a session goes unguarded.
+        if channel is None and session is None:
+            from ..llm.channel import Channel
+
+            channel = Channel.from_block(
+                "rerank",
+                {"base_url": base_url},
+                provider="llamacpp",
+                model="rerank",
+                default_url=DEFAULT_URL,
+            )
+        self._channel = channel
 
         if session is not None:
             # Dependency injection point for tests, matching the LLM
@@ -45,6 +69,22 @@ class LlamaCppReranker(Reranker):
         self._session = requests.Session()
 
     def score(self, query: str, documents: list[str]) -> list[Scored]:
+        # The query is sent too, and it is often the most sensitive thing in
+        # the request — a question about the organization's own gaps.
+        texts = [query, *documents]
+        if self._channel is not None:
+            self._channel.admit()
+        try:
+            scored = self._post(query, documents)
+        except Exception as exc:
+            if self._channel is not None:
+                self._channel.record(texts, error=type(exc).__name__)
+            raise
+        if self._channel is not None:
+            self._channel.record(texts)
+        return scored
+
+    def _post(self, query: str, documents: list[str]) -> list[Scored]:
         import requests
 
         url = f"{self.base_url}/v1/rerank"
@@ -80,6 +120,10 @@ class LlamaCppReranker(Reranker):
         return sorted(scored, key=lambda s: s.score, reverse=True)
 
     def check(self) -> bool:
-        """Whether the reranker can score a trivial pair right now."""
-        scored = self.score("access review cadence", ["Accounts are recertified quarterly."])
+        """Whether the reranker can score a trivial pair right now.
+
+        Sent past the channel, like the embedder's probe: fixed text, no
+        content, and not worth a ledger line.
+        """
+        scored = self._post("access review cadence", ["Accounts are recertified quarterly."])
         return len(scored) == 1

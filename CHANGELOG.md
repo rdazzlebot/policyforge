@@ -305,6 +305,37 @@ run each — too few to call a rate. What stands between a model that does
 and a running loader is the allowlist refusing the import, which is
 deterministic and tested.
 
+### Every channel that sends text to a model is classified and recorded
+
+The ledger's guarantee is that no call site can forget, and three could.
+The entailer built its own `LiteLLMProvider` instead of going through
+`get_provider`, so its calls — cited passages and the claims made about
+them — were never classified and never recorded. The embedder and reranker
+posted passage text, and the reranker the user's question, to a configurable
+`base_url` with no classification at all. All three are off by default, but
+pointing `embed.base_url` at a hosted endpoint would have carried
+licensed-derived passages out of the boundary silently.
+
+`llm/channel.py` holds the embed and rerank endpoints to the same rules as a
+model. `boundary.classify_endpoint` classifies the URL by host — the rule
+`llm:` already uses — and `embed.classification` or `rerank.classification`
+overrides it, validated at startup. Each batch is checked against the
+content ceiling before a byte is sent, using the class the ledger scope
+names and the organization's own material otherwise, and each batch that
+leaves writes one ledger record with a count and a hash of the texts and
+never the texts. A failed batch is recorded because it was still sent; the
+health probe is not, as `RecordingProvider.check` is not. Those records stay
+out of a document's provenance, which lists the models that wrote it and
+should not name one that did not. `CallRecord` gains an optional `items`
+count, and records written before it still load.
+
+The entailer now goes through `ledger.wrap` with an `llm:`-shaped block built
+from `entail:`, so `entail.api_base` and `entail.classification` classify it
+exactly as their `llm.` counterparts would. None of it can be skipped by
+building a provider directly: an embedder, reranker or entailer constructed
+without the factory still gets a channel or a wrap from its own settings,
+and the only unguarded path is a test injecting a fake on purpose.
+
 ## 1.0.0
 
 The release that makes the policy set answerable.

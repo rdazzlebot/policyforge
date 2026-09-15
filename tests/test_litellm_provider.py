@@ -326,7 +326,9 @@ def test_get_provider_dispatches_to_litellm(monkeypatch):
 
     provider = get_provider({"llm": {"provider": "litellm", "model": "gemini/gemini-2.0-flash"}})
 
-    assert isinstance(provider, FakeLiteLLMProvider)
+    # `get_provider` wraps what it builds in the model-call ledger, so
+    # the dispatch is asserted on the factory's result underneath.
+    assert isinstance(provider.inner, FakeLiteLLMProvider)
     assert captured["model"] == "gemini/gemini-2.0-flash"
     # Neither is required: LiteLLM resolves most providers' credentials
     # from their own environment variables.

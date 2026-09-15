@@ -640,3 +640,145 @@ def test_boundary_command_exits_nonzero_on_a_refused_path(tmp_path, monkeypatch)
     assert result.exit_code != 0
     assert "REFUSED" in result.output
     assert "licensed" in result.output
+
+
+def test_generate_stamps_the_model_that_actually_wrote_the_document(tmp_path, monkeypatch):
+    """The version-history stamp used to read `model` out of config.
+
+    Config says what was configured most recently, which is a different
+    question from what wrote this file — and a different answer whenever a
+    cascade escalated, or whenever somebody changed the model afterwards.
+    """
+    import policyforge.cli as cli_mod
+    from policyforge.history.version_store import load_history
+    from policyforge.llm import ledger
+
+    synthesis_path = tmp_path / "authenticator-mgmt.md"
+    synthesis_path.write_text(
+        "---\ntopic: Authenticator Mgmt\nowner: IAM\n---\n\n- a requirement [NIST IA-5]\n",
+        encoding="utf-8",
+    )
+    history_dir = tmp_path / "history"
+    out_path = tmp_path / "standard.md"
+
+    class EscalatingProvider(FakeProvider):
+        """Answers as the stronger half of a cascade would."""
+
+        def generate(self, **kwargs):
+            from policyforge.llm.base import LLMResponse
+
+            self.calls.append(kwargs)
+            return LLMResponse(
+                text="# Authenticator Management Standard\n\nBody.",
+                model="deepseek-v4-pro",
+                cost_usd=0.004,
+            )
+
+    ledger_path = tmp_path / "calls.jsonl"
+    config = {"llm": {"provider": "cascade", "model": "deepseek-v4-flash"}}
+    monkeypatch.setattr(cli_mod, "load_config", lambda: config)
+    monkeypatch.setattr(
+        cli_mod,
+        "get_provider",
+        lambda config: ledger.RecordingProvider(
+            EscalatingProvider(),
+            provider_name="cascade",
+            provider_class="third-party",
+            path=ledger_path,
+        ),
+    )
+
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        [
+            "generate",
+            "--tier",
+            "standard",
+            "--synthesis",
+            str(synthesis_path),
+            "--out",
+            str(out_path),
+            "--history-dir",
+            str(history_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    metadata = load_history(history_dir, "standard/standard")[-1].metadata
+    assert metadata["models"] == ["deepseek-v4-pro"]
+    assert metadata["provider"] == "cascade"
+    assert metadata["prompt_shas"]
+    assert "deepseek-v4-pro" in result.output
+
+    # And the same calls landed in the ledger, attributed to this document.
+    recorded = ledger.load(ledger_path)
+    assert {r.subject for r in recorded} == {"standard/standard"}
+    assert {r.site for r in recorded} == {"generate"}
+
+
+def test_model_log_summarizes_what_was_sent_where(tmp_path, monkeypatch):
+    import policyforge.cli as cli_mod
+    from policyforge.llm.ledger import CallRecord
+
+    ledger_path = tmp_path / "calls.jsonl"
+    ledger_path.write_text(
+        "\n".join(
+            record.as_json()
+            for record in [
+                CallRecord(
+                    "2026-09-01T00:00:00+00:00",
+                    "litellm",
+                    "third-party",
+                    "flash",
+                    "standard/a",
+                    "generate",
+                    input_tokens=100,
+                    output_tokens=50,
+                    cost_usd=0.001,
+                ),
+                CallRecord(
+                    "2026-09-02T00:00:00+00:00",
+                    "litellm",
+                    "third-party",
+                    "pro",
+                    "standard/a",
+                    "generate",
+                    input_tokens=200,
+                    output_tokens=80,
+                    cost_usd=0.06,
+                ),
+                CallRecord(
+                    "2026-09-03T00:00:00+00:00",
+                    "litellm",
+                    "third-party",
+                    "flash",
+                    "standard/b",
+                    "ssp",
+                    input_tokens=10,
+                    output_tokens=5,
+                    cost_usd=0.0002,
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+
+    result = CliRunner().invoke(
+        cli_mod.cli, ["model-log", "--by", "subject", "--path", str(ledger_path)]
+    )
+
+    assert result.exit_code == 0
+    assert "standard/a" in result.output
+    assert "standard/b" in result.output
+    assert "$0.0612" in result.output
+
+    # Filtering answers the question the record exists for: which documents
+    # did this model touch.
+    filtered = CliRunner().invoke(
+        cli_mod.cli,
+        ["model-log", "--by", "subject", "--model", "pro", "--path", str(ledger_path)],
+    )
+    assert "standard/a" in filtered.output
+    assert "standard/b" not in filtered.output

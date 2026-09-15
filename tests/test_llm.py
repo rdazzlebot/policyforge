@@ -206,7 +206,8 @@ def test_get_provider_dispatches_to_vertex(monkeypatch):
         }
     )
 
-    assert isinstance(provider, FakeVertexProvider)
+    # See the bedrock case: the factory's result is wrapped in the ledger.
+    assert isinstance(provider.inner, FakeVertexProvider)
     assert created == {"model": "m", "project_id": "proj", "region": "europe-west4"}
 
 
@@ -303,7 +304,9 @@ def test_get_provider_dispatches_to_bedrock(monkeypatch):
 
     provider = get_provider({"llm": {"provider": "bedrock", "model": "m", "region": "us-west-2"}})
 
-    assert isinstance(provider, FakeBedrockProvider)
+    # `get_provider` wraps what it builds in the model-call ledger, so the
+    # dispatch is asserted on what came out of the factory underneath.
+    assert isinstance(provider.inner, FakeBedrockProvider)
     assert created == {"model": "m", "region": "us-west-2"}
 
 

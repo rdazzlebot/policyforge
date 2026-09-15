@@ -209,7 +209,9 @@ def test_get_provider_dispatches_to_openai_compat(monkeypatch):
                 }
             }
         )
-        assert isinstance(provider, FakeOpenAICompatProvider)
+        # `get_provider` wraps what it builds in the model-call ledger, so
+        # the dispatch is asserted on the factory's result underneath.
+        assert isinstance(provider.inner, FakeOpenAICompatProvider)
 
     assert captured["model"] == "qwen3:14b"
     assert captured["base_url"] == "http://localhost:11434/v1"

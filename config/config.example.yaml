@@ -31,6 +31,15 @@ llm:
   # boundary:
   #   organization-internal: self-hosted   # our own drafts stay inside
 
+  # Every model call is recorded — provider, model, the document or control
+  # it was about, token counts, cost, and a hash of the prompt. Never the
+  # prompt or the reply: a record that quoted what it saw would copy
+  # licensed content into a file under output/, which is the leak it exists
+  # to disprove. Read it back with `policyforge model-log`.
+  # ledger:
+  #   enabled: true                        # the default
+  #   path: output/.model-log/calls.jsonl  # the default; under gitignored output/
+
 frameworks:
   # Where to look for framework catalogs, in order. The first match for an
   # id wins, so your own newer export shadows a bundled one without deleting

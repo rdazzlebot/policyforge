@@ -651,9 +651,22 @@ def synthesize_cmd(
         raise SystemExit(1)
 
     provider = get_provider(config)
-    result = synthesize_topic(synthesis_topic, provider)
+
+    from policyforge.llm import ledger
+    from policyforge.llm.boundary import classify_path
 
     slug = re.sub(r"[^a-z0-9]+", "-", topic.lower()).strip("-")
+
+    # The most exposed content class among the catalogs that fed this topic.
+    # A synthesis drawn from a licensed catalog is licensed-derived, and the
+    # ledger should say so about the call rather than leaving it to be
+    # re-derived later from paths that may have moved.
+    classes = [classify_path(path, config).klass for path in controls_paths]
+    content_class = "licensed" if "licensed" in classes else (classes[0] if classes else None)
+
+    with ledger.about(f"synthesis/{slug}", site="synthesize", content_class=content_class):
+        result = synthesize_topic(synthesis_topic, provider)
+
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{slug}.md"
     out_path.write_text(
@@ -792,13 +805,21 @@ def ssp_cmd(
         if not yes:
             click.confirm("Continue?", abort=True)
         provider = get_provider(config)
+
+        from policyforge.llm import ledger
+
         with click.progressbar(
             scoped, label="Drafting narratives", item_show_func=lambda c: c.control_id if c else ""
         ) as bar:
             for control in bar:
-                drafted[control.control_id] = draft_implementation_narrative(
-                    control, org, system, provider
-                )
+                # One scope per control, not one for the run: this is the
+                # highest-volume path in the project, and "which controls did
+                # that model write narratives for" is the question somebody
+                # asks about a baseline of several hundred.
+                with ledger.about(control.control_id, site="ssp"):
+                    drafted[control.control_id] = draft_implementation_narrative(
+                        control, org, system, provider
+                    )
 
     slug = re.sub(r"[^a-z0-9]+", "-", (system.name or "system").lower()).strip("-")
     out_path = out or Path("output/ssp") / f"{slug}-ssp.xlsx"
@@ -918,23 +939,33 @@ def generate_cmd(
 
     provider = get_provider(config)
 
-    if tier in ("policy", "procedure"):
-        if standard_path is None:
-            raise click.UsageError(
-                f"--standard is required when --tier {tier}, so the {tier.capitalize()} "
-                "can reference its Standard document by name."
+    from policyforge.llm import ledger
+
+    # Every call the drafting makes is attributed to this document, so the
+    # version-history stamp below names the model that actually wrote it
+    # rather than the one config happened to hold. Those differ whenever a
+    # cascade escalates, which is exactly when the difference matters.
+    out_path = out or Path(f"output/{tier}s") / synthesis_path.name
+    slug = f"{tier}/{out_path.stem}"
+
+    with ledger.about(slug, site="generate") as scope:
+        if tier in ("policy", "procedure"):
+            if standard_path is None:
+                raise click.UsageError(
+                    f"--standard is required when --tier {tier}, so the {tier.capitalize()} "
+                    "can reference its Standard document by name."
+                )
+            standard_title = extract_title(standard_path.read_text(encoding="utf-8"))
+            generator = generate_policy if tier == "policy" else generate_procedure
+            document = generator(
+                topic_synthesis,
+                org,
+                provider,
+                standard_title=standard_title,
+                topic=topic_context,
             )
-        standard_title = extract_title(standard_path.read_text(encoding="utf-8"))
-        generator = generate_policy if tier == "policy" else generate_procedure
-        document = generator(
-            topic_synthesis,
-            org,
-            provider,
-            standard_title=standard_title,
-            topic=topic_context,
-        )
-    else:
-        document = generate_standard(topic_synthesis, org, provider, topic=topic_context)
+        else:
+            document = generate_standard(topic_synthesis, org, provider, topic=topic_context)
 
     # Fill the role placeholders here rather than trusting the prompt to have
     # done it consistently. Same document plus same config gives the same
@@ -953,7 +984,6 @@ def generate_cmd(
         )
         click.echo("  Add them under `org.vendors` or `org.teams`, then regenerate.")
 
-    out_path = out or Path(f"output/{tier}s") / synthesis_path.name
     written = write_markdown(document + "\n", output_dir=out_path.parent, filename=out_path.name)
     if not check_markdown_quality(written):
         click.echo(
@@ -963,7 +993,12 @@ def generate_cmd(
 
     from policyforge.history.version_store import record_version
 
-    slug = f"{tier}/{out_path.stem}"
+    # The provenance stamp replaces a bare `model` read out of config. The
+    # day a model is found to systematically weaken cited requirements — the
+    # failure `content/deontic.py` detects — the question is which documents
+    # it touched, and config's answer is only ever what was configured most
+    # recently. This one is what answered, with the prompt hashes that
+    # produced it, at no cost at generation time.
     record = record_version(
         history_dir,
         slug,
@@ -971,10 +1006,12 @@ def generate_cmd(
         source="generate",
         metadata={
             "org": org.name,
-            "model": config.get("llm", {}).get("model"),
             "synthesis_source": str(synthesis_path),
+            **scope.provenance(),
         },
     )
+    if scope.models:
+        click.echo(f"Drafted by: {', '.join(scope.models)} ({len(scope.records)} call(s))")
     if record is None:
         click.echo(
             f"No content change since the last recorded version of {slug!r} — history unchanged."
@@ -2018,6 +2055,91 @@ def boundary_cmd(paths: tuple[Path, ...]):
     if refused:
         # Exits non-zero so this can gate a pipeline, not only inform a human.
         raise SystemExit(1)
+
+
+@cli.command("model-log")
+@click.option(
+    "--by",
+    type=click.Choice(["model", "subject", "site", "provider", "content_class"]),
+    default="model",
+    show_default=True,
+    help="What to group the totals by.",
+)
+@click.option("--subject", default=None, help="Only calls about this document or control.")
+@click.option("--model", "model_filter", default=None, help="Only calls answered by this model.")
+@click.option(
+    "--since",
+    default=None,
+    help="Only calls on or after this ISO date, e.g. 2026-09-01.",
+)
+@click.option(
+    "--path",
+    "ledger_file",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Ledger to read. Defaults to `llm.ledger.path`, else output/.model-log/calls.jsonl.",
+)
+def model_log_cmd(
+    by: str,
+    subject: str | None,
+    model_filter: str | None,
+    since: str | None,
+    ledger_file: Path | None,
+):
+    """What was sent to which model, when, and at what cost.
+
+    Every model call this tool makes is recorded — provider, model, the
+    document or control it was about, token counts, cost, and a hash of the
+    prompt. Not the prompt and not the reply: a record that quoted what it
+    saw would copy licensed content into a file, which is the leak it exists
+    to disprove.
+
+    This is the answer to "which documents did that model touch", asked the
+    day a model turns out to have been weakening the requirements it cited.
+    """
+    from policyforge.llm import ledger
+
+    try:
+        config = load_config()
+    except FileNotFoundError:
+        config = {}
+
+    path = ledger_file or ledger.ledger_path(config)
+    records = ledger.load(path)
+    if not records:
+        click.echo(f"No model calls recorded in {path}.")
+        if not ledger.ledger_enabled(config):
+            click.echo("  `llm.ledger.enabled` is false in config, so nothing is being recorded.")
+        return
+
+    total_before = len(records)
+    if subject:
+        records = [r for r in records if r.subject == subject]
+    if model_filter:
+        records = [r for r in records if r.model == model_filter]
+    if since:
+        records = [r for r in records if r.timestamp >= since]
+
+    if not records:
+        click.echo(f"None of the {total_before} recorded call(s) match those filters.")
+        return
+
+    click.echo(f"{len(records)} of {total_before} recorded call(s), by {by}:")
+    click.echo(ledger.format_summary(records, by))
+
+    overall = ledger.Totals()
+    for record in records:
+        overall.add(record)
+    click.echo("")
+    click.echo(
+        f"Total: {overall.calls} call(s), {overall.input_tokens} in / "
+        f"{overall.output_tokens} out, {overall.cost}"
+    )
+    if overall.errors:
+        # Said out loud: a failed call still reached the vendor, was still
+        # billed, and still carried its content there.
+        click.echo(f"  {overall.errors} call(s) failed after being sent.")
+    click.echo(f"  {path}")
 
 
 @cli.command("roles")

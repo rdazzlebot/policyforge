@@ -43,3 +43,22 @@ def no_live_credentials(monkeypatch):
     """
     for name in _CREDENTIALS:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def ledger_writes_nowhere_real(monkeypatch, tmp_path):
+    """Point the model-call ledger at a throwaway file.
+
+    Same reasoning as the credentials above, in the other direction. The
+    ledger defaults to `output/.model-log/calls.jsonl` relative to the
+    working directory, and `get_provider` wraps every provider in it — so
+    without this, running the suite would append several hundred fake
+    entries to whatever real audit record the developer happens to have.
+    A record somebody may one day rely on is the last file a test run
+    should be writing to by accident.
+
+    Tests that care what was recorded pass their own path explicitly.
+    """
+    from policyforge.llm import ledger
+
+    monkeypatch.setattr(ledger, "DEFAULT_LEDGER_PATH", tmp_path / "calls.jsonl")

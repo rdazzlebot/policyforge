@@ -1269,11 +1269,11 @@ redistribution, and only one of them used to be checked.
 call rather than describing it here. Providers are classified by where the
 bytes end up:
 
-| Class         | What it means                                 | How it's recognised                            |
-| ------------- | --------------------------------------------- | ---------------------------------------------- |
-| `local`       | A model on this machine. Nothing leaves.      | A loopback `base_url` — Ollama, llama-server   |
-| `self-hosted` | A model you run, over your own network        | An RFC 1918 address, or an `.internal` name    |
-| `third-party` | Somebody else's processor                     | Anthropic, Bedrock, Vertex, LiteLLM, any public host |
+| Class         | What it means                            | How it's recognised                                  |
+| ------------- | ---------------------------------------- | ---------------------------------------------------- |
+| `local`       | A model on this machine. Nothing leaves. | A loopback `base_url` — Ollama, llama-server         |
+| `self-hosted` | A model you run, over your own network   | An RFC 1918 address, or an `.internal` name          |
+| `third-party` | Somebody else's processor                | Anthropic, Bedrock, Vertex, LiteLLM, any public host |
 
 Content is classified by who may hold it — `public-domain` (NIST, HIPAA),
 `organization-internal` (your generated documents, your topic registry), or
@@ -1332,6 +1332,63 @@ Loosening is refused deliberately. A line of YAML is the wrong weight for
 "our HITRUST export may go to OpenRouter"; declaring the provider says the
 same thing in a place where it reads as a claim about your network, which is
 what it is.
+
+### The record of what was sent where
+
+A rule with no record of its operation is a rule nobody can evidence — which
+is the exact criticism the Standards this tool generates make of an
+organization that has a policy and no logs. So `llm/ledger.py` records every
+model call: provider, provider class, the model that **answered**, the
+document or control it was about, token counts, cost, and a SHA-256 prefix
+of the prompt.
+
+**Never the prompt and never the reply.** A ledger that quoted what it saw
+would take a licensed export that correctly went to a local model and copy
+it into a file under `output/`, recreating in the audit trail precisely the
+leak the audit trail exists to disprove. The hash is enough to say "the same
+prompt" or "a different prompt" without holding either.
+
+Read it back with `policyforge model-log`:
+
+```
+$ policyforge model-log --by subject
+5 of 5 recorded call(s), by subject:
+  standard/authenticator-mgmt      2 call(s)       8400 in      3900 out     $0.0620
+  AC-2                             1 call(s)        900 in       300 out     $0.0002
+  AC-3                             1 call(s)        880 in       290 out     $0.0002  (1 failed)
+  (unattributed)                   1 call(s)        500 in       120 out     $0.0000
+
+Total: 5 call(s), 10680 in / 4610 out, $0.0624
+```
+
+`--by model|subject|site|provider|content_class` regroups it, and
+`--model`/`--subject`/`--since` filter it — which is how you answer *which
+documents did that model touch*, the question that gets asked the day a
+model turns out to have been weakening the requirements it cited.
+
+Three details are deliberate. The model recorded is the one that
+**answered**, not the one in config, because a cascade that escalated wrote
+that document with its stronger half. A **failed** call is still recorded:
+it reached the vendor, was billed, and carried its content there, which a
+spend-only meter misses. And `$0.0000` and `unpriced` are different answers,
+because a local model is genuinely free and a provider that does not price
+its calls is unknown.
+
+Calls made outside a named piece of work are recorded as `(unattributed)`
+rather than guessed at — a true statement about a run, where an invented
+attribution would be indistinguishable from a real one later.
+
+**Generated documents carry the stamp too.** `generate` used to record
+`model` into local version history by reading it out of config, which
+answers a different question: what was configured most recently, not what
+wrote this file. The version-history entry now carries the models that
+actually answered, the prompt hashes that produced it, the provider and its
+class, and the cost — at no extra cost at generation time, since the ledger
+already had it.
+
+`llm.ledger.enabled: false` turns the whole thing off. That is a decision
+visible in a file; a ledger that silently dropped what it could not write
+would be neither, so a write it cannot make raises instead.
 
 ### Generating a BYOC parser from a sample export
 
@@ -1864,27 +1921,33 @@ answer.
   it or from living under `local_content/`. The pairing is a ceiling per
   content class, checked before the call and not after, and `generate-parser`
   — the one case that was live and advisory — now refuses rather than asking a
-  human at 11pm whether their MyCSF licence covers a hosted API. `policyforge
-  boundary` prints the matrix and classifies named paths, exiting non-zero on a
-  refusal so it can gate a pipeline. What is not yet wired: `synthesize`,
-  `generate` and `ssp` read controls that could in principle be licensed, and
-  none of them call `enforce` yet. See
+  human at 11pm whether their MyCSF licence covers a hosted API. `synthesize`
+  checks every `--controls` path before reading any of them. The `boundary`
+  command prints the matrix and classifies named paths, exiting non-zero on a
+  refusal so it can gate a pipeline. Not yet wired: `generate` and `ssp`, which
+  read synthesis output rather than catalogs, so neither has a licensed path
+  today and neither is checked. See
   [Which content may reach which model](#which-content-may-reach-which-model)
-- [ ] **Record which model saw which document** — nothing persists what was sent
-  where, when, or at what cost. `LLMResponse` carries model and cost, and
-  `_Metered` in `scripts/eval_zardoz.py` shows the shape of the accounting, but
-  the record ends with the run. Here that record is itself an auditable control:
-  it is what evidences that licensed content never left the boundary, and what
-  identifies every document a given model touched. Provider, model string,
-  document or control, token counts, cost. `history/version_store.py` is the
-  closest existing home, though this is a different kind of record and may want
-  its own
-- [ ] **Stamp generated documents with their model provenance** — `generate`
-  records each document into local version history, but not which model wrote it.
-  The day a model is found to systematically weaken cited requirements — the
-  failure `content/deontic.py` now detects — the question is which documents it
-  touched, and today that cannot be answered. Model, model version and a hash of
-  the prompt, recorded alongside the document, at no cost at generation time
+- [x] **Record which model saw which document** — done, in `llm/ledger.py`.
+  Every call is appended to `output/.model-log/calls.jsonl`: provider,
+  provider class, the model that answered, the document or control, token
+  counts, cost, and a hash of the prompt — never the prompt or the reply,
+  since a record that quoted what it saw would copy licensed content into a
+  file under `output/`. The wrapper goes on in `get_provider`, so no call site
+  can forget it, and a subject is a `ledger.about(...)` scope rather than an
+  argument, because `generate()` has never been told which document it is
+  working on. `policyforge model-log` groups and filters it. Failed calls are
+  recorded too — they reached the vendor and were billed. Not yet wired to a
+  subject: the Zardoz answering path and the eval runner, whose calls record as
+  `(unattributed)`, which is true rather than useful
+- [x] **Stamp generated documents with their model provenance** — done, and it
+  fell out of the ledger. `generate` records the models that actually answered,
+  the prompt hashes, the provider and its class, and the cost into the
+  version-history entry, replacing a bare `model` read out of config — which
+  answered a different question, since config says what was configured most
+  recently and not what wrote the file. Those differ whenever a cascade
+  escalated. Still open: nothing stamps documents that arrive by
+  `import-confluence`, and nothing reads the stamp back out — `policyforge history` shows it only as metadata
 - [ ] **Cost levers on the SSP path** — `ssp` makes one model call per in-scope
   control, several hundred for a moderate baseline. That makes it the largest
   volume path in the project and the one nobody waits on, which is exactly the

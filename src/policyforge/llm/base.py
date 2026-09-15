@@ -91,11 +91,29 @@ class LLMProvider(ABC):
 
 
 def get_provider(config: dict) -> LLMProvider:
+    """The configured provider, recording every call it makes.
+
+    The ledger wraps here rather than at each call site because there are
+    fourteen call sites across nine modules and the fifteenth is the one
+    that would be missed. `llm/ledger.py` says what is recorded and what
+    deliberately is not; `llm.ledger.enabled: false` turns it off, which is
+    a decision visible in a file rather than a gap nobody notices.
+    """
+    from .ledger import wrap
+
+    return wrap(_build_provider(config), config)
+
+
+def _build_provider(config: dict) -> LLMProvider:
     """Factory: build the configured provider from config['llm'].
 
     Adding a new provider later means: write a new class implementing
     LLMProvider, register it in this dict, and nothing else in the codebase
     changes.
+
+    Separate from `get_provider` so that the cascade branch can recurse
+    without wrapping each half in its own ledger — which would write three
+    records for one call and make a cascade look like it cost triple.
     """
     provider_name = config["llm"]["provider"]
 
@@ -179,8 +197,8 @@ def get_provider(config: dict) -> LLMProvider:
                 )
 
         return CascadeProvider(
-            primary=get_provider({"llm": config["llm"]["primary"]}),
-            escalate_to=get_provider({"llm": config["llm"]["escalate_to"]}),
+            primary=_build_provider({"llm": config["llm"]["primary"]}),
+            escalate_to=_build_provider({"llm": config["llm"]["escalate_to"]}),
         )
 
     raise ValueError(

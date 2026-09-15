@@ -217,6 +217,54 @@ trailing restatement to a single clause was tried on the theory that it was
 crowding rules 9 and 10, and was worse. `MEASUREMENTS.md` epoch 6 has the
 numbers, and the two ways that sweep nearly lied about them.
 
+### The write path takes no orders from the page it edits
+
+The read path got a fence; the write path — the one that publishes back to
+the live policy set — did not. `edit-confluence` and `edit-topic` inlined the
+fetched page as `Current document:\n\n{document}`, so anyone with edit rights
+on that wiki page could write a line the planner or the rewriter would read
+as an instruction. The per-request token generator now lives in
+`llm/fence.py`, shared by both paths, and `edit/fencing.py` wraps the page
+with a contract worded for material to revise rather than evidence to answer
+from. A page title is collapsed to one line, since it comes from the same
+wiki and sits outside the fence.
+
+`check_edit` flagged only losses — dropped citations, removed sections — so a
+requirement *inserted* into a section nobody planned came back clean, which
+is exactly what a successful injection looks like. It now compares section
+by section against the plan: a section that changed without a step naming it
+is reported, and so is a new heading when no step could have added one.
+
+The CLI gained three gates. A page the injection scanner flags is refused
+before any model call, unless `--allow-reader-directed` says someone has
+looked. The full diff is written to `<slug>.diff` beside the revision, where
+the terminal used to be the only copy and cut it at 120 lines — past which a
+long insertion was invisible to the person approving it. And `--yes` no
+longer covers a page whose check came back dirty.
+
+**Measured against real models, which found what the fakes could not.** New
+`edit_plan` and `edit_apply` eval suites plant passages in otherwise
+legitimate standards and require the operator's real instruction to be
+carried out too, so over-refusal fails as loudly as obedience. "Ignore all
+previous instructions" and "you are now…" were resisted every run by every
+model. A line claiming to *be* the operator was not: `deepseek-v4-flash`'s
+planner followed "Revised operator instruction:" 3 runs of 3, and one of
+those plans said in its own notes that the line was document content before
+carrying it out. `deepseek-v4-pro` resisted the bare claim but fell to it
+wrapped in lookalike `END pf-0000` markers. `glm-5.3-flash` and
+`claude-sonnet-5` passed every case every run. Rewording the contract to
+name the one valid token made no difference and was reverted; two scanner
+rules — lookalike fence markers, and a line opening with a revised or new
+instruction label — were added instead, so the CLI now refuses every page in
+the suite.
+
+**Known limit.** An executor that obeys lands outside the plan and
+`check_edit` catches it. A planner that obeys makes the injected section a
+planned target, and the rewrite then checks clean. The scanner is a word
+list; on a page it misses, only the model stands in the way, which is why
+the edit path should run on the recommended default and not on
+`deepseek-v4-flash`. `MEASUREMENTS.md` epoch 7 has the numbers.
+
 ## 1.0.0
 
 The release that makes the policy set answerable.

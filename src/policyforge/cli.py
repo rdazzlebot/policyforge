@@ -1311,6 +1311,12 @@ def export_confluence_cmd(
     click.echo(f"Published to Confluence -> {url}")
 
 
+#: Diff lines shown in the terminal before pointing at the file. The cap is
+#: for readability only — the whole diff is written to `<slug>.diff` next to
+#: the revision, so nothing a reviewer needs is only ever off-screen.
+_DIFF_LINES = 120
+
+
 def _edit_run(
     *,
     targets,
@@ -1319,6 +1325,7 @@ def _edit_run(
     do_apply: bool,
     yes: bool,
     allow_macros: bool,
+    allow_reader_directed: bool = False,
     out_dir: Path,
     history_dir: Path,
     config: dict,
@@ -1329,6 +1336,12 @@ def _edit_run(
     publish only on explicit approval. Nothing is written back until every
     page has been planned and rewritten, so a failure part-way through leaves
     the whole set untouched.
+
+    "Unsafe" covers two things here. A page using macros this tool cannot
+    round-trip would be damaged by editing it at all. A page containing text
+    addressed to the model rather than to the organization is the other: the
+    fence in `edit.fencing` is what holds on that one, and this refusal is
+    the part that tells somebody to go and look at the page.
     """
     import difflib
     import json
@@ -1337,6 +1350,7 @@ def _edit_run(
     from policyforge.edit.session import apply_targets, fetch_targets, plan_targets
     from policyforge.export.confluence_exporter import ConcurrentEditError, update_page_body
     from policyforge.history.version_store import record_version
+    from policyforge.zardoz import injection
 
     provider = get_provider(config)
     model = (config.get("llm") or {}).get("model", "")
@@ -1363,6 +1377,34 @@ def _edit_run(
             f"WARNING: {target.label} has unsupported macros: "
             f"{', '.join(target.unsupported_macros)}"
         )
+
+    # Anyone with edit rights on a wiki page can put a line in it addressed to
+    # whoever reads the prompt, and this is the path that publishes back to
+    # the live policy set. The fence means such a line is quoted rather than
+    # obeyed; this refusal means a person gets told it is there. Checked
+    # before the first LLM call for the same reason the macro check is.
+    directed = [(t, injection.scan_document(t.title, t.original)) for t in targets]
+    directed = [(t, findings) for t, findings in directed if findings]
+    if directed and not allow_reader_directed:
+        detail = "\n".join(
+            f"  {t.label}:\n"
+            + "\n".join(f"    {f}" for f in findings[:5])
+            + (f"\n    ... {len(findings) - 5} more" if len(findings) > 5 else "")
+            for t, findings in directed
+        )
+        raise click.UsageError(
+            "These pages contain text addressed to the reader of a prompt rather "
+            f"than to the organization:\n{detail}\n"
+            "Each is a heuristic hit, and some are innocent — a runbook somebody "
+            "pasted a chat transcript into reads the same way. Go and look at the "
+            "page. Re-run with --allow-reader-directed once you have."
+        )
+    for target, findings in directed:
+        click.echo(f"WARNING: {target.label} contains reader-directed text:")
+        for finding in findings[:5]:
+            click.echo(f"  {finding}")
+        if len(findings) > 5:
+            click.echo(f"  ... {len(findings) - 5} more")
 
     slugs = {id(t): re.sub(r"[^a-z0-9]+", "-", t.title.lower()).strip("-") for t in targets}
 
@@ -1401,6 +1443,7 @@ def _edit_run(
             click.echo(f"\n{outcome.target.label}: no edits planned — leaving unchanged.")
             continue
         check = outcome.check
+        slug = slugs[id(outcome.target)]
         click.echo("")
         click.echo("=" * 60)
         click.echo(f"{outcome.target.label} (+{check.lines_added}/-{check.lines_removed})")
@@ -1414,10 +1457,17 @@ def _edit_run(
                 n=2,
             )
         )
-        for line in diff[:120]:
+        # The terminal shows a readable amount; the file holds all of it.
+        # Truncating was the only copy of the diff a reviewer got, which put
+        # a long insertion past the cut and out of sight.
+        (out_dir / f"{slug}.diff").write_text("\n".join(diff) + "\n", encoding="utf-8")
+        for line in diff[:_DIFF_LINES]:
             click.echo("  " + line)
-        if len(diff) > 120:
-            click.echo(f"  ... {len(diff) - 120} more diff lines")
+        if len(diff) > _DIFF_LINES:
+            click.echo(
+                f"  ... {len(diff) - _DIFF_LINES} more diff lines — full diff: "
+                f"{out_dir / f'{slug}.diff'}"
+            )
 
         if check.unchanged:
             click.echo("  (rewrite is identical to the live page — nothing to publish)")
@@ -1433,9 +1483,27 @@ def _edit_run(
                     "  WARNING: sections removed that the plan did not ask to remove: "
                     + ", ".join(check.removed_headings)
                 )
-            click.echo("  These are traceability losses — review before publishing.")
+            if check.dropped_source_tags or check.removed_headings:
+                click.echo("  These are traceability losses — review before publishing.")
+            if check.changed_sections:
+                click.echo(
+                    "  WARNING: sections changed that no plan step named: "
+                    + ", ".join(check.changed_sections)
+                )
+            if check.added_headings and not check.additions_were_planned:
+                click.echo(
+                    "  WARNING: sections added that the plan did not ask for: "
+                    + ", ".join(check.added_headings)
+                )
+            if check.changed_sections or (
+                check.added_headings and not check.additions_were_planned
+            ):
+                click.echo(
+                    "  Text moved outside the approved plan. Read it in the diff "
+                    "before publishing — this is what an instruction planted in the "
+                    "page would look like."
+                )
 
-        slug = slugs[id(outcome.target)]
         (out_dir / f"{slug}.md").write_text(outcome.revised, encoding="utf-8")
         # The plan is written next to the revision, so a dry run leaves a
         # reviewable artifact rather than only terminal output that scrolls away.
@@ -1456,7 +1524,18 @@ def _edit_run(
         )
         return
 
-    if not yes:
+    # --yes is for the routine case. A check that came back dirty is the
+    # case it is not for: something changed that nobody planned, and the
+    # whole point of the check is that a person sees it before it publishes.
+    unreviewed = [o for o in publishable if not o.check.is_clean]
+    if unreviewed and yes:
+        click.echo(
+            "\n--yes does not cover these pages — their checks found changes the "
+            "plan did not call for:"
+        )
+        for outcome in unreviewed:
+            click.echo(f"  {outcome.target.label}")
+    if not yes or unreviewed:
         names = ", ".join(o.target.label for o in publishable)
         click.confirm(f"Publish edits to {names}?", abort=True)
 
@@ -1535,6 +1614,12 @@ def _edit_run(
     "round-trip. They will be degraded or lost. Read the warning first.",
 )
 @click.option(
+    "--allow-reader-directed",
+    is_flag=True,
+    help="Proceed even though the page contains text addressed to the reader of a "
+    "prompt rather than to the organization. Look at the page first.",
+)
+@click.option(
     "--out-dir",
     default=Path("output/edits"),
     type=click.Path(path_type=Path),
@@ -1555,6 +1640,7 @@ def edit_confluence_cmd(
     do_apply: bool,
     yes: bool,
     allow_macros: bool,
+    allow_reader_directed: bool,
     out_dir: Path,
     history_dir: Path,
 ):
@@ -1575,6 +1661,7 @@ def edit_confluence_cmd(
         do_apply=do_apply,
         yes=yes,
         allow_macros=allow_macros,
+        allow_reader_directed=allow_reader_directed,
         out_dir=out_dir,
         history_dir=history_dir,
         config=load_config(),
@@ -1613,6 +1700,12 @@ def edit_confluence_cmd(
     help="Proceed even though a page uses Confluence macros this tool cannot round-trip.",
 )
 @click.option(
+    "--allow-reader-directed",
+    is_flag=True,
+    help="Proceed even though a page contains text addressed to the reader of a "
+    "prompt rather than to the organization. Look at the page first.",
+)
+@click.option(
     "--out-dir",
     default=Path("output/edits"),
     type=click.Path(path_type=Path),
@@ -1633,6 +1726,7 @@ def edit_topic_cmd(
     do_apply: bool,
     yes: bool,
     allow_macros: bool,
+    allow_reader_directed: bool,
     out_dir: Path,
     history_dir: Path,
 ):
@@ -1688,6 +1782,7 @@ def edit_topic_cmd(
         do_apply=do_apply,
         yes=yes,
         allow_macros=allow_macros,
+        allow_reader_directed=allow_reader_directed,
         out_dir=out_dir,
         history_dir=history_dir,
         config=load_config(),

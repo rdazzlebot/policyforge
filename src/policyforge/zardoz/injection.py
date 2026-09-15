@@ -168,6 +168,26 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
             re.IGNORECASE | re.MULTILINE,
         ),
     ),
+    (
+        # Speaking for the operator. Added on measurement: on the edit path,
+        # a line labelled "Revised operator instruction:" was carried out by
+        # deepseek-v4-flash in every run, while "ignore all previous
+        # instructions" was resisted in every run. It uses none of the
+        # machinery vocabulary the rules above look for — its only move is
+        # a claim of authority — so the claim is what is matched.
+        #
+        # Deliberately narrow: a line that *opens* with a label announcing a
+        # new or revised instruction. "Updated instructions are posted in
+        # the runbook" is ordinary prose and has no colon after the noun. An
+        # unqualified "Operator note:" is left alone too, because OT and
+        # data-centre procedures address human operators exactly that way.
+        "claims to speak for the operator",
+        re.compile(
+            r"^[ \t>*_-]*(?:revised|updated|new|additional|amended|replacement)\s+"
+            r"(?:operator\s+)?instructions?\s*:",
+            re.IGNORECASE | re.MULTILINE,
+        ),
+    ),
 )
 
 #: This system's own control vocabulary. A single occurrence is a finding on
@@ -183,10 +203,24 @@ _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
 #: reference list at the foot of a policy document matches it exactly. A
 #: rule that fires on ordinary documents to catch something covered twice
 #: elsewhere is the trade this project's checks are supposed to refuse.
+#:
+#: The fence markers are the opposite case, and were added on measurement
+#: rather than argument. A page cannot contain the real per-request token,
+#: so structurally the fence holds — but a live run against the edit path
+#: showed a model obeying an instruction wrapped in *lookalike* markers
+#: (`END pf-0000` … `BEGIN pf-0000`) in 5 runs of 6, while resisting a plain
+#: "ignore all previous instructions" every time. A model does not compare
+#: tokens character by character. And unlike a numbered reference list,
+#: this project's fence vocabulary has no innocent reason to be in a policy
+#: page, so a hit costs nothing in false positives.
 _CONTROL_TOKENS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "contains the refusal sentinel",
         re.compile(rf"\b{re.escape(REFUSAL_SENTINEL)}\b"),
+    ),
+    (
+        "imitates this system's fence markers",
+        re.compile(r"\b(?:BEGIN|END)\s+pf-[0-9A-Za-z]+\b"),
     ),
 )
 

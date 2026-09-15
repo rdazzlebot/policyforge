@@ -33,6 +33,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from policyforge.llm.fence import fence_token as _fence_token
+
 from .retrieve import Passage
 
 #: What the model is told to return when the passages do not answer the
@@ -166,17 +168,18 @@ def fence_token(passages: list[Passage]) -> str:
     collision loop costs nothing and is there because "astronomically
     unlikely" is not the same as "impossible", and this is the one place
     where the difference would be silent.
-    """
-    import secrets
 
-    haystack = "\n".join(
-        f"{p.document.title}\n{p.document.owner}\n{p.chunk.section}\n{p.chunk.text}"
-        for p in passages
+    The token generator lives in `llm.fence` because the Confluence edit
+    path needs the same guarantee against a different kind of supplied
+    text. What stays here is the part specific to passages: which fields a
+    document controls, and therefore what the token is checked against.
+    """
+    return _fence_token(
+        *(
+            f"{p.document.title}\n{p.document.owner}\n{p.chunk.section}\n{p.chunk.text}"
+            for p in passages
+        )
     )
-    while True:
-        token = f"pf-{secrets.token_hex(8)}"
-        if token not in haystack:
-            return token
 
 
 def format_passages(passages: list[Passage], fence: str) -> str:

@@ -197,6 +197,34 @@ def _bundled_catalog_dirs() -> list[Path]:
     return found
 
 
+def _names_a_bundled_catalog_directory(out: Path) -> bool:
+    """Whether `out`, as written or as resolved, runs through a `data/frameworks`.
+
+    The identity test below only knows the bundled directories it can find
+    from here, so another checkout's is protected by this one alone. It
+    compares path components, case-folded, on both the path as given and its
+    resolved form. Case-folded because on a case-insensitive filesystem
+    `Data/Frameworks` is the same directory: run from outside another
+    checkout, an absolute `.../Data/Frameworks/govramp/controls.json` got
+    past the case-sensitive substring this replaced and wrote the catalog
+    into that checkout's bundled directory (found by policyforge-ba).
+    Resolved because `data/x/../frameworks` is the same directory too.
+
+    On a case-sensitive filesystem this refuses a `Data/Frameworks` that is a
+    different directory. That is the chosen side to err on: the cost is
+    naming another directory, and the other side's cost is a licensed
+    catalog in a public repository.
+    """
+    import os
+    from itertools import pairwise
+
+    for spelling in (out, Path(os.path.realpath(out))):
+        parts = [part.casefold() for part in spelling.parts]
+        if ("data", "frameworks") in pairwise(parts):
+            return True
+    return False
+
+
 def _lands_in_bundled_catalogs(out: Path) -> bool:
     """Whether writing `out` would put a file inside a bundled catalog directory.
 
@@ -245,15 +273,13 @@ def _guard_licensed_write(out: Path, *, force: bool, product: str, licence: str,
     # The bundled directory is this project's public, redistributable half.
     # A licensed catalog written there would be committed and pushed.
     #
-    # Two tests, because the first alone was bypassable. The spelling test
-    # refuses any path naming data/frameworks, in this checkout or another.
+    # Two tests, because each alone was bypassable. The spelling test refuses
+    # any path running through data/frameworks, in this checkout or another.
     # The identity test asks the filesystem whether the destination is inside
-    # the bundled directory this command would actually read, which the
-    # spelling test could not: `--out Data/Frameworks/...` on a
-    # case-insensitive filesystem, or `--out frameworks/...` run from inside
-    # data/, both wrote a licensed catalog there with --force. Measured before
-    # the fix, on all three.
-    if "data/frameworks" in out.as_posix() or _lands_in_bundled_catalogs(out):
+    # the bundled directory this command would actually read, which catches
+    # `--out frameworks/...` run from inside data/. Both bypasses were
+    # reproduced with --force before their fixes.
+    if _names_a_bundled_catalog_directory(out) or _lands_in_bundled_catalogs(out):
         raise click.ClickException(
             f"{out} is inside data/frameworks/, which is this project's bundled "
             f"public content. A {product} must never be written there. Use "

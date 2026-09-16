@@ -291,10 +291,10 @@ def test_a_licensed_catalog_never_lands_in_the_bundled_directory(
 ):
     """The invariant, stated as what must not happen on disk.
 
-    Not "the command exits non-zero": on a case-sensitive filesystem
-    `Data/Frameworks` is a different directory, and writing there is fine.
-    What must never happen, on any filesystem and with --force, is a licensed
-    catalog appearing inside the directory this project bundles and pushes.
+    Stated on disk rather than as "the command exits non-zero", because the
+    disk is what matters: what must never happen, on any filesystem and with
+    --force, is a licensed catalog appearing inside the directory this
+    project bundles and pushes.
     The rule used to be a substring test on the path's spelling, which the
     filesystem does not share.
     """
@@ -318,6 +318,67 @@ def test_a_licensed_catalog_never_lands_in_the_bundled_directory(
         f"--out {out_spelling!r} from {cwd_part or '.'!r} wrote a licensed catalog into "
         f"the bundled directory: {landed}\n{result.output}"
     )
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        ("data", "frameworks"),
+        # Found by policyforge-ba: from outside the other checkout, the
+        # upward search never finds its data/frameworks, and the spelling
+        # test was a case-sensitive substring. Wrote the catalog on Windows.
+        ("Data", "Frameworks"),
+        ("DATA", "FRAMEWORKS"),
+        # A detour through a sibling, spelled in absolute form.
+        ("data", "govramp", "..", "frameworks"),
+    ],
+)
+def test_another_checkouts_bundled_directory_is_refused_from_outside_it(
+    tmp_path, monkeypatch, spelling
+):
+    import policyforge.cli as cli_mod
+    from tests.test_govramp import build_workbook
+
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    other = tmp_path / "other-checkout"
+    bundled = other / "data" / "frameworks"
+    (bundled / "govramp").mkdir(parents=True)
+    (other / "data" / "govramp").mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    matrix = build_workbook(tmp_path / "GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx")
+    out = other.joinpath(*spelling, "govramp", "controls.json")
+
+    monkeypatch.chdir(elsewhere)
+    result = CliRunner().invoke(
+        cli_mod.cli, ["etl-govramp", "--export", str(matrix), "--out", str(out), "--force"]
+    )
+
+    assert result.exit_code != 0, result.output
+    assert "must never be written there" in result.output
+    assert list(other.rglob("*.json")) == []
+
+
+@pytest.mark.parametrize("out_parts", [("metadata", "frameworks"), ("data", "frameworks-old")])
+def test_a_directory_that_only_resembles_the_bundled_one_is_not_refused(
+    tmp_path, monkeypatch, out_parts
+):
+    """Components, not substrings: `metadata/frameworks` is not `data/frameworks`."""
+    import policyforge.cli as cli_mod
+    from tests.test_govramp import build_workbook
+
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    matrix = build_workbook(tmp_path / "GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx")
+    destination = tmp_path.joinpath(*out_parts, "govramp", "controls.json")
+
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        ["etl-govramp", "--export", str(matrix), "--out", str(destination), "--force"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert destination.exists()
 
 
 @pytest.mark.parametrize("cwd_part", ["", "data", "local_content"])

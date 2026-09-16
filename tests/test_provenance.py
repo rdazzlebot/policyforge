@@ -8,13 +8,20 @@ requirement text.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import yaml
 
 from policyforge.ingest.oscal_loader import BASELINE_URLS, CATALOG_URL, OSCAL_REF
 from policyforge.ingest.provenance import (
+    MISMATCH,
+    MISSING,
+    UNSTAMPED,
+    VERIFIED,
     content_digest,
     read_provenance,
     record_source_provenance,
+    verify_all,
     verify_content,
 )
 
@@ -94,21 +101,47 @@ def test_verify_catches_a_catalog_that_no_longer_matches(tmp_path):
         source_url=CATALOG_URL,
         content=(tmp_path / "controls.json").read_bytes(),
     )
-    assert verify_content(tmp_path) is None
+    assert verify_content(tmp_path).ok
 
     (tmp_path / "controls.json").write_text(
         '[{"id": "AC-2"}, {"id": "SNUCK-IN"}]', encoding="utf-8"
     )
-    problem = verify_content(tmp_path)
-    assert problem is not None
-    assert "does not match the recorded hash" in problem
+    status = verify_content(tmp_path)
+    assert status.state == MISMATCH
+    assert not status.ok
+    assert "does not match the recorded hash" in status.message
 
 
-def test_verify_is_silent_on_an_unstamped_framework(tmp_path):
-    """Nothing recorded means nothing to contradict, not a failure."""
+def test_an_unstamped_framework_is_not_a_pass(tmp_path):
+    """The distinction another session caught, and the one that matters.
+
+    Every catalog bundled before the stamps existed is UNSTAMPED, so a
+    caller treating "nothing to check" as "checked" would report the whole
+    bundled set as verified while verifying nothing. Not an error either —
+    an unstamped catalog stays usable.
+    """
     (tmp_path / "framework.yaml").write_text(EXISTING, encoding="utf-8")
     (tmp_path / "controls.json").write_text("[]", encoding="utf-8")
-    assert verify_content(tmp_path) is None
+
+    status = verify_content(tmp_path)
+    assert status.state == UNSTAMPED
+    assert not status.ok
+    assert not status.checkable
+    assert "cannot be checked" in status.message
+
+
+def test_the_bundled_catalogs_report_their_real_state():
+    """Whatever it is, it must not be silence.
+
+    Today they are unstamped, and this asserts the shape rather than the
+    verdict so that stamping them is not a test failure.
+    """
+    statuses = verify_all(Path("data/frameworks"))
+    assert statuses, "no framework directories found to check"
+    assert all(s.state in {VERIFIED, UNSTAMPED, MISMATCH, MISSING} for s in statuses)
+    assert not any(s.state == MISMATCH for s in statuses), [
+        s.message for s in statuses if s.state == MISMATCH
+    ]
 
 
 def test_verify_reports_a_recorded_catalog_that_went_missing(tmp_path):
@@ -121,4 +154,4 @@ def test_verify_reports_a_recorded_catalog_that_went_missing(tmp_path):
         content=b"[]",
     )
     (tmp_path / "controls.json").unlink()
-    assert "missing" in (verify_content(tmp_path) or "")
+    assert verify_content(tmp_path).state == MISSING

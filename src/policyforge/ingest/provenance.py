@@ -32,6 +32,7 @@ quietly restate.
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -98,28 +99,116 @@ def read_provenance(framework_yaml: Path) -> dict:
     return {key: data[key] for key in PROVENANCE_KEYS if key in data}
 
 
-def verify_content(framework_dir: Path, *, controls_name: str = "controls.json") -> str | None:
-    """Check the committed catalog still hashes to what was recorded.
+#: The four things a catalog can be, kept apart on purpose.
+#:
+#: An earlier version of this returned None for both VERIFIED and UNSTAMPED,
+#: which is the same conflation `zardoz/shadow.py` exists to avoid and the
+#: same one `LLMResponse.cached_input_tokens` distinguishes zero from None
+#: for: a check that did not run reads exactly like a check that passed.
+#: It matters here more than most places, because today *every* bundled
+#: catalog is UNSTAMPED — the stamps are written by the etl-* commands, and
+#: the committed catalogs predate them — so a caller treating "nothing to
+#: check" as "checked" would report the whole bundled set as verified while
+#: verifying nothing at all.
+VERIFIED = "verified"
+UNSTAMPED = "unstamped"
+MISMATCH = "mismatch"
+MISSING = "missing"
 
-    Returns None when it matches or when there is nothing to check, and a
-    description of the mismatch otherwise. This is the question provenance
-    exists to answer — "is the file I am holding the one that was fetched" —
-    and it is answerable offline, which the drift job is not.
+
+@dataclass(frozen=True)
+class ProvenanceStatus:
+    """What is known about one catalog's integrity, and how sure."""
+
+    state: str
+    framework: str
+    message: str = ""
+
+    @property
+    def ok(self) -> bool:
+        """True only when a hash was recorded and the file matches it.
+
+        Deliberately False for UNSTAMPED. "We have no way to tell" is not a
+        pass, and a caller writing `if status.ok` should not quietly inherit
+        an unverifiable catalog.
+        """
+        return self.state == VERIFIED
+
+    @property
+    def checkable(self) -> bool:
+        """Whether there was anything to check at all."""
+        return self.state != UNSTAMPED
+
+    def __str__(self) -> str:
+        return self.message or f"{self.framework}: {self.state}"
+
+
+def verify_content(
+    framework_dir: Path, *, controls_name: str = "controls.json"
+) -> ProvenanceStatus:
+    """Whether the committed catalog is the one that was fetched.
+
+    This is the question provenance exists to answer, and it is answerable
+    offline — which the monthly drift job is not, since that compares
+    against a live upstream and tells you something moved rather than
+    whether what you hold is what was published.
+
+    UNSTAMPED is the honest answer for every catalog bundled before the
+    stamps existed. It is not an error and must not be treated as one: an
+    unstamped catalog should stay usable. It is also not a pass.
     """
+    name = framework_dir.name
     recorded = read_provenance(framework_dir / "framework.yaml")
     expected = recorded.get("content_sha256")
     if not expected:
-        return None
+        return ProvenanceStatus(
+            state=UNSTAMPED,
+            framework=name,
+            message=(
+                f"{name}: no provenance recorded, so integrity cannot be checked. "
+                f"Re-run the framework's etl-* command to stamp it."
+            ),
+        )
 
     controls = framework_dir / controls_name
     if not controls.exists():
-        return f"{framework_dir.name}: {controls_name} is recorded but missing"
+        return ProvenanceStatus(
+            state=MISSING,
+            framework=name,
+            message=f"{name}: {controls_name} is recorded but missing",
+        )
 
     actual = content_digest(controls.read_bytes())
     if actual != expected:
-        return (
-            f"{framework_dir.name}: {controls_name} does not match the recorded hash — "
-            f"expected {expected[:16]}…, found {actual[:16]}…. Either it was edited by "
-            f"hand, or it was re-fetched without updating the provenance stamp."
+        return ProvenanceStatus(
+            state=MISMATCH,
+            framework=name,
+            message=(
+                f"{name}: {controls_name} does not match the recorded hash — "
+                f"expected {expected[:16]}…, found {actual[:16]}…. Either it was edited "
+                f"by hand, or it was re-fetched without updating the provenance stamp."
+            ),
         )
-    return None
+    ref = recorded.get("source_ref", "?")
+    return ProvenanceStatus(
+        state=VERIFIED,
+        framework=name,
+        message=f"{name}: matches the recorded hash ({expected[:16]}…, {ref})",
+    )
+
+
+def verify_all(frameworks_dir: Path) -> list[ProvenanceStatus]:
+    """Every framework directory's status, so a caller can see the shape.
+
+    Returns one row per framework rather than a single verdict, because the
+    interesting fact today is the proportion: a set where most catalogs are
+    UNSTAMPED is a different security posture from one where they are all
+    VERIFIED, and a boolean would hide that entirely.
+    """
+    if not frameworks_dir.exists():
+        return []
+    return [
+        verify_content(child)
+        for child in sorted(frameworks_dir.iterdir())
+        if child.is_dir() and (child / "framework.yaml").exists()
+    ]

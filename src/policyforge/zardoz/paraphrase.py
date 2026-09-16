@@ -35,6 +35,8 @@ separable in the result.
 
 from __future__ import annotations
 
+from policyforge.llm.prompts import Prompt, register
+
 from .budgets import EXPANSION_TOKENS
 
 #: Ceiling on how much vocabulary one expansion may add. Enough to name a
@@ -49,7 +51,11 @@ from .budgets import EXPANSION_TOKENS
 #: falsifiable, and is kept anyway.
 MAX_EXPANSION_TERMS = 12
 
-EXPANSION_SYSTEM_PROMPT = """You name the vocabulary an organization's \
+EXPANSION_SYSTEM_PROMPT = register(
+    Prompt(
+        name="zardoz.expand",
+        version=1,
+        text="""You name the vocabulary an organization's \
 security policy documents would use for an idea, so a keyword search can \
 find them.
 
@@ -69,7 +75,9 @@ Rules:
    answering — and a frequency you supplied would be searched for and might
    well be found, which would attach this tool's guess to a real citation.
 4. At most twelve terms. If the question is already in the documents' own
-   register, return fewer, or nothing at all."""
+   register, return fewer, or nothing at all.""",
+    )
+)
 
 
 def expand_query(question: str, provider, *, max_terms: int = MAX_EXPANSION_TERMS) -> str:

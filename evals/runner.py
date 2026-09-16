@@ -1022,6 +1022,10 @@ def prompt_epoch_report() -> list[str]:
         ]
         return lines
 
+    lines += [
+        f"  {old} is now {new}: renamed, text unchanged ({current[new]})"
+        for old, new in prompts.renames(recorded)
+    ]
     differences = prompts.compare(recorded)
     if not differences:
         lines += ["", "  Unchanged since the last recorded epoch — comparable with it."]

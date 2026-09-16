@@ -136,9 +136,32 @@ def load_all() -> None:
     that a module which stops registering shows up as an import that stopped
     being needed rather than as a silently smaller registry.
     """
-    from policyforge.edit import plan  # noqa: F401
+    from policyforge.edit import apply, plan  # noqa: F401
     from policyforge.entail import llm_entailer  # noqa: F401
-    from policyforge.zardoz import answer, discover  # noqa: F401
+    from policyforge.generate import policy_writer  # noqa: F401
+    from policyforge.zardoz import answer, conversation, discover, paraphrase, skills  # noqa: F401
+
+
+def renames(recorded: dict[str, str]) -> list[tuple[str, str]]:
+    """`(old, new)` name pairs whose text is identical across a rename.
+
+    A name that went away and a name that appeared with the same fingerprint
+    are one prompt under a new name: the model receives the same bytes, so a
+    run is still comparable. Reported as a difference, a rename would mark
+    every run after it "NOT comparable" for a change that did not happen —
+    and a warning that is always on stops being read. Paired only when the
+    fingerprint is unambiguous on both sides.
+    """
+    current = fingerprints()
+    gone = [name for name in recorded if name not in current]
+    new = [name for name in current if name not in recorded]
+    pairs = []
+    for old in sorted(gone):
+        same_old = [n for n in gone if recorded[n] == recorded[old]]
+        same_new = [n for n in new if current[n] == recorded[old]]
+        if len(same_old) == 1 and len(same_new) == 1:
+            pairs.append((old, same_new[0]))
+    return pairs
 
 
 def compare(recorded: dict[str, str]) -> list[str]:
@@ -148,15 +171,23 @@ def compare(recorded: dict[str, str]) -> list[str]:
     prompts that changed, then prompts that appeared, then prompts that went
     away. An empty list means this run is comparable with whatever produced
     `recorded`, which is the only claim MEASUREMENTS.md lets a number make.
+    Renames with unchanged text are not differences; see `renames`.
     """
     current = fingerprints()
+    renamed = renames(recorded)
+    renamed_old = {old for old, _ in renamed}
+    renamed_new = {new for _, new in renamed}
     changed = [
         f"{name}: {recorded[name]} -> {current[name]}"
         for name in sorted(set(recorded) & set(current))
         if recorded[name] != current[name]
     ]
-    added = [f"{name}: new ({current[name]})" for name in sorted(set(current) - set(recorded))]
+    added = [
+        f"{name}: new ({current[name]})"
+        for name in sorted(set(current) - set(recorded) - renamed_new)
+    ]
     removed = [
-        f"{name}: gone (was {recorded[name]})" for name in sorted(set(recorded) - set(current))
+        f"{name}: gone (was {recorded[name]})"
+        for name in sorted(set(recorded) - set(current) - renamed_old)
     ]
     return changed + added + removed

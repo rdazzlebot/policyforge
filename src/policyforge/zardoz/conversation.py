@@ -32,6 +32,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from policyforge.llm.prompts import Prompt, register
+
 from .budgets import RESOLUTION_TOKENS
 from .retrieve import Passage, tokenize
 
@@ -63,7 +65,11 @@ CONTEXT_TURNS = 2
 
 _WORD_RE = re.compile(r"[a-z']+")
 
-RESOLVE_SYSTEM_PROMPT = """You rewrite follow-up questions into standalone \
+RESOLVE_SYSTEM_PROMPT = register(
+    Prompt(
+        name="zardoz.resolve",
+        version=1,
+        text="""You rewrite follow-up questions into standalone \
 ones, for a search over an organization's security policy documents.
 
 You are given the recent exchange and a new question. Return the new
@@ -99,7 +105,9 @@ Rules:
    equality, so a lost or truncated identifier searches for the wrong
    control while the answer still looks right.
 7. Never return a fragment. The result is a question somebody could have
-   typed; "who owns" is not one."""
+   typed; "who owns" is not one.""",
+    )
+)
 
 
 @dataclass

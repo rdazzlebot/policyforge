@@ -38,6 +38,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from policyforge.llm.base import LLMProvider
+from policyforge.llm.prompts import Prompt, register
 
 
 @dataclass
@@ -70,7 +71,11 @@ class TopicContext:
     evidence: list[str] = field(default_factory=list)
 
 
-_STANDARD_SYSTEM_PROMPT = """You are a compliance policy drafting engine. \
+_STANDARD_SYSTEM_PROMPT = register(
+    Prompt(
+        name="generate.standard",
+        version=1,
+        text="""You are a compliance policy drafting engine. \
 Turn a set of already-synthesized, source-tagged requirement statements \
 into a formal information security STANDARD document for one \
 organization.
@@ -96,9 +101,15 @@ Rules:
 - Write in formal policy language ("must", "shall"), addressed to the
   security/IT staff who implement and audit against this document, not to
   a generic reader.
-"""
+""",
+    )
+)
 
-_POLICY_SYSTEM_PROMPT = """You are a compliance policy drafting engine. \
+_POLICY_SYSTEM_PROMPT = register(
+    Prompt(
+        name="generate.policy",
+        version=1,
+        text="""You are a compliance policy drafting engine. \
 Turn a set of already-synthesized, source-tagged requirement statements \
 into a short, plain-language information security POLICY document for one \
 organization. Unlike the Standard document these requirements also feed,
@@ -135,10 +146,16 @@ Rules:
   Where a detail is missing, use a square-bracket placeholder in the same
   style as vendor placeholders, e.g. `[Security Team]` or
   `[Policy Owner Title]`, rather than making one up.
-"""
+""",
+    )
+)
 
 
-_PROCEDURE_SYSTEM_PROMPT = """You are a compliance policy drafting engine. \
+_PROCEDURE_SYSTEM_PROMPT = register(
+    Prompt(
+        name="generate.procedure",
+        version=1,
+        text="""You are a compliance policy drafting engine. \
 Turn a set of already-synthesized, source-tagged requirement statements \
 into a formal information security PROCEDURE document for one \
 organization — the step-by-step operational instructions for executing an \
@@ -177,7 +194,9 @@ Rules:
 - Write in direct, imperative operational language ("Open the console and
   verify...", "Set the value to..."), addressed to the practitioner
   executing the procedure, not to an auditor.
-"""
+""",
+    )
+)
 
 
 def _render_org(org: OrgContext) -> str:

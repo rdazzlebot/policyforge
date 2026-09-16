@@ -34,6 +34,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from policyforge.llm.prompts import Prompt, register
+
 from .budgets import ROUTING_TOKENS
 
 #: What a router returns when the question is about the documents rather
@@ -563,7 +565,11 @@ SKILLS: dict[str, Skill] = {
 }
 
 
-ROUTER_SYSTEM_PROMPT = """You decide whether a question about an \
+ROUTER_SYSTEM_PROMPT = register(
+    Prompt(
+        name="zardoz.route",
+        version=1,
+        text="""You decide whether a question about an \
 organization's security programme should be answered from its documents or \
 by running an analysis.
 
@@ -581,10 +587,16 @@ Rules:
 3. If two could apply, choose the more specific one.
 4. If you are unsure, say `documents`. A wrong analysis wastes a turn; a
    question sent to the documents that finds nothing gets an honest refusal,
-   which is recoverable."""
+   which is recoverable.""",
+    )
+)
 
 
-ARGUMENT_PROMPT = """You are given an analysis that has already been chosen, \
+ARGUMENT_PROMPT = register(
+    Prompt(
+        name="zardoz.route.arguments",
+        version=1,
+        text="""You are given an analysis that has already been chosen, \
 and the question it was chosen for. Say how the analysis should be narrowed.
 
 Rules:
@@ -600,7 +612,9 @@ Rules:
    is matched against the registry exactly as written there, so answer with
    what the question said.
 4. Returning nothing at all is a correct and common answer. Most questions
-   name no scope."""
+   name no scope.""",
+    )
+)
 
 
 #: Fallback routing, used when no model is configured. Deliberately narrow:
@@ -886,7 +900,11 @@ def route_with_arguments(question: str, provider=None) -> Routed:
 MAX_ANALYSES = 2
 
 
-ALSO_PROMPT = """A question about an organization's security programme has \
+ALSO_PROMPT = register(
+    Prompt(
+        name="zardoz.route.also",
+        version=1,
+        text="""A question about an organization's security programme has \
 already been routed to one analysis. You decide whether it also asks a second, \
 separate thing that a different analysis answers.
 
@@ -901,7 +919,9 @@ Rules:
 3. Never add an analysis because it is related or might be useful. Only
    because the question asks for what it reports.
 4. If you are unsure, answer `none`. A missing second report is a follow-up
-   question; an unwanted one buries the answer that was asked for."""
+   question; an unwanted one buries the answer that was asked for.""",
+    )
+)
 
 
 def _route_also(question: str, first: str, provider) -> str:

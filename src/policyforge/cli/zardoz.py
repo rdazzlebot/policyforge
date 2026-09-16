@@ -86,20 +86,12 @@ def zardoz_cmd(ctx, topics_path: Path, corpus_dir: Path, no_art: bool, plain: bo
     write. It can draft a `policyforge edit-topic` command for you to run,
     but every change to a live page still goes through that command's gates.
     """
-    from policyforge.topics.registry import TopicRegistryError, load_topics
+    from policyforge.zardoz.startup import load_registry, open_session
 
-    # A missing or broken registry is not fatal: the shell is still useful
-    # without it, and starting up to say what's wrong beats a traceback.
-    topics, registry_note = [], ""
-    try:
-        topics = load_topics(topics_path)
-    except FileNotFoundError:
-        registry_note = (
-            f"  (no topic registry at {topics_path} — /topics will be empty. "
-            "Copy config/topics.example.yaml to start one.)"
-        )
-    except TopicRegistryError as exc:
-        registry_note = f"  (topic registry at {topics_path} could not be read: {exc})"
+    # Loaded before deciding whether to open a shell, because `sync` and
+    # `discover` need the registry too.
+    registry = load_registry(topics_path)
+    topics, _note = registry
 
     ctx.ensure_object(dict)
     ctx.obj.update(topics=topics, topics_path=topics_path, corpus_dir=corpus_dir)
@@ -107,63 +99,28 @@ def zardoz_cmd(ctx, topics_path: Path, corpus_dir: Path, no_art: bool, plain: bo
         return
 
     from policyforge.zardoz.art import banner
-    from policyforge.zardoz.corpus import load_corpus
-    from policyforge.zardoz.shell import ShellState, run_shell
+    from policyforge.zardoz.shell import run_shell
 
-    # An unsynced corpus is a normal state to open the shell in, not an
-    # error: /topics and /corpus both still answer, and /corpus is where the
-    # explanation of what to do about it lives.
-    corpus, corpus_note = None, ""
-    try:
-        corpus = load_corpus(corpus_dir)
-    except FileNotFoundError:
-        corpus_note = "  (no documents synced yet — run `policyforge zardoz sync`)"
-    except ValueError as exc:
-        corpus_note = f"  ({exc})"
-
-    # An LLM is optional. Without one the shell still finds and shows the
-    # passages a question is about — retrieval is entirely offline — so a
-    # missing API key costs you the prose, not the search.
-    provider, provider_note = None, ""
-    shell_config = load_config_or_empty()
-    try:
-        provider = get_provider(shell_config)
-    except (FileNotFoundError, KeyError, ValueError, RuntimeError) as exc:
-        # RuntimeError is what a missing API key raises, which is the most
-        # common way to open this shell — running without a model is a
-        # supported mode, so it must not be a crash on launch. It was one
-        # until the test suite stopped carrying a live key.
-        provider_note = f"No model configured ({str(exc).splitlines()[0]})"
-
-    configured_content = (shell_config.get("zardoz") or {}).get("content_dir") or ""
-    content_root = Path(configured_content) if configured_content else None
+    # Loading and explaining what could not be loaded is shared with the MCP
+    # server — see zardoz/startup.py for why the two must not decide
+    # separately what is worth mentioning.
+    session = open_session(
+        topics_path=topics_path,
+        corpus_dir=corpus_dir,
+        config=load_config_or_empty(),
+        provider_factory=get_provider,
+        registry=registry,
+        plain=plain,
+        history_dir=_DEFAULT_HISTORY_DIR,
+    )
 
     click.echo(banner(art=not no_art, plain=plain))
-    for note in (registry_note, corpus_note):
-        if note:
-            click.echo(note)
-    if provider_note:
-        click.echo(f"  ({provider_note} — questions will return passages, not prose)")
-    if corpus is not None and corpus.is_stale:
-        click.echo(f"  (this snapshot is {corpus.age_days:.0f} days old — re-sync, then /reload)")
+    for note in session.notes:
+        click.echo(note)
     click.echo("")
 
     run_shell(
-        ShellState(
-            topics=topics,
-            plain=plain,
-            corpus=corpus,
-            corpus_dir=corpus_dir,
-            provider=provider,
-            provider_note=provider_note,
-            # What the analyses read. Paths rather than loaded data: a shell
-            # opened to ask one question should not pay to parse a thousand
-            # controls it may never look at.
-            config=shell_config,
-            parameters_path=Path("config/parameters.yaml"),
-            history_dir=_DEFAULT_HISTORY_DIR,
-            content_dir=content_root,
-        ),
+        session.state,
         read=lambda prompt: click.prompt(prompt, prompt_suffix="", show_default=False),
         write=click.echo,
     )

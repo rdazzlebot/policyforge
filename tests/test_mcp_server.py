@@ -151,11 +151,117 @@ def test_none_arguments_are_tolerated(empty_state):
 
 def test_a_tool_returns_exactly_what_the_shell_returns(empty_state):
     """No second code path. A tool that reformatted a report would let the
-    CLI and an agent disagree about the same repository."""
+    CLI and an agent disagree about the same repository.
+
+    The report is the shell's, byte for byte. When something could not be
+    loaded at startup, the notes follow it — the terminal shows those under
+    its banner, and an agent has no banner.
+    """
+    from policyforge.mcp.server import with_startup_notes
     from policyforge.zardoz.shell import dispatch
 
-    assert call_tool(empty_state, "corpus", {}) == dispatch("/corpus", empty_state)
-    assert call_tool(empty_state, "topics", {}) == dispatch("/topics", empty_state)
+    for tool, command in (("corpus", "/corpus"), ("topics", "/topics")):
+        report = dispatch(command, empty_state)
+        result = call_tool(empty_state, tool, {})
+        assert result.startswith(report)
+        assert result == with_startup_notes(report, empty_state)
+
+
+def test_with_nothing_missing_a_tool_returns_only_the_report():
+    """The notes are there to explain an absence, not to decorate every answer."""
+    from types import SimpleNamespace
+
+    from policyforge.mcp.server import with_startup_notes
+
+    assert with_startup_notes("the report", SimpleNamespace(startup_notes=[])) == "the report"
+
+
+def _registry_state(tmp_path, body: str):
+    topics = tmp_path / "topics.yaml"
+    topics.write_text(body, encoding="utf-8")
+
+    def no_model(config):
+        raise RuntimeError("no key")
+
+    return build_state(
+        {}, corpus_dir=tmp_path / "corpus", topics_path=topics, provider_factory=no_model
+    )
+
+
+def test_a_broken_registry_is_not_reported_as_a_missing_one(tmp_path):
+    """The misdiagnosis this change exists to stop.
+
+    Before, the server swallowed the load error, so with a topics.yaml that
+    exists and does not parse an agent calling `coverage` was told "No topic
+    registry loaded" and nothing else. The terminal has always said why.
+    """
+    state = _registry_state(tmp_path, "topics:\n  - name: [unclosed\n")
+
+    result = call_tool(state, "coverage", {})
+
+    assert "could not be read" in result
+    assert "not valid YAML" in result
+    assert "When this PolicyForge server started" in result
+
+
+def test_the_server_and_the_terminal_give_the_same_notes(tmp_path):
+    """One function decides what is worth saying, so they cannot drift again."""
+    from policyforge.zardoz.startup import open_session
+
+    topics = tmp_path / "topics.yaml"
+    topics.write_text("topics:\n  - name: [unclosed\n", encoding="utf-8")
+
+    def no_model(config):
+        raise RuntimeError("no key")
+
+    terminal = open_session(
+        topics_path=topics, corpus_dir=tmp_path / "corpus", config={}, provider_factory=no_model
+    )
+    server = build_state(
+        {}, corpus_dir=tmp_path / "corpus", topics_path=topics, provider_factory=no_model
+    )
+    assert server.startup_notes == terminal.notes
+    assert len(terminal.notes) == 3  # registry, corpus, model
+
+
+def test_a_stale_snapshot_is_reported_to_the_agent(tmp_path):
+    """An agent could answer from a two-month-old corpus with no sign of it."""
+    import json
+
+    from policyforge.zardoz.corpus import TRUSTED, CorpusDocument, write_corpus
+
+    corpus_dir = tmp_path / "corpus"
+    write_corpus(
+        [
+            CorpusDocument(
+                doc_id="access",
+                title="Access Control Standard",
+                space="ENG",
+                confidence=TRUSTED,
+                owner="IAM",
+                body="# Access Control Standard\n\nReviews are quarterly.\n",
+            )
+        ],
+        corpus_dir=corpus_dir,
+    )
+    manifest = corpus_dir / "manifest.json"
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["synced_at"] = "2020-01-01T00:00:00+00:00"
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+
+    state = build_state(
+        {},
+        corpus_dir=corpus_dir,
+        topics_path=tmp_path / "none.yaml",
+        provider_factory=lambda config: object(),
+    )
+
+    assert "days old" in call_tool(state, "corpus", {})
+
+
+def test_the_server_session_is_recorded_as_mcp(tmp_path):
+    state = _registry_state(tmp_path, "topics:\n  - name: A\n    owner: B\n")
+    assert state.surface == "mcp"
 
 
 def test_the_bundle_tool_reaches_the_registry(tmp_path):

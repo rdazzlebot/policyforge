@@ -40,7 +40,6 @@ the report itself, not this server's account of it.
 
 from __future__ import annotations
 
-from contextlib import suppress
 from dataclasses import dataclass
 
 #: Ships as an optional extra: `pip install policyforge[mcp]`.
@@ -175,72 +174,59 @@ _DISPATCH = {
 }
 
 
-def build_state(config: dict | None = None, *, corpus_dir=None, topics_path=None):
+def build_state(
+    config: dict | None = None, *, corpus_dir=None, topics_path=None, provider_factory=None
+):
     """A shell state for the server to run analyses against.
 
-    The same `ShellState` the REPL uses, so a tool's answer is identical to
-    the terminal's — there is no second code path to drift.
+    The same session the terminal opens, built by the same function —
+    `zardoz/startup.py` — so a tool's answer and what it says about a missing
+    registry, corpus or model match the terminal's. This used to be a shorter
+    copy of the CLI's construction, and the copy had drifted: it swallowed
+    every note, so a broken topics.yaml looked to an agent like no registry at
+    all, and a two-month-old snapshot gave no sign of its age.
 
-    The construction is a shorter version of the one inside the `zardoz`
-    command in `policyforge/cli/zardoz.py`, which is not currently
-    extractable: it is entangled with banner printing and the notes it
-    echoes as it goes. C-01 split the CLI into a package as a pure move and
-    deliberately left that entanglement alone, so it is still open; when it
-    is untangled, both should call one function. Until then this
-    deliberately mirrors it rather than inventing
-    different defaults, and every absence is a supported state: no registry,
-    no corpus and no model each answer rather than crash.
+    `provider_factory` defaults to the real one; tests pass their own.
     """
     from pathlib import Path
 
-    from policyforge.topics.registry import TopicRegistryError, load_topics
-    from policyforge.zardoz.corpus import DEFAULT_CORPUS_DIR, load_corpus
-    from policyforge.zardoz.shell import ShellState
+    from policyforge.zardoz.corpus import DEFAULT_CORPUS_DIR
+    from policyforge.zardoz.startup import open_session
 
-    config = config or {}
-    corpus_dir = Path(corpus_dir) if corpus_dir else DEFAULT_CORPUS_DIR
-    topics_path = Path(topics_path) if topics_path else Path("config/topics.yaml")
+    if provider_factory is None:
+        from policyforge.llm.base import get_provider as provider_factory
 
-    # Each of the three is optional, and each absence is a supported state
-    # rather than an error: no registry, no synced corpus and no model all
-    # still answer. `contextlib.suppress` rather than try/except/pass
-    # because ruff is right that it reads better, and the comment carries
-    # the part suppression cannot say — which is *why* the failure is fine.
-    topics = []
-    with suppress(FileNotFoundError, TopicRegistryError):
-        topics = load_topics(topics_path)
-
-    corpus = None
-    with suppress(FileNotFoundError, ValueError):
-        corpus = load_corpus(corpus_dir)
-
-    # Running without a model is supported: retrieval is offline, so a
-    # question still returns the passages it would have answered from, and a
-    # missing API key costs the prose rather than the search.
-    provider = None
-    with suppress(FileNotFoundError, KeyError, ValueError, RuntimeError):
-        from policyforge.llm.base import get_provider
-
-        provider = get_provider(config)
-
-    configured_content = (config.get("zardoz") or {}).get("content_dir") or ""
-    return ShellState(
-        topics=topics,
-        corpus=corpus,
-        corpus_dir=corpus_dir,
-        provider=provider,
-        config=config,
-        parameters_path=Path("config/parameters.yaml"),
-        history_dir=Path("output/.history"),
-        content_dir=Path(configured_content) if configured_content else None,
-        plain=True,
+    session = open_session(
+        topics_path=Path(topics_path) if topics_path else Path("config/topics.yaml"),
+        corpus_dir=Path(corpus_dir) if corpus_dir else DEFAULT_CORPUS_DIR,
+        config=config or {},
+        provider_factory=provider_factory,
         # Every model call this server causes is recorded as `mcp/<session>`
-        # rather than `zardoz/<session>`. Six of the seven tools call no
-        # model at all; `ask_documents` does, and an agent can call it in a
-        # loop without anyone typing. The ledger has to be able to say which
-        # of those a cost came from.
+        # rather than `zardoz/<session>`. Six of the seven tools call no model
+        # at all; `ask_documents` does, and an agent can call it in a loop
+        # without anyone typing. The ledger has to be able to say which of
+        # those a cost came from.
         surface="mcp",
+        plain=True,
     )
+    return session.state
+
+
+def with_startup_notes(report: str, state) -> str:
+    """`report`, followed by anything that could not be loaded at startup.
+
+    Appended to every tool's result rather than only to `topics` and `corpus`,
+    because the misdiagnosis this prevents shows up in the analyses: with a
+    broken registry, `coverage` says "No topic registry loaded", and an agent
+    that called `coverage` first would never otherwise learn the registry is
+    there and unreadable. The report itself is untouched — the notes follow
+    it, marked as being about the server rather than about the question.
+    """
+    notes = [note.strip() for note in getattr(state, "startup_notes", []) or []]
+    if not notes:
+        return report
+    listed = "\n".join(f"  {note}" for note in notes)
+    return f"{report}\n\nWhen this PolicyForge server started:\n{listed}"
 
 
 def call_tool(state, name: str, arguments: dict) -> str:
@@ -264,17 +250,17 @@ def call_tool(state, name: str, arguments: dict) -> str:
         # what applies the refusal rendering, the citation checks and the
         # conversation context, and a tool that skipped them would be a
         # second, laxer answering path.
-        return dispatch(question, state)
+        return with_startup_notes(dispatch(question, state), state)
 
     if name not in _DISPATCH:
         return f"No such tool: {name}"
 
     kind, target, argument = _DISPATCH[name]
     if kind == "command":
-        return dispatch(target, state)
+        return with_startup_notes(dispatch(target, state), state)
 
     value = str(arguments.get(argument, "")).strip() if argument else ""
-    return run_skill(target, state, value.split() if value else [])
+    return with_startup_notes(run_skill(target, state, value.split() if value else []), state)
 
 
 def serve(config: dict | None = None, *, corpus_dir=None, topics_path=None) -> None:
@@ -293,6 +279,12 @@ def serve(config: dict | None = None, *, corpus_dir=None, topics_path=None) -> N
     import anyio
 
     state = build_state(config, corpus_dir=corpus_dir, topics_path=topics_path)
+    # stdout is the protocol channel; stderr is where an MCP client keeps the
+    # server's log, so that is where the operator who configured it looks.
+    import sys
+
+    for note in state.startup_notes:
+        print(f"policyforge mcp:{note}", file=sys.stderr)
     server = Server("policyforge")
 
     @server.list_tools()

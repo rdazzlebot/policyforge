@@ -106,6 +106,12 @@ class ShellState:
     #: answerable question, and it is the field that makes an unexpected
     #: line on a bill attributable to a tool rather than to a colleague.
     surface: str = "zardoz"
+    #: What could not be loaded when this session opened, worded as the
+    #: terminal prints it under its banner. The shell has already shown these
+    #: by the time it reads a line; a surface with no banner — the MCP server —
+    #: reports them itself, so an agent is told why an answer is empty rather
+    #: than left to guess. See zardoz/startup.py.
+    startup_notes: list[str] = field(default_factory=list)
 
     # Everything below is what the analyses need. Half the questions people
     # have about a compliance programme are not answerable from any

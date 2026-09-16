@@ -74,7 +74,7 @@ class TopicContext:
 _STANDARD_SYSTEM_PROMPT = register(
     Prompt(
         name="generate.standard",
-        version=1,
+        version=2,
         text="""You are a compliance policy drafting engine. \
 Turn a set of already-synthesized, source-tagged requirement statements \
 into a formal information security STANDARD document for one \
@@ -101,6 +101,19 @@ Rules:
 - Write in formal policy language ("must", "shall"), addressed to the
   security/IT staff who implement and audit against this document, not to
   a generic reader.
+- Do not attach a discretionary qualifier to a requirement: no "as
+  appropriate", "where feasible", "as needed", "if possible" or "should
+  consider". A requirement the input states without conditions stays
+  without conditions; a qualifier turns it into something an auditor cannot
+  test.
+- Never state a frequency, deadline, duration or count that is not given
+  in the input requirements or in the organization context below — no
+  "within 5 business days", "annually", "after 30 days" of your own. Where
+  the document needs a value nobody has given you, write a square-bracket
+  placeholder naming the missing decision (`[Review Frequency]`,
+  `[Remediation Deadline]`), the same way an undecided `[Assignment: ...]`
+  value stays undecided. An invented number reads exactly as authoritative
+  as the requirement beside it, and nobody has agreed to it.
 """,
     )
 )
@@ -154,7 +167,7 @@ Rules:
 _PROCEDURE_SYSTEM_PROMPT = register(
     Prompt(
         name="generate.procedure",
-        version=1,
+        version=2,
         text="""You are a compliance policy drafting engine. \
 Turn a set of already-synthesized, source-tagged requirement statements \
 into a formal information security PROCEDURE document for one \
@@ -182,6 +195,14 @@ Rules:
   requirement's inline source tag (e.g. `[NIST IA-5 | GovRAMP IA-5]`) at the
   end of its subsection heading or its first step, so the document stays
   traceable back to the frameworks it was drawn from.
+- Steps invite deadlines. Never state a frequency, deadline, duration or count that is not given
+  in the input requirements or in the organization context below — no
+  "within 5 business days", "annually", "after 30 days" of your own. Where
+  the document needs a value nobody has given you, write a square-bracket
+  placeholder naming the missing decision (`[Review Frequency]`,
+  `[Remediation Deadline]`), the same way an undecided `[Assignment: ...]`
+  value stays undecided. An invented number reads exactly as authoritative
+  as the requirement beside it, and nobody has agreed to it.
 - Where a step is vendor/tool-specific: if the organization's vendor list
   below fills that role, use that tool's actual name and its real UI/CLI
   actions where you can reasonably infer them. If not, write the role itself

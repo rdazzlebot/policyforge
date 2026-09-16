@@ -133,7 +133,7 @@ llm:
     organization-internal: self-hosted   # our own drafts stay inside
 ```
 
-**It fails closed in three places**, and each is deliberate:
+**It fails closed in four places**, and each is deliberate:
 
 - A provider nobody can classify is treated as **third-party**. The expensive
   mistake is assuming a model is local when it is not.
@@ -141,6 +141,11 @@ llm:
 - A ceiling naming a class that does not exist **raises** rather than falling
   back to a default. A typo that silently restores the default permission is
   how a control stops being one.
+- A config file that exists but **fails to parse raises**, rather than
+  running as if there were no config. Only a *missing* file is treated as
+  empty. Otherwise a syntax error would silently discard the ceilings and
+  provider classification the operator wrote. Pinned by
+  [`tests/test_cli_seam.py`](../tests/test_cli_seam.py).
 
 Provider class is normally *inferred* from the endpoint — a hosted API is
 third-party, a loopback `base_url` is local, an RFC 1918 address is

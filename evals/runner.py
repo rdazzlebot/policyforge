@@ -566,6 +566,200 @@ def run_conversation(case: dict, provider, corpora: dict | None = None) -> Outco
     return Outcome(True, output=f"{len(case['turns'])} turns")
 
 
+def _section(document: str, name: str) -> str:
+    """The body of one `## ` section, up to the next one."""
+    lines, inside = [], False
+    for line in document.splitlines():
+        if line.startswith("## "):
+            inside = line[3:].strip().lower().startswith(name.lower())
+            continue
+        if inside:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+#: A NIST control identifier in running text. A Policy is read by people who
+#: will never see one, so any at all is the tier failing at its one job.
+_CONTROL_ID_RE = re.compile(r"\b[A-Z]{2}-\d+(?:\(\d+\))?\b")
+
+
+def _tags(text: str) -> set[str]:
+    """The control references a text cites: one per framework and identifier.
+
+    References rather than tag strings, for two reasons a live run found. A
+    tag inside a markdown table has its pipe escaped — `[NIST AC-2 \\| HIPAA
+    164.308]` — which is correct markdown and a different string. And a
+    document that merges two requirements writes one tag naming both
+    controls, `[NIST AC-2 | NIST AC-6]`, which cites nothing its synthesis
+    did not. Compared as strings, both read as fabricated citations, and the
+    grader failed documents for being right.
+
+    Splitting also makes the loss check stricter where it counts: a merged
+    tag that quietly drops one of the two controls it replaced is a missing
+    reference, which a string comparison would have called a new tag.
+    """
+    from policyforge.edit.apply import _SOURCE_TAG_RE
+
+    references: set[str] = set()
+    for tag in _SOURCE_TAG_RE.findall(text):
+        for part in tag.strip("[]").replace("\\", "").split("|"):
+            reference = " ".join(part.split())
+            if reference:
+                references.add(reference)
+    return references
+
+
+def _cited_blocks(document: str) -> list[str]:
+    """The heading-to-heading blocks that carry a source tag.
+
+    The unit for "states an interval the synthesis does not". A whole
+    document is the wrong unit: a Standard that ends "this Standard is
+    reviewed annually" has invented nothing, and a check that flagged it
+    would fire on every well-formed document. A sentence is the wrong unit
+    too — a Procedure carries its tag on the subsection heading, so the step
+    inventing a cadence underneath it is never itself cited. The block
+    between headings is what a requirement and its steps actually occupy.
+    """
+    from policyforge.edit.apply import _SOURCE_TAG_RE
+
+    blocks: list[list[str]] = [[]]
+    for line in document.splitlines():
+        blocks.append([line]) if line.startswith("#") else blocks[-1].append(line)
+    joined = ["\n".join(block) for block in blocks]
+    return [block for block in joined if _SOURCE_TAG_RE.search(block)]
+
+
+def _heading_name(line: str) -> str:
+    """A `## ` heading's name, without the numbering documents often carry."""
+    return re.sub(r"^\d+[.)]\s*", "", line[3:].strip()).lower()
+
+
+def run_generation(case: dict, provider, corpora: dict | None = None) -> Outcome:
+    """Does a drafted document keep what its synthesis said, and only that?
+
+    Graded by the checks the project already runs on real documents, which
+    is the point: `content/check.py`'s citation comparison, `deontic`'s
+    binding share and weakened citations, the answering path's
+    `ungrounded_values`, and each tier's own structural rules from its
+    prompt. The ones that matter most are the ones a reader cannot see — a
+    dropped citation, "shall" become "should consider", an interval the
+    synthesis never stated — because the prose around them reads fine.
+    """
+    from policyforge.content.deontic import binding_share, weakened_citations
+    from policyforge.generate.policy_writer import (
+        OrgContext,
+        generate_policy,
+        generate_procedure,
+        generate_standard,
+    )
+    from policyforge.zardoz.answer import ungrounded_values
+
+    synthesis, tier = case["synthesis"], case["tier"]
+    org = OrgContext(
+        name=case.get("org", "Acme Health"),
+        industry=case.get("industry", "Healthcare"),
+        vendors=list(case.get("vendors") or []),
+    )
+    standard_title = case.get("standard_title", "Access Control Standard")
+    if tier == "standard":
+        document = generate_standard(synthesis, org, provider)
+    elif tier == "policy":
+        document = generate_policy(synthesis, org, provider, standard_title=standard_title)
+    elif tier == "procedure":
+        document = generate_procedure(synthesis, org, provider, standard_title=standard_title)
+    else:
+        raise ValueError(f"unknown tier {tier!r}")
+
+    expected = _tags(synthesis)
+    present = _tags(document)
+    if tier != "policy":
+        missing = sorted(expected - present)
+        if missing:
+            return Outcome(False, f"dropped citations {missing}", document)
+    invented = sorted(present - expected)
+    if invented:
+        return Outcome(False, f"cites what the synthesis does not {invented}", document)
+    if tier == "policy":
+        cited = present or set(_CONTROL_ID_RE.findall(document))
+        if cited:
+            return Outcome(False, f"a Policy names controls {sorted(cited)}", document)
+
+    # Opt-in, because a weakened citation is not always a weakening. The
+    # synthesis prohibits shared accounts "except where approved in
+    # writing", and a document writing that exception as "an exception may
+    # be made where..." is being faithful, not permissive. The binding share
+    # below is the measure of "shall" drifting to "should"; this catches a
+    # document where it has gone further than a case will allow.
+    allowed_weak = case.get("max_weakened")
+    if allowed_weak is not None:
+        weakened = weakened_citations(document)
+        if len(weakened) > allowed_weak:
+            return Outcome(
+                False,
+                f"{len(weakened)} cited requirement(s) do not bind, over {allowed_weak}: "
+                f"{weakened[0].text[:90]!r}",
+                document,
+            )
+    floor = case.get("min_binding_share")
+    if floor is not None:
+        binding, modal = binding_share(document)
+        if modal and binding / modal < floor:
+            return Outcome(False, f"binding share {binding}/{modal} below {floor:.0%}", document)
+
+    # Over the blocks that carry a citation, not the whole document, and
+    # casefolded because the check casefolds each value it finds and
+    # compares it against the haystack as given — a document writing
+    # "Quarterly" at the start of a sentence would otherwise read as an
+    # invention of the word its synthesis states in lower case.
+    ungrounded = sorted(
+        {
+            value
+            for block in _cited_blocks(document)
+            for value in ungrounded_values(block, synthesis.casefold())
+        }
+    )
+    if ungrounded:
+        return Outcome(
+            False,
+            f"a cited requirement states intervals the synthesis does not {ungrounded}",
+            document,
+        )
+
+    matched = [p for p in case.get("forbid_patterns") or [] if re.search(p, document, re.I)]
+    if matched:
+        return Outcome(False, f"matches forbidden pattern {matched[0]!r}", document)
+
+    headings = [_heading_name(line) for line in document.splitlines() if line.startswith("## ")]
+    positions = []
+    for name in case.get("sections") or []:
+        index = next((i for i, h in enumerate(headings) if h.startswith(name.lower())), None)
+        if index is None:
+            return Outcome(False, f"no '## {name}' section", document)
+        positions.append(index)
+    if positions != sorted(positions):
+        return Outcome(False, "sections are out of the order the tier requires", document)
+
+    most = case.get("max_policy_bullets")
+    if most is not None:
+        bullets = [
+            line
+            for line in _section(document, "Policy Statements").splitlines()
+            if line.lstrip().startswith(("- ", "* ", "+ "))
+        ]
+        if len(bullets) > most:
+            return Outcome(
+                False, f"{len(bullets)} policy statements, compressed to at most {most}", document
+            )
+
+    fewest = case.get("min_subsections")
+    if fewest is not None:
+        subsections = sum(1 for line in document.splitlines() if line.startswith("### "))
+        if subsections < fewest:
+            return Outcome(False, f"{subsections} step subsection(s), expected {fewest}+", document)
+
+    return grade_text(document, case)
+
+
 SUITES = {
     "routing": run_routing,
     "resolution": run_resolution,
@@ -586,6 +780,11 @@ SUITES = {
     # run grading both cannot say which of them failed.
     "edit_plan": run_edit_plan,
     "edit_apply": run_edit_apply,
+    # The drafting prompts, graded by the checks that already run on real
+    # documents. The largest gap the review found: every prompt that writes
+    # policy was unmeasured, and a model that routes perfectly can still
+    # turn "shall" into "should consider".
+    "generation": run_generation,
 }
 
 

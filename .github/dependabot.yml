@@ -13,6 +13,18 @@ updates:
     cooldown:
       default-days: 7
 
+  # The hashed lock CI installs from (requirements/ci.txt). Without this entry
+  # the lock would pin today's versions forever and the CVE alerts above
+  # would have nothing to open a pull request against. Same cooldown, which
+  # the lock now makes meaningful: CI installs what Dependabot proposed and a
+  # person merged, not whatever was published an hour ago.
+  - package-ecosystem: "pip"
+    directory: "/requirements"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+
   # GitHub Actions used in ci.yml. Actions here are pinned to commit SHAs
   # (see ci.yml) rather than mutable version tags, for supply-chain
   # hardening — Dependabot still tracks SHA-pinned actions and opens PRs

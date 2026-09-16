@@ -37,17 +37,18 @@ ______________________________________________________________________
 
 ### What each suite tests
 
-| Suite               | Asks                                                                            |
-| ------------------- | ------------------------------------------------------------------------------- |
-| `routing`           | does a question reach the analysis that can answer it                           |
-| `resolution`        | does a follow-up become the question it obviously means                         |
-| `expansion`         | does query expansion name the document's vocabulary without inventing facts     |
-| `answering`         | grounded prose with citations, and refusal when the passages do not support one |
-| `answer_paraphrase` | the answering cases in wordings their author did not choose                     |
-| `conversation`      | multi-turn, driven through the real shell                                       |
-| `paraphrase`        | 66 generated rewordings of the routing cases                                    |
-| `edit_plan`         | does the Confluence edit planner plan the operator's change and only that       |
-| `edit_apply`        | does the rewrite make exactly the planned change, graded by `check_edit`        |
+| Suite               | Asks                                                                                     |
+| ------------------- | ---------------------------------------------------------------------------------------- |
+| `routing`           | does a question reach the analysis that can answer it                                    |
+| `resolution`        | does a follow-up become the question it obviously means                                  |
+| `expansion`         | does query expansion name the document's vocabulary without inventing facts              |
+| `answering`         | grounded prose with citations, and refusal when the passages do not support one          |
+| `answer_paraphrase` | the answering cases in wordings their author did not choose                              |
+| `conversation`      | multi-turn, driven through the real shell                                                |
+| `paraphrase`        | 66 generated rewordings of the routing cases                                             |
+| `edit_plan`         | does the Confluence edit planner plan the operator's change and only that                |
+| `edit_apply`        | does the rewrite make exactly the planned change, graded by `check_edit`                 |
+| `generation`        | does a drafted Standard, Policy or Procedure keep what its synthesis said, and only that |
 
 ______________________________________________________________________
 
@@ -327,6 +328,56 @@ behave, and it still covers the other route the review named, a passage
 carrying the token. The question is now an answering case, which makes the
 suite 27 cases and totals after this epoch not comparable with the ones
 above.
+
+### 9. The drafting prompts, measured for the first time — 2026-09-15
+
+First epoch for `generation`, and the largest gap the review found: every
+prompt that actually writes policy was unmeasured. Six cases over one fixed
+synthesis — a compound citation, an enhancement, a placeholder role, and an
+undecided `[Assignment: ...]` value — so a failure attributes to the tier's
+prompt rather than to what it was given.
+
+`--repeat 3`:
+
+| Model                        | cases always pass | runs        | cost    |
+| ---------------------------- | ----------------- | ----------- | ------- |
+| `z-ai/glm-5.3-flash`         | 4/6               | 16/18 (89%) | $0.0542 |
+| `deepseek/deepseek-v4-flash` | 2/6               | 9/18 (50%)  | $0.0036 |
+
+**The two fail differently, and that is the result.** `deepseek-v4-flash`
+invents intervals inside cited requirement blocks — `annual` and `annually`
+in Standards on three separate cases, and across runs a Procedure carrying
+`1 business day`, `2 hours`, `15 business days`, `30 days` and `monthly`.
+The synthesis states none of them, and each sits under a heading carrying a
+framework tag, so it reads as a requirement traceable to a control that does
+not say it. It also ignored a vendor it was given (`Okta`) in one run of
+three, while correctly naming none it was not given. `glm-5.3-flash` does
+not invent intervals; it drops citations. One run laid the Standard out as a
+table and lost all seven references at once, and its Procedure lost
+`NIST AC-7` — the one requirement whose value is undecided.
+
+**Neither is a verdict on the model.** An earlier run of the same code put
+`glm-5.3-flash` at 4/6 with 14/18 runs, failing on invented intervals and the
+phrase "as appropriate" rather than on citations. The case count held and
+which cases failed did not, which is what `--repeat` exists to show.
+
+**The graders were wrong five times before the numbers meant anything**, and
+every one of them failed a *correct* document. A citation inside a markdown
+table has its pipe escaped (`\|`) and read as a fabricated tag. Documents
+number their headings, so `## 2. Scope` did not match a required `Scope`
+section. A Standard's own "this Standard is reviewed annually" is furniture
+in an uncited section, and checking the whole document flagged every
+well-formed one — hence the block-scoped check above. The synthesis
+prohibits shared accounts "except where approved in writing", so a document
+writing that exception with "may" is being faithful, not permissive. And a
+document that merges two requirements cites both controls in one tag, which
+as a string looked like a citation the synthesis never carried. Each is now
+a unit test in `tests/test_eval_harness.py`. A grader that fails correct
+behaviour produces a number that looks like a model getting worse.
+
+Cost is not close: $0.00285 per call against $0.00019, because the stronger
+model writes longer documents. Against a suite this small that is cents;
+against a document set it is the difference worth knowing before choosing.
 
 ______________________________________________________________________
 

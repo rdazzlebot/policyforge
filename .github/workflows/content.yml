@@ -43,7 +43,10 @@ jobs:
       - name: Install project
         run: |
           python -m pip install --upgrade pip setuptools
-          pip install -e .
+          # Hashed, as in ci.yml. The publish job holds the Confluence token,
+          # which makes it the job where a fresh resolve matters most.
+          pip install --require-hashes -r requirements/ci.txt
+          pip install --no-deps -e .
 
       # No credentials, no network, no LLM. Errors fail the build: two files
       # claiming one page, a link to a document that isn't there, a
@@ -71,7 +74,10 @@ jobs:
       - name: Install project
         run: |
           python -m pip install --upgrade pip setuptools
-          pip install -e .
+          # Hashed, as in ci.yml. The publish job holds the Confluence token,
+          # which makes it the job where a fresh resolve matters most.
+          pip install --require-hashes -r requirements/ci.txt
+          pip install --no-deps -e .
 
       # Always plan first, into the job log. When a publish does something
       # surprising, the plan is the record of what it believed it was doing,

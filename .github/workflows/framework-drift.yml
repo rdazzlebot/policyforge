@@ -40,7 +40,9 @@ jobs:
       - name: Install project
         run: |
           python -m pip install --upgrade pip setuptools
-          pip install -e .
+          # Hashed, as in ci.yml.
+          pip install --require-hashes -r requirements/ci.txt
+          pip install --no-deps -e .
 
       # Overwrites the catalog in the working copy. Git still holds the
       # version that was committed, which is what `drift` compares against.

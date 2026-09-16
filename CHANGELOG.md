@@ -396,10 +396,19 @@ is resolved, a digest of it — never its text.
 block, unlike the other workflows, so it ran with the repository default.
 It now declares `contents: read` and `pull-requests: read`, and gitleaks'
 PR comments — the only thing that needed write access — are off; a leak
-still fails the job. The other half of that finding, a hashed lockfile
-installed with `--require-hashes`, is not done: resolving one for CI's
-Linux and Python 3.12 from here needs a cross-platform resolver this
-repository does not yet use.
+still fails the job.
+
+**CI installs from a hashed lock.** Every workflow resolved the newest release
+of every dependency at run time, so Dependabot's seven-day cooldown
+constrained nothing — including the publish job, which holds the Confluence
+token. `requirements/ci.txt` is now a universal lock with hashes, resolved
+by `uv pip compile --universal --python-version 3.12 --generate-hashes` so it
+is correct for CI's Linux and Python 3.12 whatever machine regenerates it;
+the command is in its header. All three workflows install it with
+`--require-hashes` and then the checkout with `--no-deps`, and Dependabot
+watches `requirements/` so the lock does not freeze. What is not hashed:
+the `pip install --upgrade pip setuptools` that precedes it, and the
+setuptools a build-isolated editable install fetches.
 
 ### A publish no longer destroys an edit made on the wiki
 
@@ -423,10 +432,46 @@ to go green over the damage. `--force` overwrites anyway. The edit path's
 `update_page_body` stamps its writes too, so an approved edit is not later
 mistaken for a hand one.
 
-**Pages published before this change carry no stamp.** Until each is pulled
-once or published with `--force`, a publish reports it as moved rather than
-overwriting it — the safe direction, but it means the first CI run after
-upgrading will fail on every existing page.
+**Pages published before this change carry no stamp**, so they are adopted
+by content rather than by history: a page whose body is exactly what the
+repository would publish — compared after collapsing the whitespace between
+tags, since Confluence may reflow its markup on save — is published and
+stamped, because overwriting it destroys nothing. Any other difference counts
+as an edit and the page is reported as moved until it is pulled once or
+published with `--force`.
+
+### The prompts that write policy are graded
+
+The largest gap the review found: `evals/` covered Zardoz's four prompts and
+nothing that writes a document. A model that routes perfectly can still turn
+"shall" into "should consider", and nothing would have said so.
+
+A `generation` suite drafts a Standard, a Policy and a Procedure from one
+fixed synthesis and grades them with the checks that already run on real
+documents — the source tags a synthesis carried, `deontic`'s binding share,
+`ungrounded_values` for an interval nobody stated, and each tier's own rules
+from its prompt: a Policy that names a control has failed at its one job, a
+Procedure needs a subsection per requirement, and a document may not name a
+vendor the configuration never supplied. Citations are compared as
+*references* rather than as tag strings, so a merged `[NIST AC-2 | NIST AC-6(5)]` is the two controls it names and a table's escaped pipe is not a
+new citation.
+
+**Measured on two models, which fail differently.** `deepseek-v4-flash`
+invents intervals inside cited requirements — `annually` in Standards,
+`2 hours` and `15 business days` in a Procedure — none of which its
+synthesis states, each under a heading carrying a framework tag. It passed
+2 of 6 cases. `glm-5.3-flash` invents no intervals and drops citations
+instead, once losing all seven references by rendering the Standard as a
+table; it passed 4 of 6. `MEASUREMENTS.md` epoch 9 has the numbers and the
+rates behind them.
+
+**The graders were wrong five times first**, each failing a correct
+document: an escaped pipe in a table, a numbered heading, a Standard's own
+"reviewed annually" furniture, a faithful "may" exception, and a merged tag
+citing two controls. Every one is now a unit test, because a grader that
+fails correct behaviour produces a number that looks like a model getting
+worse — the same failure the harness refuses to accept from a model-judged
+eval.
 
 ## 1.0.0
 

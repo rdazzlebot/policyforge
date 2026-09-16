@@ -1667,12 +1667,16 @@ question.
 
 ## Grading the prompts
 
-Four things in Zardoz are prompts — answering, follow-up resolution,
-paraphrase expansion, skill routing — and a prompt cannot be tested against
-a fixture. Whether the answerer refuses when the passages don't support a
-claim, whether the router picks the right analysis, whether the rewriter
-invents a detail: those are properties of a model's behaviour, and the only
-way to know them is to ask the model.
+A prompt cannot be tested against a fixture. Four of them are in Zardoz —
+answering, follow-up resolution, paraphrase expansion, skill routing. Three
+more write or change documents: the Confluence edit planner and its executor
+(`edit_plan`, `edit_apply`), and the drafting prompts behind `generate`
+(`generation`), which were the largest unmeasured surface here — every
+prompt that actually writes policy. Whether the answerer refuses when the
+passages don't support a claim, whether a page can talk the editor into a
+change nobody asked for, whether a drafted Standard keeps every citation its
+synthesis carried and every "shall" it was given: those are properties of a
+model's behaviour, and the only way to know them is to ask the model.
 
 ```
 python scripts/eval_zardoz.py --repeat 3
@@ -1711,9 +1715,10 @@ A case right seven times in eight is reported as **FLAKY**, not as passing,
 and flaky exits non-zero. That distinction is the whole point.
 
 **Grading is deterministic.** No model judges another model's output —
-every check is a substring, a citation marker, a refusal sentinel, or the
-project's own `check_answer`, the same integrity checks that run in
-production. A grader that needed a model would have the failure mode it
+every check is a substring, a citation marker, a refusal sentinel, or one of
+the project's own checks: `check_answer` on an answer, `check_edit` on a
+revision, `deontic` on whether a cited requirement still binds, and the
+source tags a synthesis carried. The same checks that run in production. A grader that needed a model would have the failure mode it
 exists to detect. The grading logic itself is unit-tested offline in
 `tests/test_eval_harness.py`, because a harness whose scoring is wrong is
 worse than none: it produces numbers that look like evidence.
@@ -2045,7 +2050,12 @@ scripts/
 1. `pip install --upgrade pip setuptools` — a fresh venv's own pip/setuptools are
    often a version behind, which otherwise shows up as a confusing false-alarm-feeling
    failure the first time you run `pip-audit` (see "Running the quality checks" below).
-1. `pip install -e ".[dev]"`
+1. `pip install -e ".[dev]"` — for local work. CI installs from
+   `requirements/ci.txt` instead, a hashed lock resolved for its Linux and
+   Python 3.12 rather than for whatever the machine running it has. Change a
+   dependency in `pyproject.toml` and the lock needs regenerating with the
+   `uv pip compile` command written in its header; Dependabot bumps it
+   otherwise.
 1. `cp config/config.example.yaml config/config.yaml` and fill in your model choice
    and the *name* of the environment variable holding your API key (not the key itself).
 1. `export ANTHROPIC_API_KEY=sk-...` (or whatever env var name you configured)

@@ -398,11 +398,13 @@ def test_a_pulled_page_can_be_published_straight_back(tmp_path, monkeypatch):
 # S-05: an edit made on the wiki is not destroyed by the next publish
 # --------------------------------------------------------------------------
 
-#: Somebody tidied the page in Confluence after this tool last wrote it.
+#: Somebody tidied the page in Confluence after this tool last wrote it. The
+#: body differs from what the repository would publish, as a real edit does
+#: — otherwise the page is unchanged and publishing it destroys nothing.
 HAND_EDITED = FakePage(
     id="id-acs",
     title="Access Control Standard",
-    storage_body=PLAIN_PAGE,
+    storage_body="<h1>Access Control Standard</h1><p>Accounts are reviewed every quarter.</p>",
     version=5,
     version_message="Tidied the wording",
 )
@@ -542,3 +544,70 @@ def test_the_publish_command_fails_the_run_when_a_page_has_moved(tmp_path, monke
     assert result.exit_code != 0
     assert "Changed on the wiki" in result.output
     assert "Backup Standard" in result.output
+
+
+# ---- adopting pages published before the stamp existed --------------------
+
+
+def _as_published(root, title="Access Control Standard"):
+    """The storage this tool would publish for the document titled `title`."""
+    from policyforge.content.tree import load_content_tree
+    from policyforge.export.confluence_exporter import markdown_to_confluence
+
+    documents, _ = load_content_tree(root)
+    return markdown_to_confluence(next(d for d in documents if d.page_title == title).body)
+
+
+def _legacy(storage_body):
+    """A page this tool published before it stamped its writes."""
+    return FakePage(
+        id="id-acs",
+        title="Access Control Standard",
+        storage_body=storage_body,
+        version=2,
+        version_message="",
+    )
+
+
+def test_an_unchanged_page_from_before_the_stamp_is_adopted(tmp_path, monkeypatch):
+    """Otherwise the first run after upgrading reports every existing page
+    as moved, though overwriting one that already says what the repository
+    says destroys nothing."""
+    _write(tmp_path, "standards/a.md", _bound("Access Control Standard"))
+    exported = []
+    _patch_confluence(
+        monkeypatch,
+        pages={"Access Control Standard": _legacy(_as_published(tmp_path))},
+        exported=exported,
+    )
+
+    report = publish_tree(tmp_path, host="https://x", dry_run=False)
+
+    assert [r.action for r in report.results] == [UPDATED]
+    assert "adopted" in report.format_report()
+    assert len(exported) == 1, "published, and so stamped from here on"
+
+
+def test_adoption_tolerates_confluence_reflowing_the_markup(tmp_path, monkeypatch):
+    _write(tmp_path, "standards/a.md", _bound("Access Control Standard"))
+    reflowed = _as_published(tmp_path).replace("><", ">\n    <").replace("\n", "\n    ")
+    _patch_confluence(monkeypatch, pages={"Access Control Standard": _legacy(reflowed)})
+
+    report = publish_tree(tmp_path, host="https://x")
+
+    assert [r.action for r in report.results] == [UPDATED]
+
+
+def test_an_unstamped_page_that_differs_is_still_moved(tmp_path, monkeypatch):
+    """Adoption is by content: any real difference is an edit somebody made."""
+    _write(tmp_path, "standards/a.md", _bound("Access Control Standard"))
+    edited = _as_published(tmp_path).replace("quarterly", "monthly")
+    exported = []
+    _patch_confluence(
+        monkeypatch, pages={"Access Control Standard": _legacy(edited)}, exported=exported
+    )
+
+    report = publish_tree(tmp_path, host="https://x", dry_run=False)
+
+    assert [r.action for r in report.results] == [MOVED]
+    assert exported == []

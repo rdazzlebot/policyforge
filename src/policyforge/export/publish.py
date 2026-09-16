@@ -25,10 +25,11 @@ Two guards stand between a merge and a live page:
   so it always won: an edit somebody made on the wiki last week was
   destroyed the next time an unrelated document merged, and nothing said
   so. Now a page is overwritten only when its latest version was written by
-  this tool, or is the version a person has already pulled into the
-  repository. Anything else has *moved*, and a moved page is reported on its
-  own and fails the run — so the pull-and-review loop is triggered rather
-  than bypassed. `--force` is there for the decision to overwrite anyway.
+  this tool, is the version a person has already pulled into the
+  repository, or already says exactly what the repository would publish.
+  Anything else has *moved*, and a moved page is reported on its own and
+  fails the run — so the pull-and-review loop is triggered rather than
+  bypassed. `--force` is there for the decision to overwrite anyway.
 
 The obvious design — store the page version in frontmatter at publish time
 and compare — does not work from CI. A publish job runs on a checkout and
@@ -39,6 +40,7 @@ version message this tool stamps on its own writes needs no write-back.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -49,6 +51,9 @@ SKIPPED = "skipped"
 #: repository has not heard from. Kept apart from SKIPPED because it asks
 #: for a different action: not "read the reason", but "pull and review".
 MOVED = "moved"
+
+#: The reason attached to a page taken over from an unstamped publish.
+ADOPTED = "adopted: unchanged since a publish from before pages were stamped"
 
 
 @dataclass
@@ -95,7 +100,8 @@ class PublishReport:
         ]
         for result in self.published:
             mark = "+" if result.action == CREATED else "~"
-            lines.append(f"  {mark} {result.path} -> {result.space}/{result.title}")
+            note = f" ({result.reason})" if result.reason else ""
+            lines.append(f"  {mark} {result.path} -> {result.space}/{result.title}{note}")
             if result.url:
                 lines.append(f"      {result.url}")
 
@@ -155,6 +161,30 @@ def moved_since_last_publish(doc, live) -> str:
     )
 
 
+def _storage_key(storage: str) -> str:
+    """Storage markup with the whitespace between tags collapsed.
+
+    Confluence may reflow storage format when it saves a page, and a
+    difference in the gaps between elements is not an edit anybody made.
+    Nothing else is normalized: any other difference counts as an edit,
+    which is the direction to be wrong in.
+    """
+    return re.sub(r">\s+<", "><", storage.strip())
+
+
+def unchanged_on_the_wiki(doc, live) -> bool:
+    """Whether the live page already says exactly what `doc` would publish.
+
+    Overwriting such a page destroys nothing, whoever wrote its latest
+    version. This is what lets a page published before the stamp existed be
+    adopted — published, and so stamped and tracked from then on — instead
+    of being reported as moved on the first run after upgrading.
+    """
+    from policyforge.export.confluence_exporter import markdown_to_confluence
+
+    return _storage_key(markdown_to_confluence(doc.body)) == _storage_key(live.storage_body or "")
+
+
 def publish_tree(
     root: Path,
     *,
@@ -212,8 +242,13 @@ def publish_tree(
                 )
                 continue
 
+        reason = ""
         if live is not None and not force:
             moved = moved_since_last_publish(doc, live)
+            if moved and unchanged_on_the_wiki(doc, live):
+                # Nothing to lose: the page already says what the repository
+                # says. Publishing it stamps it, and it is tracked from here.
+                moved, reason = "", ADOPTED
             if moved:
                 report.results.append(
                     PublishResult(
@@ -238,6 +273,7 @@ def publish_tree(
                 space=doc.space,
                 title=doc.page_title,
                 action=action,
+                reason=reason,
                 url=url or (live.webui_url if live else ""),
             )
         )

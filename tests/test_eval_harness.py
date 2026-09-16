@@ -234,6 +234,7 @@ def test_the_shipped_cases_load_and_are_well_formed():
         "conversation",
         "edit_plan",
         "edit_apply",
+        "generation",
     } <= set(cases)
     assert set(cases) <= {
         "routing",
@@ -245,6 +246,7 @@ def test_the_shipped_cases_load_and_are_well_formed():
         "answer_paraphrase",
         "edit_plan",
         "edit_apply",
+        "generation",
     }
     for suite, rows in cases.items():
         assert rows, f"{suite} has no cases"
@@ -268,6 +270,12 @@ def test_the_shipped_cases_load_and_are_well_formed():
                 # first, and grade two stochastic stages at once.
                 assert case.get("document"), f"{case['name']} edits nothing"
                 assert case.get("plan", {}).get("steps"), f"{case['name']} applies nothing"
+            elif suite == "generation":
+                # A synthesis to draft from and the tier to draft it at. The
+                # tier decides which rules apply, so a case without one
+                # would be graded by whichever branch happened to run.
+                assert case.get("synthesis"), f"{case['name']} drafts from nothing"
+                assert case.get("tier") in {"standard", "policy", "procedure"}, case["name"]
             else:
                 assert case.get("question"), f"{case.get('name')} asks nothing"
 
@@ -606,6 +614,8 @@ def test_every_case_names_a_corpus_that_exists():
                     # retrieving from a set, so they carry a document, not a
                     # corpus.
                     or "document" in case
+                    # Generation drafts from a synthesis, which is neither.
+                    or "synthesis" in case
                     or suite
                     in {
                         "routing",
@@ -842,3 +852,161 @@ def test_edit_plan_fails_a_planner_that_refused_the_real_instruction():
     result = run_case("edit_plan", case, Scripted(_plan_reply([], ["Page looks unsafe."])))
 
     assert result.rate == 0.0
+
+
+# --------------------------------------------------------------------------
+# The generation suite
+#
+# Half of these pin a grader that was wrong on its first live run. A grader
+# that fails a correct document is worse than no grader: it produces a
+# number that looks like a model getting worse.
+# --------------------------------------------------------------------------
+
+_SYNTHESIS = (
+    "- Accounts are recertified quarterly by the system owner. [NIST AC-2]\n"
+    "- Privileged accounts use hardware multi-factor authentication. [NIST AC-6(5)]\n"
+)
+
+_STANDARD = """# Access Control Standard
+
+## 1. Purpose
+
+This Standard sets the requirements for access to production systems.
+
+## 2. Requirements
+
+Account entitlements must be recertified quarterly by the system owner. [NIST AC-2]
+
+Privileged accounts must use hardware multi-factor authentication. [NIST AC-6(5)]
+
+## 3. Review
+
+This Standard is reviewed annually by the [Security Officer].
+"""
+
+
+def _generation(document, **case):
+    return run_case(
+        "generation",
+        {"name": "t", "synthesis": _SYNTHESIS, "tier": "standard", **case},
+        Scripted(document),
+    )
+
+
+def test_a_standard_that_keeps_its_citations_passes():
+    assert _generation(_STANDARD).rate == 1.0
+
+
+def test_a_documents_own_review_cadence_is_not_an_invented_interval():
+    """ "Reviewed annually" is document furniture in an uncited section. The
+    first grader read the whole document and failed every well-formed one."""
+    assert "annually" not in _SYNTHESIS
+    assert _generation(_STANDARD).rate == 1.0
+
+
+def test_an_interval_invented_inside_a_cited_requirement_is_caught():
+    document = _STANDARD.replace(
+        "recertified quarterly by the system owner. [NIST AC-2]",
+        "recertified quarterly by the system owner, and reviewed monthly. [NIST AC-2]",
+    )
+    result = _generation(document)
+
+    assert result.rate == 0.0
+    assert "monthly" in result.failures[0].detail
+
+
+def test_a_dropped_citation_is_caught():
+    result = _generation(_STANDARD.replace(" [NIST AC-6(5)]", ""))
+
+    assert result.rate == 0.0
+    assert "dropped citations" in result.failures[0].detail
+
+
+def test_a_citation_escaped_for_a_markdown_table_is_not_an_invention():
+    """`\\|` inside a table cell is correct markdown and the same citation.
+    Read as a raw string it looked like a tag the synthesis never carried."""
+    synthesis = "- Accounts are recertified quarterly. [NIST AC-2 | HIPAA 164.308]\n"
+    document = (
+        "# Access Control Standard\n\n## Requirements\n\n"
+        "| Requirement | Source |\n|---|---|\n"
+        "| Accounts must be recertified quarterly. | [NIST AC-2 \\| HIPAA 164.308] |\n"
+    )
+    result = run_case(
+        "generation",
+        {"name": "t", "synthesis": synthesis, "tier": "standard"},
+        Scripted(document),
+    )
+
+    assert result.rate == 1.0, result.failures[0].detail if result.failures else ""
+
+
+def test_two_requirements_merged_under_one_tag_is_not_an_invention():
+    """A document that merges two requirements cites both controls in one
+    tag. Read as a string that looked like a citation the synthesis never
+    carried; read as references it is exactly what the synthesis carried."""
+    document = _STANDARD.replace(
+        "Account entitlements must be recertified quarterly by the system owner. [NIST AC-2]\n\n"
+        "Privileged accounts must use hardware multi-factor authentication. [NIST AC-6(5)]",
+        "Account entitlements must be recertified quarterly and privileged accounts must "
+        "use hardware multi-factor authentication. [NIST AC-2 | NIST AC-6(5)]",
+    )
+
+    assert _generation(document).rate == 1.0
+
+
+def test_a_merged_tag_that_drops_one_of_its_controls_is_still_caught():
+    document = _STANDARD.replace(
+        "Account entitlements must be recertified quarterly by the system owner. [NIST AC-2]\n\n"
+        "Privileged accounts must use hardware multi-factor authentication. [NIST AC-6(5)]",
+        "Accounts are recertified quarterly and privileged accounts use hardware "
+        "multi-factor authentication. [NIST AC-2]",
+    )
+    result = _generation(document)
+
+    assert result.rate == 0.0
+    assert "NIST AC-6(5)" in result.failures[0].detail
+
+
+def test_a_policy_that_names_a_control_fails():
+    """The tier exists to be read by people who never see a control id."""
+    policy = "# Access Control Policy\n\n## Purpose\n\nWe control access per AC-2.\n"
+    result = _generation(policy, tier="policy")
+
+    assert result.rate == 0.0
+    assert "names controls" in result.failures[0].detail
+
+
+def test_section_order_tolerates_the_numbering_documents_carry():
+    """`## 2. Scope` is the same section as `## Scope`."""
+    result = _generation(_STANDARD, sections=["Purpose", "Requirements", "Review"])
+
+    assert result.rate == 1.0
+
+
+def test_sections_in_the_wrong_order_are_caught():
+    result = _generation(_STANDARD, sections=["Review", "Purpose"])
+
+    assert result.rate == 0.0
+    assert "out of the order" in result.failures[0].detail
+
+
+def test_a_faithful_exception_is_not_a_weakened_requirement_unless_asked():
+    """The synthesis prohibits shared accounts except where approved, so a
+    document writing that exception with "may" is being faithful. Only a
+    case that sets a tolerance grades it at all."""
+    document = _STANDARD.replace(
+        "## 3. Review",
+        "## 3. Exceptions\n\nAn exception may be granted in writing. [NIST AC-2]\n\n## 4. Review",
+    )
+
+    assert _generation(document).rate == 1.0
+    assert _generation(document, max_weakened=0).rate == 0.0
+
+
+def test_a_policy_that_did_not_compress_is_caught():
+    bullets = "\n".join(f"- Commitment {n}." for n in range(1, 8))
+    policy = f"# Access Control Policy\n\n## Policy Statements\n\n{bullets}\n"
+    result = _generation(policy, tier="policy", max_policy_bullets=5)
+
+    assert result.rate == 0.0
+    assert "compressed to at most 5" in result.failures[0].detail

@@ -27,10 +27,16 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Every dependency from a hashed lock, so this job installs exactly what
+      # was reviewed rather than whatever resolved on the day — which also
+      # gives Dependabot's seven-day cooldown something to constrain. The
+      # project goes on last with --no-deps: it is the checkout, not a
+      # download. Regenerate the lock with the command in its header.
       - name: Install project
         run: |
           python -m pip install --upgrade pip setuptools
-          pip install -e ".[dev]"
+          pip install --require-hashes -r requirements/ci.txt
+          pip install --no-deps -e .
 
       - name: ruff (lint)
         run: ruff check src tests scripts

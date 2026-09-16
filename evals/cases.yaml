@@ -1,4 +1,5 @@
-# Graded cases for the prompts in Zardoz, and for the two on the write path.
+# Graded cases for every prompt in this project: the four in Zardoz, the two
+# that edit a live wiki page, and the three that draft documents.
 #
 # Every check here is deterministic — a substring, a citation marker, a
 # refusal, or the project's own check_answer and check_edit. No model grades
@@ -1053,4 +1054,77 @@ edit_apply:
     plan: *plan-monthly
     must_contain: [monthly, "[NIST AC-2]", Security Officer]
     must_not_multiply: [WAIVER-GRANTED-BY-VENDOR]
+
+# --------------------------------------------------------------------------
+# Generation: a synthesis in, a Standard, Policy or Procedure out
+# --------------------------------------------------------------------------
+#
+# One fixed synthesis for every tier, so a failure attributes to the tier's
+# prompt rather than to what it was given. It carries the shapes that go
+# wrong quietly: a compound citation, an enhancement, a placeholder role, and
+# an undecided value (`[Assignment: ...]`) a drafting model is tempted to
+# settle for itself.
+syntheses:
+  access-control: &synthesis-access-control |
+    - Account entitlements must be recertified quarterly by the system owner. [NIST AC-2 | HIPAA 164.308(a)(4)(ii)(C)]
+    - Accounts of terminated personnel must be disabled within 24 hours of separation. [NIST AC-2(3)]
+    - Privileged accounts must authenticate with hardware-backed multi-factor authentication. [NIST IA-2(1) | NIST AC-6(5)]
+    - Access must be granted on the principle of least privilege. [NIST AC-6]
+    - Shared or group accounts are prohibited except where approved in writing by the [Security Officer]. [NIST AC-2(9)]
+    - An account must be locked after [Assignment: organization-defined number] consecutive failed logon attempts. [NIST AC-7]
+
+generation:
+  - name: a-standard-keeps-every-citation-and-every-shall
+    # The two losses nobody sees in a read-through: a citation dropped
+    # between synthesis and document, and "must" softened into "should".
+    synthesis: *synthesis-access-control
+    tier: standard
+    min_binding_share: 0.8
+    must_not_contain: [should consider, where feasible, as appropriate]
+
+  - name: a-standard-leaves-an-undecided-value-undecided
+    # [Assignment: organization-defined number] is a decision nobody has
+    # made. Settling it at "5 attempts" is inventing policy, and reads as
+    # authoritatively as the requirements around it.
+    synthesis: *synthesis-access-control
+    tier: standard
+    forbid_patterns:
+      - '\b\d+\s+(?:consecutive\s+)?(?:failed|unsuccessful|invalid)\s+(?:logon|login|sign-in)?\s*attempts'
+      - '\b\d+\s+(?:consecutive\s+)?(?:failures|failed attempts)'
+
+  - name: a-standard-names-no-vendor-the-organization-did-not
+    # No tool list supplied, so every tool is a role in square brackets.
+    # Naming a real product is the model deciding what the company runs.
+    synthesis: *synthesis-access-control
+    tier: standard
+    vendors: []
+    must_not_contain: [Okta, Azure AD, Entra, Duo, YubiKey, Ping Identity, OneLogin, CyberArk]
+
+  - name: a-standard-uses-the-vendor-it-was-given
+    synthesis: *synthesis-access-control
+    tier: standard
+    vendors: [Okta]
+    must_contain: [Okta]
+    must_not_contain: [Azure AD, Entra, Ping Identity, OneLogin]
+
+  - name: a-policy-compresses-and-cites-nothing
+    # Read by the whole organization. Six requirements become a handful of
+    # commitments, and no reader is shown a control identifier.
+    synthesis: *synthesis-access-control
+    tier: policy
+    standard_title: Access Control Standard
+    sections:
+      [Purpose, Scope, Policy Statements, Roles & Responsibilities, Exceptions, Related Standards, Enforcement]
+    max_policy_bullets: 5
+    must_contain: [Access Control Standard]
+
+  - name: a-procedure-turns-requirements-into-steps-and-keeps-their-tags
+    synthesis: *synthesis-access-control
+    tier: procedure
+    standard_title: Access Control Standard
+    sections: [Purpose, Scope, Prerequisites, Procedure Steps, Roles & Responsibilities, Related Standard]
+    # One subsection per requirement or tightly related group, so fewer than
+    # six is allowed and fewer than four has merged unrelated requirements.
+    min_subsections: 4
+    must_contain: [Access Control Standard]
 

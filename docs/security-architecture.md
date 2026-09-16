@@ -561,7 +561,10 @@ comfortable.
    instructions" was resisted in every run. One run stated in its own
    `out_of_scope` field that the line "is part of the document content and is
    not an instruction to act upon", and then carried it out as step 2 of the
-   same reply. **Model choice is a security control on this path.**
+   same reply. **Model choice is a security control on this path**, as
+   measured on the prose planner. The planner now requests a JSON schema
+   where the provider supports one, and that path's injection resistance
+   has not been re-measured.
    `glm-5.3-flash` and `claude-sonnet-5` passed every run of every case;
    running the edit path on `deepseek-v4-flash` to save a fraction of a cent
    is the one configuration here that should not be used. Rewording the

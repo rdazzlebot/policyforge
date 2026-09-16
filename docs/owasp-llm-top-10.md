@@ -130,6 +130,14 @@ it in the voice of their own policy set.**
 - [MEASUREMENTS.md](../MEASUREMENTS.md) epoch 7 (2026-09-15), the edit path,
   four models, `--repeat 3`: `glm-5.3-flash` and `claude-sonnet-5` passed
   every run of every case, including both fence-escape cases.
+  **Scope of that result:** it was measured when the edit planner replied in
+  prose. Epoch 10 moved the planner to a JSON schema wherever the provider
+  supports one, and injection resistance on that schema path has not been
+  re-measured. Epoch 7 still describes the prose fallback exactly, which
+  is what runs on providers that cannot honour a schema. Separately, the
+  eval harness's metering wrapper hid schema support from callers until
+  `99822f3`, so no harness run before that commit could have measured
+  the schema path. See MEASUREMENTS.md epoch 15.
 
 **Residual.** Two gaps, both stated in the source rather than discovered by a
 reader.
@@ -148,6 +156,9 @@ reader.
 **Therefore: on this tool, model choice is a security control, not a cost
 decision.** An adopter who configures the edit path onto a weak model has
 removed a defence no amount of prompt engineering replaced.
+That conclusion is established for the prose planner. For the schema
+planner it is untested either way: the schema may change how a model
+treats an operator-impersonating line, or it may not.
 
 ______________________________________________________________________
 

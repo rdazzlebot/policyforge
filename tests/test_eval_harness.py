@@ -69,6 +69,21 @@ def test_any_of_needs_only_one():
     assert not grade_text("something else entirely", case).passed
 
 
+def test_each_group_must_be_satisfied_on_its_own():
+    """Two requirements that must each keep a phrase. One surviving is the
+    failure, not half a pass."""
+    case = {
+        "must_contain_each": [
+            ["implemented as needed", "implement as needed"],
+            ["updated as needed"],
+        ]
+    }
+
+    assert grade_text("implement as needed ... updated as needed", case).passed
+    assert not grade_text("shall be implemented ... updated as needed", case).passed
+    assert not grade_text("implemented as needed ... shall be updated", case).passed
+
+
 def test_checks_are_case_insensitive():
     assert grade_text("QUARTERLY", {"must_contain": ["quarterly"]}).passed
 
@@ -665,7 +680,11 @@ def test_the_cases_that_never_reach_a_model_are_the_ones_we_know_about():
         for suite in ("expansion", "resolution")
         for case in cases[suite]
         if case.get("allow_empty")
-        and not (case.get("must_contain") or case.get("must_contain_any"))
+        and not (
+            case.get("must_contain")
+            or case.get("must_contain_any")
+            or case.get("must_contain_each")
+        )
     }
     assert vacuous == set()
 

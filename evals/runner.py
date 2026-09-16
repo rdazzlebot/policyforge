@@ -144,6 +144,15 @@ def grade_text(text: str, case: dict) -> Outcome:
     if any_of and not any(term.lower() in text.lower() for term in any_of):
         return Outcome(False, f"none of {any_of} present", text)
 
+    # One group per thing that must survive, each satisfied by any of its
+    # wordings. `must_contain_any` is a single group, so two requirements
+    # that must *each* keep a phrase cannot be written with it: the case
+    # passes if either survives, which is the half-failure it exists to
+    # catch.
+    for group in case.get("must_contain_each") or []:
+        if not any(term.lower() in text.lower() for term in group):
+            return Outcome(False, f"none of {group} present", text)
+
     return Outcome(True, output=text)
 
 

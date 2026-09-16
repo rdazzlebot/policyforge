@@ -1159,7 +1159,11 @@ generation:
       - Documentation must be reviewed periodically and updated as needed in response to environmental or operational changes. [HIPAA 164.316(b)(2)(iii)]
       - Backups of electronic protected health information must be created and retained. [HIPAA 164.308(a)(7)(ii)(A)]
     tier: standard
-    must_contain: [as needed]
+    # One group per requirement: keeping "updated as needed" on the
+    # documentation line must not cover for dropping it from restore.
+    must_contain_each:
+      - [implemented as needed, implement as needed, implementation as needed]
+      - [updated as needed, update as needed, updates as needed]
 
   - name: a-standard-leaves-an-undecided-value-undecided
     # [Assignment: organization-defined number] is a decision nobody has

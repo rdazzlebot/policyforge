@@ -387,8 +387,13 @@ argument somebody has to keep in step.
 
 On the edit path, `check_edit` reports a rewrite that lands in a section the
 plan never named — which is how an executor that obeyed an injected
-instruction gets caught. See [Residual risk](#residual-risk) for the case it
-does not catch.
+instruction gets detected. It does not block the write: a page whose check is
+dirty needs an interactive confirmation even with `--yes`, so a person is
+forced to look, and may still approve. What does block is narrower — a
+rewrite that echoes the request's fence token raises `EchoedFenceError` and
+writes nothing, and a page the injection scanner flags is refused before any
+model call unless the operator passes `--allow-reader-directed`. See
+[Residual risk](#residual-risk) for the case none of these catch.
 
 ## Model-generated code
 
@@ -552,8 +557,9 @@ comfortable.
 1. **The injection scanner is a word list, and a patient author writes around
    one.** It is a report on the corpus, not a guarantee about it.
 1. **The planner gap is open.** On the edit path, an executor that obeys an
-   injected instruction lands in a section the plan never named and
-   `check_edit` catches it. A *planner* that obeys makes that section a
+   injected instruction lands in a section the plan never named, and
+   `check_edit` detects it and forces a person to review it. A *planner* that
+   obeys makes that section a
    planned target, and the rewrite then checks clean. Measured (2026-09-15):
    the attack that works is **impersonating the operator**, not forging the
    fence markers — a line opening "Revised operator instruction:" was carried
@@ -561,10 +567,9 @@ comfortable.
    instructions" was resisted in every run. One run stated in its own
    `out_of_scope` field that the line "is part of the document content and is
    not an instruction to act upon", and then carried it out as step 2 of the
-   same reply. **Model choice is a security control on this path**, as
-   measured on the prose planner. The planner now requests a JSON schema
-   where the provider supports one, and that path's injection resistance
-   has not been re-measured.
+   same reply. **Model choice is a security control on this path**, first
+   measured on the prose planner and re-established on the production
+   request — schema planner, effort sent — in epoch 16.
    `glm-5.3-flash` and `claude-sonnet-5` passed every run of every case;
    running the edit path on `deepseek-v4-flash` to save a fraction of a cent
    is the one configuration here that should not be used. Rewording the

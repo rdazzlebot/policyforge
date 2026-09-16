@@ -49,6 +49,14 @@ class Finding:
 class CheckReport:
     documents: int = 0
     findings: list[Finding] = field(default_factory=list)
+    #: Which model wrote which document, where the document says so. Not a
+    #: finding in either direction: a stamp is not a problem, and its
+    #: absence is not either — a hand-written document has none, and so does
+    #: one pulled back from Confluence, which cannot carry frontmatter
+    #: through storage format. Reported because "which documents did that
+    #: model touch" is the question asked after a model is found to be
+    #: weakening requirements, and it should be answerable from a checkout.
+    attribution: str = ""
 
     @property
     def errors(self) -> list[Finding]:
@@ -74,6 +82,8 @@ class CheckReport:
             lines.append("Nothing to report.")
         elif self.ok:
             lines += ["", "No errors — safe to publish."]
+        if self.attribution:
+            lines += ["", self.attribution]
         return "\n".join(lines)
 
 
@@ -255,4 +265,7 @@ def check_tree(root: Path, *, synthesis_dir: Path | None = None) -> CheckReport:
     if synthesis_dir is not None:
         report.findings.extend(_check_citations(documents, synthesis_dir))
 
+    from .provenance import attribution_summary
+
+    report.attribution = attribution_summary(documents)
     return report

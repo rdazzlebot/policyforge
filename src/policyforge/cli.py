@@ -1312,7 +1312,23 @@ def generate_cmd(
         )
         click.echo("  Add them under `org.vendors` or `org.teams`, then regenerate.")
 
-    written = write_markdown(document + "\n", output_dir=out_path.parent, filename=out_path.name)
+    # Stamped into the document, not just into the gitignored local history.
+    # The question "which documents did that model touch" has to be
+    # answerable from a checkout by someone who was not here — see
+    # content/provenance.py. Written before the quality check so that what
+    # mdformat judges is the file that ships.
+    from policyforge.content.provenance import stamp_document
+
+    # A stamp with no models asserts nothing. That happens when the ledger
+    # saw no calls — a provider injected directly, or one built outside
+    # `get_provider` — and writing `models: []` into a governance document
+    # would be noise claiming to be provenance. Absence already means "not
+    # known", which is the honest record here.
+    provenance = scope.provenance()
+    stamped = (
+        stamp_document(document + "\n", provenance) if provenance.get("models") else document + "\n"
+    )
+    written = write_markdown(stamped, output_dir=out_path.parent, filename=out_path.name)
     if not check_markdown_quality(written):
         click.echo(
             f"WARNING: {written} did not pass the mdformat quality check — review before shipping."

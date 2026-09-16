@@ -15,6 +15,19 @@ from pathlib import Path
 
 import mdformat
 
+#: The same extension set `.pre-commit-config.yaml` gives the mdformat hook,
+#: which is the whole point of this function — it exists so a generated file
+#: is judged by the rule the repository enforces, and a narrower set here
+#: would mean passing locally and failing in CI, or the reverse.
+#:
+#: `frontmatter` is not optional. Without it mdformat reads a leading `---`
+#: as a thematic break and rewrites the YAML underneath it into headings and
+#: list items: the stamp `content/provenance.py` writes would be reported as
+#: badly formatted, and anything that then *applied* mdformat would destroy
+#: it. The pre-commit config has carried that warning since frontmatter
+#: first appeared in this repo; this function did not have the extension.
+_EXTENSIONS = frozenset({"gfm", "frontmatter"})
+
 
 def write_markdown(content: str, *, output_dir: Path, filename: str) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -34,5 +47,5 @@ def check_markdown_quality(path: Path) -> bool:
     Confluence exporter.
     """
     original = path.read_text(encoding="utf-8")
-    formatted = mdformat.text(original, extensions={"gfm"})
+    formatted = mdformat.text(original, extensions=_EXTENSIONS)
     return original == formatted

@@ -463,6 +463,83 @@ often a correct answer produces zero citations. That number decides whether
 or would only train readers to ignore warnings — which is the reason it is
 not one today.
 
+### 12. Full-suite baseline: `moonshotai/kimi-k3` — 2026-09-15
+
+First full run of `openrouter/moonshotai/kimi-k3` across every suite
+(`--min-interval 6`, after the rate limit voided the two earlier attempts
+recorded in the Void runs table above). The process started at 19:56, before
+`9d887b6` (A-06, structured outputs) and `02ffb49` (A-03, native citations)
+landed, and it imported every module those commits touch before either was
+written to disk — checked directly by comparing the log's start time against
+each touched file's mtime, not assumed from commit timestamps. So the nine
+scored suites below measure `88752af`, the commit immediately before A-06,
+not current HEAD.
+
+That makes this the harder-to-reproduce half of a future A/B rather than a
+stale number: re-measuring pre-A-06 kimi-k3 later means checking out
+`88752af` and re-running 486 calls, where a current-HEAD run is one
+`--model` invocation away.
+`litellm.supports_response_schema(model="openrouter/moonshotai/kimi-k3")`
+returns `True`, so `edit_plan` and clustering do differ across A-06 for this
+model — the gap below is real, not moot.
+
+| Suite             | Result                                       |
+| ----------------- | -------------------------------------------- |
+| routing           | 12/12 cases always pass (36/36 runs, 100%)   |
+| resolution        | 7/7 cases always pass (21/21 runs, 100%)     |
+| expansion         | 3/3 cases always pass (9/9 runs, 100%)       |
+| answering         | 27/27 cases always pass (81/81 runs, 100%)   |
+| conversation      | 6/7 cases always pass (20/21 runs, 95%)      |
+| paraphrase        | 66/66 cases always pass (198/198 runs, 100%) |
+| answer_paraphrase | 25/25 cases always pass (75/75 runs, 100%)   |
+| edit_apply        | 4/4 cases always pass (12/12 runs, 100%)     |
+| generation        | 5/6 cases always pass (15/18 runs, 83%)      |
+
+Cost: 555 model calls total (includes the one-call reachability probe),
+$2.9137, $0.00525 each.
+
+**The cost is a failure in its own right, independent of the pass rates
+above.** $0.00525/call puts `kimi-k3` second only to
+`gemini-3.1-pro-preview` ($0.00804) among every model in this file, and
+above `claude-sonnet-5` ($0.00350) — the strongest model measured here — by
+roughly 1.5x. Against the recommended default, `glm-5.3-flash` ($0.00019),
+it costs about 28x more; against `deepseek-v4-flash` ($0.00004), about
+130x. `kimi-k3` does not occupy the cheap-alternative slot the other
+OpenRouter models in this file hold: it is priced closer to a frontier
+model while, on this run, flaking on `conversation` and fabricating
+requirement intervals on `generation` — failures neither `sonnet-5` nor
+`glm-5.3-flash` produced on the suites where they were measured. Cost and
+quality both point the same direction here, which is not the case for
+every model in this file.
+
+**`conversation` flaked 2/3** on
+`an-evaluative-follow-up-carries-the-answer-on-purpose`: asked the follow-up
+"is that enough?", kimi-k3 answered the routed `/parameters` report instead
+of resolving the pronoun back to the recertification-cadence question, and
+missed "quarterly" in two of three runs.
+
+**`generation` failed `a-procedure-turns-requirements-into-steps-and-keeps-their-tags`
+0/3**: kimi-k3 invented intervals under cited requirement tags (`15 business days`, `5 business days`) that the synthesis never states — the same failure
+mode epoch 9 measured on `deepseek-v4-flash`.
+
+**`edit_plan` is excluded, not scored 0/5.** Every case crashed with
+`AttributeError: module 'policyforge.llm.effort' has no attribute 'call_shaped'` — a stale cached module, not a model failure, and not a torn
+read of the tree either. `policyforge.llm.effort` is imported lazily inside
+`build_edit_plan` (`edit/plan.py:296`), and `build_edit_plan` itself is
+imported lazily inside `evals/runner.py`'s `run_edit_plan` (`runner.py:405`).
+This process imported `effort` early — `answering` calls it first — while
+`effort.py` still read as `88752af`, with no `call_shaped`, and Python
+cached that module object for the life of the process. `edit_plan` didn't
+run until later, well after a peer session committed `9d887b6` (A-06): its
+first import of `edit/plan.py` read the new file straight off disk, which
+calls `effort.call_shaped` against the effort module already cached from
+before the commit. The filesystem was never inconsistent; the process held
+two different commits' worth of code through two different module handles.
+The durable fix is running evals from a `git worktree` pinned to one commit
+rather than a checkout someone else can commit into mid-run. Re-run
+`edit_plan` alone, against either `88752af` or current HEAD, for a real
+number; the 0/5 says nothing about kimi-k3.
+
 ______________________________________________________________________
 
 ## Two ways a run can lie, found the hard way

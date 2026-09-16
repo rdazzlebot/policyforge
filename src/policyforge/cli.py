@@ -612,6 +612,103 @@ def map_cmd(controls_paths, out: Path):
         )
 
 
+def _topics_and_controls(topics_path: Path, controls_paths):
+    """The registry and the catalogs, split into anchorable and reachable.
+
+    The registry anchors on NIST ids, so every view over it has to know
+    which half of a mixed catalog set can be anchored and which half is only
+    reachable through the crosswalk. Shared rather than repeated because
+    getting that split wrong makes a HIPAA requirement look anchorable.
+    """
+    from policyforge.ingest.schema import load_controls
+    from policyforge.mapping.crosswalk import normalize_framework
+    from policyforge.topics.registry import load_topics
+
+    topics = load_topics(topics_path)
+    controls = []
+    for path in controls_paths:
+        controls.extend(load_controls(path))
+    nist = [c for c in controls if normalize_framework(c.framework) == "nist"]
+    other = [c for c in controls if normalize_framework(c.framework) != "nist"]
+    return topics, controls, nist, other
+
+
+@cli.command("bundle")
+@click.argument("owner")
+@click.option(
+    "--topics",
+    "topics_path",
+    default=Path("config/topics.yaml"),
+    type=click.Path(exists=True, path_type=Path),
+    help="Topic registry (default: config/topics.yaml).",
+)
+@click.option(
+    "--controls",
+    "controls_paths",
+    required=True,
+    multiple=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to a controls.json. Repeatable.",
+)
+def bundle_cmd(owner: str, topics_path: Path, controls_paths):
+    """Everything one team answers for: topics, requirements, documents, cadence.
+
+    The question a team lead asks, which `coverage` answers only by being
+    read whole and filtered by eye. Set arithmetic over the registry — no
+    model involved, and the answer is exactly as good as the registry is.
+    """
+    from policyforge.mapping.crosswalk import build_crosswalk
+    from policyforge.topics.bundles import team_bundle
+
+    topics, controls, nist, _ = _topics_and_controls(topics_path, controls_paths)
+    click.echo(team_bundle(topics, nist, owner, crosswalk=build_crosswalk(controls)).render())
+
+
+@cli.command("addresses")
+@click.argument("requirement")
+@click.option(
+    "--topics",
+    "topics_path",
+    default=Path("config/topics.yaml"),
+    type=click.Path(exists=True, path_type=Path),
+    help="Topic registry (default: config/topics.yaml).",
+)
+@click.option(
+    "--controls",
+    "controls_paths",
+    required=True,
+    multiple=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to a controls.json. Repeatable — pass the framework the "
+    "requirement belongs to as well as the NIST catalog.",
+)
+def addresses_cmd(requirement: str, topics_path: Path, controls_paths):
+    """Who answers for one requirement, and which document says so.
+
+    The assessor's direction of travel. Name any requirement — NIST, HIPAA,
+    HITRUST — and this resolves it through the crosswalk to the topics the
+    registry anchors, then names the owner and the pages.
+
+    Every claim says how it was reached: anchored directly, inherited from a
+    parent control, or reached through a published crosswalk. The last is
+    the weakest and is labelled as such, because a mapping is not evidence
+    that anybody wrote the requirement down.
+    """
+    from policyforge.mapping.crosswalk import build_crosswalk
+    from policyforge.topics.bundles import requirement_view
+
+    topics, controls, nist, other = _topics_and_controls(topics_path, controls_paths)
+    click.echo(
+        requirement_view(
+            topics,
+            nist,
+            requirement,
+            other_controls=other,
+            crosswalk=build_crosswalk(controls),
+        ).render()
+    )
+
+
 @cli.command("coverage")
 @click.option(
     "--topics",

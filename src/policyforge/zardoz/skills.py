@@ -297,7 +297,107 @@ def _roles(state, args: list[str]) -> str:
     return "\n".join(lines)
 
 
+def _bundle(state, args: list[str]) -> str:
+    """Everything one team answers for.
+
+    The team lead's question, which the coverage report answers only by
+    being read whole and filtered by eye.
+    """
+    from policyforge.mapping.crosswalk import build_crosswalk
+    from policyforge.topics.bundles import team_bundle
+
+    if not state.topics:
+        return (
+            "No topic registry loaded, so there is nobody to build a bundle for. "
+            "Copy config/topics.example.yaml to config/topics.yaml."
+        )
+
+    owner = " ".join(args).strip()
+    if not owner:
+        owners = sorted({t.owner for t in state.topics})
+        return (
+            "Name a team. Owners in the registry: " + ", ".join(owners) + "\n"
+            "  e.g. /bundle Security Engineering"
+        )
+
+    controls = _controls(state)
+    if not controls:
+        return "No control catalogs on disk. Run `policyforge etl-oscal` first."
+
+    nist = [c for c in controls if _is_nist_control(c)]
+    return team_bundle(state.topics, nist, owner, crosswalk=build_crosswalk(controls)).render()
+
+
+def _addresses(state, args: list[str]) -> str:
+    """Where one requirement is answered, and by whom.
+
+    The assessor's direction of travel: they name a citation, often not a
+    NIST one, and want the document.
+    """
+    from policyforge.mapping.crosswalk import build_crosswalk
+    from policyforge.topics.bundles import requirement_view
+
+    if not state.topics:
+        return (
+            "No topic registry loaded, so nothing can be said about who answers "
+            "for a requirement. Copy config/topics.example.yaml to config/topics.yaml."
+        )
+
+    requirement = " ".join(args).strip()
+    if not requirement:
+        return "Name a requirement — e.g. /addresses AC-2, or /addresses 164.308(a)(1)(i)."
+
+    controls = _controls(state)
+    if not controls:
+        return "No control catalogs on disk. Run `policyforge etl-oscal` first."
+
+    nist = [c for c in controls if _is_nist_control(c)]
+    other = [c for c in controls if not _is_nist_control(c)]
+    return requirement_view(
+        state.topics,
+        nist,
+        requirement,
+        other_controls=other,
+        crosswalk=build_crosswalk(controls),
+    ).render()
+
+
+def _is_nist_control(control) -> bool:
+    """Whether a control belongs to the catalog the registry anchors on.
+
+    The registry's `nist_controls` are NIST ids, so the two views have to
+    know which half of a mixed catalog set is anchorable and which half is
+    only reachable through the crosswalk.
+    """
+    from policyforge.mapping.crosswalk import normalize_framework
+
+    return normalize_framework(control.framework) == "nist"
+
+
 SKILLS: dict[str, Skill] = {
+    "bundle": Skill(
+        name="bundle",
+        summary="Everything one team owns: topics, requirements, documents, cadence.",
+        answers=(
+            "what is my team responsible for; what does a named team own; which "
+            "documents does a team have to keep current; what am I accountable "
+            "for; show me the Security team's obligations. Ask for one team by "
+            "name — for the whole programme's gaps, that is coverage."
+        ),
+        run=_bundle,
+    ),
+    "addresses": Skill(
+        name="addresses",
+        summary="Who answers for one requirement, and which document says so.",
+        answers=(
+            "where do we address a named control or citation; which document "
+            "covers AC-2; who owns 164.308(a)(1)(i); show me where a HIPAA or "
+            "HITRUST requirement is answered; which team is responsible for one "
+            "specific requirement. Ask about one named requirement — for how "
+            "much of a baseline is owned overall, that is coverage."
+        ),
+        run=_addresses,
+    ),
     "coverage": Skill(
         name="coverage",
         summary="Which in-scope controls no topic owns, and which two claim.",

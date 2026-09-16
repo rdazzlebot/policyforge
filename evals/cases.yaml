@@ -158,6 +158,30 @@ routing:
   - name: tree-health
     question: are there any broken links between our documents?
     expect: check
+  - name: team-obligations
+    question: what is the identity team responsible for?
+    expect: bundle
+  - name: team-documents-to-maintain
+    question: which documents does the security team have to keep current?
+    expect: bundle
+  - name: where-is-a-control-addressed
+    question: where do we address AC-2?
+    expect: addresses
+  - name: where-is-a-hipaa-citation-addressed
+    question: which document covers 164.308(a)(1)(i)?
+    expect: addresses
+
+  # The two new skills sit either side of coverage, and the boundary is
+  # scope rather than subject: one team is `bundle`, one requirement is
+  # `addresses`, the whole programme is `coverage`. All three are ownership
+  # questions, so a router that reads the subject and not the scope will
+  # collapse them — which is exactly what these cases are for.
+  - name: programme-wide-not-one-team
+    question: which controls does nobody own at all?
+    expect: coverage
+  - name: one-team-not-the-programme
+    question: what does the platform team own?
+    expect: bundle
 
   # Must NOT route. A router that hijacks an ordinary document question has
   # made the shell worse than it was, because the analysis it picked cannot

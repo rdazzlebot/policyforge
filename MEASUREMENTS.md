@@ -540,6 +540,37 @@ rather than a checkout someone else can commit into mid-run. Re-run
 `edit_plan` alone, against either `88752af` or current HEAD, for a real
 number; the 0/5 says nothing about kimi-k3.
 
+### 13. Two more skills on the router — 2026-09-16
+
+`bundle` (everything one team owns) and `addresses` (who answers for one
+requirement, and which document says so) ship as CLI commands and as Zardoz
+skills, so each arrives with routing cases rather than being added to the
+router untested.
+
+Six new routing cases, taking the suite from 12 to 18. Four are the new
+skills; two exist only to pin the boundary between the three ownership
+skills, which is the part that could plausibly break — `coverage`, `bundle`
+and `addresses` are all questions about who owns what, and they differ by
+*scope* rather than by subject. The whole programme is `coverage`, one team
+is `bundle`, one requirement is `addresses`. A router reading the subject
+and not the scope would collapse them.
+
+| Model                        | routing | runs  | cost    |
+| ---------------------------- | ------- | ----- | ------- |
+| `z-ai/glm-5.3-flash`         | 18/18   | 36/36 | $0.0032 |
+| `deepseek/deepseek-v4-flash` | 18/18   | 54/54 | $0.0005 |
+
+**The boundary held on both, including the cheap one.** That is the result
+worth recording: the risk was never that "what does the platform team own"
+fails to route, it was that it routes to `coverage`, which would answer a
+different question convincingly. Both models kept the three apart on every
+run, and the two deliberately-adjacent cases
+(`programme-wide-not-one-team`, `one-team-not-the-programme`) passed
+throughout.
+
+Not comparable with epoch 12's routing row: the suite gained six cases, so
+the denominator changed.
+
 ______________________________________________________________________
 
 ## Two ways a run can lie, found the hard way

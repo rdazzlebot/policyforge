@@ -145,17 +145,50 @@ def draft_implementation_narrative(
     Returns the narrative prefixed with `DRAFT_PREFIX`, so an unreviewed
     cell is self-identifying wherever it ends up.
     """
-    prompt = (
-        f"{_context_block(org, system)}\n\n"
+    stable, varying = _narrative_prompt(control, org, system)
+
+    from policyforge.llm import effort
+
+    response = effort.call(
+        provider,
+        effort=effort.NARRATIVE,
+        cache=True,
+        cache_prefix=stable,
+        system=_SYSTEM_PROMPT,
+        prompt=varying,
+        max_tokens=NARRATIVE_TOKENS,
+        temperature=NARRATIVE_TEMPERATURE,
+    )
+    return _finished(response.text)
+
+
+#: One narrative is a cell in a spreadsheet, not an essay.
+NARRATIVE_TOKENS = 900
+NARRATIVE_TEMPERATURE = 0.1
+
+
+def _narrative_prompt(control: Control, org: OrgContext, system: SystemProfile) -> tuple[str, str]:
+    """The request, split where it stops repeating.
+
+    This is the highest-volume path in the project — one call per control,
+    several hundred in a run — and the organization block in front of each
+    one is identical every time. Returned as two halves so the caller can
+    mark the first as cacheable; the text sent is their concatenation, so
+    what changes is the price and not the question.
+    """
+    stable = f"{_context_block(org, system)}\n\n"
+    varying = (
         f"{_control_block(control)}\n\n"
         "Write the Implementation Description cell for this control now. "
         "Output the narrative text only — no preamble, no heading, no quotes."
     )
-    response = provider.generate(
-        system=_SYSTEM_PROMPT, prompt=prompt, max_tokens=900, temperature=0.1
-    )
-    text = " ".join(response.text.split())
-    return f"{DRAFT_PREFIX} {text}" if text else ""
+    return stable, varying
+
+
+def _finished(text: str) -> str:
+    """One narrative, or "" when the model said nothing worth a cell."""
+    cleaned = " ".join(text.split())
+    return f"{DRAFT_PREFIX} {cleaned}" if cleaned else ""
 
 
 def draft_narratives(
@@ -165,15 +198,24 @@ def draft_narratives(
     provider: LLMProvider,
     *,
     progress=None,
+    batch: bool = False,
 ) -> dict[str, str]:
     """Draft narratives for many controls, keyed by control ID.
 
-    One request per control rather than batching: grounding each call in a
-    single control's text keeps the narrative attributable to that control,
-    and a batch failure part-way through would otherwise lose work for every
-    control in the batch. `progress` is called with each control ID as it
+    One request per control either way: grounding each call in a single
+    control's text keeps the narrative attributable to that control, and
+    that does not change. `progress` is called with each control ID as it
     starts, so a long run can report where it is.
+
+    `batch` submits those requests together instead of one at a time, for
+    half the price. Nobody watches a System Security Plan build, which is
+    what makes this the right path for it — but it is opt-in, because a
+    batch takes as long as the queue takes and a caller who wanted an answer
+    now would be left waiting.
     """
+    if batch:
+        return _draft_as_batch(controls, org, system, provider)
+
     narratives: dict[str, str] = {}
     for control in controls:
         if progress is not None:
@@ -182,3 +224,50 @@ def draft_narratives(
             control, org, system, provider
         )
     return narratives
+
+
+def _draft_as_batch(
+    controls: list[Control],
+    org: OrgContext,
+    system: SystemProfile,
+    provider: LLMProvider,
+) -> dict[str, str]:
+    """Every control in one submission, matched back by control ID.
+
+    Refuses rather than falling back to one call at a time: somebody who
+    asked for a batch asked for its price, and quietly spending twice that
+    is not a smaller failure than stopping.
+    """
+    from policyforge.llm import effort
+    from policyforge.llm.batch import BatchError, BatchRequest
+
+    if not getattr(provider, "supports_batch", lambda: False)():
+        raise BatchError(
+            "The configured provider cannot submit a batch. Re-run without --batch "
+            "to draft one control at a time, or configure the anthropic provider."
+        )
+
+    requests = []
+    for control in controls:
+        stable, varying = _narrative_prompt(control, org, system)
+        requests.append(
+            BatchRequest(
+                custom_id=control.control_id,
+                system=_SYSTEM_PROMPT,
+                prompt=varying,
+                max_tokens=NARRATIVE_TOKENS,
+                temperature=NARRATIVE_TEMPERATURE,
+                effort=effort.NARRATIVE,
+                cache_prefix=stable,
+            )
+        )
+
+    answers = provider.generate_batch(requests)
+    # Keyed by the id that went out, never by position: results come back in
+    # any order, and matching them by index would give one control's
+    # narrative to another with nothing in the workbook to show it.
+    return {
+        control.control_id: _finished(answers[control.control_id].text)
+        for control in controls
+        if control.control_id in answers
+    }

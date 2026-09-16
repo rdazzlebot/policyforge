@@ -65,6 +65,13 @@ class BedrockProvider(LLMProvider):
             model=self.model,
             input_tokens=usage.get("inputTokens"),
             output_tokens=usage.get("outputTokens"),
+            # The same three facts the Anthropic providers now carry, under
+            # Converse's own names. `stopReason` is how a truncated reply
+            # says so, and without it a cut-off document is indistinguishable
+            # from a finished one.
+            stop_reason=response.get("stopReason"),
+            cached_input_tokens=usage.get("cacheReadInputTokens"),
+            request_id=(response.get("ResponseMetadata") or {}).get("RequestId"),
         )
 
     def check(self) -> bool:

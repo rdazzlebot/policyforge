@@ -864,6 +864,13 @@ def synthesize_cmd(
     "control). --no-narratives builds the workbook with those cells left empty.",
 )
 @click.option(
+    "--batch",
+    is_flag=True,
+    help="Submit the narratives as one batch, at half the price, instead of one "
+    "request at a time. The run then waits for the queue rather than for the "
+    "model, so use it when nobody is watching. Anthropic provider only.",
+)
+@click.option(
     "--yes", is_flag=True, help="Skip the confirmation prompt before making LLM requests."
 )
 @click.option(
@@ -877,6 +884,7 @@ def ssp_cmd(
     baseline: str | None,
     system_name: str | None,
     narratives: bool,
+    batch: bool,
     yes: bool,
     out: Path | None,
 ):
@@ -975,6 +983,7 @@ def ssp_cmd(
         click.echo(
             f"Drafting implementation narratives for {len(scoped)} controls — "
             f"that is {len(scoped)} requests to your configured LLM provider."
+            + (" Submitted together as one batch, at half the price." if batch else "")
         )
         if not yes:
             click.confirm("Continue?", abort=True)
@@ -982,18 +991,46 @@ def ssp_cmd(
 
         from policyforge.llm import ledger
 
-        with click.progressbar(
-            scoped, label="Drafting narratives", item_show_func=lambda c: c.control_id if c else ""
-        ) as bar:
-            for control in bar:
-                # One scope per control, not one for the run: this is the
-                # highest-volume path in the project, and "which controls did
-                # that model write narratives for" is the question somebody
-                # asks about a baseline of several hundred.
-                with ledger.about(control.control_id, site="ssp", content_class=content_class):
-                    drafted[control.control_id] = draft_implementation_narrative(
-                        control, org, system, provider
-                    )
+        if batch:
+            from policyforge.llm.batch import BatchError
+            from policyforge.ssp.narrative import draft_narratives
+
+            click.echo(
+                "A batch is queued rather than answered, so this waits for the queue "
+                "rather than for the model. Nothing is written until it ends."
+            )
+            # The scope names the run; each narrative inside it is recorded
+            # against its own control id by the ledger's batch path, so the
+            # per-control attribution survives the submission.
+            with ledger.about(
+                f"ssp/{system.name or 'system'}", site="ssp", content_class=content_class
+            ):
+                try:
+                    drafted = draft_narratives(scoped, org, system, provider, batch=True)
+                except BatchError as exc:
+                    raise click.ClickException(str(exc)) from exc
+            missing = [c.control_id for c in scoped if c.control_id not in drafted]
+            if missing:
+                click.echo(
+                    f"WARNING: {len(missing)} control(s) came back with no narrative: "
+                    + ", ".join(missing[:5])
+                    + ("..." if len(missing) > 5 else "")
+                )
+        else:
+            with click.progressbar(
+                scoped,
+                label="Drafting narratives",
+                item_show_func=lambda c: c.control_id if c else "",
+            ) as bar:
+                for control in bar:
+                    # One scope per control, not one for the run: this is the
+                    # highest-volume path in the project, and "which controls
+                    # did that model write narratives for" is the question
+                    # somebody asks about a baseline of several hundred.
+                    with ledger.about(control.control_id, site="ssp", content_class=content_class):
+                        drafted[control.control_id] = draft_implementation_narrative(
+                            control, org, system, provider
+                        )
 
     slug = re.sub(r"[^a-z0-9]+", "-", (system.name or "system").lower()).strip("-")
     out_path = out or Path("output/ssp") / f"{slug}-ssp.xlsx"

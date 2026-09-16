@@ -53,6 +53,9 @@ class VertexProvider(LLMProvider):
         prompt: str,
         max_tokens: int = 4096,
         temperature: float = 0.2,
+        effort: str | None = None,
+        cache: bool = False,
+        cache_prefix: str | None = None,
     ) -> LLMResponse:
         from ._anthropic_compat import call_messages_api
 
@@ -63,7 +66,18 @@ class VertexProvider(LLMProvider):
             prompt=prompt,
             max_tokens=max_tokens,
             temperature=temperature,
+            effort=effort,
+            cache=cache,
+            cache_prefix=cache_prefix,
         )
+
+    def supports_caching(self) -> bool:
+        """Same request shape as the direct API, so the same marker."""
+        return True
+
+    def supports_effort(self) -> bool:
+        """Same request shape as the direct API, so the same lever."""
+        return True
 
     def check(self) -> bool:
         """Cheap round-trip to confirm credentials + model actually work."""

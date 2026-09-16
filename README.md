@@ -1988,6 +1988,18 @@ attestation.
 LLM calls; otherwise the command tells you how many requests it's about to
 make and asks before making them.
 
+`--batch` submits those requests together through the Batch API instead of
+one at a time, for half the price. This is the path it suits: several
+hundred requests and nobody watching, so waiting on a queue costs nothing
+but the wait. The organization block in front of every control is marked as
+a cacheable prefix either way, so the half of each request that never
+changes is not billed at full price after the first. Results come back in
+whatever order the API finishes them and are matched to controls by ID —
+never by position, which would fill every cell with another control's
+narrative and look entirely plausible. Anthropic provider only; with any
+other configured provider `--batch` says so rather than quietly costing
+twice what you asked for.
+
 ## Architecture
 
 ```

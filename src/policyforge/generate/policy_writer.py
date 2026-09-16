@@ -261,8 +261,15 @@ def generate_standard(
         f"Synthesized requirements:\n\n{topic_synthesis}\n\n"
         "Draft the Standard document per the rules above."
     )
-    response = provider.generate(
-        system=_STANDARD_SYSTEM_PROMPT, prompt=prompt, temperature=0.2, max_tokens=8192
+    from policyforge.llm import effort
+
+    response = effort.call(
+        provider,
+        effort=effort.DRAFTING,
+        system=_STANDARD_SYSTEM_PROMPT,
+        prompt=prompt,
+        temperature=0.2,
+        max_tokens=8192,
     )
     return response.text.strip()
 
@@ -292,8 +299,15 @@ def generate_policy(
         f"{topic_synthesis}\n\n"
         "Draft the Policy document per the rules above."
     )
-    response = provider.generate(
-        system=_POLICY_SYSTEM_PROMPT, prompt=prompt, temperature=0.2, max_tokens=4096
+    from policyforge.llm import effort
+
+    response = effort.call(
+        provider,
+        effort=effort.DRAFTING,
+        system=_POLICY_SYSTEM_PROMPT,
+        prompt=prompt,
+        temperature=0.2,
+        max_tokens=4096,
     )
     return response.text.strip()
 
@@ -323,7 +337,14 @@ def generate_procedure(
         f"{topic_synthesis}\n\n"
         "Draft the Procedure document per the rules above."
     )
-    response = provider.generate(
-        system=_PROCEDURE_SYSTEM_PROMPT, prompt=prompt, temperature=0.2, max_tokens=8192
+    from policyforge.llm import effort
+
+    response = effort.call(
+        provider,
+        effort=effort.DRAFTING,
+        system=_PROCEDURE_SYSTEM_PROMPT,
+        prompt=prompt,
+        temperature=0.2,
+        max_tokens=8192,
     )
     return response.text.strip()

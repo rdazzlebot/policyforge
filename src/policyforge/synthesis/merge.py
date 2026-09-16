@@ -182,7 +182,19 @@ def synthesize_topic(topic: SynthesisTopic, provider: LLMProvider) -> str:
         f"Source controls:\n\n{source_text}\n\n"
         "Produce the merged requirement list per the rules above."
     )
-    response = provider.generate(system=_SYSTEM_PROMPT, prompt=prompt, temperature=0.1)
+    from policyforge.llm import effort
+
+    # Only the system prompt repeats here — every topic brings different
+    # controls — so the breakpoint sits at the end of it. Worth marking
+    # because a run synthesizes a topic set, not one topic.
+    response = effort.call(
+        provider,
+        effort=effort.SYNTHESIS,
+        cache=True,
+        system=_SYSTEM_PROMPT,
+        prompt=prompt,
+        temperature=0.1,
+    )
     return response.text.strip()
 
 

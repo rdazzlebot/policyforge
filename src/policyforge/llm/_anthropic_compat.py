@@ -23,6 +23,112 @@ def _text_of(response) -> str:
     return "".join(block.text for block in response.content if block.type == "text")
 
 
+def _message_params(request, *, model: str) -> dict:
+    """One batch entry's request body, in the same shape as a live call."""
+    params: dict = {
+        "model": model,
+        "max_tokens": request.max_tokens,
+        "system": request.system,
+        "messages": [{"role": "user", "content": request.prompt}],
+        "temperature": request.temperature,
+    }
+    if request.effort is not None:
+        params["output_config"] = {"effort": request.effort}
+    if request.cache_prefix:
+        params["messages"] = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": request.cache_prefix,
+                        "cache_control": {"type": "ephemeral"},
+                    },
+                    {"type": "text", "text": request.prompt},
+                ],
+            }
+        ]
+    return params
+
+
+def submit_batch(
+    client,
+    requests,
+    *,
+    model: str,
+    poll_seconds: float = 30.0,
+    timeout_seconds: float = 24 * 60 * 60,
+    sleep=None,
+    clock=None,
+) -> dict:
+    """Submit `requests` as one batch and wait for it, keyed by `custom_id`.
+
+    Polls rather than streams because a batch has no progress to stream:
+    it is queued, it ends, and the results arrive together. The wait is
+    bounded — a batch that never ends would otherwise hang a run forever —
+    and the bound is a day, which is the window the API itself promises.
+
+    Results come back in any order. They are read into a dict by the id the
+    caller chose, and a caller that matched them by position would silently
+    attribute one control's narrative to another.
+    """
+    import time
+
+    from .base import LLMResponse
+    from .batch import BatchError
+
+    sleep = sleep or time.sleep
+    clock = clock or time.monotonic
+
+    payload = [
+        {"custom_id": request.custom_id, "params": _message_params(request, model=model)}
+        for request in requests
+    ]
+    if not payload:
+        return {}
+
+    batch = client.messages.batches.create(requests=payload)
+    started = clock()
+    while True:
+        state = client.messages.batches.retrieve(batch.id)
+        if getattr(state, "processing_status", None) == "ended":
+            break
+        if clock() - started > timeout_seconds:
+            raise BatchError(
+                f"Batch {batch.id} was still {getattr(state, 'processing_status', '?')} after "
+                f"{timeout_seconds / 3600:.0f}h. Nothing was written; the batch may still "
+                f"finish, and its results can be fetched with its id."
+            )
+        sleep(poll_seconds)
+
+    answers: dict[str, LLMResponse] = {}
+    failures: list[str] = []
+    for entry in client.messages.batches.results(batch.id):
+        result = entry.result
+        if getattr(result, "type", None) != "succeeded":
+            failures.append(f"{entry.custom_id}: {getattr(result, 'type', 'unknown')}")
+            continue
+        message = result.message
+        usage = message.usage
+        answers[entry.custom_id] = LLMResponse(
+            text=_text_of(message),
+            model=getattr(message, "model", model),
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            stop_reason=getattr(message, "stop_reason", None),
+            cached_input_tokens=getattr(usage, "cache_read_input_tokens", None),
+            request_id=getattr(message, "id", None),
+        )
+
+    if failures:
+        raise BatchError(
+            f"{len(failures)} of {len(payload)} batch request(s) did not succeed: "
+            + "; ".join(failures[:5])
+            + ("..." if len(failures) > 5 else "")
+        )
+    return answers
+
+
 def call_messages_api(
     client,
     *,
@@ -31,6 +137,9 @@ def call_messages_api(
     prompt: str,
     max_tokens: int,
     temperature: float,
+    effort: str | None = None,
+    cache: bool = False,
+    cache_prefix: str | None = None,
 ) -> LLMResponse:
     import anthropic
 
@@ -40,6 +149,43 @@ def call_messages_api(
         "system": system,
         "messages": [{"role": "user", "content": prompt}],
     }
+
+    if cache:
+        # A cache is a prefix match, so the breakpoint goes at the end of
+        # the region that repeats — and the render order is system, then
+        # messages. Marking the system prompt alone caches the system
+        # prompt; a call site whose user prompt also opens with unchanging
+        # text (the organization block in front of each control) passes it
+        # as `cache_prefix`, and the breakpoint moves past both.
+        #
+        # The text sent is identical either way: two text blocks are the
+        # same content as their concatenation, so this changes what is
+        # billed and not what the model reads.
+        if cache_prefix:
+            kwargs["messages"] = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": cache_prefix,
+                            "cache_control": {"type": "ephemeral"},
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ]
+        else:
+            kwargs["system"] = [
+                {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+            ]
+
+    if effort is not None:
+        # Inside `output_config`, which is where the API reads it. A
+        # top-level `effort` is accepted by the SDK's kwargs and changes
+        # nothing, which is the worst of both: the call site believes it
+        # asked for less deliberation and pays for the same.
+        kwargs["output_config"] = {"effort": effort}
 
     send_temperature = True
 
@@ -79,9 +225,19 @@ def call_messages_api(
         response = _create(max_tokens=max(max_tokens * 8, MIN_RETRY_TOKENS))
         text = _text_of(response)
 
+    usage = response.usage
     return LLMResponse(
         text=text,
         model=model,
-        input_tokens=response.usage.input_tokens,
-        output_tokens=response.usage.output_tokens,
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+        # All three were on the response already and thrown away here. The
+        # retry above is the only thing that ever read `stop_reason`, so a
+        # reply truncated *after* some text reached the caller looking
+        # finished; a cache that silently never hit was invisible; and the
+        # request id, which is the first thing Anthropic support asks for,
+        # cannot be reconstructed once this function returns.
+        stop_reason=getattr(response, "stop_reason", None),
+        cached_input_tokens=getattr(usage, "cache_read_input_tokens", None),
+        request_id=getattr(response, "_request_id", None),
     )

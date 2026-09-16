@@ -247,7 +247,14 @@ def generate_byoc_parser(
         f"Sample export content:\n\n{sample_text}\n\n"
         "Write the loader module per the rules above."
     )
-    response = provider.generate(
-        system=_SYSTEM_PROMPT, prompt=prompt, temperature=0, max_tokens=8192
+    from policyforge.llm import effort
+
+    response = effort.call(
+        provider,
+        effort=effort.DRAFTING,
+        system=_SYSTEM_PROMPT,
+        prompt=prompt,
+        temperature=0,
+        max_tokens=8192,
     )
     return _strip_code_fence(response.text.strip()) + "\n"

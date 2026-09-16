@@ -247,8 +247,15 @@ def build_edit_plan(
         f"Current document:\n\n{block}\n\n"
         f"Return the JSON plan now. {fence_contract(fence)}"
     )
-    response = provider.generate(
-        system=_SYSTEM_PROMPT, prompt=prompt, temperature=0.0, max_tokens=2048
+    from policyforge.llm import effort
+
+    response = effort.call(
+        provider,
+        effort=effort.EDITING,
+        system=_SYSTEM_PROMPT,
+        prompt=prompt,
+        temperature=0.0,
+        max_tokens=2048,
     )
     data = _extract_json(response.text)
 

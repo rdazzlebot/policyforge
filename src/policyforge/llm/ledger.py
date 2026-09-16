@@ -92,6 +92,17 @@ class CallRecord:
     #: model call. Those channels send a batch rather than a prompt, and the
     #: count is what says how much of the corpus a request exposed.
     items: int | None = None
+    #: Why the model stopped, when the provider says. `max_tokens` is the
+    #: one worth keeping: the document that call produced is short and looks
+    #: finished, and nothing downstream can tell afterwards.
+    stop_reason: str | None = None
+    #: Input tokens served from the prompt cache. Zero and None differ —
+    #: zero is a call that could have hit the cache and did not, which is
+    #: what a silently-too-short cacheable prefix looks like from here.
+    cached_input_tokens: int | None = None
+    #: The provider's own id for the request. Free on the response, the
+    #: first thing a vendor asks for, and unrecoverable afterwards.
+    request_id: str | None = None
 
     def as_json(self) -> str:
         return json.dumps(dataclasses.asdict(self))
@@ -324,6 +335,9 @@ class RecordingProvider(LLMProvider):
             input_tokens=response.input_tokens if response else None,
             output_tokens=response.output_tokens if response else None,
             cost_usd=response.cost_usd if response else None,
+            stop_reason=response.stop_reason if response else None,
+            cached_input_tokens=response.cached_input_tokens if response else None,
+            request_id=response.request_id if response else None,
             prompt_sha=prompt_digest(system, prompt),
             error=error,
         )
@@ -351,6 +365,44 @@ class RecordingProvider(LLMProvider):
             raise
         self._record(system=system, prompt=prompt, response=response)
         return response
+
+    def generate_batch(self, requests, **kwargs) -> dict:
+        """A batch is recorded too, one entry per request.
+
+        Without this, `__getattr__` would have found the inner provider's
+        method and several hundred narratives would have reached a vendor
+        with nothing in the ledger to say so — which is the one thing the
+        wrapper exists to make impossible.
+        """
+        try:
+            answers = self._inner.generate_batch(requests, **kwargs)
+        except Exception as exc:
+            # Submitted and billed or not, the content left this machine.
+            for request in requests:
+                self._record(
+                    system=request.system,
+                    prompt=request.prompt,
+                    response=None,
+                    error=type(exc).__name__,
+                )
+            raise
+        scope = current_scope()
+        for request in requests:
+            # Attributed to the request's own id, not to the submission. The
+            # per-call scope is what answers "which controls did that model
+            # write narratives for", and a batch would otherwise file several
+            # hundred narratives under one subject.
+            with about(
+                request.custom_id,
+                site=scope.site if scope else None,
+                content_class=scope.content_class if scope else None,
+            ):
+                self._record(
+                    system=request.system,
+                    prompt=request.prompt,
+                    response=answers.get(request.custom_id),
+                )
+        return answers
 
     def supports_schema(self) -> bool:
         return self._inner.supports_schema()

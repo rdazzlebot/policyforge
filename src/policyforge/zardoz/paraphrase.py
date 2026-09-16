@@ -83,8 +83,12 @@ def expand_query(question: str, provider, *, max_terms: int = MAX_EXPANSION_TERM
     if provider is None or not question.strip():
         return ""
 
+    from policyforge.llm import effort
+
     try:
-        response = provider.generate(
+        response = effort.call(
+            provider,
+            effort=effort.EXPANSION,
             system=EXPANSION_SYSTEM_PROMPT,
             prompt=f"QUESTION\n\n{question.strip()}\n\nName the documents' vocabulary.",
             temperature=0.0,

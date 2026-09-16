@@ -230,7 +230,14 @@ def apply_edit_plan(
         f"Current document:\n\n{block}\n\n"
         f"Return the complete revised document now. {fence_contract(fence)}"
     )
-    response = provider.generate(
-        system=_SYSTEM_PROMPT, prompt=prompt, temperature=0.0, max_tokens=8192
+    from policyforge.llm import effort
+
+    response = effort.call(
+        provider,
+        effort=effort.EDITING,
+        system=_SYSTEM_PROMPT,
+        prompt=prompt,
+        temperature=0.0,
+        max_tokens=8192,
     )
     return response.text.strip() + "\n"

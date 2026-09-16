@@ -216,8 +216,15 @@ def resolve_question(question: str, conversation: Conversation, provider=None) -
         f"NEW QUESTION\n\n{question.strip()}\n\n"
         "Rewrite the new question so it stands alone."
     )
-    response = provider.generate(
-        system=RESOLVE_SYSTEM_PROMPT, prompt=prompt, temperature=0.0, max_tokens=RESOLUTION_TOKENS
+    from policyforge.llm import effort
+
+    response = effort.call(
+        provider,
+        effort=effort.RESOLUTION,
+        system=RESOLVE_SYSTEM_PROMPT,
+        prompt=prompt,
+        temperature=0.0,
+        max_tokens=RESOLUTION_TOKENS,
     )
     resolved = response.text.strip().strip('"').strip()
 

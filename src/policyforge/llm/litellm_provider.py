@@ -213,6 +213,7 @@ class LiteLLMProvider(LLMProvider):
         prompt: str,
         max_tokens: int = 4096,
         temperature: float = 0.2,
+        effort: str | None = None,
         _response_format: dict | None = None,
     ) -> LLMResponse:
         # Private, and not on the LLMProvider interface: callers ask for a
@@ -243,6 +244,12 @@ class LiteLLMProvider(LLMProvider):
             "drop_params": True,
             "num_retries": self.num_retries,
         }
+        if effort is not None:
+            # LiteLLM's own spelling of the same lever, mapped per provider.
+            # `drop_params` above removes it for a model with no such
+            # control, which is why `supports_effort` is a belief rather
+            # than a guarantee — see its docstring.
+            payload["reasoning_effort"] = effort
         if _response_format is not None:
             payload["response_format"] = _response_format
         if self.api_base:
@@ -278,7 +285,28 @@ class LiteLLMProvider(LLMProvider):
             input_tokens=getattr(usage, "prompt_tokens", None),
             output_tokens=getattr(usage, "completion_tokens", None),
             cost_usd=cost,
+            # LiteLLM's own spelling of the three facts the SDK providers
+            # now carry. `finish_reason` is already read above to decide
+            # whether to retry a truncation; it travels now instead of
+            # being spent on that decision and discarded.
+            stop_reason=finish_reason,
+            cached_input_tokens=getattr(
+                getattr(usage, "prompt_tokens_details", None), "cached_tokens", None
+            ),
+            request_id=getattr(response, "id", None),
         )
+
+    def supports_effort(self) -> bool:
+        """Whether an effort level will reach the model.
+
+        True means "it will be sent", not "the model will obey": LiteLLM
+        maps `reasoning_effort` per provider and `drop_params` removes it
+        for a model with no such control. That is the same belief
+        `supports_schema` reports, and it is the honest answer available —
+        the alternative is a capability table that was already wrong about
+        `temperature` on claude-sonnet-5.
+        """
+        return True
 
     def supports_schema(self) -> bool:
         """Whether LiteLLM believes this model can be held to a schema.

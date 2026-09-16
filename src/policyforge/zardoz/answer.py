@@ -545,7 +545,11 @@ def answer_question(
             refused=True,
         )
 
-    response = provider.generate(
+    from policyforge.llm import effort
+
+    response = effort.call(
+        provider,
+        effort=effort.ANSWERING,
         system=SYSTEM_PROMPT,
         prompt=build_prompt(question, passages),
         temperature=0.0,

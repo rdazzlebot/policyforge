@@ -493,6 +493,50 @@ takes on their behalf. `--fail-on-change` is opt-in, as in `drift`, so a
 scheduled run can be the notification without a routine report exiting
 non-zero and being muted within a month.
 
+### The response carries what it knew, and each call asks for what it needs
+
+Three things the providers already had and discarded. `stop_reason` was read
+to decide whether to retry a truncation and then thrown away, so a reply cut
+off *after* some text reached the caller looking finished. Cache hits were
+never read. The request id — the first thing a vendor asks for — was gone by
+the time the call returned. `LLMResponse` now carries `stop_reason`,
+`cached_input_tokens` and `request_id`, the SDK-backed providers populate
+them, LiteLLM maps its own spellings, and the ledger records all three. Zero
+and None stay different answers for the cache: zero is a call that could
+have hit it and did not, which is what a silently too-short prefix looks
+like from the outside.
+
+**Effort is set per call site, not by sizing token budgets around
+deliberation.** `zardoz/budgets.py` is generous because a reasoning model
+spends its ceiling thinking before a one-word answer, and
+`_anthropic_compat` retries at eight times the budget for the same reason.
+Both work around the wrong lever. `llm/effort.py` names what each of the
+eleven call sites actually wants — `low` for routing, resolution and
+expansion, `high` for synthesis, drafting and editing — and passes it only
+to providers that advertise `supports_effort()`. One that would drop the
+parameter is called exactly as before, rather than letting the call site
+believe it asked for less deliberation and pay for the same. The budgets
+themselves are untouched: lowering them is a measured change, and epoch 2
+records what happened the last time they were set by argument.
+
+**Prompt caching on the two paths that repeat.** A cache is a prefix match,
+so the breakpoint sits at the end of what repeats: the system prompt for
+`synthesize`, and the system prompt plus the organization block for `ssp`,
+whose narrative prompt is now split into its stable and varying halves. The
+text sent is their concatenation either way — what changes is the price, not
+the question — and a provider that cannot mark a prefix is still sent it,
+because the prefix is part of the request rather than a hint about it.
+
+**`ssp --batch`.** Nobody watches a System Security Plan build, and it is
+the highest-volume path here: one call per control, several hundred in a
+run. `--batch` submits them together for half the price. Results come back
+in any order, so each is matched by the control id that went out — matching
+by position would fill every cell in the workbook with another control's
+narrative and look entirely plausible. The ledger's wrapper implements
+`generate_batch` itself rather than inheriting it, which would have sent
+several hundred narratives with nothing on file to say so, and each one is
+recorded against its own control id.
+
 ## 1.0.0
 
 The release that makes the policy set answerable.

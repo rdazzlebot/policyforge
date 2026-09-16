@@ -29,6 +29,20 @@ class LLMResponse:
     #: rather than None. Left None by every other provider, so a caller
     #: must treat "unknown" and "free" as different answers.
     cost_usd: float | None = None
+    #: Why the model stopped. `max_tokens` means the reply was cut off, and
+    #: the providers already knew: they read it to decide whether to retry
+    #: and then threw it away, so a truncated document reached the caller
+    #: looking like a finished one. Now it travels, and the ledger records it.
+    stop_reason: str | None = None
+    #: Input tokens served from the prompt cache. Zero and None are different
+    #: answers: zero means the call could have hit the cache and did not —
+    #: which is what a silently-too-short cacheable prefix looks like — and
+    #: None means the provider does not report caching at all.
+    cached_input_tokens: int | None = None
+    #: The provider's own id for the request, which is the first thing
+    #: Anthropic support asks for. Free on every response and impossible to
+    #: reconstruct afterwards.
+    request_id: str | None = None
 
 
 class LLMProvider(ABC):
@@ -69,6 +83,46 @@ class LLMProvider(ABC):
     def supports_schema(self) -> bool:
         """Whether `generate_json` will actually constrain the reply."""
         return False
+
+    # ---- effort, opt-in ------------------------------------------------
+    #
+    # Asked rather than passed, for the same reason as the schema above. A
+    # provider that cannot act on an effort level would have to accept the
+    # argument and drop it, and the call site would believe it had set
+    # something. `llm/effort.py` is where a caller asks.
+
+    def supports_effort(self) -> bool:
+        """Whether `generate` will act on an `effort` argument."""
+        return False
+
+    def supports_caching(self) -> bool:
+        """Whether `generate` will act on `cache` / `cache_prefix`.
+
+        Asked for the same reason again. A provider that cannot mark a
+        cacheable prefix would drop the hint, and the high-volume call
+        sites would believe they were paying a tenth for the part of the
+        request that never changes.
+        """
+        return False
+
+    # ---- batching, opt-in ----------------------------------------------
+
+    def supports_batch(self) -> bool:
+        """Whether `generate_batch` will submit a real batch."""
+        return False
+
+    def generate_batch(self, requests, **kwargs) -> dict:
+        """Answer many requests together, keyed by each one's `custom_id`.
+
+        Only call this when `supports_batch()` is True. The default refuses
+        rather than quietly running the requests one at a time: a caller
+        that asked for a batch asked for its price, and a silent fallback
+        would bill interactive rates for a run somebody chose to wait on.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} cannot submit a batch. "
+            f"Check supports_batch() before calling generate_batch()."
+        )
 
     def generate_json(
         self,

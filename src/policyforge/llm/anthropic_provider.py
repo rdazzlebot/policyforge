@@ -36,6 +36,9 @@ class AnthropicProvider(LLMProvider):
         prompt: str,
         max_tokens: int = 4096,
         temperature: float = 0.2,
+        effort: str | None = None,
+        cache: bool = False,
+        cache_prefix: str | None = None,
     ) -> LLMResponse:
         from ._anthropic_compat import call_messages_api
 
@@ -46,7 +49,38 @@ class AnthropicProvider(LLMProvider):
             prompt=prompt,
             max_tokens=max_tokens,
             temperature=temperature,
+            effort=effort,
+            cache=cache,
+            cache_prefix=cache_prefix,
         )
+
+    def supports_batch(self) -> bool:
+        """The Messages API has a batch endpoint, at half the price."""
+        return True
+
+    def generate_batch(self, requests, **kwargs) -> dict:
+        from ._anthropic_compat import submit_batch
+
+        return submit_batch(self._client, requests, model=self.model, **kwargs)
+
+    def supports_caching(self) -> bool:
+        """The Messages API caches a marked prefix on every current model.
+
+        Whether a given prefix is *long enough* to cache is decided by the
+        model, silently: below its minimum the marker is ignored and the
+        call is billed in full. `cached_input_tokens` on the response is how
+        a caller finds out, which is why C-03 put it there.
+        """
+        return True
+
+    def supports_effort(self) -> bool:
+        """Current Claude models take `output_config.effort`.
+
+        A model old enough to reject it refuses the request rather than
+        ignoring the field, which is the honest failure: the call site finds
+        out, instead of paying for deliberation it asked not to have.
+        """
+        return True
 
     def check(self) -> bool:
         """Cheap round-trip to confirm the key + model actually work."""

@@ -519,15 +519,22 @@ def route(question: str, provider=None) -> str:
         if routed is not None:
             return routed
 
+    from policyforge.llm import effort
+
     try:
-        response = provider.generate(
+        response = effort.call(
+            provider,
+            # The call that least wants deliberation: one word from a closed
+            # list, where thinking its way past `documents` is the failure.
+            effort=effort.ROUTING,
             system=ROUTER_SYSTEM_PROMPT,
             prompt=f"ANALYSES\n\n{catalog}\n\nQUESTION\n\n{question.strip()}\n\nOne word.",
             temperature=0.0,
             # Room for a reasoning preamble plus one word. The shim retries a
             # truncation, but paying for that on every call would be silly.
             # See zardoz/budgets.py: how much preamble is enough depends on
-            # the model, so this is tunable per run.
+            # the model, so this is tunable per run — and `effort` above is
+            # the lever that should eventually make the budget unnecessary.
             max_tokens=ROUTING_TOKENS,
         )
     except Exception:  # noqa: BLE001 - a routing failure is not a session failure

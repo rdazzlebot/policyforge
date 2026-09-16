@@ -253,8 +253,12 @@ def cluster_leftovers(pages, provider) -> tuple[list[ProposedTopic], list]:
     if not pages or provider is None:
         return [], list(pages)
 
+    from policyforge.llm import effort
+
     by_title = {page.title: page for page in pages}
-    response = provider.generate(
+    response = effort.call(
+        provider,
+        effort=effort.CLUSTERING,
         system=CLUSTER_SYSTEM_PROMPT,
         prompt="TITLES\n\n" + "\n".join(sorted(by_title)) + "\n\nGroup these into topics.",
         temperature=0.0,

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from click.testing import CliRunner
 
 
@@ -268,6 +269,82 @@ def test_etl_govramp_bundled_directory_refusal_names_the_matrix(tmp_path):
 
     assert result.exit_code != 0
     assert "A GovRAMP matrix must never be written there" in result.output
+
+
+@pytest.mark.parametrize(
+    ("cwd_part", "out_spelling"),
+    [
+        ("", "data/frameworks/govramp/controls.json"),
+        # Case-insensitive filesystems (Windows, macOS by default) resolve
+        # these to the same directory. Measured: before this test, both wrote
+        # a licensed GovRAMP catalog into the bundled directory with --force.
+        ("", "Data/Frameworks/govramp/controls.json"),
+        ("", "DATA/frameworks/govramp/controls.json"),
+        # Run from inside data/, and the path never mentions data/frameworks.
+        ("data", "frameworks/govramp/controls.json"),
+        # A detour that comes back.
+        ("", "local_content/../data/frameworks/govramp/controls.json"),
+    ],
+)
+def test_a_licensed_catalog_never_lands_in_the_bundled_directory(
+    tmp_path, monkeypatch, cwd_part, out_spelling
+):
+    """The invariant, stated as what must not happen on disk.
+
+    Not "the command exits non-zero": on a case-sensitive filesystem
+    `Data/Frameworks` is a different directory, and writing there is fine.
+    What must never happen, on any filesystem and with --force, is a licensed
+    catalog appearing inside the directory this project bundles and pushes.
+    The rule used to be a substring test on the path's spelling, which the
+    filesystem does not share.
+    """
+    import policyforge.cli as cli_mod
+    from tests.test_govramp import build_workbook
+
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    bundled = tmp_path / "data" / "frameworks"
+    (bundled / "govramp").mkdir(parents=True)
+    (tmp_path / "local_content").mkdir()
+    matrix = build_workbook(tmp_path / "GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx")
+
+    monkeypatch.chdir(tmp_path / cwd_part if cwd_part else tmp_path)
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        ["etl-govramp", "--export", str(matrix), "--out", out_spelling, "--force"],
+    )
+
+    landed = list(bundled.rglob("*.json"))
+    assert landed == [], (
+        f"--out {out_spelling!r} from {cwd_part or '.'!r} wrote a licensed catalog into "
+        f"the bundled directory: {landed}\n{result.output}"
+    )
+
+
+@pytest.mark.parametrize("cwd_part", ["", "data", "local_content"])
+def test_the_bundled_directory_rule_does_not_refuse_a_write_beside_it(
+    tmp_path, monkeypatch, cwd_part
+):
+    """The identity check searches upward for data/frameworks. It must refuse
+    only a destination *inside* that directory — a licensed catalog written to
+    local_content/, right next to it, is exactly where this project says to
+    put one."""
+    import policyforge.cli as cli_mod
+    from tests.test_govramp import build_workbook
+
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    (tmp_path / "data" / "frameworks" / "govramp").mkdir(parents=True)
+    (tmp_path / "local_content").mkdir()
+    matrix = build_workbook(tmp_path / "GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx")
+    destination = tmp_path / "local_content" / "govramp" / "controls.json"
+
+    monkeypatch.chdir(tmp_path / cwd_part if cwd_part else tmp_path)
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        ["etl-govramp", "--export", str(matrix), "--out", str(destination), "--force"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert destination.exists()
 
 
 def test_map_builds_crosswalk_from_controls_json(tmp_path):

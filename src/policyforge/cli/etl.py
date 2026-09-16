@@ -168,6 +168,62 @@ def etl_hipaa(date: str | None, out: Path):
     click.echo(f"Parsed {len(controls)} HIPAA Security Rule requirements -> {out}")
 
 
+def _bundled_catalog_dirs() -> list[Path]:
+    """The bundled catalog directories that exist and must never take licensed data.
+
+    Every `data/frameworks` found by searching upward from where the command
+    runs, the way git finds a repository root, plus the one in the checkout
+    this code was imported from.
+
+    Upward rather than only in the working directory, and the difference was
+    a bypass: the first version of this looked for `./data/frameworks`, so a
+    command run from inside `data/` looked for `data/data/frameworks`, found
+    nothing, and let `--out frameworks/...` write a licensed catalog into the
+    repository's bundled directory. What must be protected is the directory
+    that gets committed and pushed, wherever the command happens to run.
+
+    Searching upward cannot over-refuse: a `data/frameworks` somewhere above
+    only matters if the destination is inside it.
+    """
+    cwd = Path.cwd()
+    candidates = [base / "data" / "frameworks" for base in (cwd, *cwd.parents)]
+    here = Path(__file__).resolve()
+    if len(here.parents) > 3:
+        candidates.append(here.parents[3] / "data" / "frameworks")
+    found: list[Path] = []
+    for candidate in candidates:
+        if candidate.is_dir() and candidate not in found:
+            found.append(candidate)
+    return found
+
+
+def _lands_in_bundled_catalogs(out: Path) -> bool:
+    """Whether writing `out` would put a file inside a bundled catalog directory.
+
+    Asked of the filesystem, not of the path's spelling. `out` usually does
+    not exist yet, so each existing ancestor is compared to each bundled
+    directory with `samefile`, which follows the filesystem's own rules: case
+    folding where the filesystem folds case, `..`, symlinks and junctions. The
+    path is joined to the working directory without normalising it, so a `..`
+    is resolved physically, the way the write would resolve it.
+    """
+    import os
+
+    bundled = _bundled_catalog_dirs()
+    if not bundled:
+        return False
+    probe = out if out.is_absolute() else Path.cwd() / out
+    for ancestor in (probe, *probe.parents):
+        try:
+            if not ancestor.exists():
+                continue
+            if any(os.path.samefile(ancestor, directory) for directory in bundled):
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def _guard_licensed_write(out: Path, *, force: bool, product: str, licence: str, noun: str):
     """Refuse to write a licensed catalog anywhere it could be redistributed.
 
@@ -188,7 +244,16 @@ def _guard_licensed_write(out: Path, *, force: bool, product: str, licence: str,
 
     # The bundled directory is this project's public, redistributable half.
     # A licensed catalog written there would be committed and pushed.
-    if "data/frameworks" in out.as_posix():
+    #
+    # Two tests, because the first alone was bypassable. The spelling test
+    # refuses any path naming data/frameworks, in this checkout or another.
+    # The identity test asks the filesystem whether the destination is inside
+    # the bundled directory this command would actually read, which the
+    # spelling test could not: `--out Data/Frameworks/...` on a
+    # case-insensitive filesystem, or `--out frameworks/...` run from inside
+    # data/, both wrote a licensed catalog there with --force. Measured before
+    # the fix, on all three.
+    if "data/frameworks" in out.as_posix() or _lands_in_bundled_catalogs(out):
         raise click.ClickException(
             f"{out} is inside data/frameworks/, which is this project's bundled "
             f"public content. A {product} must never be written there. Use "

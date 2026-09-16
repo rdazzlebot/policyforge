@@ -102,3 +102,52 @@ def test_patching_the_package_reaches_a_command_in_a_submodule(monkeypatch):
     result = CliRunner().invoke(policyforge.cli.cli, ["llm-check"])
     assert result.exit_code == 0, result.output
     assert "OK" in result.output
+
+
+def test_a_missing_config_is_an_empty_config(monkeypatch):
+    from policyforge.cli._common import load_config_or_empty
+
+    def _missing():
+        raise FileNotFoundError("config/config.yaml")
+
+    monkeypatch.setattr(policyforge.cli, "load_config", _missing)
+    assert load_config_or_empty() == {}
+
+
+def test_a_broken_config_is_not_silently_an_empty_one(monkeypatch):
+    """Only a *missing* file is tolerated. Running with no settings when the
+    operator wrote some is how a boundary gets skipped."""
+    import pytest
+
+    from policyforge.cli._common import load_config_or_empty
+
+    def _broken():
+        raise ValueError("config/config.yaml: mapping values are not allowed here")
+
+    monkeypatch.setattr(policyforge.cli, "load_config", _broken)
+    with pytest.raises(ValueError):
+        load_config_or_empty()
+
+
+def test_catalogs_load_in_the_order_given(tmp_path):
+    import json
+
+    from policyforge.cli._common import load_catalogs
+
+    def catalog(name, *ids):
+        path = tmp_path / f"{name}.json"
+        path.write_text(
+            json.dumps(
+                [
+                    {"control_id": i, "title": i, "framework": name, "framework_version": "1"}
+                    for i in ids
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    first, second = catalog("a", "AC-1", "AC-2"), catalog("b", "IA-5")
+    assert [c.control_id for c in load_catalogs([first, second])] == ["AC-1", "AC-2", "IA-5"]
+    assert [c.control_id for c in load_catalogs([second, first])] == ["IA-5", "AC-1", "AC-2"]
+    assert load_catalogs([]) == []

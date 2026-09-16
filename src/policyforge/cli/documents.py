@@ -10,6 +10,7 @@ from policyforge.cli import cli
 from policyforge.cli._common import (
     _DEFAULT_HISTORY_DIR,
     get_provider,
+    load_catalogs,
     load_config,
 )
 from policyforge.org.context import load_org_profile
@@ -131,7 +132,6 @@ def synthesize_cmd(
     import json
     import re
 
-    from policyforge.ingest.schema import load_controls
     from policyforge.synthesis.merge import build_synthesis_topic, synthesize_topic, write_synthesis
     from policyforge.topics.registry import load_topics
 
@@ -171,9 +171,7 @@ def synthesize_cmd(
     # pass 800-53, and until this check the two were indistinguishable.
     classified = _enforce_catalogs(controls_paths, config)
 
-    controls = []
-    for path in controls_paths:
-        controls.extend(load_controls(path))
+    controls = load_catalogs(controls_paths)
 
     # Decided parameter values go in before synthesis, not after. A
     # requirement that already says "quarterly" is one the model restates;
@@ -302,7 +300,6 @@ def ssp_cmd(
     from dataclasses import fields as dataclasses_fields
 
     from policyforge.generate.policy_writer import OrgContext
-    from policyforge.ingest.schema import load_controls
     from policyforge.mapping.crosswalk import build_crosswalk, normalize_framework
     from policyforge.ssp.narrative import SystemProfile, draft_implementation_narrative
     from policyforge.ssp.workbook import build_ssp_workbook, select_for_baseline
@@ -353,9 +350,7 @@ def ssp_cmd(
             )
         )
 
-    all_controls = []
-    for path in controls_paths:
-        all_controls.extend(load_controls(path))
+    all_controls = load_catalogs(controls_paths)
     crosswalk = build_crosswalk(all_controls)
 
     nist_controls = [c for c in all_controls if normalize_framework(c.framework) == "nist"]

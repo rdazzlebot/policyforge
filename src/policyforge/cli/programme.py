@@ -11,7 +11,8 @@ from policyforge.cli._common import (
     _DEFAULT_HISTORY_DIR,
     _checked_slug,
     _content_dir,
-    load_config,
+    load_catalogs,
+    load_config_or_empty,
 )
 
 
@@ -36,12 +37,9 @@ def map_cmd(controls_paths, out: Path):
     """Build the NIST-anchored cross-framework crosswalk."""
     import json
 
-    from policyforge.ingest.schema import load_controls
     from policyforge.mapping.crosswalk import build_crosswalk
 
-    controls = []
-    for path in controls_paths:
-        controls.extend(load_controls(path))
+    controls = load_catalogs(controls_paths)
 
     crosswalk = build_crosswalk(controls)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -66,14 +64,11 @@ def _topics_and_controls(topics_path: Path, controls_paths):
     reachable through the crosswalk. Shared rather than repeated because
     getting that split wrong makes a HIPAA requirement look anchorable.
     """
-    from policyforge.ingest.schema import load_controls
     from policyforge.mapping.crosswalk import normalize_framework
     from policyforge.topics.registry import load_topics
 
     topics = load_topics(topics_path)
-    controls = []
-    for path in controls_paths:
-        controls.extend(load_controls(path))
+    controls = load_catalogs(controls_paths)
     nist = [c for c in controls if normalize_framework(c.framework) == "nist"]
     other = [c for c in controls if normalize_framework(c.framework) != "nist"]
     return topics, controls, nist, other
@@ -212,7 +207,6 @@ def coverage_cmd(
     import dataclasses
     import json as json_mod
 
-    from policyforge.ingest.schema import load_controls
     from policyforge.mapping.crosswalk import build_crosswalk, normalize_framework
     from policyforge.ssp.workbook import select_for_baseline
     from policyforge.topics.coverage import analyze_coverage, format_report
@@ -220,9 +214,7 @@ def coverage_cmd(
 
     topics = load_topics(topics_path)
 
-    all_controls = []
-    for path in controls_paths:
-        all_controls.extend(load_controls(path))
+    all_controls = load_catalogs(controls_paths)
 
     nist_controls = [c for c in all_controls if normalize_framework(c.framework) == "nist"]
     if not nist_controls:
@@ -531,12 +523,9 @@ def parameters_cmd(
     synthesis, so every document drawn from that control agrees, and the
     reasoning stays next to the value where an assessor can find it.
     """
-    from policyforge.ingest.schema import load_controls
     from policyforge.parameters.ledger import build_report, load_ledger, render_ledger
 
-    controls = []
-    for path in controls_paths:
-        controls.extend(load_controls(path))
+    controls = load_catalogs(controls_paths)
 
     if baseline:
         controls = [c for c in controls if c.baseline and baseline in c.baseline.lower()]
@@ -596,10 +585,7 @@ def frameworks_cmd():
     """
     from policyforge.frameworks.registry import check_licences
 
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
+    config = load_config_or_empty()
 
     report = check_licences(config)
     if not report.frameworks:

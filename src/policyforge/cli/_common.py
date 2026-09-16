@@ -57,10 +57,7 @@ def _content_dir(override: Path | None) -> Path:
     """
     if override is not None:
         return override
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
+    config = load_config_or_empty()
     configured = (config.get("zardoz") or {}).get("content_dir") or ""
     return Path(configured) if configured else Path("docs")
 
@@ -102,3 +99,40 @@ def get_provider(*args, **kwargs):
     import policyforge.cli as package
 
     return package.get_provider(*args, **kwargs)
+
+
+def load_config_or_empty() -> dict:
+    """The project config, or `{}` when there is no config file.
+
+    Twelve commands carried this as the same four lines. Most of what this
+    tool does works without a config file — analyses over the bundled
+    catalogs, the shell, the boundary report — and "no config" is a
+    supported way to run rather than an error. Named once so that is a
+    decision you can read, not a pattern you have to recognise twelve times.
+
+    Only a *missing* file is tolerated. A config that exists and does not
+    parse still raises, because silently running with no settings when the
+    operator wrote some is how a boundary gets skipped.
+
+    Goes through the seam above, so a test that patches
+    `policyforge.cli.load_config` reaches every command using this.
+    """
+    try:
+        return load_config()
+    except FileNotFoundError:
+        return {}
+
+
+def load_catalogs(paths) -> list:
+    """Every control in every catalog at `paths`, in the order given.
+
+    Six commands carried this loop. Order is preserved because callers
+    depend on it: a crosswalk and a coverage report are built from whichever
+    catalog names a control first.
+    """
+    from policyforge.ingest.schema import load_controls
+
+    controls: list = []
+    for path in paths:
+        controls.extend(load_controls(path))
+    return controls

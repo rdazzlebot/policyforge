@@ -10,6 +10,7 @@ from policyforge.cli import cli
 from policyforge.cli._common import (
     get_provider,
     load_config,
+    load_config_or_empty,
 )
 from policyforge.config import resolve_config_path
 
@@ -63,10 +64,7 @@ def boundary_cmd(paths: tuple[Path, ...]):
     """
     from policyforge.llm import boundary
 
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
+    config = load_config_or_empty()
 
     provider = boundary.classify_provider(config.get("llm") or {})
     click.echo(f"Configured provider: {provider}")
@@ -142,10 +140,7 @@ def model_log_cmd(
     """
     from policyforge.llm import ledger
 
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
+    config = load_config_or_empty()
 
     path = ledger_file or ledger.ledger_path(config)
     records = ledger.load(path)

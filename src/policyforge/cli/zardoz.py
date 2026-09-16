@@ -12,6 +12,7 @@ from policyforge.cli._common import (
     _zardoz_setting,
     get_provider,
     load_config,
+    load_config_or_empty,
 )
 
 
@@ -48,10 +49,7 @@ def mcp_cmd(corpus_dir: Path | None, topics_path: Path | None):
     """
     from policyforge.mcp.server import serve
 
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
+    config = load_config_or_empty()
 
     try:
         serve(config, corpus_dir=corpus_dir, topics_path=topics_path)
@@ -127,10 +125,7 @@ def zardoz_cmd(ctx, topics_path: Path, corpus_dir: Path, no_art: bool, plain: bo
     # passages a question is about — retrieval is entirely offline — so a
     # missing API key costs you the prose, not the search.
     provider, provider_note = None, ""
-    try:
-        shell_config = load_config()
-    except FileNotFoundError:
-        shell_config = {}
+    shell_config = load_config_or_empty()
     try:
         provider = get_provider(shell_config)
     except (FileNotFoundError, KeyError, ValueError, RuntimeError) as exc:
@@ -214,10 +209,7 @@ def zardoz_discover(ctx, space: str, host: str, out: Path, max_results: int, no_
     from policyforge.export.confluence_search import search_pages, space_cql
     from policyforge.zardoz.discover import discover_topics, render_registry
 
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
+    config = load_config_or_empty()
     host = _zardoz_setting(config, "host", host)
     if not host:
         raise click.UsageError("No Confluence host. Pass --host, or set `zardoz.host`.")
@@ -301,10 +293,7 @@ def zardoz_sync(
     topics = ctx.obj["topics"]
     corpus_dir = ctx.obj["corpus_dir"]
 
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
+    config = load_config_or_empty()
 
     host = _zardoz_setting(config, "host", host)
     supporting_space = _zardoz_setting(config, "supporting_space", supporting_space)

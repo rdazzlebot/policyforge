@@ -14,6 +14,7 @@ from policyforge.cli._common import (
     _zardoz_setting,
     get_provider,
     load_config,
+    load_config_or_empty,
 )
 
 
@@ -902,10 +903,7 @@ def check_cmd(content_dir: Path | None, synthesis_dir: Path, strict: bool):
     # merge, and it needs no credentials to check.
     from policyforge.frameworks.registry import check_licences
 
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
+    config = load_config_or_empty()
     licences = check_licences(config)
     if licences.findings:
         click.echo("")
@@ -972,10 +970,7 @@ def publish_cmd(
     if not root.exists():
         raise click.UsageError(f"No content directory at {root}.")
 
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
+    config = load_config_or_empty()
     host = _zardoz_setting(config, "host", host)
     if not host:
         raise click.UsageError(
@@ -1030,10 +1025,7 @@ def wiki_drift_cmd(content_dir: Path | None, host: str, only: str, fail_on_chang
     if not root.exists():
         raise click.UsageError(f"No content directory at {root}.")
 
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
+    config = load_config_or_empty()
     host = _zardoz_setting(config, "host", host)
     if not host:
         raise click.UsageError(
@@ -1107,10 +1099,7 @@ def pull_cmd(
 
     root = _content_dir(content_dir)
 
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
+    config = load_config_or_empty()
     host = _zardoz_setting(config, "host", host)
     if not host:
         raise click.UsageError("No Confluence host. Pass --host, or set `zardoz.host`.")

@@ -1236,6 +1236,7 @@ publishing target fed from it:
 ```
 policyforge check                    # the pull-request gate, offline
 policyforge publish --apply          # tree -> Confluence, on merge
+policyforge wiki-drift               # which pages changed on the wiki, and how to reconcile
 policyforge pull --apply             # Confluence -> tree, when someone hand-edits
 ```
 
@@ -2623,6 +2624,10 @@ reverse view — is in theme 2 above.
   hand-edited becomes a reviewable diff instead of a surprise. Refuses pages that
   would not survive a later publish rather than writing a file that looks correct
   and destroys them
+- [x] **`policyforge wiki-drift`** — which published pages changed on the wiki
+  since this tool wrote them, as a question rather than as the reason a publish
+  refused. Writes nothing and prints the `pull` command that reconciles each one;
+  `--fail-on-change` makes a scheduled run the notification
 - [x] **`policyforge check`** — the pull-request gate, entirely offline so it runs
   on a fork with no credentials: frontmatter resolves, no two files claim one
   page, no dangling cross-references, no citations dropped since the synthesis

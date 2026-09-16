@@ -2690,6 +2690,59 @@ def publish_cmd(
         raise SystemExit(1)
 
 
+@cli.command("wiki-drift")
+@click.option(
+    "--content-dir",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Markdown content tree to compare against.",
+)
+@click.option("--host", default="", help="Confluence base URL. Defaults to `zardoz.host`.")
+@click.option(
+    "--only",
+    default="",
+    help="Only look at documents whose path contains this substring.",
+)
+@click.option(
+    "--fail-on-change",
+    is_flag=True,
+    help="Exit non-zero when any page has moved, so a scheduled run is the notification.",
+)
+def wiki_drift_cmd(content_dir: Path | None, host: str, only: str, fail_on_change: bool):
+    """Which published pages changed on the wiki since this tool wrote them.
+
+    The question a policy owner asks before a review cycle. `publish` answers
+    it too, but only as the reason it refused to write, which is the wrong
+    moment to find out. This writes nothing and prints the `pull` command
+    that would bring each edit into the repository as a reviewable diff.
+
+    A page whose body already says what the repository says is in sync,
+    whoever wrote its latest version.
+    """
+    from policyforge.export.drift import wiki_drift
+
+    root = _content_dir(content_dir)
+    if not root.exists():
+        raise click.UsageError(f"No content directory at {root}.")
+
+    try:
+        config = load_config()
+    except FileNotFoundError:
+        config = {}
+    host = _zardoz_setting(config, "host", host)
+    if not host:
+        raise click.UsageError(
+            "No Confluence host. Pass --host, or add one to config/config.yaml:\n"
+            "    zardoz:\n"
+            "      host: https://yourorg.atlassian.net/wiki"
+        )
+
+    report = wiki_drift(root, host=host, only=only)
+    click.echo(report.format_report())
+    if fail_on_change and report.moved:
+        raise SystemExit(1)
+
+
 @cli.command("pull")
 @click.option(
     "--content-dir",

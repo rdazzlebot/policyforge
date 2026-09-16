@@ -611,3 +611,95 @@ def test_an_unstamped_page_that_differs_is_still_moved(tmp_path, monkeypatch):
 
     assert [r.action for r in report.results] == [MOVED]
     assert exported == []
+
+
+# --------------------------------------------------------------------------
+# P-04: wiki drift as a question, not the wreckage of a failed publish
+# --------------------------------------------------------------------------
+
+
+def _drift(root, only=""):
+    from policyforge.export.drift import wiki_drift
+
+    return wiki_drift(root, host="https://x", only=only)
+
+
+def test_a_page_edited_on_the_wiki_is_reported_with_how_to_reconcile_it(tmp_path, monkeypatch):
+    """The question a policy owner asks before a review cycle, answered
+    without publishing anything to find out."""
+    _patch_confluence(monkeypatch, pages={"Access Control Standard": HAND_EDITED})
+    _write(tmp_path, "standards/a.md", _bound("Access Control Standard"))
+
+    report = _drift(tmp_path)
+
+    (moved,) = report.moved
+    assert moved.title == "Access Control Standard"
+    assert "version 5" in moved.reason
+    assert moved.reconcile == (
+        'policyforge pull --space SEC --title "Access Control Standard" --tier standard --apply'
+    )
+    text = report.format_report()
+    assert "reconcile: policyforge pull" in text
+    assert "standards/a.md" in text
+
+
+def test_a_page_this_tool_wrote_last_is_in_sync(tmp_path, monkeypatch):
+    _patch_confluence(monkeypatch, pages={"Access Control Standard": PLAIN_PAGE})
+    _write(tmp_path, "standards/a.md", _bound("Access Control Standard"))
+
+    report = _drift(tmp_path)
+
+    assert report.moved == []
+    assert len(report.in_sync) == 1
+    assert "Nothing to reconcile" in report.format_report()
+
+
+def test_a_page_saying_what_the_repository_says_is_in_sync_whoever_wrote_it(tmp_path, monkeypatch):
+    """Same content rule as adoption: there is nothing to bring back."""
+    _write(tmp_path, "standards/a.md", _bound("Access Control Standard"))
+    _patch_confluence(
+        monkeypatch, pages={"Access Control Standard": _legacy(_as_published(tmp_path))}
+    )
+
+    assert _drift(tmp_path).moved == []
+
+
+def test_a_declared_page_that_does_not_exist_yet_is_reported_apart(tmp_path, monkeypatch):
+    """Absent is not drift: nobody edited a page that was never published."""
+    _patch_confluence(monkeypatch)
+    _write(tmp_path, "standards/a.md", _bound("Access Control Standard"))
+
+    report = _drift(tmp_path)
+
+    assert report.moved == []
+    assert len(report.absent) == 1
+    assert "not published yet" in report.format_report()
+
+
+def test_only_narrows_the_drift_check(tmp_path, monkeypatch):
+    _patch_confluence(monkeypatch, pages={"A": HAND_EDITED, "B": HAND_EDITED})
+    _write(tmp_path, "standards/a.md", _bound("A"))
+    _write(tmp_path, "policies/b.md", _bound("B"))
+
+    report = _drift(tmp_path, only="policies/")
+
+    assert [r.title for r in report.results] == ["B"]
+
+
+def test_wiki_drift_reports_without_failing_unless_asked(tmp_path, monkeypatch):
+    """A report that always exited non-zero would be muted inside a month;
+    --fail-on-change is what makes a scheduled run the notification."""
+    import policyforge.cli as cli_mod
+
+    _patch_confluence(monkeypatch, pages={"Access Control Standard": HAND_EDITED})
+    _write(tmp_path, "standards/a.md", _bound("Access Control Standard"))
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    argv = ["wiki-drift", "--content-dir", str(tmp_path), "--host", "https://x"]
+
+    reported = CliRunner().invoke(cli_mod.cli, argv)
+    gated = CliRunner().invoke(cli_mod.cli, [*argv, "--fail-on-change"])
+
+    assert reported.exit_code == 0
+    assert "changed on the wiki" in reported.output
+    assert "policyforge pull" in reported.output
+    assert gated.exit_code == 1

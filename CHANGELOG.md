@@ -473,6 +473,26 @@ fails correct behaviour produces a number that looks like a model getting
 worse — the same failure the harness refuses to accept from a model-judged
 eval.
 
+### Wiki drift is a question you can ask
+
+`publish` knows which pages hold an edit the repository has not seen — it
+refuses to overwrite them and reports them as moved. But that answer arrives
+as the wreckage of a publish somebody was trying to do, which is the wrong
+moment to learn it and the wrong person to tell. "What changed on the wiki
+since we last published?" is what a policy owner asks before a review cycle,
+and answering it meant pulling everything and reading the diff.
+
+`policyforge wiki-drift` answers it directly, on the same two rules: this
+tool's stamp on the latest version, or the version `pull` recorded in
+frontmatter. A page that already says what the repository says is in sync
+whoever touched it last, and a page that was never published is reported
+apart, because nobody edited it. It writes nothing and prints the `pull`
+command that would reconcile each page rather than running it — bringing an
+edit into the repository is a diff somebody reviews, not a step a report
+takes on their behalf. `--fail-on-change` is opt-in, as in `drift`, so a
+scheduled run can be the notification without a routine report exiting
+non-zero and being muted within a month.
+
 ## 1.0.0
 
 The release that makes the policy set answerable.

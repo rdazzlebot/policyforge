@@ -137,7 +137,11 @@ it in the voice of their own policy set.**
   is what runs on providers that cannot honour a schema. Separately, the
   eval harness's metering wrapper hid schema support from callers until
   `99822f3`, so no harness run before that commit could have measured
-  the schema path. See MEASUREMENTS.md epoch 15.
+  the schema path. The same wrapper hid effort support, so epoch 7's
+  `edit_apply` rows were measured with no effort level, while production
+  sends one where the provider supports it. The rewriter's result is
+  equally unconfirmed for the request production makes. A like-for-like
+  re-run of both is planned. See MEASUREMENTS.md epoch 15.
 
 **Residual.** Two gaps, both stated in the source rather than discovered by a
 reader.

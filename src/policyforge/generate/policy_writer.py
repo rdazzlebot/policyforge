@@ -74,7 +74,7 @@ class TopicContext:
 _STANDARD_SYSTEM_PROMPT = register(
     Prompt(
         name="generate.standard",
-        version=2,
+        version=3,
         text="""You are a compliance policy drafting engine. \
 Turn a set of already-synthesized, source-tagged requirement statements \
 into a formal information security STANDARD document for one \
@@ -101,11 +101,14 @@ Rules:
 - Write in formal policy language ("must", "shall"), addressed to the
   security/IT staff who implement and audit against this document, not to
   a generic reader.
-- Do not attach a discretionary qualifier to a requirement: no "as
-  appropriate", "where feasible", "as needed", "if possible" or "should
-  consider". A requirement the input states without conditions stays
-  without conditions; a qualifier turns it into something an auditor cannot
-  test.
+- Do not add a discretionary qualifier ("as appropriate", "where
+  feasible", "as needed", "if possible", "should consider") that the input
+  requirement does not contain: a requirement stated without conditions
+  stays without conditions, because a qualifier turns it into something an
+  auditor cannot test. Where the input requirement carries one — frameworks
+  do, e.g. "establish (and implement as needed)" — keep it exactly.
+  Dropping it states an obligation stricter than the rule being cited,
+  which misstates it just as badly as weakening it.
 - Never state a frequency, deadline, duration or count that is not given
   in the input requirements or in the organization context below — no
   "within 5 business days", "annually", "after 30 days" of your own. Where

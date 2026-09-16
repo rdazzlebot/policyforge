@@ -469,10 +469,24 @@ def _generate(monkeypatch, tmp_path, source, *extra):
 
     sample_path = tmp_path / "sample.csv"
     sample_path.write_text("control_id,title\nAC-1,Access Control Policy\n", encoding="utf-8")
+    import sys
+    from pathlib import Path
+
     monkeypatch.setattr(cli_mod, "load_config", lambda: {})
     monkeypatch.setattr(cli_mod, "get_provider", lambda config: FakeProvider(text=source))
     # Never the real package: a promotion in a test must not land in src/.
-    monkeypatch.setattr(cli_mod, "_PARSER_PACKAGE_DIR", tmp_path / "package")
+    #
+    # Patched on the module that actually defines the command, found from the
+    # command itself, not on `policyforge.cli` by name. A constant is read
+    # from the globals of the module it lives in, so if the command ever moves
+    # — the cli.py split moves every command — patching the old location
+    # silently does nothing, and this test would write model-generated,
+    # importable code into the real `src/policyforge/ingest/`. That is the
+    # exact outcome `generate-parser` exists to prevent.
+    command_module = sys.modules[cli_mod.cli.commands["generate-parser"].callback.__module__]
+    monkeypatch.setattr(command_module, "_PARSER_PACKAGE_DIR", tmp_path / "package")
+    real_package = Path(__file__).parents[1] / "src" / "policyforge" / "ingest"
+    before = set(real_package.glob("*_loader.py"))
     candidate = tmp_path / "candidate" / "hitrust_loader.py"
     result = CliRunner().invoke(
         cli_mod.cli,
@@ -487,6 +501,10 @@ def _generate(monkeypatch, tmp_path, source, *extra):
             "--yes",
             *extra,
         ],
+    )
+    # Tripwire, independent of whether the patch above reached its target.
+    assert set(real_package.glob("*_loader.py")) == before, (
+        "a generate-parser test wrote into the real ingest package"
     )
     return result, candidate, tmp_path / "package" / "hitrust_loader.py"
 

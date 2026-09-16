@@ -513,9 +513,14 @@ def test_the_candidate_is_written_outside_the_package_by_default():
     """Model output used to land in src/ and be importable on the next run."""
     from pathlib import Path
 
+    import sys
+
     import policyforge.cli as cli_mod
 
-    assert Path("output/parsers") == cli_mod._PARSER_CANDIDATE_DIR
+    # Read from the module that defines the command, as `_generate` patches it,
+    # so this keeps describing the constant the command actually uses.
+    command_module = sys.modules[cli_mod.cli.commands["generate-parser"].callback.__module__]
+    assert Path("output/parsers") == command_module._PARSER_CANDIDATE_DIR
 
 
 def test_code_that_reaches_the_network_is_refused_and_never_run(tmp_path, monkeypatch):

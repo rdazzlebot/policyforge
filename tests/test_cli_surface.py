@@ -241,3 +241,22 @@ if __name__ == "__main__":
     FIXTURE.parent.mkdir(parents=True, exist_ok=True)
     FIXTURE.write_text(json.dumps(_live(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"wrote {FIXTURE}")
+
+
+def test_the_cli_runs_as_a_module():
+    """`python -m policyforge.cli` works on the single-file module, via its
+    `if __name__ == "__main__"` guard. A package runs `__main__.py` instead,
+    so a split that forgot one would break this invocation with nothing else
+    failing."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "policyforge.cli", "--help"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Usage:" in result.stdout

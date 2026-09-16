@@ -15,13 +15,50 @@ takes its own no-model path, so the suite now exercises the way most people
 will actually run this. That path was crashing — `AnthropicProvider` raises
 `RuntimeError` for a missing key and the shell only caught `ValueError` —
 and nobody noticed, because everybody working on it had a key.
+
+**Stripping the environment is not sufficient on its own, and that was
+measured rather than assumed.** LiteLLM calls `load_dotenv()` at import, so
+it reads this repository's `.env` off disk and writes the keys into
+`os.environ` — which happens *after* the fixture below has run, and happens
+even when the variable was never in the environment to begin with. Observed
+directly: with `OPENROUTER_API_KEY` absent from the environment, `import
+litellm` created it, populated from `.env`. Any test importing litellm after
+that point would hold a live, billable key.
+
+So the load is disabled before anything can import litellm, and the fixture
+strips what is already there. Two mechanisms, because they fail differently:
+one covers a key in the developer's shell, the other covers a key on disk.
 """
 
 from __future__ import annotations
 
+import dotenv
 import pytest
 
+#: Disarm dotenv before any test, fixture or module import can pull a
+#: credential off disk.
+#:
+#: Done at conftest import — the earliest point pytest gives us, and before
+#: litellm can be imported by anything — because `load_dotenv()` runs at
+#: *its* import and a fixture would be far too late. Patching a third-party
+#: module is heavy-handed, and it is the only thing that actually works here:
+#: the alternative is a suite whose hermeticity depends on which test
+#: imported litellm first.
+#:
+#: Scoped to the test session by being in conftest. Nothing in `src/` is
+#: affected, and a real run loads `.env` exactly as before.
+dotenv.load_dotenv = lambda *args, **kwargs: False
+if hasattr(dotenv, "main"):
+    dotenv.main.load_dotenv = lambda *args, **kwargs: False
+
 #: Every environment variable that could let a provider reach the network.
+#:
+#: The second group is the one the suite was missing. LiteLLM reaches most
+#: vendors behind one model string and resolves each one's key from that
+#: vendor's own environment convention, so the project's rule — that a key
+#: is only ever reached through a variable config names — does not constrain
+#: it. `openrouter/…` is the model string this project's own measurements
+#: are run with, and `OPENROUTER_API_KEY` was not on this list.
 _CREDENTIALS = (
     "ANTHROPIC_API_KEY",
     "AWS_ACCESS_KEY_ID",
@@ -30,6 +67,18 @@ _CREDENTIALS = (
     "GOOGLE_APPLICATION_CREDENTIALS",
     "CONFLUENCE_API_TOKEN",
     "CONFLUENCE_USERNAME",
+    "OPENROUTER_API_KEY",
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "AZURE_API_KEY",
+    "MISTRAL_API_KEY",
+    "COHERE_API_KEY",
+    "GROQ_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "TOGETHERAI_API_KEY",
+    "HUGGINGFACE_API_KEY",
+    "XAI_API_KEY",
 )
 
 

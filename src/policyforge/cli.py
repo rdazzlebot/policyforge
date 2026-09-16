@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import click
@@ -13,6 +14,39 @@ from policyforge.org.context import load_org_profile
 # a substitute for. Shared default across `generate`, `import-confluence`,
 # and `history` so a given tier+name lands in the same stream by default.
 _DEFAULT_HISTORY_DIR = Path("output/.history")
+
+#: What a document name may contain. The same shape `slugify` produces, so
+#: a name that came from this tool round-trips and a name somebody typed is
+#: held to what this tool would have written.
+_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def _checked_slug(name: str) -> str:
+    """`name`, or a usage error — it is about to become a path segment.
+
+    `history` and `import-confluence` build their storage path as
+    `history_dir / tier / name`, and every other path in this project goes
+    through `slugify` first. These two did not, so `--name ../../../../tmp/x`
+    resolved outside the history store entirely (verified: it wrote to
+    `C:\\tmp\\pwned\\index.jsonl`), and `--name ..\\..\\evil` climbed out of
+    `.history` into `output/`.
+
+    This is a local CLI, so the realistic case is a mistake rather than an
+    attacker — a name pasted with a stray path on the front, quietly writing
+    a version stream somewhere nobody will look for it again. Rejecting is
+    better than slugifying silently: a name that is not what this tool would
+    have written is a name the caller should see corrected, not have guessed
+    at, because the corrected form is the one they must type next time to
+    read the history back.
+    """
+    if not _SLUG_RE.match(name):
+        raise click.UsageError(
+            f"--name must be a slug — lowercase letters, digits and single hyphens "
+            f"— and {name!r} is not. It becomes a directory name under the history "
+            f"store, so a name carrying path separators would write outside it. "
+            f"Try {(re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-') or 'access-control')!r}."
+        )
+    return name
 
 
 @click.group()
@@ -106,10 +140,13 @@ def etl_oscal(out: Path, no_baselines: bool):
     import json
 
     from policyforge.ingest.oscal_loader import (
+        CATALOG_URL,
+        OSCAL_REF,
         fetch_oscal_baselines,
         fetch_oscal_catalog,
         parse_oscal_catalog,
     )
+    from policyforge.ingest.provenance import record_source_provenance
 
     catalog = fetch_oscal_catalog()
     baselines = {} if no_baselines else fetch_oscal_baselines()
@@ -126,6 +163,19 @@ def etl_oscal(out: Path, no_baselines: bool):
         f"({catalog['catalog']['metadata']['version']}) -> {out}"
     )
     click.echo(f"Excluded {withdrawn} withdrawn controls/enhancements.")
+
+    # Provenance travels with the data, not just in the loader's source. A
+    # reviewer holding controls.json can now name the upstream revision and
+    # check the hash, which is the difference between "an upstream revision"
+    # and "an upstream compromise" — the two look identical in a diff.
+    stamp = record_source_provenance(
+        out.parent / "framework.yaml",
+        source_ref=OSCAL_REF,
+        source_url=CATALOG_URL,
+        content=out.read_bytes(),
+    )
+    if stamp is not None:
+        click.echo(f"Recorded provenance: {OSCAL_REF} sha256:{stamp[:16]}… -> {out.parent}")
     if baselines:
         for name, ids in baselines.items():
             click.echo(f"  {name} baseline: {len(ids)} controls")
@@ -1992,6 +2042,10 @@ def import_confluence_cmd(
     from policyforge.export.confluence_importer import import_from_confluence
     from policyforge.history.version_store import load_history, record_version
 
+    # Checked before the network call, not after: a name that cannot be
+    # stored is not worth fetching a page for.
+    name = _checked_slug(name)
+
     markdown_text = import_from_confluence(space=space, title=title, host=host)
 
     out_path = out or Path(f"output/{tier}s") / f"{name}.imported.md"
@@ -2058,7 +2112,7 @@ def history_cmd(tier: str, name: str, history_dir: Path, diff_range: str | None)
     """List (or diff) the locally recorded version history for one document."""
     from policyforge.history.version_store import diff_versions, load_history
 
-    slug = f"{tier}/{name}"
+    slug = f"{tier}/{_checked_slug(name)}"
     records = load_history(history_dir, slug)
     if not records:
         click.echo(f"No recorded history for {slug!r} in {history_dir}.")

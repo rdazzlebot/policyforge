@@ -30,6 +30,24 @@ Registering a prompt does not change how it is used. The constants stay
 plain strings and every call site passes them exactly as before — a
 registry that required rewriting eleven call sites to gain a hash would be
 paid for in the currency it is trying to save.
+
+**It does change how a prompt is found by a static check, and that has
+already bitten once.** `SYSTEM_PROMPT = register(Prompt(...))` is an
+`ast.Call`, where it used to be a bare `ast.Constant`. Anything that
+locates prompts by matching the *shape* of the assignment — an AST walk
+looking for a module-level string constant, a grep for `_PROMPT = "` —
+walks straight past a registered prompt and reports success on the ones it
+still finds. A credential-containment check written against the old shape
+silently skipped `edit/plan.py`, `zardoz/answer.py` and
+`entail/llm_entailer.py`: 14 constants found across 11 modules, with the
+three most security-relevant prompts in the project missing and nothing
+saying so.
+
+The fix for such a check is to gather every string constant *underneath* the
+assigned value rather than matching the assignment itself, which finds both
+forms. Runtime access is unaffected — `getattr(module, "SYSTEM_PROMPT")`
+still returns the `str`, which is why `scripts/mutate_zardoz.py` keeps
+working unchanged, verified rather than assumed.
 """
 
 from __future__ import annotations

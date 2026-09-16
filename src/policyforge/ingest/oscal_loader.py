@@ -45,23 +45,33 @@ import re
 
 from .schema import Control, ControlEnhancement
 
-CATALOG_URL = (
-    "https://raw.githubusercontent.com/usnistgov/oscal-content/main"
-    "/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json"
-)
+#: The upstream revision this catalog is read from.
+#:
+#: Was `main`, which meant the bundled `controls.json` could not be traced to
+#: anything: a reviewer looking at it could not tell an upstream revision
+#: from an upstream compromise, and re-running the ETL a month apart could
+#: produce two different catalogs with no record of why. The monthly drift
+#: job turns any change into a red build, which is a good compensating
+#: control and not the same as provenance.
+#:
+#: Pinned to a release tag rather than a bare commit because the tag is what
+#: NIST publishes and what a reviewer can look up. Verified before pinning:
+#: at the time of the change the catalog bytes at `v1.5.0` and at `main` were
+#: identical (sha256 01f37cf90ea9…, 10,442,037 bytes), so this changed
+#: nothing about the content — only about whether it can be named.
+#:
+#: Moving this is a deliberate act: bump the ref, re-run `etl-oscal`, and
+#: let the diff on `controls.json` be reviewed.
+OSCAL_REF = "v1.5.0"
+
+_OSCAL_ROOT = f"https://raw.githubusercontent.com/usnistgov/oscal-content/{OSCAL_REF}"
+_REV5_JSON = "/nist.gov/SP800-53/rev5/json"
+
+CATALOG_URL = f"{_OSCAL_ROOT}{_REV5_JSON}/NIST_SP-800-53_rev5_catalog.json"
 BASELINE_URLS = {
-    "Low": (
-        "https://raw.githubusercontent.com/usnistgov/oscal-content/main"
-        "/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_LOW-baseline_profile.json"
-    ),
-    "Moderate": (
-        "https://raw.githubusercontent.com/usnistgov/oscal-content/main"
-        "/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_MODERATE-baseline_profile.json"
-    ),
-    "High": (
-        "https://raw.githubusercontent.com/usnistgov/oscal-content/main"
-        "/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_HIGH-baseline_profile.json"
-    ),
+    "Low": f"{_OSCAL_ROOT}{_REV5_JSON}/NIST_SP-800-53_rev5_LOW-baseline_profile.json",
+    "Moderate": f"{_OSCAL_ROOT}{_REV5_JSON}/NIST_SP-800-53_rev5_MODERATE-baseline_profile.json",
+    "High": f"{_OSCAL_ROOT}{_REV5_JSON}/NIST_SP-800-53_rev5_HIGH-baseline_profile.json",
 }
 # Baselines are cumulative, so ordering them least-to-most protective keeps
 # the rendered value readable ("Low, Moderate, High" rather than set order).

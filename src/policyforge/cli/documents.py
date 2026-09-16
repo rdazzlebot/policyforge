@@ -15,6 +15,48 @@ from policyforge.cli._common import (
 from policyforge.org.context import load_org_profile
 
 
+def _enforce_catalogs(paths, config, *, hint: str = ""):
+    """Refuse any catalog that may not leave for the configured provider.
+
+    Returns each path's classification, in order, for the caller to record.
+
+    `synthesize` and `ssp` both send control text to a model and each carried
+    its own copy of this check. The copies had already drifted once in a way
+    that mattered: both computed the content class as "the first catalog's",
+    so 800-53 listed ahead of an organization-internal catalog labelled the
+    whole set public domain, and the fix had to be made twice. One helper
+    means the next fix is made once.
+
+    `hint` is what the two did differently on purpose. `ssp` has a zero-call
+    way to finish — `--no-narratives` builds the workbook without a model —
+    and names it in the refusal; `synthesize` has none and says nothing more.
+    Checking every catalog before classifying any is also preserved: a refusal
+    names the first catalog that cannot leave, before any work is done.
+    """
+    from policyforge.llm.boundary import BoundaryViolation, classify_path, enforce
+
+    for path in paths:
+        try:
+            enforce(path, config)
+        except BoundaryViolation as exc:
+            raise click.ClickException(f"{exc}\n  {hint}" if hint else str(exc)) from exc
+    return [classify_path(path, config) for path in paths]
+
+
+def _most_restrictive(classified) -> str | None:
+    """The most guarded content class among `classified`, or None if empty.
+
+    Most restrictive, not first-named. The order in `CONTENT_CLASSES` runs
+    from least to most guarded, so a synthesis drawn from any licensed
+    catalog is licensed-derived however the catalogs were listed.
+    """
+    from policyforge.llm.boundary import CONTENT_CLASSES
+
+    if not classified:
+        return None
+    return max((c.klass for c in classified), key=CONTENT_CLASSES.index)
+
+
 @cli.command("synthesize")
 @click.option(
     "--topic-name",
@@ -127,13 +169,7 @@ def synthesize_cmd(
     # licensed HITRUST export under `local_content/` — which this project
     # tells people to do — can pass it to `--controls` as easily as it can
     # pass 800-53, and until this check the two were indistinguishable.
-    from policyforge.llm.boundary import BoundaryViolation, enforce
-
-    for path in controls_paths:
-        try:
-            enforce(path, config)
-        except BoundaryViolation as exc:
-            raise click.ClickException(str(exc)) from exc
+    classified = _enforce_catalogs(controls_paths, config)
 
     controls = []
     for path in controls_paths:
@@ -159,7 +195,6 @@ def synthesize_cmd(
     provider = get_provider(config)
 
     from policyforge.llm import ledger
-    from policyforge.llm.boundary import classify_path
 
     slug = re.sub(r"[^a-z0-9]+", "-", topic.lower()).strip("-")
 
@@ -167,17 +202,7 @@ def synthesize_cmd(
     # topic. A synthesis drawn from a licensed catalog is licensed-derived,
     # and the ledger should say so about the call rather than leaving it to
     # be re-derived later from paths that may have moved.
-    #
-    # Most restrictive, not first-named: this read "licensed if any input is,
-    # otherwise the first input's class", so 800-53 listed ahead of an
-    # organization-internal catalog labelled the whole synthesis public
-    # domain. The order in CONTENT_CLASSES runs from least to most guarded.
-    from policyforge.llm.boundary import CONTENT_CLASSES
-
-    classified = [classify_path(path, config) for path in controls_paths]
-    content_class = (
-        max((c.klass for c in classified), key=CONTENT_CLASSES.index) if classified else None
-    )
+    content_class = _most_restrictive(classified)
     # Named by framework where the catalog declares one, by file otherwise,
     # so a refusal in `generate` can say which input made the text licensed.
     derived_from = [
@@ -316,25 +341,17 @@ def ssp_cmd(
     # model path in the project, so an unguarded run against a licensed
     # GovRAMP or HITRUST catalog would send several hundred requests of it
     # rather than one.
-    from policyforge.llm.boundary import BoundaryViolation, classify_path, enforce
-
     content_class = None
     if narratives:
-        for path in controls_paths:
-            try:
-                enforce(path, config)
-            except BoundaryViolation as exc:
-                raise click.ClickException(
-                    f"{exc}\n  Or pass --no-narratives, which builds the workbook "
-                    "with no model calls at all."
-                ) from exc
-        # Most restrictive, for the reason given in `synthesize`: the first
-        # catalog's class understated a set whose later entries were
-        # organization-internal.
-        from policyforge.llm.boundary import CONTENT_CLASSES
-
-        classes = [classify_path(path, config).klass for path in controls_paths]
-        content_class = max(classes, key=CONTENT_CLASSES.index) if classes else None
+        content_class = _most_restrictive(
+            _enforce_catalogs(
+                controls_paths,
+                config,
+                hint=(
+                    "Or pass --no-narratives, which builds the workbook with no model calls at all."
+                ),
+            )
+        )
 
     all_controls = []
     for path in controls_paths:

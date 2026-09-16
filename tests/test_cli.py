@@ -982,6 +982,54 @@ def test_model_log_summarizes_what_was_sent_where(tmp_path, monkeypatch):
     assert "standard/b" not in filtered.output
 
 
+def test_synthesize_refuses_licensed_controls_before_any_model_call(tmp_path, monkeypatch):
+    """The same refusal as `ssp`, without `ssp`'s escape hatch.
+
+    Written before the two boundary checks were merged into one helper: `ssp`'s
+    refusal was tested and this one was not, so the merge could have changed
+    this message — adding a `--no-narratives` hint that means nothing to
+    `synthesize` — with every test still green.
+    """
+    import policyforge.cli as cli_mod
+
+    catalog_dir = tmp_path / "local_content" / "hitrust"
+    catalog_dir.mkdir(parents=True)
+    controls_path = catalog_dir / "controls.json"
+    _write_controls_json(controls_path, [_control()])
+    crosswalk_path = tmp_path / "crosswalk.json"
+    crosswalk_path.write_text("{}", encoding="utf-8")
+
+    fake = FakeProvider()
+    config = {
+        "llm": {"provider": "anthropic", "model": "claude-sonnet-5"},
+        "frameworks": {"search_paths": [str(tmp_path / "local_content")]},
+    }
+    monkeypatch.setattr(cli_mod, "load_config", lambda: config)
+    monkeypatch.setattr(cli_mod, "get_provider", lambda config: fake)
+
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        [
+            "synthesize",
+            "--topic",
+            "Authenticator Mgmt",
+            "--nist-controls",
+            "IA-5",
+            "--controls",
+            str(controls_path),
+            "--crosswalk",
+            str(crosswalk_path),
+            "--out-dir",
+            str(tmp_path / "synthesis"),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "REFUSED" in result.output
+    assert "--no-narratives" not in result.output
+    assert fake.calls == []
+
+
 def test_ssp_refuses_licensed_controls_when_it_would_draft_narratives(tmp_path, monkeypatch):
     """The highest-volume model path in the project.
 

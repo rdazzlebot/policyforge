@@ -167,3 +167,41 @@ def test_the_shell_prints_each_report_under_its_own_command(monkeypatch):
     assert "(ran /parameters)" in output
     assert output.index("COVERAGE REPORT") < output.index("(ran /parameters)")
     assert output.index("(ran /parameters)") < output.index("PARAMETERS REPORT")
+
+
+class BareWordPlanner(Planner):
+    """A schema-capable model that sometimes drops the JSON wrapper.
+
+    Measured on glm-5.3-flash through OpenRouter: asked for {"also": ...} it
+    occasionally replied with the bare word. The provider raises on that, and
+    the second analysis used to vanish with it.
+    """
+
+    def generate_json(self, **kwargs):
+        if kwargs["schema"]["json_schema"]["name"] == "also":
+            self.asked.append("also")
+            raise RuntimeError("returned something else: 'parameters'")
+        return super().generate_json(**kwargs)
+
+    def generate(self, **kwargs):
+        self.asked.append("prose")
+        return LLMResponse(text=f"{self.also}.", model="test")
+
+
+def test_a_bare_word_reply_to_the_schema_call_is_recovered_in_prose():
+    planner = BareWordPlanner("coverage", also="parameters")
+    plan = route_plan(
+        "which controls does nobody own, and how many parameters are undecided?", planner
+    )
+    assert names(plan) == ["coverage", "parameters"]
+    assert planner.asked.count("prose") == 1
+
+
+def test_the_prose_fallback_still_cannot_invent_an_analysis():
+    planner = BareWordPlanner("coverage", also="delete_everything")
+    assert names(route_plan("orphans?", planner)) == ["coverage"]
+
+
+def test_the_prose_fallback_saying_none_is_none():
+    planner = BareWordPlanner("coverage", also="none")
+    assert names(route_plan("which controls does nobody own?", planner)) == ["coverage"]

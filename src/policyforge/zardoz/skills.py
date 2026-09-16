@@ -438,7 +438,11 @@ SKILLS: dict[str, Skill] = {
             "covers AC-2; who owns 164.308(a)(1)(i); show me where a HIPAA or "
             "HITRUST requirement is answered; which team is responsible for one "
             "specific requirement. Ask about one named requirement — for how "
-            "much of a baseline is owned overall, that is coverage."
+            "much of a baseline is owned overall, that is coverage. Not for what "
+            'a requirement says or requires — "what does AC-2 require?" asks '
+            "what a document states, which is a question for the documents. Not "
+            'for who owns a document — "who owns the backup standard?" names a '
+            "document, not a requirement, and is a question for the documents."
         ),
         run=_addresses,
         arguments={
@@ -932,23 +936,51 @@ def _route_also(question: str, first: str, provider) -> str:
             },
         },
     }
+    prompt = (
+        f"ALREADY ROUTED TO\n\n{first}: {SKILLS[first].answers}\n\n"
+        f"OTHER ANALYSES\n\n{catalog}\n\nQUESTION\n\n{question.strip()}"
+    )
     try:
         response = provider.generate_json(
             system=ALSO_PROMPT,
-            prompt=(
-                f"ALREADY ROUTED TO\n\n{first}: {SKILLS[first].answers}\n\n"
-                f"OTHER ANALYSES\n\n{catalog}\n\nQUESTION\n\n{question.strip()}"
-            ),
+            prompt=prompt,
             schema=schema,
             temperature=0.0,
             max_tokens=ROUTING_TOKENS,
         )
         choice = json.loads(response.text).get("also", "none")
-    except Exception:  # noqa: BLE001 - a missed second report is a follow-up, not an error
-        return "none"
+    except Exception:  # noqa: BLE001 - the prose fallback below is what recovers
+        choice = _also_in_prose(prompt, provider)
     # `strict` should make this impossible; a schema nobody enforced is the
     # one case that cannot be detected from inside.
     return choice if choice in others else "none"
+
+
+def _also_in_prose(prompt: str, provider) -> str:
+    """The second-analysis question as one word, when the schema call failed.
+
+    Routing has always had this fallback and this had not, and the gap was
+    measured rather than guessed. `glm-5.3-flash` through OpenRouter sometimes
+    ignores the schema's wrapper and replies with the bare word — `frameworks`
+    rather than `{"also": "frameworks"}`. The provider rightly refuses a reply
+    that is not the JSON it promised, and without a fallback that correct
+    answer became `none`: chaining went from 11/11 to 8/11 on one run while
+    routing, which recovers exactly this way, held at 54/54.
+
+    The word is still checked against the closed list by the caller, so this
+    cannot invent an analysis — only recover one the model already chose.
+    """
+    try:
+        response = provider.generate(
+            system=ALSO_PROMPT,
+            prompt=f"{prompt}\n\nReply with exactly one word: the analysis name, or none.",
+            temperature=0.0,
+            max_tokens=ROUTING_TOKENS,
+        )
+    except Exception:  # noqa: BLE001 - a missed second report is a follow-up, not an error
+        return "none"
+    words = response.text.strip().strip(".`\"'").split()
+    return words[0].lower().strip(".`\"',") if words else "none"
 
 
 def route_plan(question: str, provider=None) -> list[Routed]:

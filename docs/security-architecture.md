@@ -90,7 +90,8 @@ and sharper set of questions:
 
 Two outbound channels exist besides the model API: the **Confluence REST
 API**, reached with a credential you supply, and **framework source fetches**
-(`etl-oscal`, `etl-hipaa`) which pull public catalogs from NIST. Both are
+(`etl-oscal`, `etl-hipaa`, `etl-hipaa-crosswalk`, `etl-fedramp`,
+`etl-arc-ampe`) which pull public catalogs from NIST, eCFR and CMS. Both are
 explicit commands. Nothing in this tool phones home, reports telemetry, or
 contacts any endpoint the operator did not configure.
 
@@ -456,13 +457,23 @@ the proportion verified is the interesting fact.
 
 **Current state of the bundled catalogs**, which you can check yourself:
 
-| Catalog               | Status                                                                                                                                                                           |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `nist-800-53-r5`      | **Verified** — `controls.json` hashes to the value recorded against upstream tag `v1.5.0`, checkable offline                                                                     |
-| `hipaa-security-rule` | **Unstamped** — stamping it means regenerating live regulatory data through a two-command pipeline, which is a reviewable change rather than a passing one. See the hazard below |
+| Catalog               | Status                                                                                                                                                                  |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `nist-800-53-r5`      | **Verified** — hashes to the value recorded against upstream tag `v1.5.0`, checkable offline                                                                            |
+| `arc-ampe`            | **Verified** against `v1.02`                                                                                                                                            |
+| `fedramp`             | **Verified** against the upstream commit it was built from                                                                                                              |
+| `hipaa-security-rule` | **Unstamped** — stamping it means regenerating live regulatory data through a two-command pipeline, a reviewable change rather than a passing one. See the hazard below |
 
 An unstamped catalog stays usable rather than becoming an error; it simply
 does not claim to have been verified.
+
+`govramp` and `hitrust-csf` carry no `controls.json`: they are licensed
+catalogs you supply yourself, so there is nothing bundled to verify.
+
+**Check for yourself rather than trusting this table** — `verify_all()`
+reports a row per framework, and the proportion verified is the fact worth
+watching. This table was accurate at the commit that wrote it and catalogs
+get re-fetched.
 
 **A catalog can be built by more than one command, and that is a hazard
 worth knowing about before you refresh anything.** The HIPAA catalog is
@@ -586,11 +597,18 @@ comfortable.
    enforced by the commands. Making `etl-hipaa` refuse to clobber an
    enriched catalog would be the fix; it is a behaviour change and has not
    been made.
-1. **Catalog provenance is populated for one catalog, not both.**
-   `nist-800-53-r5` is stamped and verifies; `hipaa-security-rule` is
-   unstamped and reports as unverifiable rather than as passing. An
+1. **Catalog provenance is populated for most bundled catalogs, not all.**
+   `nist-800-53-r5`, `arc-ampe` and `fedramp` verify; `hipaa-security-rule`
+   is unstamped and reports as unverifiable rather than as passing. An
    unstamped catalog is still usable, so its integrity rests on git history
    and review until it is re-fetched.
+1. **FedRAMP no longer publishes a machine-readable baseline.**
+   `GSA/fedramp-automation` is gone — the repository and its API both 404,
+   not archived or moved — so the bundled `fedramp` catalog carries control
+   tailoring rather than a Low/Moderate/High baseline, and `Control.baseline`
+   is left empty rather than reconstructed from an unofficial mirror. If your
+   program needs FedRAMP baselines, that selection has to come from
+   somewhere you trust, and this tool will not invent it.
 
 ## Adoption checklist
 

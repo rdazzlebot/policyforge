@@ -387,10 +387,14 @@ the publish-path guard, the closed-list assertion, and a test that no tool
 
 **Residual.**
 
-- **`ask_documents` calls a model.** If one is configured, an MCP client can
-  cause model calls without a person typing a command — same provider, same
-  ledger, same boundary as the CLI, so no new recipient, but a **new
-  trigger**. Watch spend via `policyforge model-log`; see
+- **`ask_documents` calls a model.** It is the only one of the seven that
+  does; the other six are set arithmetic over local files. If a model is
+  configured, an MCP client can cause model calls without a person typing a
+  command — same provider, same ledger, same boundary as the CLI, so no new
+  recipient, but a **new trigger**. Calls from the server are recorded as
+  `mcp/<session>` rather than `zardoz/<session>`, so an agent's question is
+  distinguishable from a person's in `policyforge model-log` rather than
+  indistinguishable in the record. See
   [LLM10](#llm10--unbounded-consumption).
 - **The read-only guarantee is a denylist of known write symbols.** A future
   write path under a name nobody added to that list would pass. The closed

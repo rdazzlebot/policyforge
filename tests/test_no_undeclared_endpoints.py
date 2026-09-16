@@ -41,8 +41,8 @@ SRC = Path(policyforge.__file__).resolve().parent
 #: this mapping is a new outbound relationship, and the point of the test is
 #: that adding one cannot be done quietly.
 ALLOWED_HOSTS: dict[str, str] = {
-    # Public catalog sources. All three are fetched only by an explicit
-    # `etl-*` command the operator runs, and all three serve government
+    # Public catalog sources. Every one is fetched only by an explicit
+    # `etl-*` command the operator runs, and every one serves government
     # works — the content this project is allowed to redistribute.
     "csrc.nist.gov": "NIST CPRT: the HIPAA-to-800-53 crosswalk (etl-hipaa-crosswalk)",
     "www.ecfr.gov": "eCFR: the HIPAA Security Rule, 45 CFR 164 Subpart C (etl-hipaa)",

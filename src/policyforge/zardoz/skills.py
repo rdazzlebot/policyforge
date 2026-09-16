@@ -31,7 +31,7 @@ to publish could not be written in this file.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .budgets import ROUTING_TOKENS
@@ -55,6 +55,44 @@ class Skill:
     #: Named when the skill cannot run, so the shell can say what is missing
     #: rather than printing an empty report.
     needs: str = ""
+    #: What this analysis can be narrowed by, as JSON Schema properties.
+    #:
+    #: Routing used to return a name and nothing else, and the shell ran the
+    #: skill with no arguments at all. So "which controls are orphaned in the
+    #: moderate baseline?" routed correctly to `coverage` and then reported
+    #: on all 1,408 in-scope requirements, under a heading that said "scope:
+    #: all controls". The scope in the question was not misread — it was
+    #: never carried. A confidently wrong answer to a narrower question than
+    #: the one asked is exactly what this project exists to avoid, and it was
+    #: happening on the routed path only: `/coverage moderate` typed by hand
+    #: has always worked.
+    #:
+    #: Declared per skill rather than sniffed from the question, so the model
+    #: fills a typed field and the parsing is the API's job.
+    arguments: dict = field(default_factory=dict)
+    #: The order `run` expects its positional words in. Only matters for a
+    #: skill taking more than one argument.
+    argument_order: tuple[str, ...] = ()
+
+    def as_args(self, values: dict | None) -> list[str]:
+        """Typed arguments, in the positional form `run` already parses.
+
+        Every skill reads `args: list[str]` and always has. Converting here
+        rather than rewriting ten run functions keeps this change to the
+        routing path, which is the only place that was broken — and keeps
+        `/coverage moderate` typed by hand working through exactly the same
+        code as the routed question.
+        """
+        if not values:
+            return []
+        order = self.argument_order or tuple(self.arguments)
+        words: list[str] = []
+        for key in order:
+            value = values.get(key)
+            if value is None or value == "":
+                continue
+            words.extend(str(value).split())
+        return words
 
 
 def _controls(state):
@@ -385,6 +423,12 @@ SKILLS: dict[str, Skill] = {
             "name — for the whole programme's gaps, that is coverage."
         ),
         run=_bundle,
+        arguments={
+            "owner": {
+                "type": "string",
+                "description": "The team name, exactly as the registry spells it.",
+            }
+        },
     ),
     "addresses": Skill(
         name="addresses",
@@ -397,6 +441,12 @@ SKILLS: dict[str, Skill] = {
             "much of a baseline is owned overall, that is coverage."
         ),
         run=_addresses,
+        arguments={
+            "requirement": {
+                "type": "string",
+                "description": "A requirement id, e.g. AC-2 or 164.308(a)(1)(i).",
+            }
+        },
     ),
     "coverage": Skill(
         name="coverage",
@@ -409,6 +459,13 @@ SKILLS: dict[str, Skill] = {
             "written down, which is a question for the documents."
         ),
         run=_coverage,
+        arguments={
+            "baseline": {
+                "type": "string",
+                "enum": ["low", "moderate", "high"],
+                "description": "NIST baseline to narrow to. Omit unless the question names one.",
+            }
+        },
     ),
     "parameters": Skill(
         name="parameters",
@@ -418,6 +475,13 @@ SKILLS: dict[str, Skill] = {
             "frequencies or thresholds nobody has chosen; ODP status"
         ),
         run=_parameters,
+        arguments={
+            "baseline": {
+                "type": "string",
+                "enum": ["low", "moderate", "high"],
+                "description": "NIST baseline to narrow to. Omit unless the question names one.",
+            }
+        },
     ),
     "drift": Skill(
         name="drift",
@@ -439,6 +503,22 @@ SKILLS: dict[str, Skill] = {
             "versions of that same document exist is this one."
         ),
         run=_history,
+        arguments={
+            "tier": {
+                "type": "string",
+                "enum": ["policy", "standard", "procedure"],
+                "description": (
+                    "Document tier. Defaults to standard when the question does not say."
+                ),
+            },
+            "name": {
+                "type": "string",
+                "description": "The document's filename stem, e.g. access-control.",
+            },
+        },
+        # `_history` reads args[0] as the tier and args[1] as the name when
+        # both are given, so the order is load-bearing rather than cosmetic.
+        argument_order=("tier", "name"),
     ),
     "check": Skill(
         name="check",
@@ -498,6 +578,25 @@ Rules:
 4. If you are unsure, say `documents`. A wrong analysis wastes a turn; a
    question sent to the documents that finds nothing gets an honest refusal,
    which is recoverable."""
+
+
+ARGUMENT_PROMPT = """You are given an analysis that has already been chosen, \
+and the question it was chosen for. Say how the analysis should be narrowed.
+
+Rules:
+
+1. Only fill a field the question actually names. "which controls are
+   orphaned in the moderate baseline" names a baseline; "which controls are
+   orphaned" does not. Leave a field out rather than guessing at it.
+2. An invented value is worse than an empty one. Left empty, the analysis
+   reports on everything and says so in its heading, which a reader can see.
+   Filled with a guess, it reports on a slice nobody asked for under a
+   heading that looks deliberate — and the reader has no way to tell.
+3. Copy values from the question rather than normalising them. A team name
+   is matched against the registry exactly as written there, so answer with
+   what the question said.
+4. Returning nothing at all is a correct and common answer. Most questions
+   name no scope."""
 
 
 #: Fallback routing, used when no model is configured. Deliberately narrow:
@@ -594,11 +693,195 @@ def _route_with_schema(question: str, catalog: str, provider) -> str | None:
     return choice if choice in SKILLS else NO_SKILL
 
 
+@dataclass(frozen=True)
+class Routed:
+    """A routing decision, and how the analysis should be narrowed."""
+
+    skill: str
+    arguments: dict = field(default_factory=dict)
+
+    @property
+    def ran(self) -> bool:
+        return self.skill != NO_SKILL
+
+    def as_args(self) -> list[str]:
+        skill = SKILLS.get(self.skill)
+        return skill.as_args(self.arguments) if skill else []
+
+
+def skill_tools() -> list[dict]:
+    """Every analysis as a tool definition, generated from the registry.
+
+    Generated here, unlike `mcp/server.py`'s hand-written list, and the
+    difference is not an inconsistency. The MCP list is an interface other
+    people's agents depend on, where adding an entry should be a visible
+    act. This list is what *this* project's own router chooses from, and it
+    has to contain every skill or the router cannot reach one — a skill
+    missing from it is a feature nobody can route to, which is the bug the
+    generated form makes impossible.
+    """
+    return [
+        {
+            "name": name,
+            "description": skill.answers,
+            "input_schema": {
+                "type": "object",
+                "properties": dict(skill.arguments),
+                "required": [],
+                "additionalProperties": False,
+            },
+        }
+        for name, skill in SKILLS.items()
+    ]
+
+
+def _fill_arguments(question: str, skill_name: str, provider) -> dict:
+    """Ask only how to narrow an analysis already chosen.
+
+    A second call, deliberately, and the reason is measured rather than
+    aesthetic. The first attempt did this in one call: routing enum plus
+    every skill's arguments flattened into one schema. It filled arguments
+    well and it *made routing worse* — `glm-5.3-flash` went from 10/10 to
+    9/10 on a live sweep, sending "what is our access review cadence?" (an
+    ordinary document question the eval suite covers) to `parameters` with a
+    baseline nobody had mentioned. Twenty extra fields in the schema pulled
+    the model's attention off the one decision that matters.
+
+    Split in two, the routing call is byte-for-byte the one that measures
+    100%, and argument filling cannot touch it. The cost is one extra call,
+    and only for a skill that declares arguments at all — six of the ten
+    declare none and never make it.
+
+    Returns {} on any failure. Running an analysis unnarrowed is what this
+    project did until now; it is a worse answer, not a wrong one, and it is
+    the right thing to fall back to.
+    """
+    import json
+
+    declared = SKILLS[skill_name].arguments
+    if not declared:
+        return {}
+
+    schema = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "arguments",
+            "strict": False,
+            "schema": {
+                "type": "object",
+                "properties": dict(declared),
+                "required": [],
+                "additionalProperties": False,
+            },
+        },
+    }
+    try:
+        response = provider.generate_json(
+            system=ARGUMENT_PROMPT,
+            prompt=(
+                f"ANALYSIS\n\n{skill_name}: {SKILLS[skill_name].answers}\n\n"
+                f"QUESTION\n\n{question.strip()}"
+            ),
+            schema=schema,
+            temperature=0.0,
+            max_tokens=ROUTING_TOKENS,
+        )
+        parsed = json.loads(response.text)
+    except Exception:  # noqa: BLE001 - unnarrowed is a worse answer, not a wrong one
+        return {}
+
+    if not isinstance(parsed, dict):
+        return {}
+    return {
+        key: value
+        for key, value in parsed.items()
+        if key in declared and value not in (None, "") and _named_in(question, value)
+    }
+
+
+def _named_in(question: str, value) -> bool:
+    """Whether the question actually contains the value the model returned.
+
+    Rule 2 of `ARGUMENT_PROMPT` asks the model not to invent a scope, and
+    measurement says asking is not enough. On a live sweep `glm-5.3-flash`
+    invented `baseline: moderate` on one question of ten and
+    `deepseek-v4-flash` on three — always "moderate", always for a question
+    that named no baseline at all. A prompt is a request and a check is a
+    guarantee, which is the rule the rest of this project is built on.
+
+    So a value has to be *in* the question to survive. That makes inventing
+    one structurally impossible rather than discouraged, and it costs almost
+    nothing real: every value worth filling — a baseline, a control id, a
+    team name — is something the asker typed.
+
+    Matched case-insensitively over whitespace-collapsed text, so "Moderate"
+    against "the moderate baseline" holds, and "the highest impact level"
+    still yields "high". The deliberate loss is a value the model knew from
+    somewhere other than the question: "what does the IAM team own?" will not
+    become `IAM Engineering` unless the question said so. Running unnarrowed
+    and asking which team is the better outcome there — a bundle for the
+    wrong team is worse than a prompt for the right one.
+
+    Hyphens and underscores are flattened to spaces on both sides, because a
+    document's slug is `access-control` and nobody asks about it that way —
+    "what versions of the access control standard are recorded?" should yield
+    `access-control`, and an exact match would reject it for punctuation the
+    asker had no reason to type.
+    """
+    return bool(_flatten(value)) and _flatten(value) in _flatten(question)
+
+
+def _flatten(text) -> str:
+    """Casefolded, with separators and runs of whitespace reduced to one space."""
+    import re
+
+    return " ".join(re.sub(r"[-_/]+", " ", str(text)).split()).casefold()
+
+
 def route(question: str, provider=None) -> str:
     """Which skill answers this, or `documents`.
 
     Never raises: a router failure should send the question to the documents,
     which is the honest default and the path that refuses gracefully.
+
+    Deliberately not `route_with_arguments(...).skill`. This returns a name
+    and nothing else, so filling arguments to then discard them would be a
+    second billed call bought for nothing — which is exactly what it was
+    doing until a test that counts calls caught it.
+    """
+    return _route_by_name(question, provider) if provider is not None else route_offline(question)
+
+
+def route_with_arguments(question: str, provider=None) -> Routed:
+    """`route`, plus the arguments the question named.
+
+    Kept as a separate entry point so `route()` stays exactly what every
+    existing caller and the whole routing eval suite expect — a name. The
+    suite grades which analysis a question reaches, and that question is
+    unchanged by this.
+    """
+    if provider is None:
+        return Routed(route_offline(question))
+
+    # The routing decision first, through the path that measures 100%, and
+    # unchanged by anything here.
+    skill = _route_by_name(question, provider)
+    if skill == NO_SKILL or not SKILLS[skill].arguments:
+        return Routed(skill)
+    if not getattr(provider, "supports_schema", lambda: False)():
+        # Without a schema the model would be asked for arguments in prose
+        # and parsed with a regex, which is how the scope got lost in the
+        # first place. Unnarrowed is the honest outcome here.
+        return Routed(skill)
+    return Routed(skill, _fill_arguments(question, skill, provider))
+
+
+def _route_by_name(question: str, provider) -> str:
+    """The original router: one word, no arguments.
+
+    Still here because most local models cannot be held to a schema, and a
+    router that worked only on hosted ones would be a worse router than the
+    one that was already here.
     """
     if provider is None:
         return route_offline(question)

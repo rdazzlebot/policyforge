@@ -947,6 +947,11 @@ def test_routing_uses_a_schema_when_the_model_can_be_held_to_one():
     provider = _SchemaRouter(analysis="history")
 
     assert route("what versions have been recorded?", provider) == "history"
+    # One call, not two. `route` asks only which analysis; filling that
+    # analysis's arguments is a second, separate call made by
+    # `route_with_arguments`, and it is separate precisely so it cannot
+    # affect the decision this call makes — measured, see MEASUREMENTS.md
+    # epoch 14.
     assert (provider.json_calls, provider.prose_calls) == (1, 0)
 
 

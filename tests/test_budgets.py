@@ -79,7 +79,11 @@ def test_the_call_sites_read_the_budgets(monkeypatch):
 
     from policyforge.zardoz import conversation, paraphrase, skills
 
-    assert "ROUTING_TOKENS" in inspect.getsource(skills.route)
+    # `route` delegates to `_route_by_name`, which is where the routing
+    # call — and so the budget — now lives. Argument filling reads the
+    # same budget in `_fill_arguments`.
+    assert "ROUTING_TOKENS" in inspect.getsource(skills._route_by_name)
+    assert "ROUTING_TOKENS" in inspect.getsource(skills._fill_arguments)
     assert "EXPANSION_TOKENS" in inspect.getsource(paraphrase.expand_query)
     assert "RESOLUTION_TOKENS" in inspect.getsource(conversation.resolve_question)
 

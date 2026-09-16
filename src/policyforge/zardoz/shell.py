@@ -475,7 +475,7 @@ def _answer_turn(question: str, state: ShellState, scope) -> str:
     evidence an answer would have been built out of.
     """
     from .answer import answer_question
-    from .skills import NO_SKILL, route, run_skill
+    from .skills import NO_SKILL, route_with_arguments, run_skill
 
     # Resolve before anything else. Retrieval is keyword scoring and has no
     # mechanism for "that", and neither has the router — rewriting the
@@ -497,14 +497,21 @@ def _answer_turn(question: str, state: ShellState, scope) -> str:
     # answerable with nothing synced at all — it comes out of the registry
     # and the catalogs — and refusing it for want of a document corpus would
     # be answering a question nobody asked.
-    skill = route(resolved, state.provider)
-    if skill != NO_SKILL:
+    routed = route_with_arguments(resolved, state.provider)
+    if routed.skill != NO_SKILL:
         state.conversation.add(Turn(question=question, resolved=resolved, answer=""))
+        args = routed.as_args()
+        # Shown with its arguments, so the line reads as the command a
+        # person could have typed to get the same thing. Routing can be
+        # wrong in a way you can see only if what it decided is on screen,
+        # and until now the scope it chose was invisible because there was
+        # none: every routed analysis ran unnarrowed.
+        ran = f"/{routed.skill}" + (" " + " ".join(args) if args else "")
         # The skill's output goes through untouched. A model that read the
         # numbers and told you about them could turn "14 orphaned" into
         # "mostly in the audit family", and there would be nothing to check
         # that against.
-        return "\n".join([*preamble, f"(ran /{skill})", "", run_skill(skill, state)])
+        return "\n".join([*preamble, f"(ran {ran})", "", run_skill(routed.skill, state, args)])
 
     if state.corpus is None:
         return "\n".join(

@@ -571,6 +571,78 @@ throughout.
 Not comparable with epoch 12's routing row: the suite gained six cases, so
 the denominator changed.
 
+### 14. Routing that carries the scope — 2026-09-16
+
+The router returned an analysis name and nothing else, and the shell ran
+that analysis with no arguments at all. "Which controls are orphaned in the
+moderate baseline?" routed correctly to `coverage` and then reported on all
+1,408 in-scope requirements under a heading reading *scope: all controls*.
+The scope was never misread — it was never carried. Typing
+`/coverage moderate` by hand always worked, which is what kept it invisible.
+
+Ten questions, two models, three designs. The first two were wrong and the
+measurement is the only reason that is known.
+
+**Design 1 — one call, routing enum plus every skill's arguments
+flattened into one schema.** It filled arguments and it *broke routing*:
+
+| Model                        | routed correctly | arguments filled | invented |
+| ---------------------------- | ---------------- | ---------------- | -------- |
+| `z-ai/glm-5.3-flash`         | 9/10             | 5/6              | 1        |
+| `deepseek/deepseek-v4-flash` | 10/10            | 2/6              | 2        |
+
+`glm-5.3-flash` sent "what is our access review cadence?" — an ordinary
+document question the routing suite covers, and one it had passed on every
+previous run — to `parameters`, with a baseline nobody mentioned. Twenty
+extra fields pulled the model's attention off the one decision that matters.
+A change that improves the thing it was aimed at while quietly degrading
+something already measured at 100% is the exact shape an A/B exists to
+catch.
+
+**Design 2 — two calls.** The routing call is byte-for-byte the one that
+measures 100%; arguments are asked for separately, and only for a skill that
+declares any:
+
+| Model                        | routed correctly | arguments filled | invented |
+| ---------------------------- | ---------------- | ---------------- | -------- |
+| `z-ai/glm-5.3-flash`         | 10/10            | 6/6              | 1        |
+| `deepseek/deepseek-v4-flash` | 10/10            | 6/6              | 3        |
+
+Routing restored and filling fixed, but both models now invented a scope on
+questions that named none — always `baseline: moderate`, four times across
+twenty. The prompt already told them not to, in a rule written specifically
+about this.
+
+**Design 3 — the same two calls, plus a check.** A filled value must appear
+in the question, matched casefolded with hyphens and underscores flattened
+so a slug like `access-control` still matches "the access control standard":
+
+| Model                        | routed correctly | arguments filled | invented |
+| ---------------------------- | ---------------- | ---------------- | -------- |
+| `z-ai/glm-5.3-flash`         | 10/10            | 6/6              | **0**    |
+| `deepseek/deepseek-v4-flash` | 10/10            | 6/6              | **0**    |
+
+**Invention went to zero without costing a single legitimate fill.** That is
+the same lesson as `check_answer`: a prompt is a request and a check is a
+guarantee. Two models, two invention rates, one deterministic rule that ends
+the question for both — and for the next model, which nobody has measured.
+
+The deliberate cost is a value the model knew from somewhere other than the
+question. "What does the IAM team own?" will not become `IAM Engineering`
+unless the asker wrote it. Running unnarrowed and asking which team is the
+better outcome: a bundle for the wrong team is worse than a prompt for the
+right one.
+
+Routing accuracy is unchanged from epoch 13 by construction, not by luck —
+`route()` makes exactly the call it made before, and a test counts the calls
+to keep it that way.
+
+**What A-07 asked for and this is not.** The review asked for native tool
+use, which would also let the model chain two analyses when a question needs
+both. This is structured output, not a tool loop, and it cannot chain.
+Calling it done would misrepresent it. What it does deliver is the half that
+was actually broken.
+
 ______________________________________________________________________
 
 ## Two ways a run can lie, found the hard way

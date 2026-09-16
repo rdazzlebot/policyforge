@@ -168,6 +168,24 @@ def run_routing(case: dict, provider, corpora: dict | None = None) -> Outcome:
     return Outcome(True, output=chosen)
 
 
+def run_chaining(case: dict, provider, corpora: dict | None = None) -> Outcome:
+    """Does a question get every analysis it asks for, and no others?
+
+    Graded as a set. For a question that genuinely asks two separate things,
+    which one a model routes first is its choice, and grading the order would
+    fail a correct plan. What is graded strictly is the count: a single-intent
+    case that comes back with a second analysis has attached a report nobody
+    asked for, which is the failure this suite exists to catch.
+    """
+    from policyforge.zardoz.skills import route_plan
+
+    chosen = [routed.skill for routed in route_plan(case["question"], provider)]
+    expected = case["expect"] if isinstance(case["expect"], list) else [case["expect"]]
+    if len(chosen) != len(expected) or set(chosen) != set(expected):
+        return Outcome(False, f"ran {chosen}, expected {expected}", ", ".join(chosen))
+    return Outcome(True, output=", ".join(chosen))
+
+
 def run_resolution(case: dict, provider, corpora: dict | None = None) -> Outcome:
     """Does a follow-up become the question it obviously means?"""
     from policyforge.zardoz.conversation import Conversation, Turn, resolve_question
@@ -762,6 +780,10 @@ def run_generation(case: dict, provider, corpora: dict | None = None) -> Outcome
 
 SUITES = {
     "routing": run_routing,
+    # Separate from routing so a chaining regression cannot hide inside a
+    # routing score, and so routing's numbers stay comparable with every
+    # epoch before chaining existed.
+    "chaining": run_chaining,
     "resolution": run_resolution,
     "expansion": run_expansion,
     "answering": run_answering,

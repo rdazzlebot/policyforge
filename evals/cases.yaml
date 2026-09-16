@@ -214,6 +214,48 @@ routing:
     question: do we have anything covering media sanitization?
     expect: documents
 
+# A question may ask for two analyses. Graded as a set of analyses run, with
+# the count strict: the failure worth catching is a report nobody asked for,
+# attached to an ordinary question, burying the one that was.
+chaining:
+  # Must run both.
+  - name: orphans-and-undecided-parameters
+    question: which controls does nobody own, and how many parameters are still undecided?
+    expect: [coverage, parameters]
+  - name: team-and-one-requirement
+    question: what does the IAM Engineering team own, and where do we address AC-2?
+    expect: [bundle, addresses]
+  - name: catalog-change-and-broken-links
+    question: did anything change in the catalog update, and are there broken links between our documents?
+    expect: [drift, check]
+  - name: two-sentences
+    question: which controls are orphaned in the moderate baseline? Also, what changed in the latest framework update?
+    expect: [coverage, drift]
+  - name: parameters-and-frameworks
+    question: how many organization-defined values are undecided, and which frameworks are loaded?
+    expect: [parameters, frameworks]
+  - name: contested-and-history
+    question: is any control claimed by two teams, and what versions of the access control standard are recorded?
+    expect: [coverage, history]
+
+  # Must run exactly one. A scope, a detail or a second clause about the
+  # same thing is not a second question.
+  - name: one-question-with-a-scope
+    question: which controls are orphaned in the moderate baseline?
+    expect: [coverage]
+  - name: one-question-two-clauses-same-thing
+    question: which controls does nobody own, and which are claimed by two teams?
+    expect: [coverage]
+  - name: one-team-with-detail
+    question: what does the security team own, and which of their documents need keeping current?
+    expect: [bundle]
+  - name: related-but-not-asked
+    question: where do we address 164.308(a)(1)(i)?
+    expect: [addresses]
+  - name: a-document-question-is-never-chained
+    question: what is our access review cadence, and who approves exceptions?
+    expect: [documents]
+
 resolution:
   - name: pronoun-carries-the-subject
     history:

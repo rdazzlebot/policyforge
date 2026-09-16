@@ -238,6 +238,7 @@ def test_the_shipped_cases_load_and_are_well_formed():
     } <= set(cases)
     assert set(cases) <= {
         "routing",
+        "chaining",
         "resolution",
         "expansion",
         "answering",
@@ -619,6 +620,8 @@ def test_every_case_names_a_corpus_that_exists():
                     or suite
                     in {
                         "routing",
+                        # Routes questions to analyses; reads no documents.
+                        "chaining",
                         "resolution",
                         "expansion",
                         "paraphrase",

@@ -643,6 +643,58 @@ both. This is structured output, not a tool loop, and it cannot chain.
 Calling it done would misrepresent it. What it does deliver is the half that
 was actually broken.
 
+### 15. The harness was measuring the fallback — and chaining — 2026-09-16
+
+**A correction to every routing number above, starting with epoch 5.**
+
+`scripts/eval_zardoz.py` wraps the provider in `_Metered` to count cost. The
+wrapper exposed `generate` and `check` and nothing else, so under the harness
+a schema-capable model looked like one that could not be held to a schema,
+and every caller took its fallback path. Routing ran its prose fallback, not
+the enum-constrained call production makes. Argument filling and chaining
+never ran. No effort level was sent. `_Metered` was written before schema
+routing, so this is true of every epoch that measured routing through the
+harness: epoch 5, recorded as "Structured outputs — no regression", measured
+the prose path on both sides of the change it describes, and the routing
+figures in epochs 12 and 13 are fallback figures too.
+
+Epoch 14 is unaffected — its measurements used the raw provider in a direct
+script, not the harness — and that difference is how this was found: a live
+chaining eval through the harness scored 0/6 on compound questions that a
+direct probe of the same model and prompt got 12/12 on. Fixed in 99822f3; the
+numbers below are the first harness measurement of the path production runs.
+
+| Model                        | routing (schema path) | chaining | runs |
+| ---------------------------- | --------------------- | -------- | ---- |
+| `z-ai/glm-5.3-flash`         | 18/18                 | 11/11    | x2   |
+| `deepseek/deepseek-v4-flash` | **16/18**             | 11/11    | x2   |
+
+**`deepseek-v4-flash` routes worse on the production path than the record
+said.** Epoch 13 put it at 18/18; on the schema path it is 16/18, flaky on two
+document questions — "who owns the backup standard?" and "what does AC-2
+require?" — each sent to `addresses` in one run of two. Both flakes are into a
+skill added in epoch 13, whose routing was validated only on the fallback, so
+that epoch's claim that the ownership boundary "held on both, including the
+cheap one" was not established for this model. Recorded here as found, not
+fixed; the fix and its measurement are the next epoch.
+
+**Chaining.** A question can now run two analyses: routing picks the first
+exactly as before, and a second call, made only when the first is an
+analysis, asks whether the question plainly asks a separate thing another
+analysis answers. Eleven cases: six compound questions that must run both,
+and five that must run exactly one — including "which controls does nobody
+own, and which are claimed by two teams?", an "and" joining two clauses that
+one report answers, which is where a rule like "and means two" would chain
+falsely. Both models passed all eleven on every run.
+
+It was measured before it was built, with the raw provider: across the twelve
+single-intent routing questions and six compound ones, no false second
+analysis in 52 single-intent runs on the two models, and all 24 compound runs
+fully routed. The failure it is built to avoid is a report nobody asked for,
+so single-intent cases grade the count strictly.
+
+Cost was not captured for this run.
+
 ______________________________________________________________________
 
 ## Two ways a run can lie, found the hard way

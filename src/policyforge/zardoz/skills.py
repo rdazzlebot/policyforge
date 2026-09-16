@@ -876,6 +876,106 @@ def route_with_arguments(question: str, provider=None) -> Routed:
     return Routed(skill, _fill_arguments(question, skill, provider))
 
 
+#: The most analyses one question may run. Two, not "as many as it asks for":
+#: a question that needs three reports is better asked as two questions, and
+#: every extra report is more for a person to read past to find their answer.
+MAX_ANALYSES = 2
+
+
+ALSO_PROMPT = """A question about an organization's security programme has \
+already been routed to one analysis. You decide whether it also asks a second, \
+separate thing that a different analysis answers.
+
+Rules:
+
+1. Most questions ask one thing. Answer `none` unless the question plainly
+   asks two separate things — usually joined by "and", or asked as two
+   sentences.
+2. A detail, a scope or a restatement of the same thing is not a second
+   question. "Which controls are orphaned in the moderate baseline?" asks one
+   thing.
+3. Never add an analysis because it is related or might be useful. Only
+   because the question asks for what it reports.
+4. If you are unsure, answer `none`. A missing second report is a follow-up
+   question; an unwanted one buries the answer that was asked for."""
+
+
+def _route_also(question: str, first: str, provider) -> str:
+    """A second analysis the question separately asks for, or `none`.
+
+    Its own call, after routing, for the reason argument filling is its own
+    call: putting more into the routing schema measurably made routing worse
+    (MEASUREMENTS.md epoch 14), and routing is the decision that has to stay
+    right. This call cannot change the first analysis — it only chooses among
+    the others.
+
+    Measured before it was built, on the routing suite's single-intent
+    questions and on compound ones: no false second analysis in 52 runs across
+    two models, and every compound question fully routed (MEASUREMENTS.md
+    epoch 15). Failure of any kind is `none` — one report where two were
+    asked for is a follow-up question, not a wrong answer.
+    """
+    import json
+
+    others = [name for name in SKILLS if name != first]
+    catalog = "\n".join(f"{name}: {SKILLS[name].answers}" for name in others)
+    schema = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "also",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {"also": {"type": "string", "enum": ["none", *others]}},
+                "required": ["also"],
+                "additionalProperties": False,
+            },
+        },
+    }
+    try:
+        response = provider.generate_json(
+            system=ALSO_PROMPT,
+            prompt=(
+                f"ALREADY ROUTED TO\n\n{first}: {SKILLS[first].answers}\n\n"
+                f"OTHER ANALYSES\n\n{catalog}\n\nQUESTION\n\n{question.strip()}"
+            ),
+            schema=schema,
+            temperature=0.0,
+            max_tokens=ROUTING_TOKENS,
+        )
+        choice = json.loads(response.text).get("also", "none")
+    except Exception:  # noqa: BLE001 - a missed second report is a follow-up, not an error
+        return "none"
+    # `strict` should make this impossible; a schema nobody enforced is the
+    # one case that cannot be detected from inside.
+    return choice if choice in others else "none"
+
+
+def route_plan(question: str, provider=None) -> list[Routed]:
+    """Every analysis the question asks for — one, or at most two.
+
+    The first is exactly what `route_with_arguments` returns, by the same
+    calls. A second is looked for only when the first is an analysis: a
+    question sent to the documents is answered from passages, and there is no
+    report to set another beside.
+
+    Chaining needs a schema. Without one, the second call would be a word
+    parsed out of prose, which is the least reliable thing this module does,
+    and a spurious extra report costs the reader more than a missing one.
+    """
+    first = route_with_arguments(question, provider)
+    if first.skill == NO_SKILL or provider is None:
+        return [first]
+    if not getattr(provider, "supports_schema", lambda: False)():
+        return [first]
+
+    second = _route_also(question, first.skill, provider)
+    if second == "none":
+        return [first]
+    arguments = _fill_arguments(question, second, provider) if SKILLS[second].arguments else {}
+    return [first, Routed(second, arguments)][:MAX_ANALYSES]
+
+
 def _route_by_name(question: str, provider) -> str:
     """The original router: one word, no arguments.
 

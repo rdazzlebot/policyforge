@@ -511,9 +511,8 @@ def _generate(monkeypatch, tmp_path, source, *extra):
 
 def test_the_candidate_is_written_outside_the_package_by_default():
     """Model output used to land in src/ and be importable on the next run."""
-    from pathlib import Path
-
     import sys
+    from pathlib import Path
 
     import policyforge.cli as cli_mod
 

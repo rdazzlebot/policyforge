@@ -132,6 +132,22 @@ bundled catalog directory, using `os.path.samefile`, which resolves case,
 `..`, symlinks and junctions the way the write does. Three of the five test
 cases failed before the fix.
 
+**The first fix was itself incomplete, and closed the same day.** It found
+bundled directories only by searching upward from the working directory, and
+kept a spelling test as the fallback for everything else — case-sensitively.
+So running from *outside* a checkout with an absolute, differently-cased path
+(`--out <repo>/Data/Frameworks/…`) wrote a licensed catalog into that
+checkout's bundled directory, exit 0, while the lowercase spelling of the same
+path was refused. The spelling test now compares path components case-folded,
+on the path as given and on its resolved form, so `Data/Frameworks`,
+`DATA/FRAMEWORKS` and `data/x/../frameworks` are refused wherever the command
+runs; components rather than substrings, so `metadata/frameworks` and
+`data/frameworks-old` are still allowed. The tests place the other checkout
+beside the working directory and write through an absolute path. One stated
+cost: on a case-sensitive filesystem, a `Data/Frameworks` that genuinely is a
+different directory is now refused too. A false refusal is recoverable; a
+false permission is a redistributed licence.
+
 **Not covered:** the identity check needs the bundled directory to exist on
 disk to compare against, and 8.3 short names and hard-linked directories have
 not been tested. `samefile` should handle both; it has not been measured, so

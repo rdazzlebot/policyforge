@@ -71,7 +71,11 @@ overclaimed:
   `DATA/frameworks/…` got past it on case-insensitive filesystems, and
   `frameworks/…` run from inside `data/` got past it on every platform. Each
   wrote licensed content into the redistributable directory with exit 0. The
-  guard now compares filesystem identity with `os.path.samefile`. This
+  guard now compares filesystem identity with `os.path.samefile`, and — after
+  review found the first fix still let `--out <other-repo>/Data/Frameworks/…`
+  through when run from outside that checkout — compares the path's
+  components case-folded, so the spelling fallback no longer depends on
+  case. This
   restores a stated commitment rather than changing one, so it is not a
   breaking change; it is recorded here because a published commitment was
   false and adopters on an affected layout should check `data/frameworks/`

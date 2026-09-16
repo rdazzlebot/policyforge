@@ -20,10 +20,12 @@ Each entry has four parts:
 **A note on the honest shape of this mapping.** Three of the ten
 (LLM01, LLM09, LLM05) carry nearly all the real risk for this tool, and they
 are where nearly all the engineering has gone. Three more (LLM02, LLM03,
-LLM04) are addressed substantively. The remaining four are largely mitigated
-by architecture — a local single-user CLI with no autonomous tool use and no
-public endpoint — rather than by controls written for them, and they are
-labelled that way rather than padded.
+LLM04) are addressed substantively. The rest are mitigated largely by
+architecture — a local, single-user tool with no public endpoint — rather than
+by controls written for them, and are labelled that way rather than padded.
+**LLM06 is the exception and changed most recently:** the MCP server means an
+external agent can call this project's analyses autonomously, so that entry is
+no longer architectural and is scored `Partial`.
 
 Scope note: this maps the **LLM Applications** list, which is the one that
 fits a generative-AI application. The OWASP Machine Learning Security Top 10
@@ -41,7 +43,7 @@ weights.** It calls an inference API you configure.
 | LLM03 | Supply Chain                     | **Substantial**                       | Hashed lock, SHA-pinned actions, cooldown, five scanners; gated model-written code |
 | LLM04 | Data and Model Poisoning         | **Partial**                           | Corpus scanning, drift detection, catalog provenance hashing; no training surface  |
 | LLM05 | Improper Output Handling         | **Substantial**                       | Output is Markdown, not code; the one code path is gated; publish guards           |
-| LLM06 | Excessive Agency                 | **Architectural**                     | No autonomous tool use; dry run default; human applies                             |
+| LLM06 | Excessive Agency                 | **Partial**                           | Read-only autonomous tools over a closed, AST-enforced list; no write tool exists  |
 | LLM07 | System Prompt Leakage            | **Architectural**                     | Prompts are open source and hold no secrets                                        |
 | LLM08 | Vector and Embedding Weaknesses  | **Partial**                           | Embed/rerank off by default, local by default, boundary-enforced                   |
 | LLM09 | Misinformation                   | **Substantial, measured**             | Grounding, citation verification, traceability tags, eval suites                   |
@@ -330,37 +332,74 @@ ______________________________________________________________________
 
 ## LLM06 — Excessive Agency
 
-**How it applies here.** **Mitigated architecturally rather than by a control
-written for it**, and that is the honest description.
+**How it applies here.** This entry changed when the MCP server landed, and
+the change is worth stating plainly rather than softening: **an external
+agent can now call this project's analyses autonomously.** That is
+autonomous tool use. The previous claim — no agent loop, nothing the
+operator did not personally invoke — is no longer true, and the interesting
+question is what constrains it instead.
 
-PolicyForge is a command-line tool that does what a person typed. There is no
-agent loop, no autonomous tool selection, no chain of model-chosen actions,
-and no ability for the model to invoke a capability the operator did not
-invoke. The model writes text; the program decides what to do with it.
+**What constrains it.**
 
-Where the tool does touch a live system, the gates are explicit:
+1. **Every tool is read-only, and structurally so.**
+   [`tests/test_mcp_server.py`](../tests/test_mcp_server.py) walks the parsed
+   AST of every module under `mcp/` and fails on any reference to
+   `update_page_body`, `export_to_confluence`, `confluence_exporter`,
+   `publish_tree`, `apply_edit_plan` or `apply_targets`. It is the same guard
+   shape that already protects `zardoz/`, and being over the AST rather than
+   over substrings it catches a lazy import inside a function body as
+   readily as a top-level one — while leaving the module free to *discuss*
+   the publish path in prose, which it must, since the reason it does not
+   call it is the point.
+1. **The tool list is closed and hand-written**, not generated from the skill
+   registry: seven tools — `ask_documents`, `coverage`, `team_bundle`,
+   `addresses`, `parameters`, `corpus`, `topics`. A test asserts the declared
+   set equals the routable set, so a tool nobody can run and a route nobody
+   declared both fail. **Adding a tool is therefore an act that produces a
+   diff somebody reviews** — the same principle as the endpoint allowlist.
+1. **Nothing fetches.** Every tool reads the corpus and catalogs already
+   synced to disk.
+1. **The transport is stdio.** It is a subprocess an MCP client spawns; it
+   binds no port and accepts no remote connection, which is why it
+   introduces no endpoint and reads no token.
+1. **The write paths stay in the CLI**, behind dry run, the macro check, the
+   version guard and a confirmation. Nothing above changes that.
 
-- **Dry run is the default** everywhere that writes to Confluence. Applying
-  is a separate, deliberate flag.
-- **A document with no `confluence:` frontmatter block is never published**,
-  so a draft stays a draft by default.
-- **A model-written parser reaches the package only when a person promotes
-  it.**
-- **The destination of every page lives in the repository under review**,
-  not in a command-line argument.
-- **Credentials are the operator's**, and the tool has exactly the privileges
-  of the user who ran it — no more, and no separate service identity with a
-  broader grant.
+**The deliberate omission is the strongest evidence here.** `plan_edit` is
+in the roadmap and was **not** implemented. Planning an edit means fetching
+the live wiki page, which is untrusted input, and the fence around it was
+red-teamed with a result that was not clean: one model obeyed a page
+claiming to speak for the operator **3 times out of 3**. Today a person
+reads the plan before anything happens. As a tool, an automated caller would
+sit on the far side of that fence and another model would consume the
+output. That is a risk decision for the operator rather than a missing
+function, and `mcp/server.py` says so in its docstring.
 
-**Evidence.** Dry-run defaults in [`export/publish.py`](../src/policyforge/export/publish.py)
-and the CLI; [`tests/test_cli.py`](../tests/test_cli.py),
+A control that was considered, measured, and declined on the evidence is
+worth more than one that was shipped because it was on a list.
+
+**Evidence.** [`tests/test_mcp_server.py`](../tests/test_mcp_server.py) —
+the publish-path guard, the closed-list assertion, and a test that no tool
+*describes itself* as changing anything. Dry-run defaults in
+[`export/publish.py`](../src/policyforge/export/publish.py);
+[`tests/test_cli.py`](../tests/test_cli.py),
 [`tests/test_edit_session.py`](../tests/test_edit_session.py).
 
-**Residual.** An adopter who wires `--apply` into unattended automation has
-removed the principal control for this risk. If you automate publishing,
-**put the human gate at pull-request review instead** — that is what the
-frontmatter-in-the-repo design is for — and never at the end of a pipeline
-where nobody reads the plan.
+**Residual.**
+
+- **`ask_documents` calls a model.** If one is configured, an MCP client can
+  cause model calls without a person typing a command — same provider, same
+  ledger, same boundary as the CLI, so no new recipient, but a **new
+  trigger**. Watch spend via `policyforge model-log`; see
+  [LLM10](#llm10--unbounded-consumption).
+- **The read-only guarantee is a denylist of known write symbols.** A future
+  write path under a name nobody added to that list would pass. The closed
+  tool list is what makes that unlikely rather than impossible.
+- **An adopter who wires `--apply` into unattended automation** has removed
+  the principal control on the CLI side. If you automate publishing, put the
+  human gate at pull-request review — that is what the
+  frontmatter-in-the-repo design is for — never at the end of a pipeline
+  where nobody reads the plan.
 
 ______________________________________________________________________
 
@@ -568,6 +607,15 @@ epoch 2.
 run across many topics is expensive by design, and nothing stops it
 part-way. Set spend limits at your provider account — that is the control
 that actually binds. Rate limiting is the provider's, not this tool's.
+
+**The MCP server narrows the "no untrusted caller" argument above.** An
+agent calling `ask_documents` in a loop spends money without a person
+typing anything each time. The caller is still local — an MCP client
+running as you, spawning a stdio subprocess — so this is not the
+denial-of-wallet shape that faces a hosted application, and every call still
+lands in the ledger. But "only a person at a keyboard can spend" is no
+longer the right description, and a provider-side spend limit is the control
+that binds.
 
 ______________________________________________________________________
 

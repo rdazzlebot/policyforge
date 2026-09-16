@@ -57,6 +57,26 @@ specifically to hold them to the same ceiling as a model, and
 [`tests/test_side_channels.py`](../tests/test_side_channels.py) asserts text a
 ceiling forbids never reaches the endpoint.
 
+## The MCP server introduces no recipient, but a new trigger
+
+Worth separating, because the two get conflated. The MCP server
+(`policyforge mcp`) exposes seven read-only tools to an external agent. It
+**adds no party to this page**: nothing in it fetches, every tool reads the
+corpus and catalogs already on disk, and the transport is stdio — a local
+subprocess, no port, no remote connection.
+
+One of those tools, `ask_documents`, answers from the corpus, and if a model
+is configured it calls that model to write the grounded answer. Same
+provider, same ledger, same boundary check as the CLI. So:
+
+- **No new recipient.** Your content goes nowhere it was not already going.
+- **A new trigger.** A model call can now originate from an agent rather
+  than from a person typing a command.
+
+If your vendor register records *when* a processor is invoked rather than
+only *which* processors exist, that distinction belongs in it.
+`policyforge model-log` shows the calls either way.
+
 ## What actually gets sent
 
 Worth stating plainly, because "sends your data to an AI provider" is both

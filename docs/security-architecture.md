@@ -24,11 +24,18 @@ does not protect you from.
 ## What PolicyForge is, architecturally
 
 It is a **single-user command-line program that runs on your machine or your
-CI runner.** It is not a service. There is no server to compromise, no
-listening port, no multi-tenant datastore, no user accounts, and no session
-management, because there is nothing to authenticate to. It reads files from
-your working tree, calls a model API you configure and hold the key for, and
-writes files back.
+CI runner.** There is no hosted service, no listening port, no multi-tenant
+datastore, no user accounts, and no session management, because there is
+nothing to authenticate to. It reads files from your working tree, calls a
+model API you configure and hold the key for, and writes files back.
+
+There is an **MCP server**, and it does not change that shape: the transport
+is stdio, so it is a subprocess an MCP client spawns on your machine rather
+than a network listener — it binds no port and accepts no remote connection.
+What it does change is that an external agent can call seven **read-only**
+analyses autonomously. See
+[LLM06](owasp-llm-top-10.md#llm06--excessive-agency) for what constrains
+that, and what was deliberately left out of it.
 
 That shape determines most of this document. A large share of the
 application-security questions an adopter would normally ask —

@@ -5,15 +5,15 @@ questionnaire. Everything here is expanded elsewhere in [docs/](README.md).
 
 ## What it is
 
-|              |                                                                                                                  |
-| ------------ | ---------------------------------------------------------------------------------------------------------------- |
-| **Name**     | PolicyForge                                                                                                      |
-| **Version**  | 1.0.0                                                                                                            |
-| **Licence**  | Apache-2.0                                                                                                       |
-| **Type**     | Single-user command-line tool, run by you, on your machine or CI runner                                          |
-| **Service?** | No. No server, no account, no telemetry, no data received by the maintainers                                     |
-| **AI used**  | A general-purpose LLM via an API you configure and hold the key for. No model is trained, fine-tuned, or shipped |
-| **Autonomy** | None. No agent loop, no model-chosen actions. It does what a person typed                                        |
+|              |                                                                                                                                                                                                                                   |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Name**     | PolicyForge                                                                                                                                                                                                                       |
+| **Version**  | 1.0.0                                                                                                                                                                                                                             |
+| **Licence**  | Apache-2.0                                                                                                                                                                                                                        |
+| **Type**     | Single-user command-line tool, run by you, on your machine or CI runner                                                                                                                                                           |
+| **Service?** | No. No server, no account, no telemetry, no data received by the maintainers                                                                                                                                                      |
+| **AI used**  | A general-purpose LLM via an API you configure and hold the key for. No model is trained, fine-tuned, or shipped                                                                                                                  |
+| **Autonomy** | Limited. An MCP server exposes seven **read-only** tools an external agent can call; the list is closed and a test fails if any module under `mcp/` can reach a write path. All writing stays in the CLI behind an explicit apply |
 
 ## What it is for
 

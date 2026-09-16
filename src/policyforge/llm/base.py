@@ -132,6 +132,7 @@ class LLMProvider(ABC):
         schema: dict,
         max_tokens: int = 4096,
         temperature: float = 0.2,
+        effort: str | None = None,
     ) -> LLMResponse:
         """Like `generate`, but the reply is constrained to `schema`.
 

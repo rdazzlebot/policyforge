@@ -36,6 +36,45 @@ from policyforge.llm.base import LLMProvider
 #: smuggle in an operation nobody reviewed the semantics of.
 EDIT_KINDS = ("add", "modify", "remove", "rewrite")
 
+#: The plan's shape, for providers that can hold a reply to it.
+#:
+#: This output is the review surface for a change to a live policy page, and
+#: until now it was asked for in prose and recovered with a regex — which
+#: works until the day a model writes a sentence before the object, or a
+#: second object after it. `_extract_json` still runs either way, so a local
+#: model that cannot be constrained keeps working exactly as before; what a
+#: schema adds is that the shape stops being a request.
+PLAN_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "edit_plan",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"type": "string", "enum": list(EDIT_KINDS)},
+                            "target": {"type": "string"},
+                            "summary": {"type": "string"},
+                            "rationale": {"type": "string"},
+                        },
+                        "required": ["kind", "target", "summary", "rationale"],
+                        "additionalProperties": False,
+                    },
+                },
+                "risks": {"type": "array", "items": {"type": "string"}},
+                "out_of_scope": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["steps", "risks", "out_of_scope"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 
 @dataclass
 class EditStep:
@@ -249,8 +288,9 @@ def build_edit_plan(
     )
     from policyforge.llm import effort
 
-    response = effort.call(
+    response = effort.call_shaped(
         provider,
+        schema=PLAN_SCHEMA,
         effort=effort.EDITING,
         system=_SYSTEM_PROMPT,
         prompt=prompt,

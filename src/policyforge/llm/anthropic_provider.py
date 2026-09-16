@@ -54,6 +54,38 @@ class AnthropicProvider(LLMProvider):
             cache_prefix=cache_prefix,
         )
 
+    def supports_schema(self) -> bool:
+        """The Messages API constrains a reply with `output_config.format`.
+
+        Until this returned True, an Anthropic user — the project's own
+        default provider — got no schema guarantee anywhere, while the
+        routing prompt asked for one and quietly fell back to parsing prose.
+        """
+        return True
+
+    def generate_json(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        schema: dict,
+        max_tokens: int = 4096,
+        temperature: float = 0.2,
+        effort: str | None = None,
+    ) -> LLMResponse:
+        from ._anthropic_compat import call_messages_api
+
+        return call_messages_api(
+            self._client,
+            model=self.model,
+            system=system,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            effort=effort,
+            schema=schema,
+        )
+
     def supports_batch(self) -> bool:
         """The Messages API has a batch endpoint, at half the price."""
         return True

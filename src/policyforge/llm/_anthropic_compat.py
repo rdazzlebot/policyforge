@@ -23,6 +23,19 @@ def _text_of(response) -> str:
     return "".join(block.text for block in response.content if block.type == "text")
 
 
+def _output_format(schema: dict) -> dict:
+    """`output_config.format`, from either spelling of a schema.
+
+    This project's schema constants are written in the envelope LiteLLM
+    wants — `{"type": "json_schema", "json_schema": {"name": ..., "schema":
+    {...}}}` — and the Messages API wants the schema itself under
+    `format.schema`. Accepting both means one constant per prompt rather
+    than one per provider, which is the point of having an interface.
+    """
+    inner = schema.get("json_schema", schema)
+    return {"type": "json_schema", "schema": inner.get("schema", inner)}
+
+
 def _message_params(request, *, model: str) -> dict:
     """One batch entry's request body, in the same shape as a live call."""
     params: dict = {
@@ -140,6 +153,7 @@ def call_messages_api(
     effort: str | None = None,
     cache: bool = False,
     cache_prefix: str | None = None,
+    schema: dict | None = None,
 ) -> LLMResponse:
     import anthropic
 
@@ -180,12 +194,19 @@ def call_messages_api(
                 {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
             ]
 
+    # Both of these live under `output_config`, so they are built together:
+    # writing one and then the other would drop whichever came first. And
+    # `effort` belongs inside it rather than at the top level, where the
+    # SDK's kwargs accept it and the API changes nothing — the worst of both,
+    # since the call site believes it asked for less deliberation and pays
+    # for the same.
+    output_config: dict = {}
     if effort is not None:
-        # Inside `output_config`, which is where the API reads it. A
-        # top-level `effort` is accepted by the SDK's kwargs and changes
-        # nothing, which is the worst of both: the call site believes it
-        # asked for less deliberation and pays for the same.
-        kwargs["output_config"] = {"effort": effort}
+        output_config["effort"] = effort
+    if schema is not None:
+        output_config["format"] = _output_format(schema)
+    if output_config:
+        kwargs["output_config"] = output_config
 
     send_temperature = True
 

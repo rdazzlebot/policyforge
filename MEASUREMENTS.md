@@ -379,6 +379,49 @@ Cost is not close: $0.00285 per call against $0.00019, because the stronger
 model writes longer documents. Against a suite this small that is cents;
 against a document set it is the difference worth knowing before choosing.
 
+### 10. Schemas on the two prose parsers — 2026-09-15
+
+`build_edit_plan` and `cluster_leftovers` both described a shape in the
+system prompt and recovered it with a parser. Both now send a JSON Schema
+where the provider can honour one, keeping the parser and the prompt for
+providers that cannot — see `llm/effort.py::call_shaped` for why these two
+fall back where the entailer refuses to.
+
+The clustering change was measured, because it is the one with a failure
+mode you cannot see. Six page titles, two of which contain the line
+format's own delimiters — `Backup | Restore: Weekly Schedule` and
+`Laptop Encryption: FileVault`. Same model, same rules, one run each,
+differing only in whether the reply was constrained:
+
+| Model                        | prose: titles placed | schema: titles placed |
+| ---------------------------- | -------------------- | --------------------- |
+| `anthropic/claude-sonnet-5`  | 5/6                  | 6/6                   |
+| `deepseek/deepseek-v4-flash` | 3/6                  | 6/6                   |
+| `z-ai/glm-5.3-flash`         | 5/6                  | 6/6                   |
+
+**Every model grouped correctly and the parser lost the answer.** All three
+put `Backup | Restore: Weekly Schedule` with `Restore Testing Runbook` in
+the reply; the line parser read the bar as a member separator and the colon
+as the end of the topic name, so it kept a topic holding only the runbook.
+`deepseek-v4-flash` lost the FileVault title the same way. This is not a
+model result — nothing here says the models got better, only that what they
+already got right now survives being read.
+
+**The failure is silent, which is why it was worth a schema rather than a
+better regex.** Rule 3 of the clustering prompt makes leaving a page
+ungrouped a normal outcome, so a page dropped by the parser is
+indistinguishable in the report from a page the model deliberately left
+alone. A wrong `[UNASSIGNED]` row gets reviewed; a missing one does not.
+
+The planner took the schema path on all three models with no change in the
+plan produced (`modify: Account Review` on every run), which is the expected
+result: its parser already recovered fenced and prose-padded objects, and
+nothing in a plan carries a delimiter that breaks JSON. The schema there
+buys a guarantee, not a fix.
+
+Titles with delimiters are not a contrived case — `Backup | Restore` and
+`Topic: Subtopic` are ordinary Confluence page names.
+
 ______________________________________________________________________
 
 ## Two ways a run can lie, found the hard way

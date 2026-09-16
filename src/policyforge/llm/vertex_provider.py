@@ -75,6 +75,33 @@ class VertexProvider(LLMProvider):
         """Same request shape as the direct API, so the same marker."""
         return True
 
+    def supports_schema(self) -> bool:
+        """Same request shape again, so the same constraint."""
+        return True
+
+    def generate_json(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        schema: dict,
+        max_tokens: int = 4096,
+        temperature: float = 0.2,
+        effort: str | None = None,
+    ) -> LLMResponse:
+        from ._anthropic_compat import call_messages_api
+
+        return call_messages_api(
+            self._client,
+            model=self.model,
+            system=system,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            effort=effort,
+            schema=schema,
+        )
+
     def supports_effort(self) -> bool:
         """Same request shape as the direct API, so the same lever."""
         return True

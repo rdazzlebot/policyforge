@@ -331,6 +331,7 @@ class LiteLLMProvider(LLMProvider):
         schema: dict,
         max_tokens: int = 4096,
         temperature: float = 0.2,
+        effort: str | None = None,
     ) -> LLMResponse:
         """A reply constrained to `schema`, parsed and checked.
 
@@ -348,6 +349,7 @@ class LiteLLMProvider(LLMProvider):
             prompt=prompt,
             max_tokens=max_tokens,
             temperature=temperature,
+            effort=effort,
             _response_format=schema,
         )
         try:

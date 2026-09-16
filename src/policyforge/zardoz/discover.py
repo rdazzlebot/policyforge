@@ -28,6 +28,7 @@ one, because a blank one gets filled in and a wrong one gets believed.
 
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter
 from dataclasses import dataclass, field
@@ -200,17 +201,31 @@ def group_by_convention(pages) -> tuple[list[ProposedTopic], list]:
     return topics, leftovers
 
 
-CLUSTER_SYSTEM_PROMPT = """You group Confluence page titles into candidate \
+_CLUSTER_TASK = """You group Confluence page titles into candidate \
 information-security topics.
 
 A topic is a coherent operational process that one team could own end to end
 — access review, backup and restore, vendor risk. It is not a control
 family, and it is not one document.
+"""
 
+#: Said two ways, because the two get asked of different models.
+#:
+#: A provider that can be held to `CLUSTER_SCHEMA` is *going* to emit JSON
+#: whatever the prompt says, so asking it for one-topic-per-line would leave
+#: it obeying a grammar while reading an instruction that contradicts it.
+#: One that cannot is still working from the line format it has always used.
+_CLUSTER_LINES = """
 Return one topic per line, in exactly this format and nothing else:
 
 Topic Name: Page Title One | Page Title Two
+"""
 
+_CLUSTER_JSON = """
+Return a topic per entry, each with the exact page titles that belong to it.
+"""
+
+_CLUSTER_RULES = """
 Rules:
 1. Use only the titles given. Never invent a page, and never split or
    reword a title.
@@ -223,6 +238,44 @@ Rules:
 5. Prefer fewer, broader topics. Around 25 is the ceiling for a whole
    organization, so a space of forty pages should not yield forty topics."""
 
+CLUSTER_SYSTEM_PROMPT = _CLUSTER_TASK + _CLUSTER_LINES + _CLUSTER_RULES
+CLUSTER_SYSTEM_PROMPT_JSON = _CLUSTER_TASK + _CLUSTER_JSON + _CLUSTER_RULES
+
+#: What the line format was asking for, said in a way a title cannot break.
+#:
+#: A page called "Access Review: Quarterly" or "Backup | Restore" is not
+#: exotic in a Confluence space, and under the line format it parses as a
+#: topic name or as two titles. Both failures are silent — a dropped page
+#: looks exactly like a page the model chose to leave out, which rule 3
+#: makes a normal outcome. Here a title is one array element and the
+#: delimiter question does not arise.
+CLUSTER_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "topic_clusters",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "topics": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "titles": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["name", "titles"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["topics"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 
 def _parse_clusters(text: str, titles: set[str]) -> list[tuple[str, list[str]]]:
     """Read the model's groupings back, keeping only real page titles.
@@ -230,22 +283,53 @@ def _parse_clusters(text: str, titles: set[str]) -> list[tuple[str, list[str]]]:
     A title the model invented or reworded is dropped rather than trusted:
     the whole file is about to be turned into page lookups, and a title that
     does not exist becomes a skip nobody can explain later.
+
+    Both shapes are read here rather than in two functions, because which
+    one arrives is a property of the provider and not of the caller, and a
+    schema-constrained model that answers in prose anyway — or a prose model
+    that volunteers JSON — should not be a crash either way.
     """
     lookup = {title.lower(): title for title in titles}
+
+    def keep(name: str, members) -> tuple[str, list[str]] | None:
+        found = [
+            lookup[str(m).strip().lower()] for m in members if str(m).strip().lower() in lookup
+        ]
+        name = name.strip().lstrip("-*0123456789. ").strip()
+        return (name, found) if name and found else None
+
+    parsed = _as_json(text)
+    if parsed is not None:
+        entries = []
+        for topic in parsed.get("topics") or []:
+            if not isinstance(topic, dict):
+                continue
+            kept = keep(str(topic.get("name", "")), topic.get("titles") or [])
+            if kept:
+                entries.append(kept)
+        return entries
+
     clusters: list[tuple[str, list[str]]] = []
     for line in text.splitlines():
         if ":" not in line:
             continue
         name, _, rest = line.partition(":")
-        name = name.strip().lstrip("-*0123456789. ").strip()
-        members = [
-            lookup[part.strip().lower()]
-            for part in rest.split("|")
-            if part.strip().lower() in lookup
-        ]
-        if name and members:
-            clusters.append((name, members))
+        kept = keep(name, rest.split("|"))
+        if kept:
+            clusters.append(kept)
     return clusters
+
+
+def _as_json(text: str) -> dict | None:
+    """The reply as an object, or None if it plainly isn't one."""
+    stripped = text.strip()
+    if not stripped.startswith("{"):
+        return None
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def cluster_leftovers(pages, provider) -> tuple[list[ProposedTopic], list]:
@@ -256,10 +340,12 @@ def cluster_leftovers(pages, provider) -> tuple[list[ProposedTopic], list]:
     from policyforge.llm import effort
 
     by_title = {page.title: page for page in pages}
-    response = effort.call(
+    shaped = effort.accepts_schema(provider)
+    response = effort.call_shaped(
         provider,
+        schema=CLUSTER_SCHEMA,
         effort=effort.CLUSTERING,
-        system=CLUSTER_SYSTEM_PROMPT,
+        system=CLUSTER_SYSTEM_PROMPT_JSON if shaped else CLUSTER_SYSTEM_PROMPT,
         prompt="TITLES\n\n" + "\n".join(sorted(by_title)) + "\n\nGroup these into topics.",
         temperature=0.0,
         max_tokens=1500,

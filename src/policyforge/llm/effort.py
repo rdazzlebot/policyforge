@@ -115,3 +115,45 @@ def call(
         # is a different request, not a slower one.
         kwargs["prompt"] = cache_prefix + kwargs["prompt"]
     return provider.generate(**extra, **kwargs)
+
+
+def call_json(provider, *, effort: str | None = None, **kwargs):
+    """`provider.generate_json(**kwargs)`, at `effort` where it means something.
+
+    The schema half of `call`. Kept separate rather than folded in, because
+    asking for a schema is a different question from asking for less
+    deliberation: `generate_json` refuses outright on a provider that cannot
+    constrain a reply, and that refusal is the point — a caller parsing JSON
+    that was never guaranteed to be JSON is the failure it exists to remove.
+    """
+    if effort is not None and accepts_effort(provider):
+        return provider.generate_json(effort=effort, **kwargs)
+    return provider.generate_json(**kwargs)
+
+
+def accepts_schema(provider) -> bool:
+    """Whether this provider will actually hold a reply to a schema."""
+    ask = getattr(provider, "supports_schema", None)
+    return bool(ask and ask())
+
+
+def call_shaped(provider, *, schema: dict, effort: str | None = None, **kwargs):
+    """Ask for a shape, and settle for asking nicely where that is all there is.
+
+    `call_json` refuses on a provider that cannot constrain a reply. That is
+    right for the entailer, whose whole output is a label from a closed set —
+    an unconstrained verdict is not worth having, so not getting one is the
+    correct outcome.
+
+    It is wrong for the two callers here. The edit planner and the topic
+    clusterer both describe their shape in the system prompt and both parse
+    the reply leniently, and they have run that way against local models
+    since before any provider here could enforce a schema. Refusing would
+    take a working feature away from an Ollama user to gain a guarantee they
+    were never relying on. So the schema goes where it can be honoured, the
+    prompt keeps asking everywhere, and the lenient parser stays — it is
+    still the only thing standing behind a model that answers in prose.
+    """
+    if accepts_schema(provider):
+        return call_json(provider, schema=schema, effort=effort, **kwargs)
+    return call(provider, effort=effort, **kwargs)

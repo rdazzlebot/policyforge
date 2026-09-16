@@ -137,7 +137,11 @@ class LLMEntailer(Entailer):
                 f"verdict is not worth having. Choose a model that can."
             )
 
-        response = self._provider.generate_json(
+        from ..llm import effort
+
+        response = effort.call_json(
+            self._provider,
+            effort=effort.ENTAILMENT,
             system=SYSTEM_PROMPT,
             prompt=prompt,
             schema=SCHEMA,

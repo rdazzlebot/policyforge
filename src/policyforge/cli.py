@@ -1896,66 +1896,22 @@ def export_confluence_cmd(
 _DIFF_LINES = 120
 
 
-def _edit_run(
-    *,
-    targets,
-    instruction: str,
-    host: str,
-    do_apply: bool,
-    yes: bool,
-    allow_macros: bool,
-    allow_reader_directed: bool = False,
-    out_dir: Path,
-    history_dir: Path,
-    config: dict,
-):
-    """Shared body of `edit-confluence` and `edit-topic`.
+#: The words that differ between editing a wiki page and editing a file.
+#: Everything else in the review — the plan, the diff, every check and every
+#: warning — is the same code for both, which is the point: the file path is
+#: not a lighter-weight copy of the wiki path that can drift.
+_WIKI = {"original": "live page", "nothing": "publish", "before": "publishing"}
+_TREE = {"original": "file", "nothing": "write", "before": "committing"}
 
-    Fetch everything, refuse anything unsafe, plan, rewrite, show, then
-    publish only on explicit approval. Nothing is written back until every
-    page has been planned and rewritten, so a failure part-way through leaves
-    the whole set untouched.
 
-    "Unsafe" covers two things here. A page using macros this tool cannot
-    round-trip would be damaged by editing it at all. A page containing text
-    addressed to the model rather than to the organization is the other: the
-    fence in `edit.fencing` is what holds on that one, and this refusal is
-    the part that tells somebody to go and look at the page.
+def _refuse_reader_directed(targets, allow_reader_directed: bool) -> None:
+    """Refuse, before any model call, a document addressed to the prompt.
+
+    Shared by both edit destinations. A file in the content tree is not a
+    safer input than a wiki page: `pull` writes page bodies into it verbatim,
+    so a line planted on a page arrives in the file on the next pull.
     """
-    import difflib
-    import json
-    import re
-
-    from policyforge.edit.session import apply_targets, fetch_targets, plan_targets
-    from policyforge.export.confluence_exporter import ConcurrentEditError, update_page_body
-    from policyforge.history.version_store import record_version
     from policyforge.zardoz import injection
-
-    provider = get_provider(config)
-    model = (config.get("llm") or {}).get("model", "")
-
-    fetch_targets(targets, host=host)
-    for target in targets:
-        click.echo(f"Fetched {target.label!r} (version {target.version}) — {target.webui_url}")
-
-    # storage -> markdown -> storage is lossless only for what this project's
-    # own exporter emits. Check every page before spending anything on the
-    # LLM, so an unsafe page in a set fails the run up front rather than after
-    # the other pages have already been rewritten.
-    unsafe = [t for t in targets if t.unsupported_macros]
-    if unsafe and not allow_macros:
-        detail = "\n".join(f"  {t.label}: {', '.join(t.unsupported_macros)}" for t in unsafe)
-        raise click.UsageError(
-            "These pages use Confluence macros this tool cannot round-trip:\n"
-            f"{detail}\nEditing them would flatten or drop those macros. Edit in "
-            "Confluence directly, or re-run with --allow-macros if you have checked "
-            "that losing them is acceptable."
-        )
-    for target in unsafe:
-        click.echo(
-            f"WARNING: {target.label} has unsupported macros: "
-            f"{', '.join(target.unsupported_macros)}"
-        )
 
     # Anyone with edit rights on a wiki page can put a line in it addressed to
     # whoever reads the prompt, and this is the path that publishes back to
@@ -1985,23 +1941,21 @@ def _edit_run(
         if len(findings) > 5:
             click.echo(f"  ... {len(findings) - 5} more")
 
-    slugs = {id(t): re.sub(r"[^a-z0-9]+", "-", t.title.lower()).strip("-") for t in targets}
 
-    # Record the pre-edit state before the first LLM call, so there is a local
-    # copy to restore from even if the run is abandoned partway.
-    for target in targets:
-        record_version(
-            history_dir,
-            f"confluence/{slugs[id(target)]}",
-            target.original,
-            source="confluence-edit-before",
-            metadata={
-                "space": target.space,
-                "title": target.title,
-                "tier": target.tier,
-                "page_version": target.version,
-            },
-        )
+def _review_edits(targets, instruction, provider, *, out_dir: Path, slugs: dict, words=None):
+    """Plan, rewrite, show and check every target. Returns what is writable.
+
+    Nothing is written to the destination here. What is written is the
+    review artifact — the full diff, the revision and the plan — to
+    `out_dir`, so a dry run leaves something to read after the terminal is
+    closed.
+    """
+    import difflib
+    import json
+
+    from policyforge.edit.session import apply_targets, plan_targets
+
+    words = words or _WIKI
 
     outcomes = plan_targets(targets, instruction, provider)
     for outcome in outcomes:
@@ -2011,7 +1965,7 @@ def _edit_run(
 
     if all(o.plan.is_empty for o in outcomes):
         click.echo("\nNo edits proposed for any page. Nothing to apply.")
-        return
+        return []
 
     apply_targets(outcomes, provider)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -2049,7 +2003,10 @@ def _edit_run(
             )
 
         if check.unchanged:
-            click.echo("  (rewrite is identical to the live page — nothing to publish)")
+            click.echo(
+                f"  (rewrite is identical to the {words['original']} — "
+                f"nothing to {words['nothing']})"
+            )
             continue
         if not check.is_clean:
             if check.dropped_source_tags:
@@ -2063,7 +2020,7 @@ def _edit_run(
                     + ", ".join(check.removed_headings)
                 )
             if check.dropped_source_tags or check.removed_headings:
-                click.echo("  These are traceability losses — review before publishing.")
+                click.echo(f"  These are traceability losses — review before {words['before']}.")
             if check.changed_sections:
                 click.echo(
                     "  WARNING: sections changed that no plan step named: "
@@ -2079,8 +2036,8 @@ def _edit_run(
             ):
                 click.echo(
                     "  Text moved outside the approved plan. Read it in the diff "
-                    "before publishing — this is what an instruction planted in the "
-                    "page would look like."
+                    f"before {words['before']} — this is what an instruction planted "
+                    "in the page would look like."
                 )
 
         (out_dir / f"{slug}.md").write_text(outcome.revised, encoding="utf-8")
@@ -2093,19 +2050,21 @@ def _edit_run(
         publishable.append(outcome)
 
     if not publishable:
-        click.echo("\nNothing to publish.")
-        return
+        click.echo(f"\nNothing to {words['nothing']}.")
+    return publishable
 
+
+def _confirm_edits(publishable, *, do_apply: bool, yes: bool, dry_run: str, prompt: str) -> bool:
+    """True when the edits should be written; False for a dry run.
+
+    `--yes` is for the routine case. A check that came back dirty is the case
+    it is not for: something changed that nobody planned, and the whole point
+    of the check is that a person sees it before it lands.
+    """
     if not do_apply:
-        click.echo(
-            f"\nDry run — Confluence unchanged. Re-run with --apply to publish "
-            f"{len(publishable)} page(s)."
-        )
-        return
+        click.echo(dry_run)
+        return False
 
-    # --yes is for the routine case. A check that came back dirty is the
-    # case it is not for: something changed that nobody planned, and the
-    # whole point of the check is that a person sees it before it publishes.
     unreviewed = [o for o in publishable if not o.check.is_clean]
     if unreviewed and yes:
         click.echo(
@@ -2116,7 +2075,103 @@ def _edit_run(
             click.echo(f"  {outcome.target.label}")
     if not yes or unreviewed:
         names = ", ".join(o.target.label for o in publishable)
-        click.confirm(f"Publish edits to {names}?", abort=True)
+        click.confirm(f"{prompt} {names}?", abort=True)
+    return True
+
+
+def _edit_run(
+    *,
+    targets,
+    instruction: str,
+    host: str,
+    do_apply: bool,
+    yes: bool,
+    allow_macros: bool,
+    allow_reader_directed: bool = False,
+    out_dir: Path,
+    history_dir: Path,
+    config: dict,
+):
+    """Shared body of `edit-confluence` and `edit-topic`.
+
+    Fetch everything, refuse anything unsafe, plan, rewrite, show, then
+    publish only on explicit approval. Nothing is written back until every
+    page has been planned and rewritten, so a failure part-way through leaves
+    the whole set untouched.
+
+    "Unsafe" covers two things here. A page using macros this tool cannot
+    round-trip would be damaged by editing it at all. A page containing text
+    addressed to the model rather than to the organization is the other: the
+    fence in `edit.fencing` is what holds on that one, and this refusal is
+    the part that tells somebody to go and look at the page.
+    """
+    import re
+
+    from policyforge.edit.session import fetch_targets
+    from policyforge.export.confluence_exporter import ConcurrentEditError, update_page_body
+    from policyforge.history.version_store import record_version
+
+    provider = get_provider(config)
+    model = (config.get("llm") or {}).get("model", "")
+
+    fetch_targets(targets, host=host)
+    for target in targets:
+        click.echo(f"Fetched {target.label!r} (version {target.version}) — {target.webui_url}")
+
+    # storage -> markdown -> storage is lossless only for what this project's
+    # own exporter emits. Check every page before spending anything on the
+    # LLM, so an unsafe page in a set fails the run up front rather than after
+    # the other pages have already been rewritten.
+    unsafe = [t for t in targets if t.unsupported_macros]
+    if unsafe and not allow_macros:
+        detail = "\n".join(f"  {t.label}: {', '.join(t.unsupported_macros)}" for t in unsafe)
+        raise click.UsageError(
+            "These pages use Confluence macros this tool cannot round-trip:\n"
+            f"{detail}\nEditing them would flatten or drop those macros. Edit in "
+            "Confluence directly, or re-run with --allow-macros if you have checked "
+            "that losing them is acceptable."
+        )
+    for target in unsafe:
+        click.echo(
+            f"WARNING: {target.label} has unsupported macros: "
+            f"{', '.join(target.unsupported_macros)}"
+        )
+
+    _refuse_reader_directed(targets, allow_reader_directed)
+
+    slugs = {id(t): re.sub(r"[^a-z0-9]+", "-", t.title.lower()).strip("-") for t in targets}
+
+    # Record the pre-edit state before the first LLM call, so there is a local
+    # copy to restore from even if the run is abandoned partway.
+    for target in targets:
+        record_version(
+            history_dir,
+            f"confluence/{slugs[id(target)]}",
+            target.original,
+            source="confluence-edit-before",
+            metadata={
+                "space": target.space,
+                "title": target.title,
+                "tier": target.tier,
+                "page_version": target.version,
+            },
+        )
+
+    publishable = _review_edits(
+        targets, instruction, provider, out_dir=out_dir, slugs=slugs, words=_WIKI
+    )
+    if not publishable:
+        return
+
+    if not _confirm_edits(
+        publishable,
+        do_apply=do_apply,
+        yes=yes,
+        dry_run="\nDry run — Confluence unchanged. Re-run with --apply to publish "
+        f"{len(publishable)} page(s).",
+        prompt="Publish edits to",
+    ):
+        return
 
     published, failed = [], []
     for outcome in publishable:
@@ -2258,7 +2313,18 @@ def edit_confluence_cmd(
     help="Topic registry to resolve --topic-name against.",
 )
 @click.option(
-    "--host", required=True, help="Confluence base URL, e.g. https://x.atlassian.net/wiki."
+    "--host",
+    default=None,
+    help="Confluence base URL, e.g. https://x.atlassian.net/wiki. Edits the live pages. "
+    "Give this or --content-dir, not both.",
+)
+@click.option(
+    "--content-dir",
+    default=None,
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Edit the topic's markdown files in this content tree instead of the live "
+    "pages, so the change is reviewed as a pull request and published on merge. "
+    "Give this or --host, not both.",
 )
 @click.option(
     "--tiers",
@@ -2300,7 +2366,8 @@ def edit_topic_cmd(
     instruction: str,
     topic_name: str,
     topics_path: Path,
-    host: str,
+    host: str | None,
+    content_dir: Path | None,
     tiers: str | None,
     do_apply: bool,
     yes: bool,
@@ -2321,6 +2388,13 @@ def edit_topic_cmd(
     from policyforge.edit.session import EditTarget
     from policyforge.topics.registry import load_topics
 
+    if bool(host) == bool(content_dir):
+        raise click.UsageError(
+            "Give exactly one of --host (edit the live Confluence pages) or "
+            "--content-dir (edit the markdown files in a content tree, reviewed as a "
+            "pull request)."
+        )
+
     registry = load_topics(topics_path)
     topic = next((t for t in registry if t.name.lower() == topic_name.lower()), None)
     if topic is None:
@@ -2328,6 +2402,21 @@ def edit_topic_cmd(
             f"No topic named {topic_name!r} in {topics_path}. Available: "
             + ", ".join(sorted(t.name for t in registry))
         )
+
+    if content_dir is not None:
+        wanted = {t.strip().lower() for t in tiers.split(",") if t.strip()} if tiers else None
+        _edit_tree_run(
+            topic=topic,
+            content_dir=content_dir,
+            tiers=wanted,
+            instruction=instruction,
+            do_apply=do_apply,
+            yes=yes,
+            allow_reader_directed=allow_reader_directed,
+            out_dir=out_dir,
+            config=load_config(),
+        )
+        return
 
     space = (topic.confluence or {}).get("space")
     pages = topic.confluence_pages()
@@ -2366,6 +2455,153 @@ def edit_topic_cmd(
         history_dir=history_dir,
         config=load_config(),
     )
+
+
+def _edit_tree_run(
+    *,
+    topic,
+    content_dir: Path,
+    tiers: set[str] | None,
+    instruction: str,
+    do_apply: bool,
+    yes: bool,
+    allow_reader_directed: bool,
+    out_dir: Path,
+    config: dict,
+):
+    """`edit-topic --content-dir`: the same review, written to files.
+
+    Everything between reading and writing is `_edit_run`'s review, called
+    rather than copied — the injection refusal, the fenced plan, the rewrite,
+    the full diff and every `check_edit` warning. What differs is the edges.
+    Documents come from the tree rather than the wiki, only their bodies are
+    shown to the model, and on --apply the revision is written back into the
+    files with the plan beside each one. No git command is run; the ones that
+    would turn this into a pull request are printed.
+
+    No local version history is recorded, unlike the wiki path. The tree is
+    under version control, and a second history beside git is the duplication
+    P-05 moved provenance out of.
+    """
+    import re
+
+    from policyforge.edit import tree
+    from policyforge.edit.session import EditTarget
+
+    if not content_dir.exists():
+        raise click.UsageError(f"No content tree at {content_dir}.")
+
+    selection = tree.select_topic_files(content_dir, topic, tiers=tiers)
+    if selection.ambiguous:
+        detail = "\n".join(
+            f"  {tier}: {', '.join(paths)}" for tier, paths in selection.ambiguous.items()
+        )
+        raise click.UsageError(
+            f"More than one file in {content_dir} claims a tier of {topic.name!r}:\n"
+            f"{detail}\nEditing one would leave the other saying the old thing. Remove "
+            "the duplicate, or fix its `topic:` or `confluence.title` frontmatter."
+        )
+    if not selection.files:
+        raise click.UsageError(
+            f"No file in {content_dir} belongs to topic {topic.name!r}. A file belongs "
+            "to a topic when its frontmatter says `topic: <name>`, or when its "
+            "`confluence.title` matches a page the registry declares for that tier — "
+            "which is what `policyforge pull` writes."
+        )
+
+    files_by_target: dict[int, tree.TreeFile] = {}
+    targets = []
+    for tier, tree_file in selection.files.items():
+        _frontmatter, body = tree.split_frontmatter(tree_file.path.read_text(encoding="utf-8"))
+        target = EditTarget(
+            space="", title=tree_file.title or tree_file.relative, tier=tier, original=body
+        )
+        files_by_target[id(target)] = tree_file
+        targets.append(target)
+        click.echo(f"Read {tree_file.relative} ({tier}; matched by {tree_file.matched_by})")
+
+    click.echo(
+        f"Topic {topic.name!r} (owner: {topic.owner or 'unassigned'}) — "
+        f"{len(targets)} file(s) in {content_dir}"
+    )
+
+    _refuse_reader_directed(targets, allow_reader_directed)
+
+    provider = get_provider(config)
+    slugs = {id(t): re.sub(r"[^a-z0-9]+", "-", t.title.lower()).strip("-") for t in targets}
+    publishable = _review_edits(
+        targets, instruction, provider, out_dir=out_dir, slugs=slugs, words=_TREE
+    )
+    if not publishable:
+        return
+
+    if do_apply:
+        paths = [files_by_target[id(o.target)].path for o in publishable]
+        dirty = tree.uncommitted(paths, cwd=content_dir)
+        if dirty is None:
+            click.echo(
+                "WARNING: could not ask git whether these files have uncommitted "
+                "changes. If they do, the model's edit and yours will land in one "
+                "diff and a reviewer cannot tell them apart."
+            )
+        elif dirty:
+            raise click.UsageError(
+                "These files have uncommitted changes:\n"
+                + "\n".join(f"  {path}" for path in dirty)
+                + "\nCommit or stash them first. Written on top, the model's edit and "
+                "the uncommitted change would be one diff, and the person reviewing "
+                "the pull request could not tell which change the plan made. A file "
+                "you have just pulled counts — commit the pull, then edit."
+            )
+
+    if not _confirm_edits(
+        publishable,
+        do_apply=do_apply,
+        yes=yes,
+        dry_run=(
+            f"\nDry run — no file in {content_dir} changed. Re-run with --apply to "
+            f"write {len(publishable)} file(s)."
+        ),
+        prompt="Write edits to",
+    ):
+        return
+
+    import json
+
+    written, failed = [], []
+    for outcome in publishable:
+        tree_file = files_by_target[id(outcome.target)]
+        try:
+            tree.write_revision(tree_file, outcome.revised)
+        except tree.TreeEditError as exc:
+            failed.append((tree_file, str(exc)))
+            continue
+        # The plan goes beside the document and into the pull request with
+        # it: what was asked, what the model intended, and what it declined.
+        plan_path = tree_file.path.with_suffix(".plan.json")
+        plan_path.write_text(
+            json.dumps(outcome.plan.as_record(), indent=2) + "\n", encoding="utf-8"
+        )
+        written.append((tree_file, plan_path))
+        click.echo(f"Wrote {tree_file.relative} (plan: {plan_path.name})")
+
+    if written:
+        click.echo("")
+        click.echo(
+            tree.git_instructions(
+                branch=tree.suggest_branch(topic.name, instruction),
+                files=[tree.display_path(f.path, cwd=content_dir) for f, _ in written],
+                plans=[tree.display_path(p, cwd=content_dir) for _, p in written],
+                topic_name=topic.name,
+                instruction=instruction,
+            )
+        )
+
+    if failed:
+        click.echo("")
+        for tree_file, message in failed:
+            click.echo(f"FAILED {tree_file.relative}: {message}")
+        raise SystemExit(1)
 
 
 @cli.command("import-confluence")

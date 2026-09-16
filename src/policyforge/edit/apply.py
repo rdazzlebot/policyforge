@@ -240,4 +240,47 @@ def apply_edit_plan(
         temperature=0.0,
         max_tokens=8192,
     )
-    return response.text.strip() + "\n"
+    return _without_echoed_fence(response.text, fence).strip() + "\n"
+
+
+class EchoedFenceError(ValueError):
+    """The rewrite contains this request's fence token somewhere it can't be removed."""
+
+
+def _without_echoed_fence(text: str, fence: str) -> str:
+    """The revision with this request's fence removed, or a refusal.
+
+    The fence is scaffolding: it exists so the model can tell the page from the
+    instruction, and it must never reach the page. Measured re-running epoch 7
+    through the fixed harness: deepseek-v4-pro wrapped its whole revision in
+    `BEGIN <token>` ... `END <token>` in 3 of 3 runs. The eval grader caught
+    it and production did not, so `edit-topic --apply` would have published
+    the markers to a live policy page — the fence causing the damage it exists
+    to prevent.
+
+    The token is generated per request and checked not to occur in the page,
+    so its presence in a reply is unambiguous. Where the reply is exactly
+    wrapped in it, the wrapper is removed: the text between is the revision.
+    Anywhere else the token cannot be removed without guessing what the model
+    meant, so the rewrite is refused and nothing is written.
+
+    Only this request's token. A page that imitates the fence contains
+    lookalike markers with a different token, and a correct revision keeps
+    those byte for byte.
+    """
+    lines = text.strip().splitlines()
+    if (
+        len(lines) >= 2
+        and lines[0].strip() == f"BEGIN {fence}"
+        and lines[-1].strip() == f"END {fence}"
+    ):
+        lines = lines[1:-1]
+    body = "\n".join(lines)
+    if fence in body:
+        raise EchoedFenceError(
+            f"The rewrite contains this request's fence token ({fence}), which is "
+            "scaffolding from the prompt, not part of the document. It could not be "
+            "removed without guessing at the model's intent, so nothing was written. "
+            "Re-run the edit; if it recurs with this model, try another."
+        )
+    return body

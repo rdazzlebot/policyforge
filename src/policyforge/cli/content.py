@@ -138,7 +138,15 @@ def _review_edits(targets, instruction, provider, *, out_dir: Path, slugs: dict,
         click.echo("\nNo edits proposed for any page. Nothing to apply.")
         return []
 
-    apply_targets(outcomes, provider)
+    from policyforge.edit.apply import EchoedFenceError
+
+    # Refused before anything is written, to the wiki or to the tree: every
+    # target is rewritten before any is published, so one refusal leaves the
+    # whole set untouched.
+    try:
+        apply_targets(outcomes, provider)
+    except EchoedFenceError as exc:
+        raise click.ClickException(str(exc)) from exc
     out_dir.mkdir(parents=True, exist_ok=True)
 
     publishable = []

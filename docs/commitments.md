@@ -120,7 +120,14 @@ against an import allowlist, runs once in a child process under a PEP 578
 audit hook refusing sockets, subprocesses and writes, and reaches `src/`
 only when a person promotes it.
 
-**Enforced by** [`tests/test_parser_gate.py`](../tests/test_parser_gate.py).
+**Enforced by** [`tests/test_parser_gate.py`](../tests/test_parser_gate.py),
+and by a tripwire in [`tests/test_cli.py`](../tests/test_cli.py) that fails if
+a test run leaves a generated loader in the real `src/policyforge/ingest/`.
+The tripwire exists because the test's own redirect of the promotion
+directory was found to break silently when the CLI was split into modules:
+with it defeated, a test wrote model-generated code into the package. A
+safeguard for this commitment that could fail without a signal needed a
+second one that cannot.
 
 **Stated limit:** this is not a sandbox and is not described as one. It
 changes the default, not the ceiling.

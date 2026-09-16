@@ -41,6 +41,16 @@ The paths where this bites most often:
 | `export/publish.py`, `export/pull.py`                          | Dry run is the default; a moved page is not overwritten                         |
 | Anything adding a URL or an env read                           | `tests/test_no_undeclared_endpoints.py`, `tests/test_credential_containment.py` |
 
+## Adding a CLI command
+
+Commands live in `src/policyforge/cli/`, one module per area. A command
+module must import `load_config` and `get_provider` from
+`policyforge.cli._common`, **never directly** — `tests/test_cli_seam.py`
+enforces this over the AST. The test suite patches those names on
+`policyforge.cli`, and a direct import in a submodule puts the command out
+of the patch's reach: a test that believes it holds a fake provider would
+build a real one, and could make real, billed calls.
+
 ## Adding an outbound endpoint
 
 Adding a host to `ALLOWED_HOSTS` in

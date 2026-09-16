@@ -95,6 +95,17 @@ class ShellState:
     #: One id per session, so the ledger can gather a session's turns and a
     #: challenged answer can be traced to the question that produced it.
     session_id: str = field(default_factory=lambda: _new_session_id())
+    #: Which surface drove the turn. "zardoz" is a person at a terminal;
+    #: "mcp" is another agent calling a tool.
+    #:
+    #: A-09 put questions in the ledger so a challenged answer could be
+    #: traced to the question that produced it. Once an MCP client can call
+    #: `ask_documents`, "a person asked this" stops being implied — an agent
+    #: can ask a hundred times in a loop, each one a billed model call that
+    #: nobody typed. Recording the surface is what keeps "who asked" an
+    #: answerable question, and it is the field that makes an unexpected
+    #: line on a bill attributable to a tool rather than to a colleague.
+    surface: str = "zardoz"
 
     # Everything below is what the analyses need. Half the questions people
     # have about a compliance programme are not answerable from any
@@ -443,7 +454,9 @@ def _answer(question: str, state: ShellState) -> str:
     """
     from policyforge.llm import ledger
 
-    with ledger.about(f"zardoz/{state.session_id}", site="zardoz.answer") as scope:
+    with ledger.about(
+        f"{state.surface}/{state.session_id}", site=f"{state.surface}.answer"
+    ) as scope:
         return _answer_turn(question, state, scope)
 
 

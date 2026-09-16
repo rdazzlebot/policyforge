@@ -187,3 +187,27 @@ def test_the_missing_dependency_message_names_the_extra():
     """
     assert "policyforge[mcp]" in mcp_server._INSTALL_HINT
     assert "optional" in mcp_server._INSTALL_HINT
+
+
+def test_model_calls_from_a_tool_are_attributed_to_the_mcp_surface(empty_state):
+    """A-09 put questions in the ledger so a challenged answer could be
+    traced to what was asked. Once an agent can call ask_documents in a
+    loop, "a person asked this" stops being implied — and an unexpected
+    line on a bill has to be attributable to a tool rather than a colleague.
+    """
+    assert empty_state.surface == "mcp"
+
+
+def test_a_terminal_session_is_still_attributed_to_zardoz():
+    """The default must not have moved under the REPL."""
+    from policyforge.zardoz.shell import ShellState
+
+    assert ShellState().surface == "zardoz"
+
+
+def test_only_one_tool_calls_a_model_and_says_so():
+    """The cost asymmetry is invisible otherwise: six of seven tools are
+    set arithmetic over local files, and the calling agent chooses from
+    these descriptions."""
+    costly = [t for t in TOOLS if "calls a language model" in t.description]
+    assert [t.name for t in costly] == ["ask_documents"]

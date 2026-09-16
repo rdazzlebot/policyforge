@@ -93,7 +93,10 @@ TOOLS: tuple[ToolSpec, ...] = (
             "Answer a question from the organization's own synced policy documents, "
             "with citations. Returns the grounded answer and the passages it rests "
             "on, or says the documents do not answer it. Never answers from general "
-            "knowledge — if nothing is synced, it says so."
+            "knowledge — if nothing is synced, it says so. "
+            "This is the only tool here that calls a language model, so it is the "
+            "only one that costs anything; the others are set arithmetic over local "
+            "files. Prefer them when they answer the question."
         ),
         schema=_text_schema("question", "The question, in plain language.", required=True),
     ),
@@ -229,6 +232,12 @@ def build_state(config: dict | None = None, *, corpus_dir=None, topics_path=None
         history_dir=Path("output/.history"),
         content_dir=Path(configured_content) if configured_content else None,
         plain=True,
+        # Every model call this server causes is recorded as `mcp/<session>`
+        # rather than `zardoz/<session>`. Six of the seven tools call no
+        # model at all; `ask_documents` does, and an agent can call it in a
+        # loop without anyone typing. The ledger has to be able to say which
+        # of those a cost came from.
+        surface="mcp",
     )
 
 

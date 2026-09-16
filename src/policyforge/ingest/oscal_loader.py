@@ -219,8 +219,8 @@ def parse_oscal_catalog(
     """Parse an OSCAL 800-53 catalog into Controls.
 
     Returns `(controls, withdrawn_count)` — the withdrawn tally is returned
-    rather than logged so the caller can report it (see `cli.py`'s
-    `etl-oscal`) instead of the exclusion being invisible.
+    rather than logged so the caller can report it (see `etl-oscal` in
+    cli/etl.py) instead of the exclusion being invisible.
     """
     catalog = catalog_json["catalog"]
     version = catalog["metadata"]["version"]

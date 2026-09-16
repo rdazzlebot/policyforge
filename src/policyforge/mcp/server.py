@@ -181,11 +181,13 @@ def build_state(config: dict | None = None, *, corpus_dir=None, topics_path=None
     The same `ShellState` the REPL uses, so a tool's answer is identical to
     the terminal's — there is no second code path to drift.
 
-    The construction is a shorter version of the one inside `cli.py`'s
-    `zardoz` command, which is not currently extractable: it is entangled
-    with banner printing and the notes it echoes as it goes. C-01 is the
-    item that would fix that, and when it does, both should call one
-    function. Until then this deliberately mirrors it rather than inventing
+    The construction is a shorter version of the one inside the `zardoz`
+    command in `policyforge/cli/zardoz.py`, which is not currently
+    extractable: it is entangled with banner printing and the notes it
+    echoes as it goes. C-01 split the CLI into a package as a pure move and
+    deliberately left that entanglement alone, so it is still open; when it
+    is untangled, both should call one function. Until then this
+    deliberately mirrors it rather than inventing
     different defaults, and every absence is a supported state: no registry,
     no corpus and no model each answer rather than crash.
     """

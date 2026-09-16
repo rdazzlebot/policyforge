@@ -26,7 +26,7 @@ that genuinely varies, and the part that must not vary stops being
 generated at all.
 
 This is a one-time, human-in-the-loop codegen step, not a runtime
-dependency: `cli.py`'s `generate-parser` command writes the result to disk
+dependency: the `generate-parser` command (cli/etl.py) writes the result to disk
 once, then you review, test, and commit it like any other source file.
 Nothing under `ingest/*_loader.py` calls an LLM at parse time -- only this
 module does, and only when you explicitly run that command.

@@ -7,7 +7,7 @@ Two things this exists for:
 - Bootstrapping: bring a policy that already lives in Confluence (written
   by hand before this tool existed) into the pipeline so it can be tracked
   going forward — see history/version_store.py.
-- Drift detection: `cli.py`'s `import-confluence` command records the
+- Drift detection: the `import-confluence` command (cli/content.py) records the
   imported content into the *same* version stream as `generate` for that
   tier/name, so you can diff "what this tool last generated" against
   "what's actually live" in case someone hand-edited the published page.

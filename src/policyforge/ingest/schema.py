@@ -154,7 +154,7 @@ class Control:
 
 def load_controls(path: Path) -> list[Control]:
     """Load a controls.json produced by any loader's `dataclasses.asdict`
-    dump (see `cli.py`'s `etl-vault` command) back into `Control` objects.
+    dump (see the `etl-vault` command in cli/etl.py) back into `Control` objects.
 
     Tolerant of catalogs written before `requirements` existed: a missing
     key is an empty list, not a crash. Files on disk outlive the schema

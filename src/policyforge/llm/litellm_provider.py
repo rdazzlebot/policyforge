@@ -27,7 +27,7 @@ import os
 import time
 
 from ._inline_thinking import answer_of, exhausted, needs_more_room, retry_budget
-from .base import LLMProvider, LLMResponse
+from .base import LLMProvider, LLMResponse, SchemaReplyError
 
 
 class _NeverRaised(Exception):
@@ -355,9 +355,10 @@ class LiteLLMProvider(LLMProvider):
         try:
             json.loads(response.text)
         except (TypeError, ValueError) as exc:
-            raise RuntimeError(
+            raise SchemaReplyError(
                 f"{self.model} was asked for JSON matching a schema and returned "
-                f"something else: {response.text[:160]!r}"
+                f"something else: {response.text[:160]!r}",
+                text=response.text,
             ) from exc
         return response
 

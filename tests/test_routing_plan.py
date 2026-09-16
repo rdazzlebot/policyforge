@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from policyforge.llm.base import LLMResponse
+from policyforge.llm.base import LLMResponse, SchemaReplyError
 from policyforge.zardoz.skills import (
     MAX_ANALYSES,
     NO_SKILL,
@@ -104,6 +104,13 @@ def test_a_failed_second_call_costs_the_second_report_not_the_first():
     assert names(plan) == ["coverage"]
 
 
+def test_a_failure_with_no_reply_is_not_asked_again():
+    """A timeout or refusal has nothing to recover; a prose retry only doubles the wait."""
+    planner = Planner("coverage", also="parameters", fail_also=True)
+    route_plan("orphans and parameters?", planner)
+    assert "prose" not in planner.asked
+
+
 def test_an_answer_off_the_list_is_none():
     """`strict` should prevent it; nothing inside can tell whether it did."""
     assert names(route_plan("orphans?", Planner("coverage", also="invented"))) == ["coverage"]
@@ -177,10 +184,14 @@ class BareWordPlanner(Planner):
     the second analysis used to vanish with it.
     """
 
+    def __init__(self, analysis, also="none", *, reply=None):
+        super().__init__(analysis, also=also)
+        self.reply = also if reply is None else reply
+
     def generate_json(self, **kwargs):
         if kwargs["schema"]["json_schema"]["name"] == "also":
             self.asked.append("also")
-            raise RuntimeError("returned something else: 'parameters'")
+            raise SchemaReplyError(f"returned something else: {self.reply!r}", text=self.reply)
         return super().generate_json(**kwargs)
 
     def generate(self, **kwargs):
@@ -188,8 +199,17 @@ class BareWordPlanner(Planner):
         return LLMResponse(text=f"{self.also}.", model="test")
 
 
-def test_a_bare_word_reply_to_the_schema_call_is_recovered_in_prose():
+def test_a_bare_word_reply_to_the_schema_call_is_read_without_asking_again():
     planner = BareWordPlanner("coverage", also="parameters")
+    plan = route_plan(
+        "which controls does nobody own, and how many parameters are undecided?", planner
+    )
+    assert names(plan) == ["coverage", "parameters"]
+    assert "prose" not in planner.asked
+
+
+def test_an_unreadable_schema_reply_is_asked_once_in_prose():
+    planner = BareWordPlanner("coverage", also="parameters", reply='{"also": "param')
     plan = route_plan(
         "which controls does nobody own, and how many parameters are undecided?", planner
     )
@@ -197,11 +217,18 @@ def test_a_bare_word_reply_to_the_schema_call_is_recovered_in_prose():
     assert planner.asked.count("prose") == 1
 
 
-def test_the_prose_fallback_still_cannot_invent_an_analysis():
+def test_the_bare_word_still_cannot_invent_an_analysis():
     planner = BareWordPlanner("coverage", also="delete_everything")
     assert names(route_plan("orphans?", planner)) == ["coverage"]
 
 
-def test_the_prose_fallback_saying_none_is_none():
+def test_the_prose_fallback_still_cannot_invent_an_analysis():
+    planner = BareWordPlanner("coverage", also="delete_everything", reply="{garbled")
+    assert names(route_plan("orphans?", planner)) == ["coverage"]
+    assert planner.asked.count("prose") == 1
+
+
+def test_a_bare_none_is_none():
     planner = BareWordPlanner("coverage", also="none")
     assert names(route_plan("which controls does nobody own?", planner)) == ["coverage"]
+    assert "prose" not in planner.asked

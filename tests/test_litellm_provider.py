@@ -526,6 +526,12 @@ def test_a_reply_that_is_not_json_is_reported_as_such():
         _provider(completion).generate_json(system="s", prompt="p", schema=SCHEMA)
 
     assert "returned something else" in str(caught.value)
+    # Its own type, carrying the whole reply, so a caller can read an answer
+    # that arrived in the wrong shape instead of asking again.
+    from policyforge.llm.base import SchemaReplyError
+
+    assert isinstance(caught.value, SchemaReplyError)
+    assert caught.value.text == "I think the answer is history."
 
 
 def test_a_truncated_reply_is_retried_before_being_called_bad_json():

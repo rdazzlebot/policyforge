@@ -34,6 +34,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from policyforge.llm.base import SchemaReplyError
 from policyforge.llm.prompts import Prompt, register
 
 from .budgets import ROUTING_TOKENS
@@ -969,15 +970,28 @@ def _route_also(question: str, first: str, provider) -> str:
             max_tokens=ROUTING_TOKENS,
         )
         choice = json.loads(response.text).get("also", "none")
-    except Exception:  # noqa: BLE001 - the prose fallback below is what recovers
-        choice = _also_in_prose(prompt, provider)
+    except SchemaReplyError as exc:
+        # The model answered, just not as JSON. Read that answer first; ask
+        # again only if it is not a word from the list.
+        choice = _first_word(exc.text)
+        if choice not in others and choice != "none":
+            choice = _also_in_prose(prompt, provider)
+    except Exception:  # noqa: BLE001 - a missed second report is a follow-up, not an error
+        # A timeout or a refused request has no reply to recover, and a
+        # second call would only double the wait for the first report.
+        choice = "none"
     # `strict` should make this impossible; a schema nobody enforced is the
     # one case that cannot be detected from inside.
     return choice if choice in others else "none"
 
 
+def _first_word(text: str) -> str:
+    words = text.strip().strip(".`\"'").split()
+    return words[0].lower().strip(".`\"',") if words else "none"
+
+
 def _also_in_prose(prompt: str, provider) -> str:
-    """The second-analysis question as one word, when the schema call failed.
+    """The second-analysis question as one word, when the schema reply was unreadable.
 
     Routing has always had this fallback and this had not, and the gap was
     measured rather than guessed. `glm-5.3-flash` through OpenRouter sometimes
@@ -986,6 +1000,12 @@ def _also_in_prose(prompt: str, provider) -> str:
     that is not the JSON it promised, and without a fallback that correct
     answer became `none`: chaining went from 11/11 to 8/11 on one run while
     routing, which recovers exactly this way, held at 54/54.
+
+    That bare word is read straight from the refused reply (`SchemaReplyError`
+    carries it), so this call is made only when the reply was neither JSON nor
+    a word from the list. The first version asked again on any failure, which
+    re-asked for an answer already in hand and turned a timeout into two
+    (found by policyforge-ba).
 
     The word is still checked against the closed list by the caller, so this
     cannot invent an analysis — only recover one the model already chose.
@@ -999,8 +1019,7 @@ def _also_in_prose(prompt: str, provider) -> str:
         )
     except Exception:  # noqa: BLE001 - a missed second report is a follow-up, not an error
         return "none"
-    words = response.text.strip().strip(".`\"'").split()
-    return words[0].lower().strip(".`\"',") if words else "none"
+    return _first_word(response.text)
 
 
 def route_plan(question: str, provider=None) -> list[Routed]:

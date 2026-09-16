@@ -17,6 +17,21 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 
+class SchemaReplyError(RuntimeError):
+    """A schema-constrained call came back as something other than JSON.
+
+    A `RuntimeError` so every existing handler still catches it, and its own
+    type so a caller can tell "the model answered, just not in the shape
+    asked" from a timeout or an auth failure. The first carries a reply worth
+    reading (`text`); the second has nothing to recover, and a caller that
+    retries on it only doubles the wait.
+    """
+
+    def __init__(self, message: str, text: str):
+        super().__init__(message)
+        self.text = text
+
+
 @dataclass
 class LLMResponse:
     text: str

@@ -1,6 +1,16 @@
 {
-  "zardoz.answer": "8052fd27359b",
+  "edit.apply": "1bc54ff2e02b",
   "edit.plan": "49afd7cad918",
   "entail.judge": "619d6f0d6cec",
-  "zardoz.cluster": "3f58d07e4945"
+  "generate.policy": "a10e9d1d4f4d",
+  "generate.procedure": "5d50b39c648b",
+  "generate.standard": "edfb134f7b28",
+  "zardoz.answer": "8052fd27359b",
+  "zardoz.cluster.json": "c06e89bdf1b8",
+  "zardoz.cluster.lines": "3f58d07e4945",
+  "zardoz.expand": "98054e760a61",
+  "zardoz.resolve": "6fe729b4c6f6",
+  "zardoz.route": "78f4d56ba1aa",
+  "zardoz.route.also": "7ddf2e6787a9",
+  "zardoz.route.arguments": "b76112165eeb"
 }

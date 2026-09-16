@@ -1005,7 +1005,7 @@
         },
         {
           "default": "data/frameworks/nist-800-53-r5/controls.json",
-          "help": "The 800-53 catalog to crosswalk against. ARC-AMPE numbers its controls with 800-53 identifiers, so each one that resolves here is anchored on its equivalent. Skipped without a warning if absent \u2014 the catalog is usable alone, just invisible to `policyforge map`.",
+          "help": "The 800-53 catalog to crosswalk against. ARC-AMPE numbers its controls with 800-53 identifiers, so each one that resolves here is anchored on its equivalent. If absent, prints a notice and carries on without a crosswalk \u2014 the catalog is usable alone, just invisible to `policyforge map`.",
           "hidden": false,
           "is_flag": false,
           "kind": "Option",

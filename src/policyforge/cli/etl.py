@@ -603,8 +603,9 @@ def etl_fedramp(nist_path: Path, out: Path):
     type=click.Path(path_type=Path),
     help="The 800-53 catalog to crosswalk against. ARC-AMPE numbers its "
     "controls with 800-53 identifiers, so each one that resolves here is "
-    "anchored on its equivalent. Skipped without a warning if absent — the "
-    "catalog is usable alone, just invisible to `policyforge map`.",
+    "anchored on its equivalent. If absent, prints a notice and carries on "
+    "without a crosswalk — the catalog is usable alone, just invisible to "
+    "`policyforge map`.",
 )
 @click.option(
     "--out",

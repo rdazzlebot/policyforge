@@ -184,6 +184,92 @@ def test_etl_govramp_refuses_to_write_into_the_bundled_directory(tmp_path):
     assert "never be written there" in result.output
 
 
+class _NoReport:
+    def format_report(self):
+        return ""
+
+
+def _hitrust(monkeypatch, tmp_path, *args):
+    """Run etl-hitrust past parsing, to exercise only its write guards.
+
+    Building a real MyCSF export to reach a guard that runs after the parse
+    would test the parser, not the guard. The guards are what these pin.
+    """
+    import policyforge.cli as cli_mod
+
+    export = tmp_path / "hitrust-export.csv"
+    export.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setattr(
+        "policyforge.ingest.byoc_loader.load_hitrust_export", lambda path, version: []
+    )
+    monkeypatch.setattr("policyforge.ingest.hitrust.summarize", lambda controls: _NoReport())
+    return CliRunner().invoke(cli_mod.cli, ["etl-hitrust", "--export", str(export), *args])
+
+
+def test_etl_hitrust_refuses_to_write_into_the_bundled_directory(tmp_path, monkeypatch):
+    """The HITRUST twin of the GovRAMP refusal, which was the only one tested.
+
+    Pinned before the two copies of this guard were merged, with the
+    framework's own wording, so a merge cannot swap "HITRUST export" for
+    "GovRAMP matrix" unnoticed.
+    """
+    result = _hitrust(
+        monkeypatch, tmp_path, "--out", "data/frameworks/hitrust/controls.json", "--force"
+    )
+
+    assert result.exit_code != 0
+    assert "A HITRUST export must never be written there" in result.output
+
+
+def test_etl_hitrust_refuses_a_tracked_destination_without_permission(tmp_path, monkeypatch):
+    import policyforge.cli as cli_mod
+
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    monkeypatch.setattr("policyforge.frameworks.registry.is_ignored", lambda path: False)
+    out = tmp_path / "controls.json"
+
+    result = _hitrust(monkeypatch, tmp_path, "--out", str(out))
+
+    assert result.exit_code == 1
+    assert "is not gitignored, and this repository has not" in result.output
+    assert "if your MyCSF licence permits your repository to carry the export" in result.output
+    assert not out.exists()
+
+
+def test_etl_govramp_refuses_a_tracked_destination_without_permission(tmp_path, monkeypatch):
+    import policyforge.cli as cli_mod
+    from tests.test_govramp import build_workbook
+
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    monkeypatch.setattr("policyforge.frameworks.registry.is_ignored", lambda path: False)
+    matrix = build_workbook(tmp_path / "GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx")
+    out = tmp_path / "controls.json"
+
+    result = CliRunner().invoke(
+        cli_mod.cli, ["etl-govramp", "--export", str(matrix), "--out", str(out)]
+    )
+
+    assert result.exit_code == 1
+    assert "is not gitignored, and this repository has not" in result.output
+    assert "if your GovRAMP licence permits your repository to carry the matrix" in result.output
+    assert not out.exists()
+
+
+def test_etl_govramp_bundled_directory_refusal_names_the_matrix(tmp_path):
+    """The existing test checks the shared phrase; this pins the noun."""
+    from policyforge.cli import cli
+    from tests.test_govramp import build_workbook
+
+    matrix = build_workbook(tmp_path / "GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx")
+    result = CliRunner().invoke(
+        cli,
+        ["etl-govramp", "--export", str(matrix), "--out", "data/frameworks/govramp/controls.json"],
+    )
+
+    assert result.exit_code != 0
+    assert "A GovRAMP matrix must never be written there" in result.output
+
+
 def test_map_builds_crosswalk_from_controls_json(tmp_path):
     from policyforge.cli import cli
 

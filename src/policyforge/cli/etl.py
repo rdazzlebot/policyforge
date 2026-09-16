@@ -168,6 +168,51 @@ def etl_hipaa(date: str | None, out: Path):
     click.echo(f"Parsed {len(controls)} HIPAA Security Rule requirements -> {out}")
 
 
+def _guard_licensed_write(out: Path, *, force: bool, product: str, licence: str, noun: str):
+    """Refuse to write a licensed catalog anywhere it could be redistributed.
+
+    `etl-hitrust` and `etl-govramp` each carried a copy of this, word for word
+    apart from what the catalog is called. Two copies of a guard that exists
+    to keep licensed content out of a public repository is two places for it
+    to be weakened, and one of them would be the one nobody checks.
+
+    Two rules, in order. The bundled `data/frameworks/` directory never takes
+    a licensed catalog, whatever the flags — it is this project's public,
+    redistributable half, and a file written there gets committed and pushed.
+    Anywhere else, a gitignored destination needs no permission, because a
+    file git will never stage cannot be redistributed by accident; a tracked
+    one needs the repository to have declared it may hold licensed content,
+    or an explicit --force.
+    """
+    from policyforge.frameworks.registry import frameworks_config, is_ignored
+
+    # The bundled directory is this project's public, redistributable half.
+    # A licensed catalog written there would be committed and pushed.
+    if "data/frameworks" in out.as_posix():
+        raise click.ClickException(
+            f"{out} is inside data/frameworks/, which is this project's bundled "
+            f"public content. A {product} must never be written there. Use "
+            "local_content/ or your own repository's frameworks/ directory."
+        )
+
+    # Gitignored destinations need no permission: a file git will never
+    # stage cannot be redistributed by accident. Everywhere else, the
+    # repository has to have said it may hold licensed content.
+    config = load_config()
+    ignored = is_ignored(out)
+    permitted = bool(frameworks_config(config).get("allow_licensed_in_repo"))
+    if not ignored and not permitted and not force:
+        unknown = "" if ignored is False else " (and git could not confirm it is ignored)"
+        click.echo(
+            f"\n{out} is not gitignored{unknown}, and this repository has not "
+            "declared `frameworks.allow_licensed_in_repo`, so writing a licensed "
+            "catalog there is refused. Write it under local_content/, set that "
+            f"flag in config.yaml if your {licence} licence permits your repository "
+            f"to carry the {noun}, or pass --force."
+        )
+        raise SystemExit(1)
+
+
 @cli.command("etl-hitrust")
 @click.option(
     "--export",
@@ -218,7 +263,6 @@ def etl_hitrust(export_path: Path, version: str, out: Path | None, force: bool):
     import dataclasses
     import json
 
-    from policyforge.frameworks.registry import frameworks_config, is_ignored
     from policyforge.ingest.byoc_loader import load_hitrust_export
     from policyforge.ingest.hitrust import summarize
     from policyforge.ingest.hitrust_export import ExportFormatError
@@ -241,31 +285,9 @@ def etl_hitrust(export_path: Path, version: str, out: Path | None, force: bool):
         )
         return
 
-    # The bundled directory is this project's public, redistributable half.
-    # A licensed catalog written there would be committed and pushed.
-    if "data/frameworks" in out.as_posix():
-        raise click.ClickException(
-            f"{out} is inside data/frameworks/, which is this project's bundled "
-            "public content. A HITRUST export must never be written there. Use "
-            "local_content/ or your own repository's frameworks/ directory."
-        )
-
-    # Gitignored destinations need no permission: a file git will never
-    # stage cannot be redistributed by accident. Everywhere else, the
-    # repository has to have said it may hold licensed content.
-    config = load_config()
-    ignored = is_ignored(out)
-    permitted = bool(frameworks_config(config).get("allow_licensed_in_repo"))
-    if not ignored and not permitted and not force:
-        unknown = "" if ignored is False else " (and git could not confirm it is ignored)"
-        click.echo(
-            f"\n{out} is not gitignored{unknown}, and this repository has not "
-            "declared `frameworks.allow_licensed_in_repo`, so writing a licensed "
-            "catalog there is refused. Write it under local_content/, set that "
-            "flag in config.yaml if your MyCSF licence permits your repository to "
-            "carry the export, or pass --force."
-        )
-        raise SystemExit(1)
+    _guard_licensed_write(
+        out, force=force, product="HITRUST export", licence="MyCSF", noun="export"
+    )
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(
@@ -343,7 +365,6 @@ def etl_govramp(export_path: Path, impact_level: str | None, version: str, out: 
     import dataclasses
     import json
 
-    from policyforge.frameworks.registry import frameworks_config, is_ignored
     from policyforge.ingest.govramp import summarize
     from policyforge.ingest.govramp_export import ExportFormatError, load_with_rows
 
@@ -369,31 +390,9 @@ def etl_govramp(export_path: Path, impact_level: str | None, version: str, out: 
         )
         return
 
-    # The bundled directory is this project's public, redistributable half.
-    # A licensed catalog written there would be committed and pushed.
-    if "data/frameworks" in out.as_posix():
-        raise click.ClickException(
-            f"{out} is inside data/frameworks/, which is this project's bundled "
-            "public content. A GovRAMP matrix must never be written there. Use "
-            "local_content/ or your own repository's frameworks/ directory."
-        )
-
-    # Gitignored destinations need no permission: a file git will never
-    # stage cannot be redistributed by accident. Everywhere else, the
-    # repository has to have said it may hold licensed content.
-    config = load_config()
-    ignored = is_ignored(out)
-    permitted = bool(frameworks_config(config).get("allow_licensed_in_repo"))
-    if not ignored and not permitted and not force:
-        unknown = "" if ignored is False else " (and git could not confirm it is ignored)"
-        click.echo(
-            f"\n{out} is not gitignored{unknown}, and this repository has not "
-            "declared `frameworks.allow_licensed_in_repo`, so writing a licensed "
-            "catalog there is refused. Write it under local_content/, set that "
-            "flag in config.yaml if your GovRAMP licence permits your repository "
-            "to carry the matrix, or pass --force."
-        )
-        raise SystemExit(1)
+    _guard_licensed_write(
+        out, force=force, product="GovRAMP matrix", licence="GovRAMP", noun="matrix"
+    )
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(

@@ -321,15 +321,30 @@ memory and write nothing unless you ask them to.
 
 Bundled and populated from public-domain sources, each re-fetchable:
 
-| Data                                                                            | Command               | Source                          |
-| ------------------------------------------------------------------------------- | --------------------- | ------------------------------- |
-| NIST 800-53 Rev 5 (300 controls, 714 enhancements, Low/Moderate/High baselines) | `etl-oscal`           | NIST's OSCAL content repository |
-| HIPAA Security Rule (34 standards, 41 implementation specifications)            | `etl-hipaa`           | eCFR's public API               |
-| HIPAA-to-800-53 crosswalk (278 mappings over 108 NIST controls)                 | `etl-hipaa-crosswalk` | NIST's CPRT catalog             |
+| Data                                                                             | Command               | Source                          |
+| -------------------------------------------------------------------------------- | --------------------- | ------------------------------- |
+| NIST 800-53 Rev 5 (300 controls, 714 enhancements, Low/Moderate/High baselines)  | `etl-oscal`           | NIST's OSCAL content repository |
+| HIPAA Security Rule (34 standards, 41 implementation specifications)             | `etl-hipaa`           | eCFR's public API               |
+| HIPAA-to-800-53 crosswalk (278 mappings over 108 NIST controls)                  | `etl-hipaa-crosswalk` | NIST's CPRT catalog             |
+| ARC-AMPE Volume II (402-item ACA Administering Entity mandatory baseline)        | `etl-arc-ampe`        | CMS's published SSPP workbook   |
+| FedRAMP control tailoring (79 controls: 19 parameter values, 64 guidance blocks) | `etl-fedramp`         | `FedRAMP/rules` rules dataset   |
 
 Because the crosswalk is wired into `mapping/crosswalk.py`, `synthesize`
 pulls HIPAA requirements into a NIST-anchored topic alongside NIST/FedRAMP,
 and `ssp` shows each 800-53 control's HIPAA equivalents as a column.
+ARC-AMPE and FedRAMP both number their controls with 800-53 identifiers, so
+they anchor onto the same table — `map` spans 427 NIST controls with all
+four loaded.
+
+One caveat on the FedRAMP row, because it is the kind of thing that
+misstates a scope if skimmed: it is **tailoring, not a baseline**. Nothing
+in it says which controls a Low, Moderate or High system must implement.
+FedRAMP published that selection as OSCAL profiles in
+`GSA/fedramp-automation`, that repository no longer exists, and no official
+machine-readable replacement has appeared — so `baseline` is left empty on
+every FedRAMP control rather than guessed, and `ssp --baseline` has nothing
+to filter on there. Use the 800-53 baselines for that. ARC-AMPE's rows are
+a real mandatory baseline and are marked as one.
 
 ### The shape of HITRUST CSF
 
@@ -600,6 +615,8 @@ generation, export) knows or cares which one produced the data.
 | `oscal_loader.py`           | `etl-oscal`                  | NIST's OSCAL release of SP 800-53 — the default way to populate 800-53 data                                                               |
 | `hipaa_loader.py`           | `etl-hipaa`                  | eCFR's XML for 45 CFR 164 Subpart C                                                                                                       |
 | `hipaa_crosswalk_loader.py` | `etl-hipaa-crosswalk`        | NIST CPRT's HIPAA-to-800-53 OLIR catalog                                                                                                  |
+| `arc_ampe.py`               | `etl-arc-ampe`               | CMS's ARC-AMPE Volume II SSPP workbook — Volume I is the narrative PDF and holds no controls                                              |
+| `fedramp.py`                | `etl-fedramp`                | FedRAMP's consolidated rules dataset — tailoring for 79 controls, joined onto the 800-53 text it tailors. No baseline; see below          |
 | `nist_vault_loader.py`      | `etl-vault`                  | Markdown notes in one specific shape (YAML frontmatter + `## headings` + `[[wikilinks]]`) — the format this project started from          |
 | `byoc_loader.py`            | `etl-hitrust`, `etl-govramp` | Your own licensed HITRUST CSF export (CSV/TSV/XLSX/HTML/MHTML), or your own GovRAMP controls matrix (XLSX/XLSM)                           |
 | `govramp.py`                | —                            | Not a loader: what GovRAMP *is* — a profile over 800-53, its parameter values and added requirements, and the Core/Ready/Authorized tiers |
@@ -1410,14 +1427,14 @@ policyforge generate --tier procedure --synthesis output/synthesis/auth-mgmt.md 
 Not all frameworks this project targets are safe to bundle and redistribute
 in an open repo. Treat them differently:
 
-| Framework               | Status                                                                                                                            | How this project handles it                                                                                                                                                                                              |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **NIST 800-53 Rev 5**   | US federal government work — public domain                                                                                        | Bundled directly in `data/frameworks/nist-800-53-r5/`, sourced from NIST's own OSCAL content repository via `policyforge etl-oscal`                                                                                      |
-| **FedRAMP**             | US federal government work — public domain                                                                                        | Bundled directly in `data/frameworks/fedramp/`                                                                                                                                                                           |
-| **ARC-AMPE**            | Published by CMS (federal agency) — public domain                                                                                 | Bundled directly in `data/frameworks/arc-ampe/`                                                                                                                                                                          |
-| **HIPAA Security Rule** | US federal regulation (45 CFR 164 Subpart C) — public domain                                                                      | Bundled directly in `data/frameworks/hipaa-security-rule/`, sourced from eCFR's public API via `policyforge etl-hipaa`, with NIST's official 800-53 crosswalk attached via `policyforge etl-hipaa-crosswalk`             |
-| **GovRAMP**             | GovRAMP's Terms & Conditions claim ownership of "documents, downloadable files" on their site, with no redistribution grant found | **Not bundled.** Treated as bring-your-own-content (BYOC) via `local_content/` until GovRAMP grants explicit permission (worth emailing info@govramp.org — ask before assuming).                                         |
-| **HITRUST CSF**         | Contractually licensed content                                                                                                    | **Never bundled.** BYOC only — you supply your own MyCSF/CSF export under your own license, and it's parsed locally. It is never committed, never uploaded anywhere by this tool, and stays out of git via `.gitignore`. |
+| Framework               | Status                                                                                                                            | How this project handles it                                                                                                                                                                                                 |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **NIST 800-53 Rev 5**   | US federal government work — public domain                                                                                        | Bundled directly in `data/frameworks/nist-800-53-r5/`, sourced from NIST's own OSCAL content repository via `policyforge etl-oscal`                                                                                         |
+| **FedRAMP**             | US federal government work — public domain                                                                                        | Bundled directly in `data/frameworks/fedramp/`, sourced from the `FedRAMP/rules` consolidated rules dataset via `policyforge etl-fedramp`. Control tailoring only — FedRAMP publishes no machine-readable baseline any more |
+| **ARC-AMPE**            | Published by CMS (federal agency) — public domain                                                                                 | Bundled directly in `data/frameworks/arc-ampe/`, sourced from CMS's published Volume II SSPP workbook via `policyforge etl-arc-ampe`. The Direct Enrollment Entity baseline is zONE-gated, so it is BYOC via `--export`     |
+| **HIPAA Security Rule** | US federal regulation (45 CFR 164 Subpart C) — public domain                                                                      | Bundled directly in `data/frameworks/hipaa-security-rule/`, sourced from eCFR's public API via `policyforge etl-hipaa`, with NIST's official 800-53 crosswalk attached via `policyforge etl-hipaa-crosswalk`                |
+| **GovRAMP**             | GovRAMP's Terms & Conditions claim ownership of "documents, downloadable files" on their site, with no redistribution grant found | **Not bundled.** Treated as bring-your-own-content (BYOC) via `local_content/` until GovRAMP grants explicit permission (worth emailing info@govramp.org — ask before assuming).                                            |
+| **HITRUST CSF**         | Contractually licensed content                                                                                                    | **Never bundled.** BYOC only — you supply your own MyCSF/CSF export under your own license, and it's parsed locally. It is never committed, never uploaded anywhere by this tool, and stays out of git via `.gitignore`.    |
 
 ### Two repositories, two sets of rights
 
@@ -2473,7 +2490,23 @@ where most of the remaining value is.
   authorization
 - [ ] **Other healthcare-relevant frameworks worth considering** — MARS-E
   (CMS, NIST-800-53-based, same public-domain lineage as ARC-AMPE). HITRUST
-  CSF and GovRAMP are both done, as BYOC loaders
+  CSF and GovRAMP are both done, as BYOC loaders. ARC-AMPE supersedes and
+  replaces MARS-E, so this is now a question about reading historical
+  packages rather than current obligations
+- [ ] **A FedRAMP baseline, if FedRAMP publishes one again** — `etl-fedramp`
+  brings in the tailoring but there is no control *selection* to bring in:
+  the Low/Moderate/High OSCAL profiles lived in `GSA/fedramp-automation`,
+  which now 404s, and `FedRAMP/rules` carries guidance and parameters only.
+  What is wanted is FedRAMP's own machine-readable selection, from FedRAMP.
+  Reconstructing it from a third-party mirror is explicitly *not* the plan —
+  a citation that traces to whoever made the copy is worth less than an
+  honest gap. Worth re-checking `FedRAMP/rules` periodically, since a `CTL`
+  section that grew a selection field would close this
+- [ ] **The ARC-AMPE Direct Enrollment Entity baseline** — CMS distributes
+  the 308-control DEE workbook through zONE, which gates access, so it
+  cannot be bundled. `etl-arc-ampe --export` already reads it. If CMS
+  publishes it openly, it becomes a second bundled catalog with no code
+  change
 
 ### 3. Zardoz and the chatbot's skills
 
@@ -2622,6 +2655,15 @@ What already exists, kept as the record of what the prose above refers to.
   alongside NIST/FedRAMP
 - [x] `ingest/oscal_loader.py` + `policyforge etl-oscal` — NIST 800-53 Rev 5 from NIST's
   own OSCAL catalog, so 800-53 data can be populated with no pre-existing Obsidian vault
+- [x] `ingest/arc_ampe.py` + `policyforge etl-arc-ampe` — ARC-AMPE Volume II, CMS's
+  402-item mandatory baseline for an ACA Administering Entity, bundled and populated
+  from CMS's published SSPP workbook. The controls sheet is found by its shape rather
+  than its name, so the zONE-gated Direct Enrollment Entity workbook reads the same way
+  via `--export`
+- [x] `ingest/fedramp.py` + `policyforge etl-fedramp` — FedRAMP's control tailoring
+  (parameter values and guidance for 79 controls), joined onto the 800-53 text it
+  tailors. Read from `FedRAMP/rules`, which is what FedRAMP publishes now that
+  `GSA/fedramp-automation` is gone. **Not** a baseline — see below
 - [x] `ssp/` + `policyforge ssp` — NIST 800-53 System Security Plan as a LibreOffice-
   compatible .xlsx workbook, with FedRAMP's CIS vocabularies and LLM-drafted
   implementation narratives (see "System Security Plan" above)

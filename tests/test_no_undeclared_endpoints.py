@@ -46,7 +46,11 @@ ALLOWED_HOSTS: dict[str, str] = {
     # works — the content this project is allowed to redistribute.
     "csrc.nist.gov": "NIST CPRT: the HIPAA-to-800-53 crosswalk (etl-hipaa-crosswalk)",
     "www.ecfr.gov": "eCFR: the HIPAA Security Rule, 45 CFR 164 Subpart C (etl-hipaa)",
-    "raw.githubusercontent.com": "NIST's OSCAL edition of SP 800-53 (etl-oscal)",
+    "www.cms.gov": "CMS: the ARC-AMPE Volume II control baseline (etl-arc-ampe)",
+    "raw.githubusercontent.com": (
+        "NIST's OSCAL edition of SP 800-53 (etl-oscal) and FedRAMP's consolidated "
+        "rules dataset (etl-fedramp)"
+    ),
     "github.com": "cited as the provenance of OSCAL content in SSP output; not fetched",
     # Local model defaults. These are the reason `boundary.py` classifies a
     # loopback endpoint as `local`: nothing leaves the host.

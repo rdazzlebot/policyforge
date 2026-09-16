@@ -569,6 +569,191 @@ def etl_hipaa_crosswalk(controls_path: Path, fixture_path: Path | None, out: Pat
         )
 
 
+@cli.command("etl-fedramp")
+@click.option(
+    "--nist",
+    "nist_path",
+    default=Path("data/frameworks/nist-800-53-r5/controls.json"),
+    type=click.Path(path_type=Path),
+    help="The 800-53 catalog this tailoring is applied to. Produced by `policyforge etl-oscal`.",
+)
+@click.option(
+    "--out",
+    default=Path("data/frameworks/fedramp/controls.json"),
+    type=click.Path(path_type=Path),
+    help="Where to write the parsed control data.",
+)
+def etl_fedramp(nist_path: Path, out: Path):
+    """Fetch FedRAMP's published control tailoring and apply it to 800-53.
+
+    Public domain — a US federal program, same basis as the NIST and eCFR
+    sources. Read from `fedramp-consolidated-rules.json` in `FedRAMP/rules`,
+    which that repository calls its canonical rules dataset.
+
+    This writes a profile, not a baseline. FedRAMP's machine-readable
+    Low/Moderate/High baseline selection used to live in
+    `GSA/fedramp-automation`, and that repository no longer exists — so
+    nothing here says which controls a given system must implement, and
+    `Control.baseline` is deliberately left unset rather than guessed. What
+    it does carry is FedRAMP's own two additions to the controls it does
+    speak to: the organization-defined values FedRAMP has already decided,
+    and the guidance it layers on top. See ingest/fedramp.py.
+    """
+    import dataclasses
+    import json
+
+    from policyforge.ingest.fedramp import (
+        FEDRAMP_RULES_REF,
+        RULES_URL,
+        fetch_fedramp_rules,
+        parse_fedramp_rules,
+    )
+    from policyforge.ingest.provenance import record_source_provenance
+    from policyforge.ingest.schema import load_controls
+
+    if not nist_path.exists():
+        raise click.ClickException(
+            f"No 800-53 catalog at {nist_path}. FedRAMP publishes no control text of "
+            "its own — it names controls NIST wrote and tailors them — so this "
+            "command needs that catalog to join against. Run `policyforge etl-oscal` "
+            "first, or point --nist at your own copy."
+        )
+
+    nist_controls = load_controls(nist_path)
+    rules = fetch_fedramp_rules()
+    controls, summary = parse_fedramp_rules(rules, nist_controls)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        json.dumps([dataclasses.asdict(c) for c in controls], indent=2),
+        encoding="utf-8",
+    )
+    enhancements = sum(len(c.enhancements) for c in controls)
+    click.echo(
+        f"Wrote {len(controls)} controls and {enhancements} enhancements "
+        f"({rules.get('info', {}).get('version', '?')}) -> {out}"
+    )
+    for line in summary.format_report():
+        click.echo(f"  {line}")
+
+    stamp = record_source_provenance(
+        out.parent / "framework.yaml",
+        source_ref=FEDRAMP_RULES_REF,
+        source_url=RULES_URL,
+        content=out.read_bytes(),
+    )
+    if stamp is not None:
+        click.echo(
+            f"Recorded provenance: {FEDRAMP_RULES_REF[:12]}… sha256:{stamp[:16]}… -> {out.parent}"
+        )
+
+
+@cli.command("etl-arc-ampe")
+@click.option(
+    "--export",
+    "export_path",
+    default=None,
+    type=click.Path(exists=True, path_type=Path),
+    help="Read a local ARC-AMPE Volume II workbook instead of fetching CMS's. "
+    "Use this for the Direct Enrollment Entity baseline, which CMS distributes "
+    "through zONE rather than publishing.",
+)
+@click.option(
+    "--version",
+    "version",
+    default="",
+    help='Document version to stamp, e.g. "v1.02". Default: the version this loader is pinned to.',
+)
+@click.option(
+    "--nist",
+    "nist_path",
+    default=Path("data/frameworks/nist-800-53-r5/controls.json"),
+    type=click.Path(path_type=Path),
+    help="The 800-53 catalog to crosswalk against. ARC-AMPE numbers its "
+    "controls with 800-53 identifiers, so each one that resolves here is "
+    "anchored on its equivalent. Skipped without a warning if absent — the "
+    "catalog is usable alone, just invisible to `policyforge map`.",
+)
+@click.option(
+    "--out",
+    default=Path("data/frameworks/arc-ampe/controls.json"),
+    type=click.Path(path_type=Path),
+    help="Where to write the parsed control data.",
+)
+def etl_arc_ampe(export_path: Path | None, version: str, nist_path: Path, out: Path):
+    """Fetch CMS's ARC-AMPE Volume II baseline and parse it into this schema.
+
+    Public domain — published by CMS, a federal agency, with no copyright
+    notice or redistribution restriction, same basis as the NIST and eCFR
+    sources.
+
+    Note which volume this reads. Volume I is the narrative PDF and holds no
+    controls; Volume II is the System Security and Privacy Plan workbook,
+    and its `AE Mandatory Baseline` sheet is the catalog — 402 controls
+    required of an ACA Administering Entity, with CMS's parameter decisions
+    already written into the control text. The sheet is found by its shape
+    rather than its name, so the Direct Enrollment Entity workbook reads the
+    same way via --export. See ingest/arc_ampe.py.
+    """
+    import dataclasses
+    import json
+
+    from policyforge.ingest.arc_ampe import (
+        ARC_AMPE_URL,
+        ARC_AMPE_VERSION,
+        fetch_arc_ampe,
+        load_workbook_from_bytes,
+        parse_arc_ampe,
+    )
+    from policyforge.ingest.provenance import record_source_provenance
+    from policyforge.ingest.schema import load_controls
+
+    if export_path is not None:
+        content = export_path.read_bytes()
+        source_url = str(export_path)
+    else:
+        content = fetch_arc_ampe()
+        source_url = ARC_AMPE_URL
+
+    nist_ids: set[str] | None = None
+    if nist_path.exists():
+        nist_ids = set()
+        for control in load_controls(nist_path):
+            nist_ids.add(control.control_id)
+            nist_ids.update(e.enhancement_id for e in control.enhancements)
+    else:
+        click.echo(
+            f"No 800-53 catalog at {nist_path}, so no crosswalk is recorded. Run "
+            "`policyforge etl-oscal` and re-run this to anchor ARC-AMPE on 800-53."
+        )
+
+    workbook = load_workbook_from_bytes(content)
+    controls, summary = parse_arc_ampe(
+        workbook, version=version or ARC_AMPE_VERSION, nist_ids=nist_ids
+    )
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        json.dumps([dataclasses.asdict(c) for c in controls], indent=2),
+        encoding="utf-8",
+    )
+    click.echo(f"Wrote {len(controls)} controls -> {out}")
+    for line in summary.format_report():
+        click.echo(f"  {line}")
+
+    stamp = record_source_provenance(
+        out.parent / "framework.yaml",
+        source_ref=version or ARC_AMPE_VERSION,
+        source_url=source_url,
+        content=out.read_bytes(),
+    )
+    if stamp is not None:
+        click.echo(
+            f"Recorded provenance: {version or ARC_AMPE_VERSION} "
+            f"sha256:{stamp[:16]}… -> {out.parent}"
+        )
+
+
 @cli.command("map")
 @click.option(
     "--controls",

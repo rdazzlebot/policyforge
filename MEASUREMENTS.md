@@ -820,6 +820,55 @@ author: each of the nine newly registered prompts was imported from
 worktrees at `b39a102` and `28d066a` and its runtime value hashed, and all
 nine match.
 
+### 17. The other four suites through the fixed meter — 2026-09-16
+
+Measured by policyforge-ba from a worktree at `b39a102`, `--repeat 3 --min-interval 1`; every suite printed `Code: b39a102`, and the prompt texts
+match the epoch 16 fingerprints. Output was searched for 429, rate-limit,
+API errors, exceptions, tracebacks and timeouts, and none were found, so no
+run is void — including the flash runs that overlapped epoch 16's.
+
+These are the first measurements of these suites through the meter fixed in
+epoch 15, so answering and generation carry the effort level production
+sends. **Not comparable with any earlier row for these suites**; they are a
+new baseline, not a change.
+
+| Suite        | `glm-5.3-flash`              | `deepseek-v4-flash`        |
+| ------------ | ---------------------------- | -------------------------- |
+| `answering`  | 25/27 (76/81 runs) $0.0084   | 24/27 (78/81 runs) $0.0100 |
+| `generation` | **3/6 (10/18 runs)** $0.0065 | 4/6 (15/18 runs) $0.0086   |
+| `resolution` | 6/7 (19/21 runs) $0.0005     | 7/7 (21/21 runs) $0.0015   |
+| `expansion`  | 3/3 (9/9 runs) $0.0004       | 3/3 (9/9 runs) $0.0005     |
+
+Cases that failed at least one run:
+
+- **answering, glm:** `an-approver-borrowed-from-the-wrong-clause` 0/3 and
+  `a-well-known-fact-absent-from-the-passages` 1/3. Both replies refuse in
+  substance ("The documents do not say who approves…") but in prose instead
+  of the `INSUFFICIENT_CONTEXT` sentinel. A refusal is read by equality
+  (epoch 8), and an unsentinelled one also misses the CLI's refusal path, so
+  they are recorded as model failures, not grader errors.
+- **answering, flash:** the opposite direction. `an-unquoted-claim-is-not-smuggled-in`
+  and `a-cross-reference-is-not-resolved-from-memory` each over-refused once;
+  `a-quote-survives-markdown-emphasis` failed integrity once, quoting text
+  (with `**6 years**` emphasis) that matched no passage.
+- **generation, glm:** `a-standard-keeps-every-citation-and-every-shall` 0/3
+  (wrote "as appropriate"), `a-procedure-turns-requirements-into-steps-and-keeps-their-tags`
+  0/3 (stated "annually" and "monthly" intervals the synthesis does not), and
+  `a-standard-uses-the-vendor-it-was-given` 1/3 (named Entra).
+- **generation, flash:** `a-standard-uses-the-vendor-it-was-given` 2/3 (Okta
+  missing), and the procedure case 1/3 ("annually").
+- **resolution, glm:** `a-standalone-question-that-does-reach-the-rewriter`
+  1/3 — rewrote a question that was already standalone.
+
+**Two conclusions, kept apart.** On these suites `deepseek-v4-flash` is level
+with or ahead of `glm-5.3-flash`, and clearly ahead on generation, where
+glm invented intervals and a hedge on two cases in every run. On the edit
+path (epoch 16) the order reverses: glm resisted every planted instruction
+and flash did not. That is why this epoch does not change the recommended
+default: the edit path is a security property, and flash fails it. glm's
+generation result is the open quality problem this epoch adds, and it is
+not yet explained.
+
 ______________________________________________________________________
 
 ## Two ways a run can lie, found the hard way

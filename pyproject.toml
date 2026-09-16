@@ -39,6 +39,17 @@ dev = [
 bedrock = [
     "boto3>=1.34",
 ]
+# Serves the read-only analyses as MCP tools (`policyforge mcp`). An extra
+# rather than a base dependency: most people use the CLI, and this is only
+# needed to let another agent call the same functions.
+#
+# Declared explicitly even though `mcp` is already present in this project's
+# dev environment — it arrives there as a transitive dependency of semgrep,
+# which is a dev tool. Building against that would give a feature that works
+# for anyone who installed the dev extras and fails for everyone else.
+mcp = [
+    "mcp>=1.29",
+]
 vertex = [
     "anthropic[vertex]>=0.40",
 ]

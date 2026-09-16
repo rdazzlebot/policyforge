@@ -633,6 +633,50 @@ def _topics_and_controls(topics_path: Path, controls_paths):
     return topics, controls, nist, other
 
 
+@cli.command("mcp")
+@click.option(
+    "--corpus-dir",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Synced document snapshot (default: the same one `zardoz` uses).",
+)
+@click.option(
+    "--topics",
+    "topics_path",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Topic registry (default: config/topics.yaml).",
+)
+def mcp_cmd(corpus_dir: Path | None, topics_path: Path | None):
+    """Serve the read-only analyses as MCP tools over stdio.
+
+    Lets Claude Code, Claude Desktop or any MCP client ask this repository
+    which controls nobody owns, what a team is accountable for, or where a
+    HIPAA citation is addressed — with the content boundary, the ledger and
+    the citation checks all still in the path, because the answers come from
+    the same functions the CLI calls.
+
+    Read-only, structurally: a test walks this package's AST and fails if any
+    module so much as names the publish path. Editing a live policy page
+    stays here in the CLI, behind its dry run, macro check, version guard and
+    explicit confirmation.
+
+    This speaks stdio and is spawned by a client; it binds no port. Configure
+    it as a command, not a URL.
+    """
+    from policyforge.mcp.server import serve
+
+    try:
+        config = load_config()
+    except FileNotFoundError:
+        config = {}
+
+    try:
+        serve(config, corpus_dir=corpus_dir, topics_path=topics_path)
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 @cli.command("bundle")
 @click.argument("owner")
 @click.option(

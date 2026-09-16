@@ -223,22 +223,24 @@ Naming the untrusted inputs explicitly is the part most LLM-application
 threat models skip, and it is the part that determines whether the rest of
 the controls are pointed in the right direction. In PolicyForge:
 
-| Input                        | Why it is untrusted                                                                                                       | Where it lands                                                                          |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| **Confluence page content**  | Anyone with wiki write access authored it, and Zardoz's corpus deliberately admits pages nobody has declared ownership of | Into the same request as the rules governing how it should be used                      |
-| **Framework exports (BYOC)** | A CSV or workbook from a vendor portal, possibly edited, possibly with a chat transcript pasted into it                   | Into the `generate-parser` prompt, whose output is *code this project imports and runs* |
-| **Company/org context**      | Operator-supplied, but pasted from elsewhere and rarely reviewed line by line                                             | Into drafting prompts                                                                   |
-| **Model output**             | Generated, not authored. A citation marker is a claim, not a fact                                                         | Into documents, and into the wiki if published                                          |
+| Input                        | Why it is untrusted                                                                                                                                                                                                                                                    | Where it lands                                                                                              |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Confluence page content**  | Anyone with wiki write access authored it, and Zardoz's corpus deliberately admits pages nobody has declared ownership of                                                                                                                                              | Into the same request as the rules governing how it should be used                                          |
+| **Content-tree files**       | **As hostile as the wiki pages they were pulled from** — `pull` writes page bodies in verbatim, and a pull request full of pulled pages is not read line by line. Hand-written files are lower risk but indistinguishable to the tool, so all are treated as untrusted | Into the edit planner and rewriter, behind the same injection scan, fence and `check_edit` as the wiki path |
+| **Framework exports (BYOC)** | A CSV or workbook from a vendor portal, possibly edited, possibly with a chat transcript pasted into it                                                                                                                                                                | Into the `generate-parser` prompt, whose output is *code this project imports and runs*                     |
+| **Company/org context**      | Operator-supplied, but pasted from elsewhere and rarely reviewed line by line                                                                                                                                                                                          | Into drafting prompts                                                                                       |
+| **Model output**             | Generated, not authored. A citation marker is a claim, not a fact                                                                                                                                                                                                      | Into documents, and into the wiki if published                                                              |
 
 Everything in [Separating instructions from quoted
 material](#separating-instructions-from-quoted-material) and [Output
-integrity](#output-integrity) below exists for these four rows.
+integrity](#output-integrity) below exists for these five rows.
 
 ## Separating instructions from quoted material
 
 Two paths put text somebody else wrote into the same request as the rules
 governing what to do with it: Zardoz answering from retrieved passages, and
-the Confluence editor rewriting a live page. Both need a marker saying
+the editor rewriting a live page or a content-tree file. Both need a marker
+saying
 "quoted material starts here and stops there" that the quoted material itself
 cannot forge.
 

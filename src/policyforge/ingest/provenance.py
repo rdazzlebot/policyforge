@@ -81,6 +81,44 @@ def record_source_provenance(
     return digest
 
 
+def restamp_content(framework_yaml: Path, *, content: bytes) -> str | None:
+    """Update the recorded hash after a later step rewrote the catalog.
+
+    Some catalogs are built by more than one command. The HIPAA pipeline is
+    `etl-hipaa` — fetch the regulation from eCFR — then
+    `etl-hipaa-crosswalk`, which rewrites the same `controls.json` with
+    NIST's CPRT mappings attached. Stamping only in the first step would
+    record a hash the second step immediately invalidates, so a correctly
+    built catalog would report MISMATCH: the mechanism would cry wolf on the
+    one pipeline that followed its own documented steps.
+
+    Only the hash moves. `source_ref` and `source_url` describe where the
+    *requirement text* came from, and an enrichment step does not change
+    that — the crosswalk adds mappings, it does not restate the regulation.
+
+    Returns None and writes nothing when there is no stamp to update. A
+    caller that enriches an unstamped catalog must not invent a provenance
+    record: nothing here knows which eCFR date that text came from, and
+    guessing would be worse than leaving it UNSTAMPED.
+    """
+    if not framework_yaml.exists():
+        return None
+
+    import yaml
+
+    data = yaml.safe_load(framework_yaml.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict) or not data.get("content_sha256"):
+        return None
+
+    digest = content_digest(content)
+    data["content_sha256"] = digest
+    framework_yaml.write_text(
+        yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=88),
+        encoding="utf-8",
+    )
+    return digest
+
+
 def read_provenance(framework_yaml: Path) -> dict:
     """The recorded provenance, or {} where none has been stamped yet.
 

@@ -204,7 +204,19 @@ def etl_hipaa(date: str | None, out: Path):
     import dataclasses
     import json
 
-    from policyforge.ingest.hipaa_loader import fetch_ecfr_subpart_c_xml, parse_hipaa_security_rule
+    from policyforge.ingest.hipaa_loader import (
+        current_ecfr_date,
+        ecfr_source_url,
+        fetch_ecfr_subpart_c_xml,
+        parse_hipaa_security_rule,
+    )
+    from policyforge.ingest.provenance import record_source_provenance
+
+    # Resolved here rather than inside the fetch so the date recorded is
+    # provably the date fetched. eCFR has no tags — the effective date is
+    # the only thing that names a revision — so it is this framework's
+    # equivalent of the OSCAL release tag.
+    date = date or current_ecfr_date()
 
     xml_text = fetch_ecfr_subpart_c_xml(date=date)
     controls = parse_hipaa_security_rule(xml_text)
@@ -213,6 +225,14 @@ def etl_hipaa(date: str | None, out: Path):
         json.dumps([dataclasses.asdict(c) for c in controls], indent=2),
         encoding="utf-8",
     )
+    stamp = record_source_provenance(
+        out.parent / "framework.yaml",
+        source_ref=date,
+        source_url=ecfr_source_url(date),
+        content=out.read_bytes(),
+    )
+    if stamp is not None:
+        click.echo(f"Recorded provenance: {date} sha256:{stamp[:16]}… -> {out.parent}")
     click.echo(f"Parsed {len(controls)} HIPAA Security Rule requirements -> {out}")
 
 
@@ -514,11 +534,21 @@ def etl_hipaa_crosswalk(controls_path: Path, fixture_path: Path | None, out: Pat
         encoding="utf-8",
     )
 
+    # This step rewrites the same controls.json `etl-hipaa` just stamped, so
+    # the recorded hash has to follow it. Only the hash: source_ref and
+    # source_url describe where the regulation text came from, and attaching
+    # a crosswalk does not change that.
+    from policyforge.ingest.provenance import restamp_content
+
+    restamped = restamp_content(out_path.parent / "framework.yaml", content=out_path.read_bytes())
+
     click.echo(
         f"Mapped {report.mapped_controls} standards and "
         f"{report.mapped_enhancements} implementation specifications "
         f"from {len(mapping)} CPRT citations -> {out_path}"
     )
+    if restamped is not None:
+        click.echo(f"Updated recorded hash to sha256:{restamped[:16]}…")
     # Anything NIST's crosswalk doesn't cover is reported rather than left
     # invisible — this is compliance data, so a gap should be an observation,
     # not a surprise.

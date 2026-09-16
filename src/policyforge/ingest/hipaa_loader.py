@@ -188,6 +188,31 @@ def _parse_section(section_id: str, head: str, body: str) -> list[Control]:
     return controls
 
 
+def current_ecfr_date() -> str:
+    """The effective date eCFR currently publishes Title 45 as up to date to.
+
+    Separate from the fetch so a caller can *name* the revision it is about
+    to pull. eCFR is a live source with no tags: the effective date is the
+    only thing that identifies a revision, which makes it the equivalent of
+    the OSCAL release tag and the right value to record as `source_ref`.
+
+    Resolving it in the caller rather than inside the fetch means the date
+    that gets stamped is provably the date that was fetched, not a second
+    lookup that could land on the other side of an eCFR publication.
+    """
+    import requests
+
+    response = requests.get("https://www.ecfr.gov/api/versioner/v1/titles.json", timeout=30)
+    response.raise_for_status()
+    title_45 = next(t for t in response.json()["titles"] if t["number"] == 45)
+    return title_45["up_to_date_as_of"]
+
+
+def ecfr_source_url(date: str) -> str:
+    """The exact URL a given effective date is read from."""
+    return f"https://www.ecfr.gov/api/versioner/v1/full/{date}/title-45.xml?part=164"
+
+
 def fetch_ecfr_subpart_c_xml(*, date: str | None = None) -> str:
     """Fetch the current (or a specific effective date's) full XML text of
     45 CFR Part 164 from eCFR's public versioner API. Kept separate from
@@ -198,12 +223,7 @@ def fetch_ecfr_subpart_c_xml(*, date: str | None = None) -> str:
     import requests
 
     if date is None:
-        titles_response = requests.get(
-            "https://www.ecfr.gov/api/versioner/v1/titles.json", timeout=30
-        )
-        titles_response.raise_for_status()
-        title_45 = next(t for t in titles_response.json()["titles"] if t["number"] == 45)
-        date = title_45["up_to_date_as_of"]
+        date = current_ecfr_date()
 
     response = requests.get(
         f"https://www.ecfr.gov/api/versioner/v1/full/{date}/title-45.xml",

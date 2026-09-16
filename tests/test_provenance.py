@@ -155,3 +155,49 @@ def test_verify_reports_a_recorded_catalog_that_went_missing(tmp_path):
     )
     (tmp_path / "controls.json").unlink()
     assert verify_content(tmp_path).state == MISSING
+
+
+def test_a_second_pipeline_step_updates_the_hash_not_the_source(tmp_path):
+    """The HIPAA pipeline is two commands writing one file.
+
+    `etl-hipaa` fetches the regulation and stamps it; `etl-hipaa-crosswalk`
+    rewrites the same controls.json with CPRT mappings attached. Without a
+    restamp the mechanism would report MISMATCH on the one catalog that
+    followed its own documented build steps.
+    """
+    from policyforge.ingest.provenance import restamp_content
+
+    (tmp_path / "framework.yaml").write_text(EXISTING, encoding="utf-8")
+    controls = tmp_path / "controls.json"
+    controls.write_text('[{"control_id": "164.308"}]', encoding="utf-8")
+    record_source_provenance(
+        tmp_path / "framework.yaml",
+        source_ref="2026-09-01",
+        source_url="https://www.ecfr.gov/...",
+        content=controls.read_bytes(),
+    )
+    assert verify_content(tmp_path).ok
+
+    # The enrichment step rewrites the file.
+    controls.write_text(
+        '[{"control_id": "164.308", "source_crosswalk": {"nist": "RA-1"}}]', encoding="utf-8"
+    )
+    assert verify_content(tmp_path).state == MISMATCH
+
+    restamp_content(tmp_path / "framework.yaml", content=controls.read_bytes())
+    status = verify_content(tmp_path)
+    assert status.ok
+    recorded = read_provenance(tmp_path / "framework.yaml")
+    assert recorded["source_ref"] == "2026-09-01"
+    assert recorded["source_url"] == "https://www.ecfr.gov/..."
+
+
+def test_enriching_an_unstamped_catalog_invents_nothing(tmp_path):
+    """Nothing here knows which revision that text came from."""
+    from policyforge.ingest.provenance import restamp_content
+
+    (tmp_path / "framework.yaml").write_text(EXISTING, encoding="utf-8")
+    (tmp_path / "controls.json").write_text("[]", encoding="utf-8")
+
+    assert restamp_content(tmp_path / "framework.yaml", content=b"[]") is None
+    assert verify_content(tmp_path).state == UNSTAMPED

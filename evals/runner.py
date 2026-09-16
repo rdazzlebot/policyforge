@@ -905,6 +905,62 @@ def recorded_fingerprints() -> dict[str, str]:
         return {}
 
 
+def code_provenance() -> list[str]:
+    """Which commit this run's code came from, and whether it was still moving.
+
+    Added after a run was lost to a hazard that cost real forensics to
+    identify. A measurement against `kimi-k3` reported `edit_plan` 0/5 with
+    `AttributeError: no attribute 'call_shaped'` — not a model score, a
+    process artifact. The run had started before a commit landed and was
+    still going after it. Because nearly every import in this codebase is
+    lazy, a long-running process keeps reading modules off disk for its
+    whole run: `policyforge.llm.effort` was cached from before the commit,
+    `policyforge.edit.plan` was imported fresh from after it, and the older
+    cached module did not have the function the newer one called.
+
+    Nothing was wrong with the repository at any point, which is what made
+    it expensive to diagnose — it was reconstructed from file mtimes and a
+    log's birth time. A run that states its own commit and dirty flag makes
+    the same situation legible in one line.
+
+    A dirty tree is not an error. It is the normal way a prompt change gets
+    measured before it is committed. It is a fact the number needs attached
+    to it, for the same reason an epoch is.
+    """
+    import subprocess
+
+    def git(*args: str) -> str:
+        try:
+            return subprocess.run(
+                ["git", *args],
+                cwd=Path(__file__).resolve().parent.parent,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            ).stdout.strip()
+        except Exception:  # noqa: BLE001 - provenance is never worth failing a run over
+            return ""
+
+    commit = git("rev-parse", "--short", "HEAD")
+    if not commit:
+        return ["", "Code: not a git checkout, so this run cannot name what it measured."]
+
+    dirty = bool(git("status", "--porcelain"))
+    lines = ["", f"Code: {commit}{' plus uncommitted changes' if dirty else ''}"]
+    if dirty:
+        lines.append(
+            "  The working tree was modified. This number measures what was on "
+            "disk, which is not any commit — say so if it goes into MEASUREMENTS.md."
+        )
+    lines.append(
+        "  A long run reads modules off disk as it goes. If the tree changes "
+        "underneath it, later suites can load code the earlier ones did not, and "
+        "the mixture is not a state that ever existed. Run from a worktree pinned "
+        "to a commit (`git worktree add ../pf-eval <commit>`) to make that impossible."
+    )
+    return lines
+
+
 def prompt_epoch_report() -> list[str]:
     """What this run's prompts are, and whether they match the last epoch.
 
@@ -1001,5 +1057,6 @@ def format_report(results: list[CaseResult], *, repeat: int) -> str:
         )
     if not failed and not flaky:
         lines.append("  every case passed every run")
+    lines += code_provenance()
     lines += prompt_epoch_report()
     return "\n".join(lines)

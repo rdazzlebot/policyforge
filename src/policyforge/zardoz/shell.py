@@ -84,6 +84,10 @@ class ShellState:
     #: The last answer, so `/sources` can show what it was drawn from in
     #: full rather than in the excerpts that fit beside the prose.
     last_answer: object | None = field(default=None, repr=False)
+    #: The last shadow comparison, for `/shadow`. None means no candidate
+    #: retriever is configured, which is the default and is not a failure —
+    #: see `shadow.py` for why these run at all.
+    last_shadow: object | None = field(default=None, repr=False)
     #: The turns so far, so a follow-up can be resolved against them.
     #: "who owns that?" is only answerable in the light of what was asked
     #: before it, and that context lives here rather than in the model.
@@ -332,8 +336,28 @@ def _cmd_forget(args: list[str], state: ShellState) -> str:
     return f"Forgotten {count} turn(s). The next question will be read on its own."
 
 
+def _cmd_shadow(args: list[str], state: ShellState) -> str:
+    """Show where a candidate retriever disagreed with the live one.
+
+    Nothing here has affected any answer. Dense retrieval, reranking and
+    entailment are parked on evidence nobody has, because gathering it means
+    running them — so they run beside the real retriever, their disagreement
+    is recorded, and what the user sees is unchanged. This command is where
+    that record is read.
+    """
+    from .shadow import ShadowReport
+
+    report = getattr(state, "last_shadow", None)
+    if report is None:
+        if state.last_answer is None:
+            return "No shadow comparison yet — ask a question first."
+        return ShadowReport().render()
+    return report.render()
+
+
 COMMANDS: dict[str, Command] = {
     "help": Command("Show the available commands.", _cmd_help, aliases=("?",)),
+    "shadow": Command("Show where a candidate retriever disagreed with the live one.", _cmd_shadow),
     "topics": Command("List the topic registry and who owns each topic.", _cmd_topics),
     "corpus": Command("Show which documents are synced and available.", _cmd_corpus),
     "sources": Command("Show the last answer's passages in full.", _cmd_sources),

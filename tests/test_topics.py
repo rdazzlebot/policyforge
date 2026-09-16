@@ -330,3 +330,58 @@ def test_example_registry_reaches_every_crosswalked_hipaa_requirement():
     (hipaa_coverage,) = report.framework_coverage
     assert len(hipaa_coverage.covered) == 65
     assert hipaa_coverage.total == 75
+
+
+def test_a_registry_that_is_not_valid_yaml_raises_the_registry_error(tmp_path):
+    """Not the YAML library's own exception.
+
+    Every caller that tolerates a bad registry catches TopicRegistryError.
+    A syntax error raised yaml's ParserError instead, which none of them
+    catch — so `policyforge zardoz`, whose launch code says a broken registry
+    "is not fatal", crashed on a topics.yaml with an unclosed bracket.
+    """
+    import pytest
+
+    from policyforge.topics.registry import TopicRegistryError, load_topics
+
+    path = tmp_path / "topics.yaml"
+    path.write_text("topics:\n  - name: [unclosed\n", encoding="utf-8")
+
+    with pytest.raises(TopicRegistryError) as caught:
+        load_topics(path)
+    message = str(caught.value)
+    assert str(path) in message
+    assert "not valid YAML" in message
+    assert "line 2" in message
+
+
+def test_zardoz_opens_on_a_registry_with_a_syntax_error(tmp_path, monkeypatch):
+    """What the fix is for, end to end: the shell starts and says what is wrong."""
+    from click.testing import CliRunner
+
+    import policyforge.cli as cli_mod
+
+    topics = tmp_path / "topics.yaml"
+    topics.write_text("topics:\n  - name: [unclosed\n", encoding="utf-8")
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    monkeypatch.setattr(
+        cli_mod, "get_provider", lambda config: (_ for _ in ()).throw(RuntimeError("no key"))
+    )
+
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        [
+            "zardoz",
+            "--topics",
+            str(topics),
+            "--corpus-dir",
+            str(tmp_path / "corpus"),
+            "--no-art",
+            "--plain",
+        ],
+        input="/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "could not be read" in result.output
+    assert "not valid YAML" in result.output

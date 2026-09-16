@@ -137,4 +137,26 @@ def load_topics(path: Path = DEFAULT_TOPICS_PATH) -> list[Topic]:
             f"{path} not found. Copy config/topics.example.yaml to {path} and set the "
             "owners to your own teams."
         )
-    return parse_topics(yaml.safe_load(path.read_text(encoding="utf-8")))
+    # A syntax error is a malformed registry like any other, and is raised as
+    # one. It used to escape as yaml's own ParserError, which no caller
+    # catches — every one of them handles TopicRegistryError — so a single
+    # unclosed bracket crashed `policyforge zardoz` at launch, in the code
+    # whose comment says a broken registry is not fatal.
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+
+        def at(mark) -> str:
+            return f"line {mark.line + 1}, column {mark.column + 1}"
+
+        # Both positions where YAML has both. For an unclosed bracket the
+        # problem is only noticed at the end of the file; the line to go and
+        # fix is where the bracket was opened, which YAML calls the context.
+        problem_mark = getattr(exc, "problem_mark", None)
+        context_mark = getattr(exc, "context_mark", None)
+        where = f" at {at(problem_mark)}" if problem_mark else ""
+        if context_mark and (not problem_mark or context_mark.line != problem_mark.line):
+            where += f" (in what starts at {at(context_mark)})"
+        problem = getattr(exc, "problem", None) or str(exc).splitlines()[0]
+        raise TopicRegistryError(f"{path} is not valid YAML{where}: {problem}.") from exc
+    return parse_topics(data)

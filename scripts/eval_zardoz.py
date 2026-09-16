@@ -74,14 +74,14 @@ class _Metered:
         #: no response came back to read a price off.
         self.unpriced = 0
 
-    def generate(self, **kwargs):
+    def _metered(self, call, **kwargs):
         # Counted in a finally, because a call that raises was still sent and
         # still billed. Incrementing after the call instead let a model that
         # trips ReasoningBudgetExhausted report *fewer* calls and a *lower*
         # cost than one that answers cleanly — inverting the comparison the
         # meter exists to make, the same way `0.0 or None` did.
         try:
-            response = self._inner.generate(**kwargs)
+            response = call(**kwargs)
         except Exception:
             self.unpriced += 1
             raise
@@ -91,6 +91,35 @@ class _Metered:
             self.cost += response.cost_usd
             self.priced = True
         return response
+
+    def generate(self, **kwargs):
+        return self._metered(self._inner.generate, **kwargs)
+
+    # Every call that can cost money is metered, not only `generate`. This
+    # wrapper used to expose `generate` and `check` and nothing else, so under
+    # the harness `supports_schema`, `generate_json` and `supports_effort` were
+    # all missing and every caller took its fallback: routing ran its prose
+    # path, argument filling and chaining were skipped, and no effort level
+    # was sent. Eval runs measured the fallbacks rather than what a user of a
+    # schema-capable model gets, from before schema routing existed until a
+    # chaining eval scored 0/6 on questions a direct probe got 12/12.
+
+    def generate_json(self, **kwargs):
+        return self._metered(self._inner.generate_json, **kwargs)
+
+    def generate_grounded(self, **kwargs):
+        return self._metered(self._inner.generate_grounded, **kwargs)
+
+    def __getattr__(self, name):
+        """Everything else is the inner provider's: capabilities, model, counters.
+
+        Only reached for attributes this class does not define, so the metered
+        calls above always take precedence. A capability the inner provider
+        lacks stays absent here too — the meter must not invent one.
+        """
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(self._inner, name)
 
     def check(self) -> bool:
         return self._inner.check()

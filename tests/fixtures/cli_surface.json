@@ -1,0 +1,3420 @@
+{
+  "commands": {
+    "addresses": {
+      "help": "Who answers for one requirement, and which document says so.\n\nThe assessor's direction of travel. Name any requirement \u2014 NIST, HIPAA,\nHITRUST \u2014 and this resolves it through the crosswalk to the topics the\nregistry anchors, then names the owner and the pages.\n\nEvery claim says how it was reached: anchored directly, inherited from a\nparent control, or reached through a published crosswalk. The last is\nthe weakest and is labelled as such, because a mapping is not evidence\nthat anybody wrote the requirement down.\n",
+      "name": "addresses",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "kind": "Argument",
+          "multiple": false,
+          "name": "requirement",
+          "nargs": 1,
+          "opts": [
+            "requirement"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "config/topics.yaml",
+          "help": "Topic registry (default: config/topics.yaml).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "topics_path",
+          "nargs": 1,
+          "opts": [
+            "--topics"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Path to a controls.json. Repeatable \u2014 pass the framework the requirement belongs to as well as the NIST catalog.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": true,
+          "name": "controls_paths",
+          "nargs": 1,
+          "opts": [
+            "--controls"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "boundary": {
+      "help": "Show what may be sent to the configured model, and why.\n\nProviders are classified by where the bytes end up \u2014 local, self-hosted,\nor a third-party processor \u2014 and content by who may hold it. The table is\nthe pairing between them, and it is checked before a call rather than\ndescribed in a README.\n\nRun it to answer \"can this configuration work offline\" without having to\nremember, and to see a refusal's reasoning before a command hits it.\n",
+      "name": "boundary",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "help": "Classify these files or directories too, and say whether the configured provider may receive them. Repeatable.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": true,
+          "name": "paths",
+          "nargs": 1,
+          "opts": [
+            "--path"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "bundle": {
+      "help": "Everything one team answers for: topics, requirements, documents, cadence.\n\nThe question a team lead asks, which `coverage` answers only by being\nread whole and filtered by eye. Set arithmetic over the registry \u2014 no\nmodel involved, and the answer is exactly as good as the registry is.\n",
+      "name": "bundle",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "kind": "Argument",
+          "multiple": false,
+          "name": "owner",
+          "nargs": 1,
+          "opts": [
+            "owner"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "config/topics.yaml",
+          "help": "Topic registry (default: config/topics.yaml).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "topics_path",
+          "nargs": 1,
+          "opts": [
+            "--topics"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Path to a controls.json. Repeatable.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": true,
+          "name": "controls_paths",
+          "nargs": 1,
+          "opts": [
+            "--controls"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "check": {
+      "help": "Check the content tree before anything is published.\n\nEntirely offline, so it runs on a pull request from a fork with no\ncredentials \u2014 which is where you want it. Catches the mistakes that\nsurvive review and fail later: two files claiming one Confluence page,\na link to a document somebody renamed, a rewrite that dropped the\nframework citations a document exists to carry.\n",
+      "name": "check",
+      "params": [
+        {
+          "default": null,
+          "help": "Markdown content tree to check. Defaults to `zardoz.content_dir`, else docs/.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "content_dir",
+          "nargs": 1,
+          "opts": [
+            "--content-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "output/synthesis",
+          "help": "Where the synthesis files live, for the dropped-citation check. Skipped if the directory isn't there.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "synthesis_dir",
+          "nargs": 1,
+          "opts": [
+            "--synthesis-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": false,
+          "help": "Treat warnings as failures too. For a repo that has finished migrating.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "strict",
+          "nargs": 1,
+          "opts": [
+            "--strict"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ]
+    },
+    "coverage": {
+      "help": "Report which in-scope controls no topic owns, and which two topics claim.\n\nOrphaned controls mean nobody is doing the work. Contested controls are\nworse: it looks covered while each owner assumes the other has it. Both\nare pure set arithmetic over the topic registry \u2014 no LLM involved. See\nREADME's \"One topic, one team\".\n",
+      "name": "coverage",
+      "params": [
+        {
+          "default": "config/topics.yaml",
+          "help": "Topic registry (default: config/topics.yaml). Copy config/topics.example.yaml to start.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "topics_path",
+          "nargs": 1,
+          "opts": [
+            "--topics"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Path to a controls.json. Repeatable \u2014 pass the NIST 800-53 file plus any other framework you want reachability reported for.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": true,
+          "name": "controls_paths",
+          "nargs": 1,
+          "opts": [
+            "--controls"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Limit the scope to one NIST baseline. 'Orphaned' only means anything relative to a defined scope, so this is usually what you want.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "baseline",
+          "nargs": 1,
+          "opts": [
+            "--baseline"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": false,
+            "choices": [
+              "low",
+              "moderate",
+              "high"
+            ],
+            "name": "choice"
+          }
+        },
+        {
+          "default": false,
+          "help": "List every orphaned control, not just the first 40.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "show_all",
+          "nargs": 1,
+          "opts": [
+            "--show-all"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Exit non-zero if anything is orphaned, contested, or anchored to an unknown control \u2014 for use as a CI gate.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "strict",
+          "nargs": 1,
+          "opts": [
+            "--strict"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Emit the report as JSON instead of a text summary.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "as_json",
+          "nargs": 1,
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ]
+    },
+    "drift": {
+      "help": "Report what a framework update changed, and what it reaches.\n\nA catalog bump touches a few dozen controls out of a thousand, and behind\nthose sit a handful of your topics and a smaller handful of your\ndocuments. Everything else is unaffected and should stay unread.\n\nRun the ETL, then run this \u2014 the ETL overwrites the catalog in place and\ngit is still holding the version you had, so no snapshot is needed:\n\n    policyforge etl-oscal\n    policyforge drift --controls data/frameworks/nist-800-53-r5/controls.json\n",
+      "name": "drift",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "help": "The updated catalog. Compared against its committed version unless --old says otherwise.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "controls_path",
+          "nargs": 1,
+          "opts": [
+            "--controls"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Explicit previous catalog. Without it, the version git has.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "old_path",
+          "nargs": 1,
+          "opts": [
+            "--old"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "HEAD",
+          "help": "Git revision to compare against when --old is not given.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "revision",
+          "nargs": 1,
+          "opts": [
+            "--revision"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "config/topics.yaml",
+          "help": "Registry, to say which topics a change reaches.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "topics_path",
+          "nargs": 1,
+          "opts": [
+            "--topics"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Content tree, to say which documents cite a changed control.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "content_dir",
+          "nargs": 1,
+          "opts": [
+            "--content-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "config/parameters.yaml",
+          "help": "Ledger, to say which recorded decisions a change reaches.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "parameters_path",
+          "nargs": 1,
+          "opts": [
+            "--parameters"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": false,
+          "help": "Show the changed lines of each control statement.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "detail",
+          "nargs": 1,
+          "opts": [
+            "--detail"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Exit non-zero when anything substantive changed. For a scheduled job that should open an issue rather than pass quietly.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "fail_on_change",
+          "nargs": 1,
+          "opts": [
+            "--fail-on-change"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ]
+    },
+    "edit-confluence": {
+      "help": "Edit one live Confluence page from a plain-language instruction.\n\nFetches the page, plans the edits, shows you the plan and the resulting\ndiff, and publishes only if you pass --apply and confirm. The page's\n\"before\" state is recorded to local version history either way, and the\nplan is saved alongside the revision, so there is always something to\ndiff against and a record of why it changed.\n",
+      "name": "edit-confluence",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "help": "What to change, in plain language.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "instruction",
+          "nargs": 1,
+          "opts": [
+            "--instruction"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Confluence space key.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "space",
+          "nargs": 1,
+          "opts": [
+            "--space"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Exact page title to edit.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "title",
+          "nargs": 1,
+          "opts": [
+            "--title"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Confluence base URL, e.g. https://x.atlassian.net/wiki.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "host",
+          "nargs": 1,
+          "opts": [
+            "--host"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "help": "Which document tier this page is. Tells the planner what altitude to edit at \u2014 a threshold change belongs in a Standard, not a Policy.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "tier",
+          "nargs": 1,
+          "opts": [
+            "--tier"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": true,
+            "choices": [
+              "policy",
+              "standard",
+              "procedure"
+            ],
+            "name": "choice"
+          }
+        },
+        {
+          "default": false,
+          "help": "Actually publish the edit. Without this the command plans, rewrites and shows you the diff, but changes nothing in Confluence.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "do_apply",
+          "nargs": 1,
+          "opts": [
+            "--apply"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Skip the confirmation prompt before publishing.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "yes",
+          "nargs": 1,
+          "opts": [
+            "--yes"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Proceed even though the page uses Confluence macros this tool cannot round-trip. They will be degraded or lost. Read the warning first.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "allow_macros",
+          "nargs": 1,
+          "opts": [
+            "--allow-macros"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Proceed even though the page contains text addressed to the reader of a prompt rather than to the organization. Look at the page first.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "allow_reader_directed",
+          "nargs": 1,
+          "opts": [
+            "--allow-reader-directed"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": "output/edits",
+          "help": "Where the revised markdown and its plan are written.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out_dir",
+          "nargs": 1,
+          "opts": [
+            "--out-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "output/.history",
+          "help": "Where local version history is recorded (default: output/.history).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "history_dir",
+          "nargs": 1,
+          "opts": [
+            "--history-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "edit-topic": {
+      "help": "Apply one instruction across a topic's whole document set.\n\nA change like \"access reviews move to monthly\" lands differently in each\ntier: the Standard states the requirement, the Procedure carries the\nsteps, and the Policy usually shouldn't change at all. Each page is\nplanned separately and tier-aware, but reviewed and published as one\nchange \u2014 and a page whose plan comes back empty is left alone rather than\nhaving an edit forced into it.\n",
+      "name": "edit-topic",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "help": "What to change, in plain language.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "instruction",
+          "nargs": 1,
+          "opts": [
+            "--instruction"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Topic in the registry whose documents to edit.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "topic_name",
+          "nargs": 1,
+          "opts": [
+            "--topic-name"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "config/topics.yaml",
+          "help": "Topic registry to resolve --topic-name against.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "topics_path",
+          "nargs": 1,
+          "opts": [
+            "--topics"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Confluence base URL, e.g. https://x.atlassian.net/wiki. Edits the live pages. Give this or --content-dir, not both.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "host",
+          "nargs": 1,
+          "opts": [
+            "--host"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "help": "Edit the topic's markdown files in this content tree instead of the live pages, so the change is reviewed as a pull request and published on merge. Give this or --host, not both.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "content_dir",
+          "nargs": 1,
+          "opts": [
+            "--content-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": false,
+            "name": "directory"
+          }
+        },
+        {
+          "default": null,
+          "help": "Comma-separated subset of tiers to edit (e.g. 'standard,procedure'). Default: every page the topic declares.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "tiers",
+          "nargs": 1,
+          "opts": [
+            "--tiers"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "help": "Actually publish. Without this nothing in Confluence changes.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "do_apply",
+          "nargs": 1,
+          "opts": [
+            "--apply"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Skip the confirmation prompt before publishing.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "yes",
+          "nargs": 1,
+          "opts": [
+            "--yes"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Proceed even though a page uses Confluence macros this tool cannot round-trip.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "allow_macros",
+          "nargs": 1,
+          "opts": [
+            "--allow-macros"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Proceed even though a page contains text addressed to the reader of a prompt rather than to the organization. Look at the page first.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "allow_reader_directed",
+          "nargs": 1,
+          "opts": [
+            "--allow-reader-directed"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": "output/edits",
+          "help": "Where revised markdown and plans are written.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out_dir",
+          "nargs": 1,
+          "opts": [
+            "--out-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "output/.history",
+          "help": "Where local version history is recorded (default: output/.history).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "history_dir",
+          "nargs": 1,
+          "opts": [
+            "--history-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "etl-arc-ampe": {
+      "help": "Fetch CMS's ARC-AMPE Volume II baseline and parse it into this schema.\n\nPublic domain \u2014 published by CMS, a federal agency, with no copyright\nnotice or redistribution restriction, same basis as the NIST and eCFR\nsources.\n\nNote which volume this reads. Volume I is the narrative PDF and holds no\ncontrols; Volume II is the System Security and Privacy Plan workbook,\nand its `AE Mandatory Baseline` sheet is the catalog \u2014 402 controls\nrequired of an ACA Administering Entity, with CMS's parameter decisions\nalready written into the control text. The sheet is found by its shape\nrather than its name, so the Direct Enrollment Entity workbook reads the\nsame way via --export. See ingest/arc_ampe.py.\n",
+      "name": "etl-arc-ampe",
+      "params": [
+        {
+          "default": null,
+          "help": "Read a local ARC-AMPE Volume II workbook instead of fetching CMS's. Use this for the Direct Enrollment Entity baseline, which CMS distributes through zONE rather than publishing.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "export_path",
+          "nargs": 1,
+          "opts": [
+            "--export"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "",
+          "help": "Document version to stamp, e.g. \"v1.02\". Default: the version this loader is pinned to.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "version",
+          "nargs": 1,
+          "opts": [
+            "--version"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "data/frameworks/nist-800-53-r5/controls.json",
+          "help": "The 800-53 catalog to crosswalk against. ARC-AMPE numbers its controls with 800-53 identifiers, so each one that resolves here is anchored on its equivalent. Skipped without a warning if absent \u2014 the catalog is usable alone, just invisible to `policyforge map`.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "nist_path",
+          "nargs": 1,
+          "opts": [
+            "--nist"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "data/frameworks/arc-ampe/controls.json",
+          "help": "Where to write the parsed control data.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "etl-fedramp": {
+      "help": "Fetch FedRAMP's published control tailoring and apply it to 800-53.\n\nPublic domain \u2014 a US federal program, same basis as the NIST and eCFR\nsources. Read from `fedramp-consolidated-rules.json` in `FedRAMP/rules`,\nwhich that repository calls its canonical rules dataset.\n\nThis writes a profile, not a baseline. FedRAMP's machine-readable\nLow/Moderate/High baseline selection used to live in\n`GSA/fedramp-automation`, and that repository no longer exists \u2014 so\nnothing here says which controls a given system must implement, and\n`Control.baseline` is deliberately left unset rather than guessed. What\nit does carry is FedRAMP's own two additions to the controls it does\nspeak to: the organization-defined values FedRAMP has already decided,\nand the guidance it layers on top. See ingest/fedramp.py.\n",
+      "name": "etl-fedramp",
+      "params": [
+        {
+          "default": "data/frameworks/nist-800-53-r5/controls.json",
+          "help": "The 800-53 catalog this tailoring is applied to. Produced by `policyforge etl-oscal`.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "nist_path",
+          "nargs": 1,
+          "opts": [
+            "--nist"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "data/frameworks/fedramp/controls.json",
+          "help": "Where to write the parsed control data.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "etl-govramp": {
+      "help": "Parse your own GovRAMP controls matrix into this project's schema.\n\nGovRAMP's Terms & Conditions claim ownership of the documents published\non their site, and no redistribution grant was found \u2014 so, like HITRUST,\nthis project never bundles the matrix and never fetches it. You supply\nthe workbook and it is parsed locally, in memory. Nothing is written\nunless you pass --out.\n\nPass the workbook as GovRAMP publishes it rather than an extract of it:\nthe controls sheet is found among the template's other thirteen by its\nheader captions, so the Low, Moderate and High workbooks all read\nwithout being told which they are.\n\nWhat this gives you that the 800-53 catalog does not is the profile's\nown two additions \u2014 the parameter values GovRAMP has already decided\n(\"at least every 3 years\"), which `policyforge parameters` would\notherwise leave open for you to answer, and the requirements it layers\non top of a control \u2014 across the Core/Ready/Authorized tiers. Those\ntiers are *not* impact levels: one Moderate matrix holds all three, and\n60 of its 319 controls stand between a service offering and Core.\n\nSee ingest/govramp.py for the framework's structure and\ningest/govramp_export.py for how the sheet and its two-row header are\nfound. If detection fails on your workbook, `policyforge generate-parser\n--framework govramp` drafts a loader for it from a sample.\n",
+      "name": "etl-govramp",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "help": "Your own GovRAMP controls matrix workbook (.xlsx/.xlsm), as published. Keep it in local_content/, which is gitignored.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "export_path",
+          "nargs": 1,
+          "opts": [
+            "--export"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "FIPS 199 level this matrix is for. Default: read from the workbook's cover sheet, then from the filename. Worth setting on a template somebody has been working in, where the cover sheet is the first thing edited.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "impact_level",
+          "nargs": 1,
+          "opts": [
+            "--impact-level"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": false,
+            "choices": [
+              "Low",
+              "Moderate",
+              "High"
+            ],
+            "name": "choice"
+          }
+        },
+        {
+          "default": "",
+          "help": "Revision and template version to stamp, e.g. \"Rev 5 (V1.06)\". Default: the revision from the cover sheet plus the version in the filename.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "version",
+          "nargs": 1,
+          "opts": [
+            "--version"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "help": "Write the parsed catalog here as controls.json. Omit to parse and report without writing anything, which is the safe default for licensed content.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": false,
+          "help": "Write --out even though this repository has not declared `frameworks.allow_licensed_in_repo`.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "force",
+          "nargs": 1,
+          "opts": [
+            "--force"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ]
+    },
+    "etl-hipaa": {
+      "help": "Fetch the HIPAA Security Rule (45 CFR 164 Subpart C) from eCFR's public\nAPI and parse it into this project's data schema. Public domain \u2014 a US\nfederal regulation, same basis as NIST/FedRAMP/ARC-AMPE \u2014 so unlike\nHITRUST/GovRAMP this is safe to bundle directly. See\ningest/hipaa_loader.py for parsing details.\n",
+      "name": "etl-hipaa",
+      "params": [
+        {
+          "default": null,
+          "help": "Specific eCFR effective date (YYYY-MM-DD) to fetch, for reproducibility. Default: eCFR's current published date for Title 45.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "date",
+          "nargs": 1,
+          "opts": [
+            "--date"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "data/frameworks/hipaa-security-rule/controls.json",
+          "help": "Where to write the parsed control data.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "etl-hipaa-crosswalk": {
+      "help": "Attach NIST's official HIPAA-Security-Rule-to-SP-800-53-Rev-5 crosswalk\nto the HIPAA control data, so `map`/`synthesize` can pull HIPAA\nrequirements into a NIST-anchored topic.\n\nSource is NIST's Cybersecurity and Privacy Reference Tool (CPRT), not SP\n800-66r2's PDF \u2014 Appendix D of that document states the mapping table was\nremoved from the PDF and published in CPRT instead. See\ningest/hipaa_crosswalk_loader.py.\n",
+      "name": "etl-hipaa-crosswalk",
+      "params": [
+        {
+          "default": "data/frameworks/hipaa-security-rule/controls.json",
+          "help": "HIPAA controls.json produced by `etl-hipaa`, to enrich in place.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "controls_path",
+          "nargs": 1,
+          "opts": [
+            "--controls"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Parse this saved CPRT payload instead of fetching (e.g. tests/fixtures/cprt_hipaa_to_800-53r5.json). Offline/reproducible.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "fixture_path",
+          "nargs": 1,
+          "opts": [
+            "--fixture"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Where to write the enriched data (default: overwrite --controls).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "etl-hitrust": {
+      "help": "Parse your own licensed HITRUST CSF export into this project's schema.\n\nHITRUST CSF is licensed content. This project never bundles it and never\nfetches it: you supply an export from your own MyCSF licence and it is\nparsed locally, in memory. Nothing is written unless you pass --out.\n\nPrefer a CSV export where you have the choice. The rendered HTML/MHTML of\nthe same report is more clearly labelled but carries markedly fewer\nauthoritative-source mappings, which is most of what makes a CSF export\nworth ingesting.\n\nSee ingest/hitrust.py for the framework's structure and\ningest/hitrust_export.py for how the columns are identified. If detection\nfails on your export, `policyforge generate-parser --framework hitrust`\ndrafts a loader for it from a sample.\n",
+      "name": "etl-hitrust",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "help": "Your own MyCSF/HITRUST CSF export (.csv, .tsv, .xlsx, .html, .mhtml). Keep it in local_content/, which is gitignored.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "export_path",
+          "nargs": 1,
+          "opts": [
+            "--export"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "",
+          "help": "CSF release this export is of, e.g. \"v11.7\". Default: read from the filename if it names one \u2014 a MyCSF export states its release nowhere inside.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "version",
+          "nargs": 1,
+          "opts": [
+            "--version"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "help": "Write the parsed catalog here as controls.json. Omit to parse and report without writing anything, which is the safe default for licensed content.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": false,
+          "help": "Write --out even though this repository has not declared `frameworks.allow_licensed_in_repo`.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "force",
+          "nargs": 1,
+          "opts": [
+            "--force"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ]
+    },
+    "etl-oscal": {
+      "help": "Fetch NIST's official OSCAL edition of SP 800-53 Rev 5 (plus the\nLow/Moderate/High baseline profiles) and parse it into this project's\ndata schema.\n\nPublic domain \u2014 a US government work, same basis as the eCFR and CPRT\nsources. Unlike `etl-vault`, this needs no pre-existing vault, so it's\nthe way to populate 800-53 data from scratch. See ingest/oscal_loader.py.\n",
+      "name": "etl-oscal",
+      "params": [
+        {
+          "default": "data/frameworks/nist-800-53-r5/controls.json",
+          "help": "Where to write the parsed control data.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": false,
+          "help": "Skip fetching the Low/Moderate/High profiles (controls load without baseline tagging, which `ssp --baseline` needs).",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "no_baselines",
+          "nargs": 1,
+          "opts": [
+            "--no-baselines"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ]
+    },
+    "etl-vault": {
+      "help": "Parse NIST 800-53 control notes from an existing vault into this\nproject's data schema. Public-domain content only \u2014 see\ningest/nist_vault_loader.py for what crosswalk columns are stripped\nby default and why.\n",
+      "name": "etl-vault",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "help": "Path to an Obsidian vault's Frameworks/NIST-800-53/Controls/ directory.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "controls_dir",
+          "nargs": 1,
+          "opts": [
+            "--controls-dir"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "data/frameworks/nist-800-53-r5/controls.json",
+          "help": "Where to write the parsed, public-domain-only control data.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "export-confluence": {
+      "help": "Convert a generated markdown document to Confluence storage format and publish it.",
+      "name": "export-confluence",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "help": "Path to a generated markdown document (from `policyforge generate`).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "doc_path",
+          "nargs": 1,
+          "opts": [
+            "--doc"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Confluence space key to publish into.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "space",
+          "nargs": 1,
+          "opts": [
+            "--space"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Page title.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "title",
+          "nargs": 1,
+          "opts": [
+            "--title"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Confluence base URL, e.g. https://yourorg.atlassian.net/wiki.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "host",
+          "nargs": 1,
+          "opts": [
+            "--host"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "help": "Parent page ID, if nesting under an existing page.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "parent_id",
+          "nargs": 1,
+          "opts": [
+            "--parent-id"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "help": "Print the converted Confluence storage format instead of publishing.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "dry_run",
+          "nargs": 1,
+          "opts": [
+            "--dry-run"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ]
+    },
+    "frameworks": {
+      "help": "List the framework catalogs on disk, and their licence position.\n\nA catalog is public domain or it is licensed, and that decides which\nrepository may hold a copy of it. This repository may hold only the\nformer; your own private repository can very often hold both, because\nyour MyCSF or GovRAMP licence permits internal use.\n\nLicensed content committed to a repository that has not declared the\nright to hold it is reported as an error \u2014 set\n`frameworks.allow_licensed_in_repo: true` in config.yaml if your licence\npermits yours to carry it.\n",
+      "name": "frameworks",
+      "params": []
+    },
+    "generate": {
+      "help": "Draft a Standard, Policy, or Procedure document from a synthesized topic.",
+      "name": "generate",
+      "params": [
+        {
+          "default": "standard",
+          "help": "Document tier to draft. 'policy' and 'procedure' require --standard, so they can reference the Standard document by name.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "tier",
+          "nargs": 1,
+          "opts": [
+            "--tier"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": true,
+            "choices": [
+              "standard",
+              "policy",
+              "procedure"
+            ],
+            "name": "choice"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Path to a synthesized topic markdown file produced by `policyforge synthesize`.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "synthesis_path",
+          "nargs": 1,
+          "opts": [
+            "--synthesis"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Path to the already-generated Standard document this Policy or Procedure implements. Required when --tier policy or --tier procedure.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "standard_path",
+          "nargs": 1,
+          "opts": [
+            "--standard"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Where to write the drafted document (default: output/<tier>s/<synthesis-filename>).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "output/.history",
+          "help": "Where local version history is recorded (default: output/.history). See `policyforge history`.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "history_dir",
+          "nargs": 1,
+          "opts": [
+            "--history-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "generate-parser": {
+      "help": "Generate a deterministic ETL parser for a BYOC framework export via your\nconfigured LLM, from a real sample export file.\n\nThe sample is part of the prompt, so the code that comes back was written\nunder the influence of a file this tool did not write \u2014 and it is about\nto run over a licensed one. So it is checked before it runs, run once\nunder watch, and kept out of the package until you promote it. Nothing\nunder ingest/*_loader.py calls the LLM at parse time \u2014 only this command\ndoes, and only when you run it.\n",
+      "name": "generate-parser",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "help": "Which BYOC framework this sample export is for.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "framework",
+          "nargs": 1,
+          "opts": [
+            "--framework"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": true,
+            "choices": [
+              "hitrust",
+              "govramp"
+            ],
+            "name": "choice"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Path to a real sample export from your own license (e.g. a MyCSF CSV/Excel export). Its full content is sent to your configured LLM provider \u2014 confirm your license terms permit that before running this.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "sample_path",
+          "nargs": 1,
+          "opts": [
+            "--sample"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Where to write the candidate parser (default: output/parsers/<framework>_loader.py). It is checked and trial-run there, and not imported by anything until promoted.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": false,
+          "help": "Overwrite --out, or the promoted module, if it exists.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "force",
+          "nargs": 1,
+          "opts": [
+            "--force"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Skip the confirmation prompt before sending --sample's content to the LLM provider.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "yes",
+          "nargs": 1,
+          "opts": [
+            "--yes"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Copy the candidate into src/policyforge/ingest/ once it passes the static check and its trial run returns records. Without this it stays in output/ for review.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "promote",
+          "nargs": 1,
+          "opts": [
+            "--promote"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ]
+    },
+    "history": {
+      "help": "List (or diff) the locally recorded version history for one document.",
+      "name": "history",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "help": "",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "tier",
+          "nargs": 1,
+          "opts": [
+            "--tier"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": true,
+            "choices": [
+              "standard",
+              "policy",
+              "procedure",
+              "confluence"
+            ],
+            "name": "choice"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Document slug/filename stem \u2014 the stem of the file `policyforge generate` wrote via --out (e.g. 'authenticator-mgmt' for authenticator-mgmt.md), the --name given to `import-confluence`, or for --tier confluence, the page title slugified (e.g. 'access-control-standard').",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "name",
+          "nargs": 1,
+          "opts": [
+            "--name"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "output/.history",
+          "help": "Where local version history is recorded (default: output/.history).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "history_dir",
+          "nargs": 1,
+          "opts": [
+            "--history-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Show a unified diff between two versions instead of listing them: 'N:M' for specific version numbers (e.g. '2:3'), or 'latest' for the two most recent versions.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "diff_range",
+          "nargs": 1,
+          "opts": [
+            "--diff"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        }
+      ]
+    },
+    "import-confluence": {
+      "help": "Pull a page's current content back out of Confluence, converting it to\nmarkdown, and record it into the same local version-history stream\n`generate` uses for --tier/--name \u2014 so you can diff what this tool last\ngenerated against what's actually live (e.g. after a manual edit).",
+      "name": "import-confluence",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "help": "Which document tier this Confluence page corresponds to \u2014 determines which local version-history stream the import is recorded into.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "tier",
+          "nargs": 1,
+          "opts": [
+            "--tier"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": true,
+            "choices": [
+              "standard",
+              "policy",
+              "procedure"
+            ],
+            "name": "choice"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Document slug/filename stem, matching what `policyforge generate` used, e.g. 'authenticator-mgmt'. Determines the version-history stream and the default --out path.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "name",
+          "nargs": 1,
+          "opts": [
+            "--name"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Confluence space key to read from.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "space",
+          "nargs": 1,
+          "opts": [
+            "--space"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Page title to look up.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "title",
+          "nargs": 1,
+          "opts": [
+            "--title"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Confluence base URL, e.g. https://yourorg.atlassian.net/wiki.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "host",
+          "nargs": 1,
+          "opts": [
+            "--host"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "help": "Where to write the imported markdown (default: output/<tier>s/<name>.imported.md \u2014 deliberately not the same filename `generate` writes, so an import never silently overwrites a fresh draft).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "output/.history",
+          "help": "Where local version history is recorded (default: output/.history).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "history_dir",
+          "nargs": 1,
+          "opts": [
+            "--history-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "llm-check": {
+      "help": "Confirm your configured API key + model actually work.",
+      "name": "llm-check",
+      "params": []
+    },
+    "map": {
+      "help": "Build the NIST-anchored cross-framework crosswalk.",
+      "name": "map",
+      "params": [
+        {
+          "default": [
+            "data/frameworks/nist-800-53-r5/controls.json"
+          ],
+          "help": "Path to a controls.json. Repeatable, and normally repeated: a cross-framework crosswalk needs every framework loaded together, so passing only the NIST file produces a crosswalk with nothing to cross-reference.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": true,
+          "name": "controls_paths",
+          "nargs": 1,
+          "opts": [
+            "--controls"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "data/frameworks/crosswalk.json",
+          "help": "Where to write the built crosswalk.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "mcp": {
+      "help": "Serve the read-only analyses as MCP tools over stdio.\n\nLets Claude Code, Claude Desktop or any MCP client ask this repository\nwhich controls nobody owns, what a team is accountable for, or where a\nHIPAA citation is addressed \u2014 with the content boundary, the ledger and\nthe citation checks all still in the path, because the answers come from\nthe same functions the CLI calls.\n\nRead-only, structurally: a test walks this package's AST and fails if any\nmodule so much as names the publish path. Editing a live policy page\nstays here in the CLI, behind its dry run, macro check, version guard and\nexplicit confirmation.\n\nThis speaks stdio and is spawned by a client; it binds no port. Configure\nit as a command, not a URL.\n",
+      "name": "mcp",
+      "params": [
+        {
+          "default": null,
+          "help": "Synced document snapshot (default: the same one `zardoz` uses).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "corpus_dir",
+          "nargs": 1,
+          "opts": [
+            "--corpus-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Topic registry (default: config/topics.yaml).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "topics_path",
+          "nargs": 1,
+          "opts": [
+            "--topics"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "model-log": {
+      "help": "What was sent to which model, when, and at what cost.\n\nEvery model call this tool makes is recorded \u2014 provider, model, the\ndocument or control it was about, token counts, cost, and a hash of the\nprompt. Not the prompt and not the reply: a record that quoted what it\nsaw would copy licensed content into a file, which is the leak it exists\nto disprove.\n\nThis is the answer to \"which documents did that model touch\", asked the\nday a model turns out to have been weakening the requirements it cited.\n",
+      "name": "model-log",
+      "params": [
+        {
+          "default": "model",
+          "help": "What to group the totals by.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "by",
+          "nargs": 1,
+          "opts": [
+            "--by"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": true,
+            "choices": [
+              "model",
+              "subject",
+              "site",
+              "provider",
+              "content_class"
+            ],
+            "name": "choice"
+          }
+        },
+        {
+          "default": null,
+          "help": "Only calls about this document or control.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "subject",
+          "nargs": 1,
+          "opts": [
+            "--subject"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "help": "Only calls answered by this model.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "model_filter",
+          "nargs": 1,
+          "opts": [
+            "--model"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "help": "Only calls on or after this ISO date, e.g. 2026-09-01.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "since",
+          "nargs": 1,
+          "opts": [
+            "--since"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "help": "Ledger to read. Defaults to `llm.ledger.path`, else output/.model-log/calls.jsonl.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "ledger_file",
+          "nargs": 1,
+          "opts": [
+            "--path"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "parameters": {
+      "help": "Record one decided value per organization-defined parameter.\n\nSP 800-53 does not say how often to review accounts \u2014 it says\n[Assignment: organization-defined frequency] and leaves it to you, 1,210\ntimes across the catalog. Today those get decided implicitly inside\ngenerated prose, by a model with no memory of what it chose for the\nneighbouring control, so the Access Control Standard says quarterly and\nthe SSP says annually and nobody decided anything.\n\nA value recorded here is substituted into the control text before\nsynthesis, so every document drawn from that control agrees, and the\nreasoning stays next to the value where an assessor can find it.\n",
+      "name": "parameters",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "help": "Framework controls.json to read parameters from. Repeatable.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": true,
+          "name": "controls_paths",
+          "nargs": 1,
+          "opts": [
+            "--controls"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "config/parameters.yaml",
+          "help": "Where decisions are recorded.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "ledger_path",
+          "nargs": 1,
+          "opts": [
+            "--ledger"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Only controls in this baseline. A thousand parameters is not a to-do list; the ones you must answer for are.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "baseline",
+          "nargs": 1,
+          "opts": [
+            "--baseline"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": true,
+            "choices": [
+              "low",
+              "moderate",
+              "high"
+            ],
+            "name": "choice"
+          }
+        },
+        {
+          "default": null,
+          "help": "Only controls your topic registry anchors \u2014 the narrowest useful scope.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "topics_path",
+          "nargs": 1,
+          "opts": [
+            "--topics"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": false,
+          "help": "Summarise by the kind of value being decided (frequency, personnel or roles) rather than listing every parameter.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "group",
+          "nargs": 1,
+          "opts": [
+            "--group"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Write a ledger covering every in-scope parameter, preserving any decisions already recorded.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "init",
+          "nargs": 1,
+          "opts": [
+            "--init"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ]
+    },
+    "publish": {
+      "help": "Publish the content tree to the pages its frontmatter declares.\n\nEach document names its own destination, so the file-to-page mapping\nlives in the repository under review rather than in a workflow argument.\nA document with no `confluence:` block is not published, which is how a\ndraft stays a draft.\n\nA page somebody edited on the wiki since this tool last wrote it is not\noverwritten: it is reported as moved and the run exits non-zero, so a CI\njob fails where it would otherwise have destroyed the edit in silence.\n\nPlans by default and writes nothing; pass --apply once you have read it.\n",
+      "name": "publish",
+      "params": [
+        {
+          "default": null,
+          "help": "Markdown content tree to publish from.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "content_dir",
+          "nargs": 1,
+          "opts": [
+            "--content-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "",
+          "help": "Confluence base URL. Defaults to `zardoz.host`.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "host",
+          "nargs": 1,
+          "opts": [
+            "--host"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "",
+          "help": "Only publish documents whose path contains this substring, so a CI job can republish just what a merge touched.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "only",
+          "nargs": 1,
+          "opts": [
+            "--only"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "help": "Actually publish. Without it, plan only.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "apply_",
+          "nargs": 1,
+          "opts": [
+            "--apply"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Publish over pages using macros this tool cannot round-trip. This flattens them; do not pass it to get past a skip you haven't read.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "allow_macros",
+          "nargs": 1,
+          "opts": [
+            "--allow-macros"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Overwrite pages changed on the wiki since this tool last wrote them. That destroys the change; pull it and review instead unless you have decided otherwise.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "force",
+          "nargs": 1,
+          "opts": [
+            "--force"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ]
+    },
+    "pull": {
+      "help": "Bring live Confluence pages down into the tree as markdown.\n\nThe way back. Somebody will edit the wiki directly - that is what a wiki\nis for - and without this, every such edit is either lost on the next\npublish or quietly makes the repo wrong. Pulling turns it into a diff on\na branch.\n\nPages using macros this tool cannot round-trip are refused rather than\nwritten, because the file would look correct and destroy them on the\nfirst publish.\n",
+      "name": "pull",
+      "params": [
+        {
+          "default": null,
+          "help": "Markdown content tree to write into.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "content_dir",
+          "nargs": 1,
+          "opts": [
+            "--content-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "",
+          "help": "Confluence base URL. Defaults to `zardoz.host`.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "host",
+          "nargs": 1,
+          "opts": [
+            "--host"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "config/topics.yaml",
+          "help": "Registry whose declared pages to pull. Ignored if --title is given.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "topics_path",
+          "nargs": 1,
+          "opts": [
+            "--topics"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "",
+          "help": "Pull one page: its space key.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "space",
+          "nargs": 1,
+          "opts": [
+            "--space"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "",
+          "help": "Pull one page: its exact title.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "title",
+          "nargs": 1,
+          "opts": [
+            "--title"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "standard",
+          "help": "Tier for a single --title pull, which decides where it lands.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "tier",
+          "nargs": 1,
+          "opts": [
+            "--tier"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": true,
+            "choices": [
+              "policy",
+              "standard",
+              "procedure"
+            ],
+            "name": "choice"
+          }
+        },
+        {
+          "default": false,
+          "help": "Actually write files. Without it, plan only.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "apply_",
+          "nargs": 1,
+          "opts": [
+            "--apply"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Pull pages whose macros would not survive a later publish. The file will look correct and destroy them the first time it is published.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "allow_macros",
+          "nargs": 1,
+          "opts": [
+            "--allow-macros"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ]
+    },
+    "roles": {
+      "help": "List the tool and team roles config can assign.\n\nThese keys go under `org.vendors` and `org.teams` in config.yaml, and\nnaming a role is what makes substitution deterministic: the generator is\ntold what a tool is *for* rather than inferring it from a product name,\nand every placeholder for a filled role is then replaced exactly.\n\nThe lists are not exhaustive. They cover what NIST 800-53 and HIPAA\nSecurity Rule procedures actually reference; a tool fitting none of them\ncan still be passed as a plain list.\n",
+      "name": "roles",
+      "params": [
+        {
+          "default": "all",
+          "help": "Which taxonomy to list.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "kind",
+          "nargs": 1,
+          "opts": [
+            "--kind"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": true,
+            "choices": [
+              "vendors",
+              "teams",
+              "all"
+            ],
+            "name": "choice"
+          }
+        }
+      ]
+    },
+    "ssp": {
+      "help": "Build a NIST 800-53 System Security Plan as a spreadsheet workbook.\n\nWrites .xlsx \u2014 an open ISO standard that LibreOffice Calc opens and edits\nnatively, so no Excel licence is needed. Control text is copied verbatim\nfrom the catalog; only the implementation narratives are LLM-drafted, and\nthose are marked as drafts requiring review. See ssp/workbook.py.\n",
+      "name": "ssp",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "help": "Path to a controls.json. Repeatable \u2014 pass the NIST 800-53 file plus any other framework whose mappings you want shown as crosswalk columns.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": true,
+          "name": "controls_paths",
+          "nargs": 1,
+          "opts": [
+            "--controls"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Limit the plan to one NIST baseline. Controls and enhancements are selected independently, matching NIST's own profiles. Default: every control.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "baseline",
+          "nargs": 1,
+          "opts": [
+            "--baseline"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": false,
+            "choices": [
+              "low",
+              "moderate",
+              "high"
+            ],
+            "name": "choice"
+          }
+        },
+        {
+          "default": null,
+          "help": "System name (overrides config.yaml's system.name).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "system_name",
+          "nargs": 1,
+          "opts": [
+            "--system-name"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": true,
+          "help": "Draft implementation descriptions with the configured LLM (one request per control). --no-narratives builds the workbook with those cells left empty.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "narratives",
+          "nargs": 1,
+          "opts": [
+            "--narratives"
+          ],
+          "required": false,
+          "secondary_opts": [
+            "--no-narratives"
+          ],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Submit the narratives as one batch, at half the price, instead of one request at a time. The run then waits for the queue rather than for the model, so use it when nobody is watching. Anthropic provider only.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "batch",
+          "nargs": 1,
+          "opts": [
+            "--batch"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Skip the confirmation prompt before making LLM requests.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "yes",
+          "nargs": 1,
+          "opts": [
+            "--yes"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": null,
+          "help": "Where to write the workbook (default: output/ssp/<system-slug>-ssp.xlsx).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "synthesize": {
+      "help": "Merge/dedupe controls for one topic into synthesized requirement prose.\n\nEither `--topic-name <registry topic>`, which takes the anchor controls and\nthe owning team from config/topics.yaml, or `--topic` plus\n`--nist-controls` for a one-off topic that isn't in the registry.\n",
+      "name": "synthesize",
+      "params": [
+        {
+          "default": null,
+          "help": "Name of a topic in the registry (config/topics.yaml). Takes its anchor controls and owning team from there, and records the owner in the output so `generate` names the real team instead of [Responsible Team].",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "topic_name",
+          "nargs": 1,
+          "opts": [
+            "--topic-name"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "config/topics.yaml",
+          "help": "Topic registry to resolve --topic-name against.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "topics_path",
+          "nargs": 1,
+          "opts": [
+            "--topics"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Ad-hoc topic name, when not using the registry. Requires --nist-controls.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "topic",
+          "nargs": 1,
+          "opts": [
+            "--topic"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "help": "Comma-separated NIST control IDs anchoring an ad-hoc topic, e.g. IA-5,IA-5(1). Ignored when --topic-name is given.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "nist_controls",
+          "nargs": 1,
+          "opts": [
+            "--nist-controls"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Path to a controls.json (one per loaded framework). Repeatable.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": true,
+          "name": "controls_paths",
+          "nargs": 1,
+          "opts": [
+            "--controls"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "data/frameworks/crosswalk.json",
+          "help": "Path to the crosswalk.json produced by `policyforge map`.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "crosswalk_path",
+          "nargs": 1,
+          "opts": [
+            "--crosswalk"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "config/parameters.yaml",
+          "help": "Ledger of decided organization-defined parameter values. Missing is fine \u2014 undecided parameters stay as [Assignment: ...] placeholders.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "parameters_path",
+          "nargs": 1,
+          "opts": [
+            "--parameters"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "output/synthesis",
+          "help": "Directory to write the synthesized topic markdown into.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out_dir",
+          "nargs": 1,
+          "opts": [
+            "--out-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "wiki-drift": {
+      "help": "Which published pages changed on the wiki since this tool wrote them.\n\nThe question a policy owner asks before a review cycle. `publish` answers\nit too, but only as the reason it refused to write, which is the wrong\nmoment to find out. This writes nothing and prints the `pull` command\nthat would bring each edit into the repository as a reviewable diff.\n\nA page whose body already says what the repository says is in sync,\nwhoever wrote its latest version.\n",
+      "name": "wiki-drift",
+      "params": [
+        {
+          "default": null,
+          "help": "Markdown content tree to compare against.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "content_dir",
+          "nargs": 1,
+          "opts": [
+            "--content-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "",
+          "help": "Confluence base URL. Defaults to `zardoz.host`.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "host",
+          "nargs": 1,
+          "opts": [
+            "--host"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "",
+          "help": "Only look at documents whose path contains this substring.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "only",
+          "nargs": 1,
+          "opts": [
+            "--only"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "help": "Exit non-zero when any page has moved, so a scheduled run is the notification.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "fail_on_change",
+          "nargs": 1,
+          "opts": [
+            "--fail-on-change"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ]
+    },
+    "zardoz": {
+      "commands": {
+        "discover": {
+          "help": "Propose a topic registry from a space nobody has catalogued.\n\nMost of the grouping is already written down, just not as data: a\ngovernance space names its pages by convention (Access Control Policy,\nAccess Control Standard) and cites the same controls throughout a related\nset. Those signals are exact and free, and they place the majority of a\nreal space with no model involved. The LLM is used only for the residue.\n\nEvery proposed owner is [UNASSIGNED]. Nothing in a page reliably says\nwhich team is accountable for it, and a wrong owner in a compliance\nartifact is worse than a blank one.\n",
+          "name": "discover",
+          "params": [
+            {
+              "default": "<UNSET>",
+              "help": "Confluence space key to crawl.",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": false,
+              "name": "space",
+              "nargs": 1,
+              "opts": [
+                "--space"
+              ],
+              "required": true,
+              "secondary_opts": [],
+              "type": {
+                "name": "text"
+              }
+            },
+            {
+              "default": "",
+              "help": "Confluence base URL. Defaults to `zardoz.host`.",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": false,
+              "name": "host",
+              "nargs": 1,
+              "opts": [
+                "--host"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "name": "text"
+              }
+            },
+            {
+              "default": "config/topics.proposed.yaml",
+              "help": "Where to write the proposal. Deliberately not topics.yaml \u2014 it needs owners set before it is usable.",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": false,
+              "name": "out",
+              "nargs": 1,
+              "opts": [
+                "--out"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "dir_okay": true,
+                "exists": false,
+                "file_okay": true,
+                "name": "path"
+              }
+            },
+            {
+              "default": 500,
+              "help": "Refuse to crawl a space larger than this rather than proposing a registry from an arbitrary subset of it.",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": false,
+              "name": "max_results",
+              "nargs": 1,
+              "opts": [
+                "--max-results"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "name": "integer"
+              }
+            },
+            {
+              "default": false,
+              "help": "Group only by naming convention and control citations. Pages no convention reaches are listed rather than clustered.",
+              "hidden": false,
+              "is_flag": true,
+              "kind": "Option",
+              "multiple": false,
+              "name": "no_llm",
+              "nargs": 1,
+              "opts": [
+                "--no-llm"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "name": "boolean"
+              }
+            }
+          ]
+        },
+        "sync": {
+          "help": "Build the local snapshot Zardoz answers from.\n\nReads a markdown content tree, a Confluence space, or both. Markdown\nneeds no credentials at all, so a repo-backed document set can be synced\nand questioned offline. Where both are configured the tree wins: in that\narrangement the file is the source of truth and the page is a copy of it.\n\nDocuments that know their owner \u2014 from the topic registry, or from their\nown frontmatter \u2014 are trusted; everything else is supporting context that\nanswers may use and will say they used.\n",
+          "name": "sync",
+          "params": [
+            {
+              "default": null,
+              "help": "Markdown content tree to read. Defaults to `zardoz.content_dir` in config.yaml. Needs no credentials.",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": false,
+              "name": "content_dir",
+              "nargs": 1,
+              "opts": [
+                "--content-dir"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "dir_okay": true,
+                "exists": false,
+                "file_okay": true,
+                "name": "path"
+              }
+            },
+            {
+              "default": "",
+              "help": "Confluence base URL. Defaults to `zardoz.host` in config.yaml. Omit to sync from markdown only.",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": false,
+              "name": "host",
+              "nargs": 1,
+              "opts": [
+                "--host"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "name": "text"
+              }
+            },
+            {
+              "default": "",
+              "help": "Extra space to pull as unowned supporting context. Defaults to `zardoz.supporting_space` in config.yaml. Omit for registry pages only.",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": false,
+              "name": "supporting_space",
+              "nargs": 1,
+              "opts": [
+                "--supporting-space"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "name": "text"
+              }
+            },
+            {
+              "default": 500,
+              "help": "Refuse to walk a supporting space larger than this, rather than silently syncing an arbitrary subset of it.",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": false,
+              "name": "max_results",
+              "nargs": 1,
+              "opts": [
+                "--max-results"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "name": "integer"
+              }
+            },
+            {
+              "default": false,
+              "help": "Let a sync that resolves nothing clear the existing corpus. Without this, a run that finds no documents leaves the previous snapshot alone.",
+              "hidden": false,
+              "is_flag": true,
+              "kind": "Option",
+              "multiple": false,
+              "name": "allow_empty",
+              "nargs": 1,
+              "opts": [
+                "--allow-empty"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "name": "boolean"
+              }
+            }
+          ]
+        }
+      },
+      "help": "Ask questions about your published policy set, conversationally.\n\nRun with no subcommand to open the shell. Zardoz reads; it does not\nwrite. It can draft a `policyforge edit-topic` command for you to run,\nbut every change to a live page still goes through that command's gates.\n",
+      "invoke_without_command": true,
+      "name": "zardoz",
+      "params": [
+        {
+          "default": "config/topics.yaml",
+          "help": "Topic registry to load, for ownership and page lookups.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "topics_path",
+          "nargs": 1,
+          "opts": [
+            "--topics"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "output/.zardoz",
+          "help": "Where the synced document snapshot lives.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "corpus_dir",
+          "nargs": 1,
+          "opts": [
+            "--corpus-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": false,
+          "help": "Skip the floating head on launch.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "no_art",
+          "nargs": 1,
+          "opts": [
+            "--no-art"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Drop the Zardoz voice from the shell chrome entirely. Answers are plain either way \u2014 this only affects greetings, prompts and errors.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "plain",
+          "nargs": 1,
+          "opts": [
+            "--plain"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ]
+    }
+  },
+  "help": "PolicyForge \u2014 cross-mapped compliance policy/procedure generation.",
+  "invoke_without_command": false,
+  "name": "policyforge",
+  "params": []
+}

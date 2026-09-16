@@ -3,6 +3,8 @@ content, diffing, and reading history back."""
 
 from __future__ import annotations
 
+import pytest
+
 
 def test_record_version_creates_first_version(tmp_path):
     from policyforge.history.version_store import load_history, record_version
@@ -77,3 +79,72 @@ def test_record_version_tracks_multiple_slugs_independently(tmp_path):
 
     assert len(load_history(tmp_path, "standard/auth-mgmt")) == 1
     assert len(load_history(tmp_path, "policy/auth-mgmt")) == 1
+
+
+# ---- the store refuses a slug that leaves it ---------------------------
+
+
+_ESCAPES = [
+    "standard/../../outside",
+    "../outside",
+    "standard/..",
+    "./standard/x",
+    "/abs/outside",
+    r"standard\..\..\outside",
+    "C:/outside",
+]
+
+
+@pytest.mark.parametrize("slug", _ESCAPES)
+def test_a_slug_that_leaves_the_store_is_refused_on_read_and_write(tmp_path, slug):
+    """The CLI checks --name; Zardoz's /history did not, so the store checks too."""
+    from policyforge.history.version_store import load_history, record_version
+
+    store = tmp_path / "store" / ".history"
+    store.mkdir(parents=True)
+    with pytest.raises(ValueError, match="outside"):
+        load_history(store, slug)
+    with pytest.raises(ValueError, match="outside"):
+        record_version(store, slug, "# Planted\n", source="generate")
+    assert not list(tmp_path.rglob("*.md"))
+
+
+def test_zardoz_history_cannot_read_an_index_outside_the_store(tmp_path):
+    """Found by policyforge-ba: the skill's arguments are model-filled and reached
+    the store unchecked, so a planted index.jsonl beside the store was readable."""
+    import json
+    from types import SimpleNamespace
+
+    from policyforge.zardoz.skills import SKILLS
+
+    store = tmp_path / "output" / ".history"
+    store.mkdir(parents=True)
+    outside = tmp_path / "output" / "secret"
+    outside.mkdir()
+    (outside / "index.jsonl").write_text(
+        json.dumps(
+            {
+                "version": 7,
+                "timestamp": "t",
+                "content_hash": "h",
+                "source": "planted",
+                "lines_added": 1,
+                "lines_removed": 0,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    report = SKILLS["history"].run(SimpleNamespace(history_dir=store), ["standard", "../../secret"])
+
+    assert "planted" not in report
+    assert "Could not read history" in report
+
+
+def test_a_confluence_title_slug_is_still_accepted(tmp_path):
+    """Refusal is for traversal only; the confluence stream's own slugs still write."""
+    from policyforge.history.version_store import load_history, record_version
+
+    record_version(tmp_path, "confluence/access-control-standard-v2", "# A\n", source="edit")
+    assert len(load_history(tmp_path, "confluence/access-control-standard-v2")) == 1

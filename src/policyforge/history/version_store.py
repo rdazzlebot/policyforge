@@ -42,6 +42,26 @@ class VersionRecord:
 
 
 def _slug_dir(history_dir: Path, slug: str) -> Path:
+    """`history_dir / slug`, refusing a slug that would leave the store.
+
+    The CLI checks `--name` before it gets here (`_checked_slug`), but that
+    protects the CLI only. Zardoz's `/history` builds the slug from arguments
+    a model fills in and reached this unchecked (found by policyforge-ba), so
+    the store checks for itself. It checks traversal rather than the CLI's
+    slug grammar: the `confluence/` stream is keyed by page titles through a
+    different slugify, and refusing those here would break writes that are
+    not a traversal.
+    """
+    parts = slug.replace("\\", "/").split("/")
+    if (
+        slug.startswith(("/", "\\"))
+        or Path(slug).is_absolute()
+        or any(part in {".", ".."} or ":" in part for part in parts)
+    ):
+        raise ValueError(
+            f"{slug!r} is not a document in the history store: a slug is "
+            "'<tier>/<name>', and this one would resolve outside it."
+        )
     return history_dir / slug
 
 

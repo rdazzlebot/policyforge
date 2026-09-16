@@ -43,6 +43,13 @@ class LLMResponse:
     #: Anthropic support asks for. Free on every response and impossible to
     #: reconstruct afterwards.
     request_id: str | None = None
+    #: Spans the API says were quoted, when the request sent its passages as
+    #: document blocks. `llm/grounded.py` says what makes these different
+    #: from the `[2]` markers a model writes: the text is extracted from the
+    #: document rather than generated, so it is verbatim by construction.
+    #: None means the request did not ask for citations; an empty list means
+    #: it did and the model cited nothing.
+    citations: list | None = None
 
 
 class LLMProvider(ABC):
@@ -122,6 +129,40 @@ class LLMProvider(ABC):
         raise NotImplementedError(
             f"{type(self).__name__} cannot submit a batch. "
             f"Check supports_batch() before calling generate_batch()."
+        )
+
+    # ---- native citations, opt-in --------------------------------------
+    #
+    # Asked before use, like everything else here. A provider that cannot
+    # send document blocks would have to flatten them into the prompt, and
+    # the caller would then believe its citations were verified spans when
+    # they were `[n]` markers a model wrote — the exact substitution the
+    # mechanism exists to remove.
+
+    def supports_grounding(self) -> bool:
+        """Whether `generate_grounded` will send real document blocks."""
+        return False
+
+    def generate_grounded(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        documents: list,
+        max_tokens: int = 4096,
+        temperature: float = 0.2,
+        effort: str | None = None,
+    ) -> LLMResponse:
+        """Like `generate`, with the passages sent as citable documents.
+
+        Only call this when `supports_grounding()` is True. The default
+        refuses rather than quietly inlining the documents into the prompt:
+        a caller that asked for citations would get uncited prose back and
+        no way to tell, which is worse than the error.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} cannot send citable documents. "
+            f"Check supports_grounding() before calling generate_grounded()."
         )
 
     def generate_json(

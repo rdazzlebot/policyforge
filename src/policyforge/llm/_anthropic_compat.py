@@ -154,8 +154,11 @@ def call_messages_api(
     cache: bool = False,
     cache_prefix: str | None = None,
     schema: dict | None = None,
+    documents=None,
 ) -> LLMResponse:
     import anthropic
+
+    from .grounded import documents_block, read_citations
 
     kwargs = {
         "model": model,
@@ -163,6 +166,27 @@ def call_messages_api(
         "system": system,
         "messages": [{"role": "user", "content": prompt}],
     }
+
+    if documents:
+        if schema is not None:
+            # The API refuses this combination, and it refuses it with a
+            # message about content blocks that does not mention citations.
+            # Saying so here costs one branch and saves reading that.
+            raise ValueError(
+                "A reply cannot be both cited and constrained to a schema — "
+                "`output_config.format` and document citations are mutually "
+                "exclusive. Ask for one or the other."
+            )
+        # Documents first, question last. The same ordering the prose path
+        # uses, and for the same measured reason: the text nearest the
+        # question is what a model weighs hardest, so the instruction goes
+        # after the material it is about.
+        kwargs["messages"] = [
+            {
+                "role": "user",
+                "content": [*documents_block(documents), {"type": "text", "text": prompt}],
+            }
+        ]
 
     if cache:
         # A cache is a prefix match, so the breakpoint goes at the end of
@@ -175,7 +199,15 @@ def call_messages_api(
         # The text sent is identical either way: two text blocks are the
         # same content as their concatenation, so this changes what is
         # billed and not what the model reads.
-        if cache_prefix:
+        if documents:
+            # The documents are the bulk of the request and they are already
+            # built, so the breakpoint goes on the last of them rather than
+            # rebuilding the turn from a prefix string — which would drop the
+            # document blocks and turn a cited answer into an uncited one.
+            kwargs["messages"][0]["content"][len(documents) - 1]["cache_control"] = {
+                "type": "ephemeral"
+            }
+        elif cache_prefix:
             kwargs["messages"] = [
                 {
                     "role": "user",
@@ -261,4 +293,5 @@ def call_messages_api(
         stop_reason=getattr(response, "stop_reason", None),
         cached_input_tokens=getattr(usage, "cache_read_input_tokens", None),
         request_id=getattr(response, "_request_id", None),
+        citations=read_citations(response, documents) if documents else None,
     )

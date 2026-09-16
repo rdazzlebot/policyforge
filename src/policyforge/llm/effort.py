@@ -131,6 +131,19 @@ def call_json(provider, *, effort: str | None = None, **kwargs):
     return provider.generate_json(**kwargs)
 
 
+def accepts_grounding(provider) -> bool:
+    """Whether this provider will send passages as citable documents."""
+    ask = getattr(provider, "supports_grounding", None)
+    return bool(ask and ask())
+
+
+def call_grounded(provider, *, documents, effort: str | None = None, **kwargs):
+    """`provider.generate_grounded(**kwargs)`, at `effort` where it lands."""
+    if effort is not None and accepts_effort(provider):
+        return provider.generate_grounded(documents=documents, effort=effort, **kwargs)
+    return provider.generate_grounded(documents=documents, **kwargs)
+
+
 def accepts_schema(provider) -> bool:
     """Whether this provider will actually hold a reply to a schema."""
     ask = getattr(provider, "supports_schema", None)

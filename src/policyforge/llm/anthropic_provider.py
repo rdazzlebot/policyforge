@@ -86,6 +86,33 @@ class AnthropicProvider(LLMProvider):
             schema=schema,
         )
 
+    def supports_grounding(self) -> bool:
+        """The Messages API cites document blocks by character range."""
+        return True
+
+    def generate_grounded(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        documents: list,
+        max_tokens: int = 4096,
+        temperature: float = 0.2,
+        effort: str | None = None,
+    ) -> LLMResponse:
+        from ._anthropic_compat import call_messages_api
+
+        return call_messages_api(
+            self._client,
+            model=self.model,
+            system=system,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            effort=effort,
+            documents=documents,
+        )
+
     def supports_batch(self) -> bool:
         """The Messages API has a batch endpoint, at half the price."""
         return True

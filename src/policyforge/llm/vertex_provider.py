@@ -102,6 +102,33 @@ class VertexProvider(LLMProvider):
             schema=schema,
         )
 
+    def supports_grounding(self) -> bool:
+        """Same request shape again, so the same document blocks."""
+        return True
+
+    def generate_grounded(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        documents: list,
+        max_tokens: int = 4096,
+        temperature: float = 0.2,
+        effort: str | None = None,
+    ) -> LLMResponse:
+        from ._anthropic_compat import call_messages_api
+
+        return call_messages_api(
+            self._client,
+            model=self.model,
+            system=system,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            effort=effort,
+            documents=documents,
+        )
+
     def supports_effort(self) -> bool:
         """Same request shape as the direct API, so the same lever."""
         return True

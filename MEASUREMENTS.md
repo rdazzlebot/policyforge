@@ -422,6 +422,47 @@ buys a guarantee, not a fix.
 Titles with delimiters are not a contrived case — `Backup | Restore` and
 `Topic: Subtopic` are ordinary Confluence page names.
 
+### 11. Native citations — 2026-09-15, unverified against the real endpoint
+
+`answer_question` now sends its passages as document blocks when the
+provider can, and reads back the spans the API says were quoted.
+`citation_disagreements` compares those against the model's own `[n]`
+markers; `check_answer` runs unchanged.
+
+**This is not measured, and the reason is worth writing down rather than
+leaving as a gap somebody discovers.** Native citations are a Messages API
+feature, and the only credential this project has configured is
+`OPENROUTER_API_KEY`. With no Anthropic or Vertex key there is no way to
+run the path against the endpoint that implements it, so what follows is
+what a live probe *did* establish and nothing more.
+
+Pointing the `anthropic` SDK at OpenRouter's Anthropic-compatible endpoint
+and sending the exact request shape this code builds:
+
+- the request was accepted — document blocks are not rejected by the proxy
+- the model read them and answered correctly, citing `[1]`, from the
+  document that held the answer
+- **`citations` came back empty**
+
+So the shape is valid and the answer is right, and the mechanism the whole
+feature exists for produced nothing. From the caller's side that is
+indistinguishable from a model that quoted nothing — no error, no warning,
+a good answer, and a cross-check that silently is not running. This is the
+same failure shape as a prompt-cache prefix below the model's minimum, which
+is why `cached_input_tokens` distinguishes zero from None.
+
+That finding is what fixes the interface rather than the code:
+`supports_grounding()` is answered True only by the two providers holding a
+real Anthropic client, and by nothing that merely speaks the same protocol.
+`LiteLLMProvider` inherits False, so the OpenRouter path this project
+actually runs on takes the prose route with the fence, exactly as before.
+
+What remains to be measured, when a key for the real endpoint exists: how
+often a correct answer produces zero citations. That number decides whether
+"the provider promised spans and returned none" can be a per-answer warning
+or would only train readers to ignore warnings — which is the reason it is
+not one today.
+
 ______________________________________________________________________
 
 ## Two ways a run can lie, found the hard way

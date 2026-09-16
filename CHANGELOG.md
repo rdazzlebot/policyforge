@@ -2,6 +2,93 @@
 
 ## Unreleased
 
+### Security documentation, and eight commitments with tests behind them
+
+`docs/` now holds the account of this tool that an adopter — or their
+assessor — needs in order to run it against real compliance work: a
+[system card](docs/system-card.md), a
+[security architecture](docs/security-architecture.md) with an explicit
+untrusted-input inventory and a residual-risk section, a mapping to the
+[OWASP Top 10 for LLM Applications](docs/owasp-llm-top-10.md), a
+[NIST AI RMF alignment](docs/nist-ai-rmf.md), a
+[subprocessor and data-flow](docs/subprocessors.md) enumeration, and the
+[responsible-use](docs/responsible-ai-use.md) argument with its limits.
+
+The part that is not prose is [docs/commitments.md](docs/commitments.md):
+eight statements about this tool's behaviour, each naming the test that fails
+when it stops being true. The project's own argument is that a control an
+organization cannot evidence is not a control, and a security promise in a
+README is the same mistake one level up — so the promises point at tests
+rather than at intentions.
+
+**Changing one of these is a breaking change**, requiring a major version
+bump and an entry under a `Security` heading here. That rule starts with
+this entry.
+
+Two commitments had no enforcing test and now do:
+
+- `tests/test_no_undeclared_endpoints.py` — every host-shaped literal in
+  `src/` must appear in an allowlist with a stated reason, the allowlist may
+  contain no telemetry-shaped name, and it may contain no dead entries. The
+  audit found nothing wrong, which is the point: "no telemetry" was true and
+  unenforced, and adding an endpoint is now a deliberate act that edits a
+  test.
+- `tests/test_credential_containment.py` — every module reading the
+  environment must be declared with what it reads and why; **no module that
+  defines prompt text may read the environment at all**; and no prompt text
+  may name a credential variable.
+
+The second of those found a gap in itself while being written. Detecting
+prompt-defining modules by matching `NAME = "..."` found 14 constants across
+11 modules and silently missed `edit/plan.py`, `zardoz/answer.py` and
+`entail/llm_entailer.py` — the three most security-relevant prompts in the
+project — because the prompt registry had changed them to
+`NAME = register(...)`, an `ast.Call` rather than an `ast.Constant`. Gathering
+every string constant beneath the assigned value finds 22 across 15 modules.
+A check that silently stops covering the thing it was written for is worse
+than no check, so the module docstring names that failure rather than the
+node type.
+
+Documentation accuracy fixes found while writing the above, each of which had
+overclaimed:
+
+- Native citations are documented as engaging only on providers holding a
+  real Anthropic client, and as unmeasured against a real endpoint. An
+  OpenRouter deployment takes the prose-and-fence route, which is what every
+  published measurement covers.
+- Entailment checking is documented as a **capability, not an operating
+  control**: it is implemented and tested, and no runtime path calls it. A
+  statement can therefore cite a real passage that does not support it.
+- Catalog provenance is documented per catalog rather than in general:
+  `nist-800-53-r5` verifies against upstream `v1.5.0`;
+  `hipaa-security-rule` is unstamped and reports as unverifiable.
+
+### Repository hardening
+
+- **OpenSSF Scorecard** (`.github/workflows/scorecard.yml`) publishes a
+  third-party grade of the repository practices the commitments rest on,
+  rather than asking a reader to accept a self-assessment.
+  `dependency-review-action` was considered for pull requests and
+  deliberately not added: it needs the repository's dependency graph
+  enabled, and a check that cannot run yet is a red job people learn to
+  scroll past — the failure mode this project's own documents warn about
+  twice. `pip-audit` already runs on every pull request, and a hash-pinned
+  lock means no dependency arrives without a deliberate regeneration. It is
+  a one-line addition if the dependency graph is ever turned on, and worth
+  more as a gate that means something on the day it lands.
+- **CI markdown checking no longer drifts from the local gate.**
+  `scripts/check.py` globs every `*.md`, while CI used a hand-maintained
+  list that had fallen behind — `CHANGELOG.md`, `MEASUREMENTS.md` and
+  `evals/documents/*.md` were gated locally and not in CI, so the pre-push
+  gate was strictly stricter than the build. CI now runs
+  `git ls-files -z '*.md' | xargs -0 mdformat --check`.
+- **`CONTRIBUTING.md`** and a pull-request template name the paths where a
+  change is most likely to break a commitment, so the question is asked in
+  review rather than discovered in CI.
+- **`SECURITY.md`** gains a coordinated-disclosure timeline, and states that
+  a report which cannot be fixed is written into residual risk under its own
+  heading rather than closed.
+
 ### GovRAMP controls matrix ingestion
 
 `policyforge etl-govramp` reads a GovRAMP (formerly StateRAMP) controls

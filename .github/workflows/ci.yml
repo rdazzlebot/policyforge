@@ -67,7 +67,14 @@ jobs:
         # pinned project install keeps this identical to what pre-commit and
         # scripts/check.py run. Without mdformat-frontmatter, mdformat
         # rewrites YAML frontmatter into a heading.
-        run: mdformat --check README.md data/frameworks/*/README.md .claude/skills/*/SKILL.md
+        # Every tracked markdown file, rather than a hand-maintained list that
+        # drifts. `scripts/check.py` globs every *.md in the tree, so a fixed
+        # list here meant CHANGELOG.md and MEASUREMENTS.md were gated locally
+        # and not in CI — the direction that lets a pre-push gate fail on
+        # something CI called clean. git ls-files is the same set CI has
+        # checked out, and output/ and local_content/ are gitignored, so they
+        # stay excluded without naming them.
+        run: git ls-files -z '*.md' | xargs -0 mdformat --check
 
       - name: pytest
         run: pytest -q

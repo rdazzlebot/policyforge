@@ -113,6 +113,30 @@ licensed content is committed.
 checked over the parsed AST across the whole read path rather than as a
 substring, so the modules stay free to discuss the rule in their docstrings.
 
+The ETL commands also refuse to write a licensed catalog into the bundled
+`data/frameworks/` directory, **even with `--force`**, enforced by
+[`tests/test_cli.py`](../tests/test_cli.py): one test writes through five
+spellings and working directories and asserts that no file appears inside the
+bundled directory, and one confirms a write *beside* it, into
+`local_content/`, still succeeds.
+
+**This guarantee was bypassable until 2026-09-16, and the way it failed is
+worth knowing.** The guard compared the path's *spelling*, and filesystems do
+not resolve paths by spelling. Three destinations wrote a licensed catalog
+into the bundled directory with `--force`, exit 0, no refusal:
+`Data/Frameworks/…` and `DATA/frameworks/…` on a case-insensitive filesystem
+(Windows, and macOS by default), and `frameworks/…` when run from inside
+`data/` — which works on **any** platform, Linux included. The guard now asks
+the filesystem whether any existing ancestor of the destination *is* a
+bundled catalog directory, using `os.path.samefile`, which resolves case,
+`..`, symlinks and junctions the way the write does. Three of the five test
+cases failed before the fix.
+
+**Not covered:** the identity check needs the bundled directory to exist on
+disk to compare against, and 8.3 short names and hard-linked directories have
+not been tested. `samefile` should handle both; it has not been measured, so
+it is not claimed.
+
 ### C-06 — Model-written code never enters the package unreviewed
 
 `generate-parser` output lands in `output/`, passes a static AST check

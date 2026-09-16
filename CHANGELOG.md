@@ -63,6 +63,20 @@ overclaimed:
   `nist-800-53-r5` verifies against upstream `v1.5.0`;
   `hipaa-security-rule` is unstamped and reports as unverifiable.
 
+### Security
+
+- **C-05's write guard was bypassable, and is fixed.** Refusing to write a
+  licensed catalog into `data/frameworks/`, even with `--force`, was a
+  substring test on the path's spelling. `Data/Frameworks/…` and
+  `DATA/frameworks/…` got past it on case-insensitive filesystems, and
+  `frameworks/…` run from inside `data/` got past it on every platform. Each
+  wrote licensed content into the redistributable directory with exit 0. The
+  guard now compares filesystem identity with `os.path.samefile`. This
+  restores a stated commitment rather than changing one, so it is not a
+  breaking change; it is recorded here because a published commitment was
+  false and adopters on an affected layout should check `data/frameworks/`
+  for licensed content they did not intend to commit.
+
 ### Repository hardening
 
 - **OpenSSF Scorecard** (`.github/workflows/scorecard.yml`) publishes a

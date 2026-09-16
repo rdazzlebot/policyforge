@@ -34,6 +34,8 @@ import re
 from dataclasses import dataclass, field
 
 from policyforge.llm.fence import fence_token as _fence_token
+from policyforge.llm.prompts import Prompt as _Prompt
+from policyforge.llm.prompts import register as _register
 
 from .retrieve import Passage
 
@@ -60,7 +62,11 @@ _CITATION_RE = re.compile(r"\[(\d+)\]")
 #: impossible.
 _QUOTE_RE = re.compile(r"\"([^\"]*)\"|“([^”]*)”")
 
-SYSTEM_PROMPT = """You answer questions about an organization's own \
+SYSTEM_PROMPT = _register(
+    _Prompt(
+        name="zardoz.answer",
+        version=6,
+        text="""You answer questions about an organization's own \
 information-security policy documents, using only the passages you are given.
 
 Rules, in priority order:
@@ -111,7 +117,9 @@ Rules, in priority order:
    This holds when you are saying the value is *absent*, which is the case
    that looks safe and is not: "no frequency has been set (e.g. annual,
    quarterly)" still puts two frequencies next to a citation, and the reader
-   skimming for a frequency finds them. Name no candidate values at all."""
+   skimming for a frequency finds them. Name no candidate values at all.""",
+    )
+)
 
 
 @dataclass

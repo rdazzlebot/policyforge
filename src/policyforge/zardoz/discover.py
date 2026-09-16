@@ -33,6 +33,8 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
+from policyforge.llm.prompts import Prompt, register
+
 from .retrieve import extract_control_ids
 
 #: Written into every proposed topic. Deliberately conspicuous: it has to
@@ -238,8 +240,24 @@ Rules:
 5. Prefer fewer, broader topics. Around 25 is the ceiling for a whole
    organization, so a space of forty pages should not yield forty topics."""
 
-CLUSTER_SYSTEM_PROMPT = _CLUSTER_TASK + _CLUSTER_LINES + _CLUSTER_RULES
-CLUSTER_SYSTEM_PROMPT_JSON = _CLUSTER_TASK + _CLUSTER_JSON + _CLUSTER_RULES
+#: Registered separately, because they are two prompts. A fingerprint over
+#: the shared rules alone would report no change when the half that differs
+#: between them changed, which is the only half a reader would be surprised
+#: by.
+CLUSTER_SYSTEM_PROMPT = register(
+    Prompt(
+        name="zardoz.cluster.lines",
+        version=1,
+        text=_CLUSTER_TASK + _CLUSTER_LINES + _CLUSTER_RULES,
+    )
+)
+CLUSTER_SYSTEM_PROMPT_JSON = register(
+    Prompt(
+        name="zardoz.cluster.json",
+        version=1,
+        text=_CLUSTER_TASK + _CLUSTER_JSON + _CLUSTER_RULES,
+    )
+)
 
 #: What the line format was asking for, said in a way a title cannot break.
 #:

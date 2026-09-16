@@ -888,6 +888,77 @@ def run_case(
     return result
 
 
+#: Where the fingerprints of the last recorded epoch live. A file rather
+#: than a constant in this module: it is data about a past run, and editing
+#: it is the deliberate act of saying "the current prompts are what the
+#: newest epoch measured".
+FINGERPRINT_FILE = Path(__file__).with_name("prompt-fingerprints.json")
+
+
+def recorded_fingerprints() -> dict[str, str]:
+    """The fingerprints the newest MEASUREMENTS.md epoch was produced by."""
+    import json
+
+    try:
+        return json.loads(FINGERPRINT_FILE.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+
+
+def prompt_epoch_report() -> list[str]:
+    """What this run's prompts are, and whether they match the last epoch.
+
+    This exists because of a specific failure. A measured run against
+    `kimi-k3` was half finished when two commits changed the edit planner
+    and the clusterer. Python had imported the old modules at process start,
+    so the run was measuring code that no longer existed on disk — and
+    nothing in the run, the report, or the resulting numbers could have said
+    so. It was caught by one person comparing file mtimes against a log's
+    birth time, and only because somebody thought to look.
+
+    A run that prints its own prompt fingerprints cannot hide that. If they
+    do not match what the last epoch recorded, the report says which prompts
+    differ, and the number that follows is not comparable with the epoch
+    above it until somebody opens a new one.
+    """
+    from policyforge.llm import prompts
+
+    prompts.load_all()
+    current = prompts.fingerprints()
+    recorded = recorded_fingerprints()
+
+    # "in this build", not "this run used". The registry is build-wide and
+    # some registered prompts are reached by no runtime path at all —
+    # `entail.judge` is implemented, tested, and called by nothing. Saying
+    # "used" would make this report assert exactly the kind of thing it
+    # exists to stop being asserted.
+    lines = ["", "Prompts in this build:"]
+    lines += [f"  {prompts.REGISTRY[name].label}" for name in sorted(current)]
+
+    if not recorded:
+        lines += [
+            "",
+            f"  No recorded epoch to compare against. Write {FINGERPRINT_FILE.name} "
+            "when this run's numbers go into MEASUREMENTS.md, and the next run "
+            "will be able to say whether it is comparable with them.",
+        ]
+        return lines
+
+    differences = prompts.compare(recorded)
+    if not differences:
+        lines += ["", "  Unchanged since the last recorded epoch — comparable with it."]
+        return lines
+
+    lines += [
+        "",
+        f"  {len(differences)} prompt(s) differ from the last recorded epoch. These "
+        "numbers are NOT comparable with the epoch above them in MEASUREMENTS.md; "
+        "open a new one.",
+    ]
+    lines += [f"    {line}" for line in differences]
+    return lines
+
+
 def format_report(results: list[CaseResult], *, repeat: int) -> str:
     lines = []
     for suite in SUITES:
@@ -930,4 +1001,5 @@ def format_report(results: list[CaseResult], *, repeat: int) -> str:
         )
     if not failed and not flaky:
         lines.append("  every case passed every run")
+    lines += prompt_epoch_report()
     return "\n".join(lines)

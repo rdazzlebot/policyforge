@@ -28,9 +28,15 @@ from __future__ import annotations
 
 import json
 
+from policyforge.llm.prompts import Prompt, register
+
 from .base import CONTRADICTED, ENTAILED, NEUTRAL, Entailer, Verdict
 
-SYSTEM_PROMPT = """You decide whether a passage from an organization's own \
+SYSTEM_PROMPT = register(
+    Prompt(
+        name="entail.judge",
+        version=1,
+        text="""You decide whether a passage from an organization's own \
 policy documents supports a claim someone has made about it.
 
 You are given a PASSAGE and a CLAIM. Answer with one label:
@@ -57,7 +63,9 @@ Rules:
    be reviewed" does not support "must be reviewed".
 4. Give one short sentence of reasoning, naming what the passage actually
    says. "The passage names IT Asset Management, not the Security Officer"
-   is useful; "the claim is not supported" is not."""
+   is useful; "the claim is not supported" is not.""",
+    )
+)
 
 #: Three labels, so the reply cannot be a paragraph of hedging.
 SCHEMA = {

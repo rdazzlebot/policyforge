@@ -271,8 +271,8 @@ def test_the_temperature_workaround_still_retries_rather_than_rejecting(stubbed_
     assert [("temperature" in k) for k in sent] == [True, False]
 
 
-@pytest.mark.parametrize("status, text", [(429, "rate limited"), (401, "invalid api key")])
-def test_a_rate_limit_or_an_auth_failure_is_not_a_rejection(status, text):
+@pytest.mark.parametrize("status, body", [(429, "rate limited"), (401, "invalid api key")])
+def test_a_rate_limit_or_an_auth_failure_is_not_a_rejection(status, body):
     """A 429 clears by waiting and a 401 is the key; neither is the request
     being refused as written, and budget advice on either would send the
     user to change the wrong thing. They stay the plain error they were."""
@@ -282,7 +282,7 @@ def test_a_rate_limit_or_an_auth_failure_is_not_a_rejection(status, text):
         def post(self, url, *, json, headers, timeout):
             class Response:
                 status_code = status
-                text = text
+                text = body
 
             return Response()
 

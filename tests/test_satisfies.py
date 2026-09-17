@@ -37,6 +37,7 @@ from policyforge.topics.satisfies import (
     document_evidence,
     format_report,
     parse_citations,
+    resolve_framework,
     split_citation,
 )
 
@@ -380,7 +381,7 @@ def test_an_unreviewed_mapping_is_shown_and_marked_rather_than_hidden():
     assert evidence.unreviewed == [reached]
     report = format_report([evidence])
     assert "NOT REVIEWED" in report
-    assert "NOBODY HAS REVIEWED" in report
+    assert "accepted by hand" in report
 
 
 def test_a_seeded_published_pair_is_not_called_unreviewed():
@@ -536,3 +537,105 @@ def test_json_output_is_parseable_and_lists_every_document(programme):
     records = json.loads(result.output)
     assert [r["document"] for r in records] == ["standards/access.md"]
     assert records[0]["cited"][0]["requirement_id"] == "AC-2"
+
+
+def test_the_report_says_how_much_it_searched_before_calling_an_anchor_uncited():
+    """The same list means two different things depending on the scope.
+
+    A gap found across a topic's three documents is a real gap; the same
+    list under `--document` only means this one file does not cite it.
+    Leaving the reader to infer which would send somebody to rewrite a
+    Policy that was never the problem.
+    """
+    topics = [Topic(name="Access", owner="IAM", nist_controls=["AC-2", "IR-3"])]
+    controls = _catalogs()
+    both = [
+        FakeDocument("[NIST 800-53 AC-2]", path="policies/access.md", slug="access"),
+        FakeDocument("No tags.", path="procedures/access.md", slug="access"),
+    ]
+    policy, _ = build_report(
+        both, controls=controls, crosswalk=build_crosswalk(controls), topics=topics
+    )
+    assert policy.anchored_scope == "across this topic's 2 documents"
+    assert "searched across this topic's 2 documents" in format_report([policy])
+
+    (alone,) = build_report(
+        both[:1], controls=controls, crosswalk=build_crosswalk(controls), topics=topics
+    )
+    assert alone.anchored_scope == "in this document alone"
+    assert "searched in this document alone" in format_report([alone])
+
+
+def test_the_unreviewed_warning_names_the_state_it_describes():
+    """ "Not reviewed" has to mean something a reader can act on.
+
+    The state is: somebody wrote `accepted` into the overlay by hand
+    instead of going through `crosswalk review`, so no one has recorded
+    checking it. A vaguer warning gets ignored.
+    """
+    overlay = _overlay(
+        {"164.308(a)(3)(i)": [MappingRow(control="AC-2", status=ACCEPTED, sources=["model"])]}
+    )
+    report = format_report([_evidence("[NIST 800-53 AC-2]", overlays=[overlay])])
+    assert "accepted by hand" in report
+    assert "NOT accepted through `policyforge crosswalk review`" in report
+
+
+def test_an_abbreviation_resolves_when_it_names_exactly_one_loaded_catalog():
+    """`ARC` reaches ARC-AMPE for the same reason `NIST` reaches NIST 800-53.
+
+    Tags abbreviate — the synthesis prompt teaches it by example and never
+    says what a given name's short form is. Accepting `NIST` while
+    rejecting `ARC` was an accident of first-word normalization, not a
+    rule, and it reported well-formed citations as defects.
+    """
+    ids = {"nist": {"PE-1"}, "arc-ampe": {"PE-1"}, "hipaa": {"164.308(a)(3)(i)"}}
+    assert resolve_framework("ARC", ids) == "arc-ampe"
+    assert resolve_framework("ARC-AMPE", ids) == "arc-ampe"
+    assert resolve_framework("NIST", ids) == "nist"
+    assert resolve_framework("NIST 800-53", ids) == "nist"
+    assert resolve_framework("HIPAA Security Rule", ids) == "hipaa"
+
+
+def test_an_abbreviation_naming_two_catalogs_resolves_to_neither():
+    """With 800-53 and 800-171 both loaded, `NIST` names no one catalog.
+
+    Picking one would attribute a citation to a framework the document
+    never named. Reported as unknown instead, which is what it is.
+    """
+    ids = {"nist-800-53": {"AC-2"}, "nist-800-171": {"3.1.1"}}
+    assert resolve_framework("NIST", ids) == ""
+    assert resolve_framework("NIST-800-53", ids) == "nist-800-53"
+
+
+def test_a_partial_token_is_not_an_abbreviation():
+    assert resolve_framework("NIS", {"nist": {"AC-2"}}) == ""
+
+
+def test_an_abbreviated_framework_is_followed_through_to_the_crosswalk():
+    """End to end: the citation resolves, so it counts as evidence.
+
+    Guards the real regression — `[ARC PE-1]` was reported as an unknown
+    citation while naming a requirement the loaded catalog has.
+    """
+    controls = _catalogs() + [
+        Control(
+            control_id="PE-1",
+            title="Physical protection policy",
+            framework="ARC-AMPE",
+            framework_version="1.0",
+            control_statement="Protect the facility.",
+            source_crosswalk={"nist": "AC-2"},
+        )
+    ]
+    # The tag as the generator actually wrote it. `edit/apply._SOURCE_TAG_RE`
+    # only matches a tag whose *first* citation names a listed framework, so
+    # a bare `[ARC PE-1]` is invisible to every stage of the pipeline — this
+    # report and `content/check` alike. That is a shared-regex question, not
+    # this command's to answer, so the case here is the one that occurs.
+    evidence = _evidence("[NIST 800-53 AC-2 | ARC PE-1 AE Mandatory]", controls=controls)
+    assert evidence.unknown == []
+    assert [(c.framework, c.requirement_id, c.qualifier) for c in evidence.cited] == [
+        ("arc-ampe", "PE-1", "AE Mandatory"),
+        ("nist", "AC-2", ""),
+    ]

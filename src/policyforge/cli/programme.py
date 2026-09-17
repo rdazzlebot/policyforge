@@ -680,7 +680,12 @@ def roles_cmd(kind: str):
     help="A single markdown document, by path. Repeatable.",
 )
 @click.option(
-    "--topic", "topic_names", multiple=True, help="Every document of a topic. Repeatable."
+    "--topic",
+    "topic_names",
+    multiple=True,
+    help="Every document of a topic. Repeatable. Matched on a document's frontmatter "
+    "topic or its filename slug, since `generate` names the file for the slug but "
+    "writes no topic - which is the state a freshly generated tree is in.",
 )
 @click.option("--all", "every", is_flag=True, help="Every document in the content tree.")
 @click.option(
@@ -749,6 +754,15 @@ def satisfies_cmd(
     mapping says where it came from: the published crosswalk, an overlay row
     somebody reviewed, or an overlay row nobody has. The last are shown and
     marked rather than dropped. No model call and no network.
+
+    Two resolution rules worth knowing, because the counts look wrong
+    without them. Citing an enhancement counts as citing its control, so a
+    topic that cites AC-2(3) is not reported as never mentioning AC-2 - the
+    same reading `coverage` and `drift` use. And a topic's anchors are
+    answered by its documents together rather than one file at a time, so a
+    Policy is not reported as missing anchors its own Procedure cites; the
+    report names how much it searched. Under --document, one file is all
+    there is to search, and it says so.
     """
     import json as json_mod
 

@@ -34,6 +34,7 @@ licensed catalog's prose out of a report that gets pasted around.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 
 from policyforge.mapping.crosswalk import normalize_framework
@@ -107,12 +108,52 @@ class DocumentEvidence:
     reached: list[Reached] = field(default_factory=list)
     #: Anchors of the document's topic that no document of that topic cites.
     anchored_not_cited: list[str] = field(default_factory=list)
+    #: Which documents were searched before calling an anchor uncited — the
+    #: topic's whole set, or this file alone under `--document`. Printed, so
+    #: a topic-level gap is never misread as a file-level one.
+    anchored_scope: str = ""
     #: Cited identifiers that match no requirement in any loaded catalog.
     unknown: list[str] = field(default_factory=list)
 
     @property
     def unreviewed(self) -> list[Reached]:
         return [r for r in self.reached if r.provenance == UNREVIEWED]
+
+
+def resolve_framework(written: str, ids=None) -> str:
+    """The catalog a citation's framework name points at, or "" if none does.
+
+    Tags abbreviate. The catalogs declare `NIST 800-53`, `HIPAA Security
+    Rule` and `ARC-AMPE`, while the convention the synthesis prompt teaches
+    by example (`[NIST IA-5 | GovRAMP IA-5]`) writes the short form, and no
+    rule anywhere says what the short form of a given name is.
+
+    So an abbreviation resolves when it names exactly one loaded catalog:
+    `ARC` reaches `arc-ampe` for the same reason `NIST` reaches `nist`.
+    Requiring the declared name would make unknowns of most real tags;
+    accepting a prefix that matches two catalogs would silently pick one,
+    so an ambiguous one resolves to nothing and is reported. Only at a
+    token boundary, so `NIS` is not an abbreviation of anything.
+
+    The uniqueness rule is doing real work rather than being defensive:
+    load 800-53 and 800-171 together and `NIST` stops naming one catalog,
+    which is a citation an assessor genuinely cannot follow.
+    """
+    index = ids or {}
+    name = written.strip().casefold()
+    if not name:
+        return ""
+    if name in index:
+        return name
+    # `NIST 800-53` and `HIPAA Security Rule` are declared names, which
+    # `normalize_framework` maps onto the key the catalogs are filed under.
+    narrowed = normalize_framework(written)
+    if narrowed in index:
+        return narrowed
+    matches = {
+        k for k in index if k.startswith(name) and not k[len(name) : len(name) + 1].isalnum()
+    }
+    return matches.pop() if len(matches) == 1 else ""
 
 
 def split_citation(part: str, frameworks: list[str], ids=None) -> tuple[str, str, str]:
@@ -152,7 +193,7 @@ def split_citation(part: str, frameworks: list[str], ids=None) -> tuple[str, str
         rest = rest.strip()
 
     words = rest.split()
-    known = (ids or {}).get(normalize_framework(framework), ())
+    known = (ids or {}).get(resolve_framework(framework, ids), ())
     for count in range(len(words), 0, -1):
         candidate = " ".join(words[:count])
         if candidate in known:
@@ -234,10 +275,12 @@ def document_evidence(
     for framework, requirement_id, qualifier, section in parse_citations(
         document.body, names, index
     ):
-        key = (normalize_framework(framework), requirement_id)
+        key = (resolve_framework(framework, index), requirement_id)
         # Checked against the framework the citation names, not against every
         # id in every catalog: `[HIPAA AC-2]` names a real NIST control under
         # the wrong framework, and an assessor following it finds nothing.
+        # An unresolvable framework name gives an empty key, which no
+        # catalog holds, so it lands in `unknown` with the id as written.
         if requirement_id not in index.get(key[0], ()):
             label = f"{framework} {requirement_id}"
             if label not in evidence.unknown:
@@ -334,10 +377,19 @@ def build_report(
             parent = _parent_of(citation.requirement_id)
             if parent:
                 reached.add(parent)
+    searched = Counter(keys)
     for evidence, slug in zip(evidences, keys, strict=True):
         if slug in anchors_of:
             evidence.anchored_not_cited = sorted(
                 set(anchors_of[slug]) - cited_by_topic.get(slug, set())
+            )
+            # Said out loud rather than left to the reader. The same list
+            # means two different things depending on how much was searched,
+            # and a topic-level gap misread as a file-level one sends
+            # somebody to rewrite a Policy that was never the problem.
+            count = searched[slug]
+            evidence.anchored_scope = (
+                f"across this topic's {count} documents" if count > 1 else "in this document alone"
             )
     return evidences
 
@@ -400,6 +452,7 @@ def as_records(evidences: list[DocumentEvidence]) -> list[dict]:
                 for r in e.reached
             ],
             "anchored_not_cited": e.anchored_not_cited,
+            "anchored_scope": e.anchored_scope,
             "unknown_citations": e.unknown,
         }
         for e in evidences
@@ -450,20 +503,24 @@ def format_report(evidences: list[DocumentEvidence]) -> str:
         if unreviewed:
             lines.append("")
             lines.append(
-                f"  {len(unreviewed)} mapping(s) above rest on an overlay entry NOBODY HAS "
-                "REVIEWED. They are shown because hiding them would make this report look "
-                "stronger than the evidence. Review them with `policyforge crosswalk review` "
-                "before handing this to an assessor."
+                f"  {len(unreviewed)} mapping(s) above rest on an overlay row marked "
+                "accepted by hand, NOT accepted through `policyforge crosswalk review`. "
+                "Nobody has recorded that they checked it. They are shown because hiding "
+                "them would make this report look stronger than the evidence behind it. "
+                "Put them through review before handing this to an assessor."
             )
         if evidence.anchored_not_cited:
             lines.append("")
+            scope = f" — searched {evidence.anchored_scope}" if evidence.anchored_scope else ""
             lines.append(
-                f"Anchored by the topic, cited nowhere ({len(evidence.anchored_not_cited)})"
+                f"Anchored by the topic, cited nowhere ({len(evidence.anchored_not_cited)}){scope}"
             )
             lines.append("-" * 60)
             lines.append(
-                "  The registry says this topic answers for these; its documents never "
-                "mention them. This is the gap between what is claimed and what is written."
+                "  The registry says this topic answers for these; nothing searched "
+                "mentions them. This is the gap between what is claimed and what is "
+                "written. Citing an enhancement counts as citing its control, so AC-2 "
+                "is not listed here when only AC-2(3) is cited."
             )
             for index in range(0, len(evidence.anchored_not_cited), 8):
                 lines.append("  " + ", ".join(evidence.anchored_not_cited[index : index + 8]))

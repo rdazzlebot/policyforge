@@ -3234,7 +3234,7 @@
       ]
     },
     "satisfies": {
-      "help": "What a published document can be shown against, and how strong the evidence is.\n\nThe assessor's direction of travel, from the page rather than the\nrequirement: name a document and this reports the requirements it cites,\nthe ones those citations reach through the crosswalk, and - separately -\nthe controls its topic claims that nothing in the topic actually says.\n\nThe citations in the text are the evidence. A topic anchor is an\nintention, so the two are never added together. Every crosswalked\nmapping says where it came from: the published crosswalk, an overlay row\nsomebody reviewed, or an overlay row nobody has. The last are shown and\nmarked rather than dropped. No model call and no network.",
+      "help": "What a published document can be shown against, and how strong the evidence is.\n\nThe assessor's direction of travel, from the page rather than the\nrequirement: name a document and this reports the requirements it cites,\nthe ones those citations reach through the crosswalk, and - separately -\nthe controls its topic claims that nothing in the topic actually says.\n\nThe citations in the text are the evidence. A topic anchor is an\nintention, so the two are never added together. Every crosswalked\nmapping says where it came from: the published crosswalk, an overlay row\nsomebody reviewed, or an overlay row nobody has. The last are shown and\nmarked rather than dropped. No model call and no network.\n\nTwo resolution rules worth knowing, because the counts look wrong\nwithout them. Citing an enhancement counts as citing its control, so a\ntopic that cites AC-2(3) is not reported as never mentioning AC-2 - the\nsame reading `coverage` and `drift` use. And a topic's anchors are\nanswered by its documents together rather than one file at a time, so a\nPolicy is not reported as missing anchors its own Procedure cites; the\nreport names how much it searched. Under --document, one file is all\nthere is to search, and it says so.",
       "name": "satisfies",
       "params": [
         {
@@ -3260,7 +3260,7 @@
         },
         {
           "default": "<UNSET>",
-          "help": "Every document of a topic. Repeatable.",
+          "help": "Every document of a topic. Repeatable. Matched on a document's frontmatter topic or its filename slug, since `generate` names the file for the slug but writes no topic - which is the state a freshly generated tree is in.",
           "hidden": false,
           "is_flag": false,
           "kind": "Option",

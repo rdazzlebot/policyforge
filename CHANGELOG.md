@@ -42,11 +42,20 @@ the ledger (its stop reason is a normal `stop`). Look for a synthesis or
 document file that has frontmatter and nothing after it, and regenerate it.
 1.2.1 refuses an empty document reply by name.
 
-Not covered by the search: runs on the `openai-compat` provider (a local
-server such as Ollama), which 1.1.0 and 1.2.0 didn't record a stop reason
-for; runs with `llm.ledger.enabled: false`; and anything generated with
-1.0.0, which had no ledger. For those, regenerate large topics, or read the
-end of each file for a sentence that stops mid-way.
+Not covered by the search, all of it about what 1.1.0 and 1.2.0 recorded
+rather than what 1.2.1 detects: runs on the `openai-compat` provider (a local
+server such as Ollama, vLLM or LM Studio), which those versions did not
+record a stop reason for at all; runs with `llm.ledger.enabled: false`; and
+anything generated with 1.0.0, which had no ledger. For those, regenerate
+large topics, or read the end of each file for a sentence that stops mid-way.
+
+**1.2.1 detects a cut-off reply on every provider**, including
+OpenAI-compatible and local servers, which is the setup the documentation
+recommends for licensed content. A contract test holds each provider to its
+own vendor's signal — `stop_reason`, `stopReason` or `finish_reason` — by
+driving it with a fake at its SDK or transport boundary, so a provider that
+stops reporting truncation fails the suite rather than writing a short
+document.
 
 **What changes in use:** synthesis, Standards and Procedures now request up
 to 16384 output tokens, retried once at 32768. That was verified on

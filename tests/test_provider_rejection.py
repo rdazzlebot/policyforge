@@ -269,3 +269,50 @@ def test_the_temperature_workaround_still_retries_rather_than_rejecting(stubbed_
 
     assert provider.generate(system="S", prompt="P").text == "fine"
     assert [("temperature" in k) for k in sent] == [True, False]
+
+
+@pytest.mark.parametrize("status, text", [(429, "rate limited"), (401, "invalid api key")])
+def test_a_rate_limit_or_an_auth_failure_is_not_a_rejection(status, text):
+    """A 429 clears by waiting and a 401 is the key; neither is the request
+    being refused as written, and budget advice on either would send the
+    user to change the wrong thing. They stay the plain error they were."""
+    from policyforge.llm.openai_compat_provider import OpenAICompatProvider
+
+    class Session:
+        def post(self, url, *, json, headers, timeout):
+            class Response:
+                status_code = status
+                text = text
+
+            return Response()
+
+    provider = OpenAICompatProvider(
+        model="m", base_url="http://localhost:11434/v1", session=Session()
+    )
+
+    with pytest.raises(RuntimeError) as caught:
+        provider.generate(system="S", prompt="P")
+    assert not isinstance(caught.value, ProviderRejected)
+    assert str(status) in str(caught.value)
+    assert "budget" not in str(caught.value)
+
+
+@pytest.mark.parametrize("status", [400, 404, 413, 422])
+def test_the_statuses_that_mean_refused_as_written(status):
+    from policyforge.llm.openai_compat_provider import OpenAICompatProvider
+
+    class Session:
+        def post(self, url, *, json, headers, timeout):
+            class Response:
+                status_code = status
+                text = VENDOR
+
+            return Response()
+
+    provider = OpenAICompatProvider(
+        model="m", base_url="http://localhost:11434/v1", session=Session()
+    )
+
+    with pytest.raises(ProviderRejected) as caught:
+        provider.generate(system="S", prompt="P")
+    assert caught.value.status == status

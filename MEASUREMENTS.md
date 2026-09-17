@@ -1180,8 +1180,21 @@ than written to `relationship` (R1).
   the title, and not repeat it. The replay gives the same counts there, and the
   glm suite is 9/9 (27/27 runs, $0.0452 for 28 calls; every call's
   `stop_reason` in the eval ledger is `stop`).
+- Rebased onto 1.2.1 (`75e8e4c`), where `effort.call_json` raises on a reply
+  cut off twice. A cut-off proposal is now left alone per requirement, named
+  in the summary, and exits non-zero rather than being retried again. The
+  replay is unchanged again. The suite there: `claude-sonnet-5` 9/9 (27/27
+  runs, $0.3416), `glm-5.3-flash` 8/9 (24/27 runs, $0.0573). glm failed
+  `encryption-is-a-cryptographic-control` on every run, and on two direct
+  calls as well, by returning rows with a relationship and both quotes and no
+  `control` field — which the schema requires and OpenRouter does not
+  enforce. It passed on five earlier commits with the same prompt and schema,
+  and sonnet passes it on this one, so this is the model, not the code. The
+  product's answer is to ask once more and then leave the requirement
+  unproposed, name it, and exit non-zero; the case stays as it is, since
+  catching exactly this is what a floor suite is for.
 - The rows above at `1149e42` and `e1ec80c`, and the live run, describe the
-  code before review; `0e1570b` is the code submitted after the third review. Before review,
+  code before review; `75e8e4c` is the code submitted, rebased onto 1.2.1. Before review,
   the live run's 84 confirmations also wrote their relationships straight into
   `relationship`, where coverage reads them. From `1683d65` the same run leaves
   each recorded relationship as it was, flags every difference for review, and

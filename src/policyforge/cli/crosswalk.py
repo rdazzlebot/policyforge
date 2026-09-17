@@ -30,6 +30,26 @@ def _published_catalogs(paths) -> list:
     return controls
 
 
+def _refuse_bundled_destination(path: Path) -> None:
+    """An overlay may hold an organization's decisions and, from a licensed
+    catalog, its digests; neither belongs in this project's bundled public
+    catalogs, which are committed and pushed. The same test `etl-*` uses."""
+    from policyforge.cli.etl import _lands_in_bundled_catalogs, _names_a_bundled_catalog_directory
+
+    if _names_a_bundled_catalog_directory(path) or _lands_in_bundled_catalogs(path):
+        raise click.ClickException(
+            f"{path} is inside data/frameworks/, this project's bundled public content. "
+            "Keep overlays in config/crosswalks/."
+        )
+
+
+def _write(path: Path, text: str) -> None:
+    from policyforge.textfile import write_text_lf
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_text_lf(path, text)
+
+
 def _framework_slug(framework: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", framework.lower()).strip("-")
 
@@ -85,6 +105,7 @@ def crosswalk_seed(framework: str, controls_paths, out: Path | None, force: bool
     )
 
     out = out or DEFAULT_OVERLAY_DIR / f"{_framework_slug(framework)}.yaml"
+    _refuse_bundled_destination(out)
     if out.exists() and not force:
         raise click.ClickException(
             f"{out} already exists, and it may hold decisions somebody made. "
@@ -95,8 +116,7 @@ def crosswalk_seed(framework: str, controls_paths, out: Path | None, force: bool
     except OverlayError as exc:
         raise click.ClickException(str(exc)) from exc
 
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(dump_overlay(overlay), encoding="utf-8")
+    _write(out, dump_overlay(overlay))
     pairs = sum(len(rows) for rows in overlay.requirements.values())
     unmapped = sum(1 for rows in overlay.requirements.values() if not rows)
     click.echo(
@@ -164,7 +184,9 @@ def crosswalk_check(controls_paths, overlay_dir: Path | None, strict: bool):
 def _overlay_path(framework: str, overlay: Path | None) -> Path:
     from policyforge.crosswalk.overlay import DEFAULT_OVERLAY_DIR
 
-    return overlay or DEFAULT_OVERLAY_DIR / f"{_framework_slug(framework)}.yaml"
+    path = overlay or DEFAULT_OVERLAY_DIR / f"{_framework_slug(framework)}.yaml"
+    _refuse_bundled_destination(path)
+    return path
 
 
 def _open_overlay(path: Path, framework: str, controls):
@@ -188,8 +210,7 @@ def _open_overlay(path: Path, framework: str, controls):
 def _save(overlay) -> None:
     from policyforge.crosswalk.overlay import dump_overlay
 
-    overlay.path.parent.mkdir(parents=True, exist_ok=True)
-    overlay.path.write_text(dump_overlay(overlay), encoding="utf-8")
+    _write(overlay.path, dump_overlay(overlay))
 
 
 @crosswalk_group.command("propose")
@@ -221,6 +242,12 @@ def crosswalk_propose(framework: str, controls_paths, overlay: Path | None, only
     # Catalog text is sent to the provider, so a catalog that may not leave is
     # refused here exactly as `synthesize` refuses it.
     classified = _enforce_catalogs(controls_paths, config)
+    # The overlay is a file in the organization's repository. Quotes from a
+    # licensed catalog would be licensed text in it, so they are verified and
+    # then recorded as digests only.
+    from policyforge.llm.boundary import LICENSED
+
+    keep_quotes = _most_restrictive(classified) != LICENSED
     controls = _published_catalogs(controls_paths)
     requirements = requirements_of(controls, framework)
     if only:
@@ -263,7 +290,7 @@ def crosswalk_propose(framework: str, controls_paths, overlay: Path | None, only
                 index=index,
                 provider=provider,
             )
-            step = merge(record, [proposal], controls, model=model)
+            step = merge(record, [proposal], controls, model=model, keep_quotes=keep_quotes)
             # Written after every requirement, so an interrupted run keeps what
             # it paid for.
             _save(record)
@@ -303,9 +330,13 @@ def _reviewer() -> str:
 
     try:
         name = subprocess.run(  # nosec B603 B607
-            ["git", "config", "user.name"], capture_output=True, text=True, check=False
+            ["git", "config", "user.name"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
         ).stdout.strip()
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         name = ""
     return name or getpass.getuser()
 
@@ -326,7 +357,7 @@ def crosswalk_review(framework: str, controls_paths, overlay: Path | None, who: 
     from datetime import date
 
     from policyforge.crosswalk.candidates import catalog_entries
-    from policyforge.crosswalk.overlay import ACCEPTED, REJECTED
+    from policyforge.crosswalk.overlay import ACCEPTED, REJECTED, RELATIONSHIPS, printable
     from policyforge.crosswalk.propose import requirements_of
 
     path = _overlay_path(framework, overlay)
@@ -352,20 +383,25 @@ def crosswalk_review(framework: str, controls_paths, overlay: Path | None, who: 
     for position, (rid, row) in enumerate(queue, start=1):
         requirement = requirements.get(rid)
         entry = entries.get(row.control)
+        # Everything shown is passed through `printable`: catalog text and
+        # model quotes alike reach a terminal here.
+        say = lambda text: click.echo(printable(text))  # noqa: E731
         click.echo(f"\n[{position}/{len(queue)}] {rid} -> {row.control}   ({row.status})")
         if requirement is not None:
             if requirement.parent:
-                click.echo(f"  under: {requirement.parent[:160]}")
-            click.echo(f"  requirement: {requirement.title} — {requirement.text[:300]}")
+                say(f"  under: {requirement.parent[:160]}")
+            say(f"  requirement: {requirement.title} — {requirement.text[:300]}")
         if entry is not None:
-            click.echo(f"  control: {entry.title} — {entry.text[:300]}")
+            say(f"  control: {entry.title} — {entry.text[:300]}")
         click.echo(f"  published: {'yes' if 'published' in row.sources else 'no'}")
         if row.flags:
-            click.echo(f"  flags: {', '.join(row.flags)}")
+            say(f"  flags: {', '.join(row.flags)}")
+        click.echo(f"  relationship: {row.relationship}")
+        if row.proposed_relationship:
+            click.echo(f"  model suggests: {row.proposed_relationship}")
         if row.evidence:
-            click.echo(f"  relationship: {row.relationship}")
-            click.echo(f'  requirement says: "{row.evidence.get("requirement", "")}"')
-            click.echo(f'  control says:     "{row.evidence.get("control", "")}"')
+            say(f'  requirement says: "{row.evidence.get("requirement", "")}"')
+            say(f'  control says:     "{row.evidence.get("control", "")}"')
         choice = click.prompt(
             "  [a]ccept, [r]eject, [s]kip, [q]uit",
             type=click.Choice(["a", "r", "s", "q"]),
@@ -375,11 +411,22 @@ def crosswalk_review(framework: str, controls_paths, overlay: Path | None, who: 
             break
         if choice == "s":
             continue
+        if choice == "a":
+            # The relationship is decided here, by the person accepting, and
+            # only here: coverage reads it.
+            suggested = row.proposed_relationship or row.relationship
+            row.relationship = click.prompt(
+                "  relationship",
+                type=click.Choice(list(RELATIONSHIPS)),
+                default=suggested,
+                show_choices=True,
+            )
         why = click.prompt("  why (optional)", default="", show_default=False)
         row.status = ACCEPTED if choice == "a" else REJECTED
         row.flags = []
+        row.proposed_relationship = ""
         if why:
-            row.rationale = why
+            row.rationale = printable(why)
         row.reviewed_by = {"who": reviewer, "date": date.today().isoformat()}
         _save(record)
         decided += 1

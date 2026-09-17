@@ -861,6 +861,11 @@ def run_crosswalk(case: dict, provider, corpora: dict | None = None) -> Outcome:
     if proposal.error:
         raise RuntimeError(proposal.error)
 
+    # A trap the candidate list never offers cannot be fallen into, so a case
+    # naming one would pass for the harness's reason, not the model's.
+    unoffered = [c for c in case.get("must_not_map") or [] if c not in proposal.candidates]
+    if unoffered:
+        raise ValueError(f"case forbids {unoffered}, which are not candidates")
     for group in case.get("must_map") or []:
         missing = [c for c in group if c not in proposal.candidates]
         if missing:

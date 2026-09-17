@@ -614,8 +614,8 @@ Everything that crosses frameworks — `map`, `synthesize`, `coverage`,
 published crosswalk is the weakest input in the project: pairs with no stated
 relationship and no reasoning (see [The problem this solves](#the-problem-this-solves)).
 A crosswalk overlay is where an organization records what it has decided
-about those pairs instead, and it lives in the organization's repository next
-to its topics and parameters:
+about those pairs instead. It lives in `config/crosswalks/`, next to the topic
+registry, and like the registry it is gitignored by `policyforge init`:
 
 ```bash
 policyforge crosswalk seed       # config/crosswalks/hipaa-security-rule.yaml
@@ -639,11 +639,11 @@ both texts that justify it, and a quote the text does not contain discards
 the mapping before anyone sees it. What it finds is written as notes, never as
 decisions:
 
-| The model…                                   | The overlay row                                          |
-| -------------------------------------------- | -------------------------------------------------------- |
-| quotes a basis for a published pair          | stays accepted, gains the quotes and a relationship      |
-| was shown a published pair and gave no basis | stays accepted, flagged `not-confirmed-by-model`         |
-| maps a control nobody published              | added as `proposed` — not in the pipeline until reviewed |
+| The model…                                   | The overlay row                                               |
+| -------------------------------------------- | ------------------------------------------------------------- |
+| quotes a basis for a published pair          | stays accepted, gains the quotes and a suggested relationship |
+| was shown a published pair and gave no basis | stays accepted, flagged `not-confirmed-by-model`              |
+| maps a control nobody published              | added as `proposed` — not in the pipeline until reviewed      |
 
 **Why a model does not decide.** Measured on the 75 HIPAA requirements
 before this was built, two models confirmed 31% and 41% of NIST's published
@@ -661,8 +661,16 @@ would dispute.
 the requirement with the standard it sits under, the control, and the quotes.
 Each accept or reject is written as it is made, with who and when and an
 optional reason, and a later `propose` never touches a reviewed row or
-re-proposes a rejected one. The file is YAML, so a pull request is a review
-path too.
+re-proposes a rejected one. Accepting a pair is also where its relationship is
+decided: the model's suggestion is offered as the default, and nothing the
+model suggests reaches a report until a person has accepted it.
+
+**Licensed catalogs leave no text behind.** When a catalog `propose` reads is
+licensed — a HITRUST export under `local_content/`, which only a local model
+may read — each quote is verified as usual and then recorded as a digest, not
+words, so the overlay holds no licensed requirement text. An organization that
+commits its overlay to review it by pull request can, for that reason, still
+do so. An overlay is never written inside `data/frameworks/`.
 
 **Relationships reach `coverage`.** Where the overlay records that every owned
 control covers only part of a requirement (`superset` or `intersects`), the

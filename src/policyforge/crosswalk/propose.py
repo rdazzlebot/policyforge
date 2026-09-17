@@ -31,13 +31,14 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from policyforge.crosswalk.candidates import CatalogEntry, WordIndex, candidates_for
-from policyforge.crosswalk.grounding import grounded, minimum_for
+from policyforge.crosswalk.grounding import grounded, is_whole_text
 from policyforge.crosswalk.overlay import (
     ACCEPTED,
     PROPOSED,
     REJECTED,
     MappingRow,
     Overlay,
+    printable,
     published_pairs,
 )
 from policyforge.llm.base import SchemaReplyError
@@ -50,6 +51,15 @@ ASSERTABLE = ("equal", "subset", "superset", "intersects")
 #: On a published pair the model was shown and gave no quotable basis for.
 #: Cleared and recomputed on every run for rows nobody has reviewed.
 NOT_CONFIRMED = "not-confirmed-by-model"
+
+#: On an accepted row whose recorded relationship differs from the one the
+#: model suggested. Coverage reads `relationship`, so the suggestion waits in
+#: `proposed_relationship` until a person promotes it.
+RELATIONSHIP_PROPOSED = "relationship-proposed-by-model"
+
+#: Flags this module sets, cleared and recomputed on every run for a row
+#: nobody has reviewed.
+MODEL_FLAGS = (NOT_CONFIRMED, RELATIONSHIP_PROPOSED)
 
 PROPOSE_PROMPT = register(
     Prompt(
@@ -264,21 +274,23 @@ def propose_for(
         return proposal
 
     requirement_words = f"{requirement.title} {requirement.text} {requirement.parent}"
-    shortest = minimum_for(requirement.text)
     seen = set()
     for row in rows:
         control = row.get("control") if isinstance(row, dict) else None
+        requirement_quote = printable(row.get("requirement_quote", "")) if control else ""
+        control_quote = printable(row.get("control_quote", "")) if control else ""
         valid = (
             control in candidates
             and control not in seen
             and row.get("relationship") in ASSERTABLE
-            and grounded(
-                str(row.get("requirement_quote", "")), requirement_words, min_words=shortest
+            # A quote of four words or more from anywhere in the requirement,
+            # its title or its parent; or, for a specification shorter than
+            # that, the whole of the specification's own text and no less.
+            and (
+                grounded(requirement_quote, requirement_words)
+                or is_whole_text(requirement_quote, requirement.text)
             )
-            and grounded(
-                str(row.get("control_quote", "")),
-                f"{entries[control].title} {entries[control].text}",
-            )
+            and grounded(control_quote, f"{entries[control].title} {entries[control].text}")
         )
         if not valid:
             proposal.refused.append(row if isinstance(row, dict) else {"row": row})
@@ -288,8 +300,8 @@ def propose_for(
             ProposedMapping(
                 control=control,
                 relationship=row["relationship"],
-                requirement_quote=str(row["requirement_quote"]).strip(),
-                control_quote=str(row["control_quote"]).strip(),
+                requirement_quote=requirement_quote,
+                control_quote=control_quote,
             )
         )
     return proposal
@@ -314,12 +326,22 @@ def merge(
     *,
     model: str,
     today: date | None = None,
+    keep_quotes: bool = True,
 ) -> MergeReport:
     """Record `proposals` on `overlay`, in place. Never changes a decision.
 
     A requirement the overlay does not list yet is first seeded from the
     published mapping, so recording a proposal on it does not unmap the
     published pairs the model happened not to confirm.
+
+    Nothing here changes what reaches the pipeline. `status` is left alone,
+    and a suggested relationship goes to `proposed_relationship`, never
+    `relationship`, which coverage reads.
+
+    `keep_quotes=False` records a digest of each quote instead of its words,
+    for a licensed catalog: the overlay lives in the organization's
+    repository, and requirement text written into it would be licensed
+    content in a file nobody classified.
     """
     prompt = REGISTRY["crosswalk.propose"]
     proposed_by = {
@@ -349,8 +371,7 @@ def merge(
             if row.reviewed_by:
                 report.left_reviewed += 1
                 continue
-            if NOT_CONFIRMED in row.flags:
-                row.flags.remove(NOT_CONFIRMED)
+            row.flags = [flag for flag in row.flags if flag not in MODEL_FLAGS]
             mapping = asserted.get(row.control)
             if mapping is None:
                 # Shown to the model and not asserted. Only meaningful for a
@@ -362,26 +383,46 @@ def merge(
                 continue
             if row.status == REJECTED:
                 continue
-            _annotate(row, mapping, proposed_by)
+            _annotate(row, mapping, proposed_by, keep_quotes)
+            if row.status == ACCEPTED and mapping.relationship != row.relationship:
+                row.flags.append(RELATIONSHIP_PROPOSED)
             report.confirmed += row.status == ACCEPTED
 
         for control, mapping in asserted.items():
             existing = by_control.get(control)
             if existing is not None:
+                # Counted where it stands, not again as new: a second run over
+                # the same proposals must not report them as fresh.
                 report.rejected_again += existing.status == REJECTED
-                report.proposed += existing.status == PROPOSED and not existing.reviewed_by
                 continue
             row = MappingRow(control=control, status=PROPOSED, sources=["model"])
-            _annotate(row, mapping, proposed_by)
+            _annotate(row, mapping, proposed_by, keep_quotes)
             rows.append(row)
             report.proposed += 1
     return report
 
 
-def _annotate(row: MappingRow, mapping: ProposedMapping, proposed_by: dict) -> None:
-    if row.relationship == "unspecified" or "model" in row.sources:
-        row.relationship = mapping.relationship
-    row.evidence = {"requirement": mapping.requirement_quote, "control": mapping.control_quote}
+def _digest(text: str) -> str:
+    import hashlib
+
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _annotate(
+    row: MappingRow, mapping: ProposedMapping, proposed_by: dict, keep_quotes: bool
+) -> None:
+    row.proposed_relationship = mapping.relationship
+    if keep_quotes:
+        row.evidence = {
+            "requirement": mapping.requirement_quote,
+            "control": mapping.control_quote,
+        }
+    else:
+        row.evidence = {
+            "requirement": _digest(mapping.requirement_quote),
+            "control": _digest(mapping.control_quote),
+            "withheld": "licensed catalog: quotes verified, not stored",
+        }
     if "model" not in row.sources:
         row.sources.append("model")
     row.proposed_by = dict(proposed_by)

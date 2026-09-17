@@ -36,6 +36,8 @@ LF_WRITERS = [
     "history/version_store.py",
     "cli/documents.py",
     "cli/content.py",
+    # Crosswalk overlays: YAML a person edits and reviews by diff.
+    "cli/crosswalk.py",
     # The synced corpus snapshot. Found by the sweep below, not by the
     # report that prompted this file — which is what the sweep is for.
     "zardoz/corpus.py",

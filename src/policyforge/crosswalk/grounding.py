@@ -27,15 +27,17 @@ _PARAMETER = re.compile(r"\[(?:Assignment|Selection)[^\]]*\]", re.IGNORECASE)
 _WORD = re.compile(r"[a-z0-9]+")
 _ELLIPSIS = re.compile(r"\.\.\.|…")
 
-#: Share of a fragment's words that must be found, in order, for it to count.
-COVERAGE = 0.85
 #: A fragment of fewer words than this proves little on its own, so a quote
 #: built from several must give each at least this many.
 MIN_FRAGMENT_WORDS = 3
-#: The usual minimum for a whole quote. `grounded` lowers it for a source text
-#: shorter than this: HIPAA's "Periodic security updates." is the whole
-#: specification, and it cannot be quoted in four words.
+#: The shortest quote `grounded` accepts. A specification shorter than this —
+#: HIPAA's "Periodic security updates." — is quoted whole instead; see
+#: `is_whole_text`.
 MIN_QUOTE_WORDS = 4
+#: Words of a fragment that may be absent from the text: one in six or seven.
+#: None for a fragment under six words, where one missing word is a sixth of
+#: the evidence or more.
+MISSES_PER_WORD = 0.15
 
 
 def words(text: str, *, drop_parameters: bool = False) -> list[str]:
@@ -44,27 +46,55 @@ def words(text: str, *, drop_parameters: bool = False) -> list[str]:
     return _WORD.findall(text.lower())
 
 
+def _allowed_misses(length: int) -> int:
+    return max(1, int(length * MISSES_PER_WORD)) if length >= 6 else 0
+
+
+def _aligned(fragment: list[str], window: list[str]) -> tuple[int, int]:
+    """(words of `fragment` found in order in `window`, index just past the last).
+
+    The longest common subsequence, so a word the quote adds that happens to
+    appear later in the text cannot pull the match past the words in between —
+    the way a greedy scan does.
+    """
+    rows, cols = len(fragment), len(window)
+    best = [[0] * (cols + 1) for _ in range(rows + 1)]
+    for r in range(rows - 1, -1, -1):
+        for c in range(cols - 1, -1, -1):
+            if fragment[r] == window[c]:
+                best[r][c] = best[r + 1][c + 1] + 1
+            else:
+                best[r][c] = max(best[r + 1][c], best[r][c + 1])
+    r = c = last = 0
+    while r < rows and c < cols:
+        if fragment[r] == window[c]:
+            last = c + 1
+            r, c = r + 1, c + 1
+        elif best[r + 1][c] >= best[r][c + 1]:
+            r += 1
+        else:
+            c += 1
+    return best[0][0], last
+
+
 def _match_after(fragment: list[str], tokens: list[str], start_at: int) -> int:
     """Index just past `fragment` found in order in `tokens`, or -1.
 
-    Gaps are allowed within a window of twice the fragment's length, so a
-    dropped article or an inserted "and" does not fail a real quote, and a
-    fragment spread thinly across a paragraph does.
+    Two kinds of slack, and both are needed. The text may have words the
+    quote leaves out — a dropped article — so the fragment is aligned against
+    a window of twice its length. The quote may have a word the text lacks —
+    an inserted "and" — so up to `_allowed_misses` of its words, including the
+    first, may go unmatched. Words out of order are never matched.
     """
-    needed = COVERAGE * len(fragment)
+    needed = len(fragment) - _allowed_misses(len(fragment))
+    heads = set(fragment[: len(fragment) - needed + 1])
     for start in range(start_at, len(tokens)):
-        if tokens[start] != fragment[0]:
+        if tokens[start] not in heads:
             continue
-        found, i = 1, start + 1
-        limit = min(start + 2 * len(fragment), len(tokens))
-        for word in fragment[1:]:
-            while i < limit and tokens[i] != word:
-                i += 1
-            if i < limit:
-                found += 1
-                i += 1
+        window = tokens[start : start + 2 * len(fragment)]
+        found, last = _aligned(fragment, window)
         if found >= needed:
-            return i
+            return start + last
     return -1
 
 
@@ -89,6 +119,13 @@ def grounded(quote: str, text: str, *, min_words: int = MIN_QUOTE_WORDS) -> bool
     return False
 
 
-def minimum_for(requirement_text: str) -> int:
-    """The shortest quote to accept from a requirement this long."""
-    return max(1, min(MIN_QUOTE_WORDS, len(words(requirement_text))))
+def is_whole_text(quote: str, text: str) -> bool:
+    """Whether `quote` is all of `text`'s words and nothing else.
+
+    For a specification too short to quote four words from. Matched against
+    the specification's own text only — not its title or the standard it
+    sits under, which are longer — and an empty text has no whole to quote,
+    so a one-word quote cannot pass by borrowing a title's length.
+    """
+    expected = words(text, drop_parameters=True)
+    return bool(expected) and words(quote, drop_parameters=True) == expected

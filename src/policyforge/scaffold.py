@@ -54,6 +54,8 @@ config/config.*.yaml
 !config/config.example.yaml
 # Topic registry: names your internal teams
 config/topics.yaml
+# Crosswalk overlays: your organization's mapping decisions
+config/crosswalks/
 
 # Licensed / bring-your-own content: never redistribute this
 local_content/*

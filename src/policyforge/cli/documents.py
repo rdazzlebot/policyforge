@@ -185,6 +185,24 @@ def synthesize_cmd(
         controls, filled = apply_to_controls(controls, decisions)
         click.echo(f"Applied {len(decisions)} recorded parameter decision(s): {filled} filled.")
 
+    # The catalogs above carry the organization's crosswalk overlays, but
+    # crosswalk.json is whatever `map` wrote last. Built before an overlay
+    # changed, it would still pull a rejected pair's requirement into the
+    # synthesis, so a stale one is refused rather than used.
+    from policyforge.crosswalk.overlay import DEFAULT_OVERLAY_DIR
+
+    if DEFAULT_OVERLAY_DIR.is_dir():
+        newer = [
+            p
+            for p in DEFAULT_OVERLAY_DIR.glob("*.yaml")
+            if p.stat().st_mtime > crosswalk_path.stat().st_mtime
+        ]
+        if newer:
+            raise click.ClickException(
+                f"{crosswalk_path} is older than {', '.join(str(p) for p in sorted(newer))}, "
+                "so it may still hold pairs the overlay has since rejected or lack ones it "
+                "added. Rebuild it with `policyforge map` first."
+            )
     crosswalk = json.loads(crosswalk_path.read_text(encoding="utf-8"))
     synthesis_topic = build_synthesis_topic(topic, nist_ids, controls, crosswalk)
     if not synthesis_topic.controls:

@@ -43,7 +43,11 @@ def map_cmd(controls_paths, out: Path):
 
     crosswalk = build_crosswalk(controls)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(crosswalk, indent=2), encoding="utf-8")
+    from policyforge.textfile import write_text_lf
+
+    # LF on every platform, so a rebuilt crosswalk.json diffs only where the
+    # crosswalk changed.
+    write_text_lf(out, json.dumps(crosswalk, indent=2))
 
     frameworks = sorted({f for entry in crosswalk.values() for f in entry})
     click.echo(f"Built crosswalk for {len(crosswalk)} NIST controls -> {out}")

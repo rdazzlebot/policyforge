@@ -144,7 +144,7 @@ def test_review_decisions_reach_map_and_survive_the_next_proposal(tmp_path, monk
         "review",
         "--who",
         "ryan",
-        input="r\nnot a training obligation\na\n\n",
+        input="r\nnot a training obligation\na\nintersects\n\n",
     )
 
     assert reviewed.exit_code == 0, reviewed.output
@@ -172,7 +172,7 @@ def test_quitting_review_keeps_the_decisions_already_made(tmp_path, monkeypatch)
     run, _ = _setup(tmp_path, monkeypatch, Mapper())
     assert run("crosswalk", "propose").exit_code == 0
 
-    result = run("crosswalk", "review", "--who", "ryan", input="a\n\nq\n")
+    result = run("crosswalk", "review", "--who", "ryan", input="a\n\n\nq\n")
 
     assert result.exit_code == 0, result.output
     assert "1 decision(s) recorded" in result.output

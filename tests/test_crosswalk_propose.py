@@ -24,6 +24,7 @@ from policyforge.crosswalk.overlay import (
 )
 from policyforge.crosswalk.propose import (
     NOT_CONFIRMED,
+    RELATIONSHIP_PROPOSED,
     Proposal,
     ProposedMapping,
     merge,
@@ -301,7 +302,11 @@ def test_a_confirmed_published_pair_gains_its_evidence_and_stays_accepted():
 
     (row,) = overlay.requirements[RID]
     assert row.status == ACCEPTED
-    assert row.relationship == "superset"
+    # The suggestion waits for review; coverage reads `relationship`.
+    assert row.relationship == "unspecified"
+    assert row.proposed_relationship == "superset"
+    assert row.flags == [RELATIONSHIP_PROPOSED]
+    assert row.needs_review
     assert row.sources == ["published", "model"]
     assert row.evidence == {"requirement": "reporting malicious software", "control": "report it"}
     assert report.confirmed == 1
@@ -332,8 +337,9 @@ def test_a_published_pair_that_was_never_a_candidate_is_not_flagged():
 def test_a_rerun_clears_a_flag_the_model_no_longer_raises():
     overlay = seed_overlay(_catalogs(), HIPAA)
     _merge(overlay, [])
+    assert overlay.requirements[RID][0].flags == [NOT_CONFIRMED]
     _merge(overlay, [_mapping("AT-2")])
-    assert overlay.requirements[RID][0].flags == []
+    assert NOT_CONFIRMED not in overlay.requirements[RID][0].flags
 
 
 def test_a_reviewed_row_is_left_exactly_as_it_was():

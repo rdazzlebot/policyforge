@@ -59,6 +59,20 @@ class OverlayError(ValueError):
     """An overlay file that cannot be read as one."""
 
 
+def printable(text) -> str:
+    """`text` with control characters replaced by spaces, tabs kept.
+
+    Quotes come from a model and rationales from a hand-edited file, and
+    `review` prints both to a terminal. A quote carrying an escape sequence
+    passes word-based grounding untouched — the checker compares words, not
+    bytes — so the characters are removed where text enters the overlay rather
+    than trusted to have been caught upstream.
+    """
+    return "".join(
+        ch if ch == "\t" or (ch.isprintable() and ch not in "\x7f") else " " for ch in str(text)
+    ).strip()
+
+
 @dataclass
 class MappingRow:
     control: str
@@ -72,6 +86,10 @@ class MappingRow:
     #: Machine-set notes for a reviewer, such as `not-confirmed-by-model`.
     #: Never change what reaches the pipeline; only `status` does.
     flags: list[str] = field(default_factory=list)
+    #: A relationship a model suggested. Held apart from `relationship`,
+    #: which coverage reads: only `review` promotes it, so a model reply can
+    #: never change a report before a person has seen it.
+    proposed_relationship: str = ""
 
     @property
     def needs_review(self) -> bool:
@@ -83,7 +101,15 @@ class MappingRow:
             "relationship": self.relationship,
             "status": self.status,
         }
-        for name in ("sources", "flags", "evidence", "rationale", "proposed_by", "reviewed_by"):
+        for name in (
+            "proposed_relationship",
+            "sources",
+            "flags",
+            "evidence",
+            "rationale",
+            "proposed_by",
+            "reviewed_by",
+        ):
             value = getattr(self, name)
             if value:
                 record[name] = value
@@ -115,7 +141,7 @@ def _string_map(value, where: str) -> dict[str, str]:
         return {}
     if not isinstance(value, dict):
         raise OverlayError(f"{where} must be a mapping, not {type(value).__name__}.")
-    return {str(k): str(v) for k, v in value.items()}
+    return {printable(k): printable(v) for k, v in value.items()}
 
 
 def parse_overlay(data, *, path: Path | None = None) -> Overlay:
@@ -146,17 +172,30 @@ def parse_overlay(data, *, path: Path | None = None) -> Overlay:
         if not isinstance(rows, list):
             raise OverlayError(f"{label}: {rid} must be a list of rows.")
         parsed = []
+        seen: dict[str, int] = {}
         for index, row in enumerate(rows, start=1):
             where = f"{label}: {rid} row {index}"
             if not isinstance(row, dict) or not row.get("control"):
                 raise OverlayError(f"{where} needs a `control:`.")
-            relationship = str(row.get("relationship") or "unspecified")
-            status = str(row.get("status") or PROPOSED)
-            if relationship not in RELATIONSHIPS:
-                allowed = ", ".join(RELATIONSHIPS)
+            # Upper-cased so `si-3` is SI-3 rather than a control nobody has.
+            control = printable(row["control"]).upper()
+            if control in seen:
                 raise OverlayError(
-                    f"{where}: relationship {relationship!r} is not one of {allowed}."
+                    f"{where}: {control} is already row {seen[control]} for {rid}. One "
+                    "requirement names a control once — two rows could accept and reject "
+                    "the same pair."
                 )
+            seen[control] = index
+            relationship = str(row.get("relationship") or "unspecified")
+            proposed_relationship = str(row.get("proposed_relationship") or "")
+            status = str(row.get("status") or PROPOSED)
+            for name, value in (
+                ("relationship", relationship),
+                ("proposed_relationship", proposed_relationship or "unspecified"),
+            ):
+                if value not in RELATIONSHIPS:
+                    allowed = ", ".join(RELATIONSHIPS)
+                    raise OverlayError(f"{where}: {name} {value!r} is not one of {allowed}.")
             if status not in STATUSES:
                 raise OverlayError(
                     f"{where}: status {status!r} is not one of {', '.join(STATUSES)}."
@@ -169,15 +208,16 @@ def parse_overlay(data, *, path: Path | None = None) -> Overlay:
                 flags = [flags]
             parsed.append(
                 MappingRow(
-                    control=str(row["control"]).strip(),
+                    control=control,
                     relationship=relationship,
                     status=status,
-                    sources=[str(s) for s in sources],
+                    sources=[printable(s) for s in sources],
                     evidence=_string_map(row.get("evidence"), f"{where} evidence"),
-                    rationale=str(row.get("rationale") or "").strip(),
+                    rationale=printable(row.get("rationale") or ""),
                     proposed_by=_string_map(row.get("proposed_by"), f"{where} proposed_by"),
                     reviewed_by=_string_map(row.get("reviewed_by"), f"{where} reviewed_by"),
-                    flags=[str(f) for f in flags],
+                    flags=[printable(f) for f in flags],
+                    proposed_relationship=proposed_relationship,
                 )
             )
         overlay.requirements[rid] = parsed
@@ -195,11 +235,26 @@ def load_overlay(path: Path) -> Overlay:
 
 
 def load_overlays(directory: Path = DEFAULT_OVERLAY_DIR) -> list[Overlay]:
-    """Every overlay in `directory`. A missing directory is no overlays."""
+    """Every overlay in `directory`. A missing directory is no overlays.
+
+    Two files for one framework are refused rather than applied in name
+    order: the later one would silently replace the earlier one's decisions
+    for every requirement both list.
+    """
     directory = Path(directory)
     if not directory.is_dir():
         return []
-    return [load_overlay(p) for p in sorted(directory.glob("*.yaml"))]
+    overlays = [load_overlay(p) for p in sorted(directory.glob("*.yaml"))]
+    first: dict[str, Overlay] = {}
+    for overlay in overlays:
+        key = overlay.framework.casefold()
+        if key in first:
+            raise OverlayError(
+                f"{first[key].path} and {overlay.path} both map {overlay.framework!r}. "
+                "Keep one file per framework."
+            )
+        first[key] = overlay
+    return overlays
 
 
 def dump_overlay(overlay: Overlay) -> str:
@@ -220,6 +275,47 @@ def _requirement_targets(controls, framework: str) -> dict:
     return targets
 
 
+def _anchor_keys(crosswalk: dict, anchor: str) -> list[str]:
+    """The keys in a `source_crosswalk` that name the anchor framework.
+
+    Catalogs do not agree on the key: the HIPAA and NIST loaders write
+    `nist`, and FedRAMP, GovRAMP and ARC-AMPE write `NIST 800-53`. Reading
+    only `nist` seeded those catalogs with no pairs at all, and a rejection
+    left the `NIST 800-53` pair in place.
+    """
+    from policyforge.mapping.crosswalk import normalize_framework
+
+    return [key for key in crosswalk if normalize_framework(key) == anchor]
+
+
+def _check_framework_is_loaded(controls, overlay: Overlay) -> None:
+    """Refuse an overlay whose framework name matches no catalog but whose ids do.
+
+    A framework the loaded catalogs do not include is normal — most commands
+    load 800-53 alone — so that on its own is not an error. A name that
+    matches nothing while its requirement ids belong to a catalog that *is*
+    loaded is a typo, and applying nothing would silently ignore every
+    reviewed decision in the file.
+    """
+    if _requirement_targets(controls, overlay.framework):
+        return
+    listed = set(overlay.requirements)
+    names = sorted(
+        {
+            control.framework
+            for control in controls
+            if control.control_id in listed
+            or any(e.enhancement_id in listed for e in control.enhancements)
+        }
+    )
+    if names:
+        raise OverlayError(
+            f"{overlay.path or 'overlay'}: framework {overlay.framework!r} matches no loaded "
+            f"catalog, but its requirement ids belong to {', '.join(repr(n) for n in names)}. "
+            "Correct the `framework:` line; until then none of its decisions apply."
+        )
+
+
 def apply_overlays(controls, overlays: list[Overlay]) -> int:
     """Replace each listed requirement's mapping with its accepted rows, in place.
 
@@ -229,16 +325,17 @@ def apply_overlays(controls, overlays: list[Overlay]) -> int:
     """
     rewritten = 0
     for overlay in overlays:
+        _check_framework_is_loaded(controls, overlay)
         targets = _requirement_targets(controls, overlay.framework)
         for requirement_id in overlay.requirements:
             target = targets.get(requirement_id)
             if target is None:
                 continue
+            for key in _anchor_keys(target.source_crosswalk, overlay.anchor):
+                target.source_crosswalk.pop(key)
             ids = [row.control for row in overlay.accepted(requirement_id)]
             if ids:
                 target.source_crosswalk[overlay.anchor] = ", ".join(ids)
-            else:
-                target.source_crosswalk.pop(overlay.anchor, None)
             rewritten += 1
     return rewritten
 
@@ -247,10 +344,13 @@ def published_pairs(controls, framework: str, anchor: str = "nist") -> dict[str,
     """The catalog's own mapping for `framework`, before any overlay."""
     from policyforge.mapping.crosswalk import _extract_ids
 
-    return {
-        rid: _extract_ids(target.source_crosswalk.get(anchor, ""))
-        for rid, target in _requirement_targets(controls, framework).items()
-    }
+    pairs = {}
+    for rid, target in _requirement_targets(controls, framework).items():
+        ids: dict[str, None] = {}
+        for key in _anchor_keys(target.source_crosswalk, anchor):
+            ids.update(dict.fromkeys(_extract_ids(target.source_crosswalk[key])))
+        pairs[rid] = list(ids)
+    return pairs
 
 
 def seed_overlay(controls, framework: str, anchor: str = "nist") -> Overlay:
@@ -289,9 +389,11 @@ def check_overlay(overlay: Overlay, controls) -> OverlayCheck:
     """What in `overlay` no longer matches the catalogs, before it is applied."""
     targets = _requirement_targets(controls, overlay.framework)
     published = published_pairs(controls, overlay.framework, overlay.anchor)
+    from policyforge.mapping.crosswalk import normalize_framework
+
     anchor_ids = set()
     for control in controls:
-        if control.framework.casefold().split()[0] == overlay.anchor:
+        if normalize_framework(control.framework) == overlay.anchor:
             anchor_ids.add(control.control_id)
             anchor_ids.update(e.enhancement_id for e in control.enhancements)
 

@@ -155,17 +155,31 @@ def test_a_requirement_with_every_pair_rejected_maps_to_nothing():
     assert "164.308(a)(1)(i)" not in _mapped(controls).get("RA-3", [])
 
 
-def test_an_overlay_for_another_framework_touches_nothing_here():
+def test_an_overlay_for_a_framework_that_is_not_loaded_touches_nothing():
+    """Most commands load 800-53 alone; a HITRUST overlay must not break them."""
     controls = _catalogs()
     overlay = parse_overlay(
         {
-            "framework": "GovRAMP",
-            "requirements": {"164.308(a)(1)(i)": [{"control": "IR-6", "status": "accepted"}]},
+            "framework": "HITRUST CSF",
+            "requirements": {"01.a": [{"control": "IR-6", "status": "accepted"}]},
         }
     )
 
     assert apply_overlays(controls, [overlay]) == 0
     assert _mapped(controls) == _mapped(_catalogs())
+
+
+def test_a_misspelled_framework_whose_ids_are_loaded_is_refused():
+    """Reproduced in review: a typo applied nothing, silently ignoring every decision."""
+    overlay = parse_overlay(
+        {
+            "framework": "HIPPA Security Rule",
+            "requirements": {"164.308(a)(1)(i)": [{"control": "IR-6", "status": "accepted"}]},
+        }
+    )
+
+    with pytest.raises(OverlayError, match="HIPAA Security Rule"):
+        apply_overlays(_catalogs(), [overlay])
 
 
 @pytest.mark.parametrize(

@@ -11,13 +11,15 @@ native citations and no prompt caching on Anthropic and Vertex, and
 config, drafts, answers and per-call cost can differ from 1.1.0. Run
 `policyforge llm-check` to see the capability line for the provider you have
 configured. Bedrock and OpenAI-compatible endpoints advertise none of these
-and are unaffected. The first entry below has the per-provider detail.
+and are unaffected. "The call ledger hid four provider capabilities" below
+has the per-provider detail.
 
 **Eval measurements from that window don't describe production.** The eval
 harness built its provider around the wrapper, so MEASUREMENTS epochs 15
-through 19 sent effort while the CLI did not. The harness now builds its
-provider through the same path as every command, with a test holding the two
-to parity.
+through 18 sent effort while the CLI did not. Those epochs were recorded
+before this fix and aren't yet annotated in `MEASUREMENTS.md`. The harness
+now builds its provider through the same path as every command, with a test
+holding the two to parity.
 
 Also in this release:
 
@@ -40,8 +42,9 @@ Also in this release:
 
 - **`scripts/capture_eval_requests.py`** records every request the eval
   harness would send, with `litellm.completion` replaced by a recorder, and
-  `--compare` diffs two captures. It is how the ledger fix below was shown
-  to leave the harness's requests byte-identical, and CONTRIBUTING now asks
+  `--compare` diffs two captures. It is how the harness change below ("The
+  eval harness builds its provider the way production does") was shown to
+  leave the harness's requests byte-identical, and CONTRIBUTING now asks
   for a capture before and after any change to what the harness sends —
   a pass rate cannot show that two runs asked for different things.
 
@@ -72,12 +75,15 @@ Also in this release:
   does not advertise it, so its refusal is by design. Bedrock and the
   OpenAI-compatible endpoint advertise none of the four and lost nothing.
 - **The eval harness was not affected, which is the uncomfortable half.**
-  `scripts/eval_zardoz.py --model` builds a `LiteLLMProvider` directly
-  inside its own meter rather than through `get_provider`, so its flags
+  Until the harness change below, `scripts/eval_zardoz.py --model` built a
+  `LiteLLMProvider` directly inside its own meter rather than through
+  `get_provider`, so its flags
   were read from the real provider and every recorded epoch sent effort.
   The CLI, running the same prompts through the wrapper, did not. The
-  measurements in that window describe a request production never made;
-  `MEASUREMENTS.md` says which epochs that reaches.
+  measurements in that window describe a request production never made.
+  Epochs 15–18 in `MEASUREMENTS.md` were recorded before this fix and aren't
+  yet annotated; on the LiteLLM path they reflect a request that sends
+  effort, which config-built runs do only from this release.
 - **Why the tests passed:** the effort and native-citation tests exercised
   fake providers unwrapped, and no ledger test asked a wrapped provider
   about any flag but `supports_schema`. `tests/test_llm_ledger.py` now
@@ -100,7 +106,7 @@ Also in this release:
   built its provider through `get_provider` and the ledger wrapper. That is
   how the entry above went unmeasured: the harness read its flags from the
   real provider and kept sending effort, and the CLI, through the wrapper,
-  did not. Epochs 15 through 19 in `MEASUREMENTS.md` describe a request
+  did not. Epochs 15 through 18 in `MEASUREMENTS.md` describe a request
   production never made. Now `evals/provider.py` turns `--model` and
   `--min-interval` into overrides on the same config dict production reads
   and hands it to `get_provider`; the meter wraps the result. The mutation

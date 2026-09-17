@@ -19,66 +19,31 @@ would produce a file that looks correct and destroys those macros the first
 time it is published. Refusing names the page and the macros and leaves it
 alone, which is the only outcome that does not eventually lose somebody's
 work.
+
+The loop is `publisher.pull_documents`, the same for every kind of store;
+this module is its Confluence entry point and owns where a pulled page
+lands in the tree.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
 
-from policyforge.content.tree import TIER_DIRS, render_document
-from policyforge.textfile import normalise_newlines, write_text_lf
-
-WRITTEN = "written"
-UNCHANGED = "unchanged"
-REFUSED = "refused"
+from policyforge.content.tree import TIER_DIRS
+from policyforge.export.publisher import (  # noqa: F401 — re-exported for callers
+    REFUSED,
+    UNCHANGED,
+    WRITTEN,
+    ConfluencePublisher,
+    PullReport,
+    PullResult,
+    pull_documents,
+)
 
 #: Where a pulled document lands when nothing says otherwise. Tier-first,
 #: matching what `generate` writes, so a pulled page and a generated one
 #: sit beside each other rather than in two parallel hierarchies.
 _TIER_DIR = {tier: directory for directory, tier in TIER_DIRS.items()}
-
-
-@dataclass
-class PullResult:
-    title: str
-    path: str
-    action: str
-    reason: str = ""
-
-
-@dataclass
-class PullReport:
-    results: list[PullResult] = field(default_factory=list)
-    dry_run: bool = True
-
-    def _of(self, action: str) -> list[PullResult]:
-        return [r for r in self.results if r.action == action]
-
-    @property
-    def refused(self) -> list[PullResult]:
-        return self._of(REFUSED)
-
-    def format_report(self) -> str:
-        written = self._of(WRITTEN)
-        unchanged = self._of(UNCHANGED)
-        verb = "Would write" if self.dry_run else "Wrote"
-        lines = [f"{verb} {len(written)} file(s); {len(unchanged)} already matched the tree."]
-        lines += [f"  {r.title} -> {r.path}" for r in written]
-
-        if self.refused:
-            lines += ["", f"Refused {len(self.refused)}:"]
-            lines += [f"  {r.title}: {r.reason}" for r in self.refused]
-            lines += [
-                "",
-                "These pages read fine but would be damaged by a publish, so they are "
-                "not brought into the tree. Rewrite them in Confluence without those "
-                "macros, or keep them wiki-only.",
-            ]
-
-        if self.dry_run and written:
-            lines += ["", "Nothing was written. Pass --apply to write these files."]
-        return "\n".join(lines)
 
 
 def target_path(root: Path, *, tier: str, slug: str) -> Path:
@@ -101,76 +66,14 @@ def pull_pages(
     caller decides what is in scope — a topic's declared set, a whole space,
     or one page somebody hand-edited.
     """
-    from policyforge.edit.apply import detect_unsupported_macros
-    from policyforge.export.confluence_importer import (
-        confluence_to_markdown,
-        extract_user_ids,
-        fetch_confluence_page,
+    return pull_documents(
+        ConfluencePublisher(host=host),
+        pages,
+        root=root,
+        target_path=target_path,
+        dry_run=dry_run,
+        allow_unsupported=allow_macros,
     )
-    from policyforge.export.confluence_search import fetch_user_names
-    from policyforge.zardoz.corpus import slugify
-
-    report = PullReport(dry_run=dry_run)
-
-    for space, title, tier in pages:
-        try:
-            page = fetch_confluence_page(space=space, title=title, host=host)
-        except LookupError as exc:
-            report.results.append(PullResult(title=title, path="", action=REFUSED, reason=str(exc)))
-            continue
-
-        macros = detect_unsupported_macros(page.storage_body)
-        if macros and not allow_macros:
-            report.results.append(
-                PullResult(
-                    title=title,
-                    path="",
-                    action=REFUSED,
-                    reason=f"uses macros that would not survive a publish ({', '.join(macros)})",
-                )
-            )
-            continue
-
-        names = fetch_user_names(extract_user_ids(page.storage_body), host=host)
-        body = confluence_to_markdown(page.storage_body, user_names=names)
-        slug = slugify(title) or slugify(page.id)
-        destination = target_path(root, tier=tier, slug=slug)
-
-        rendered = render_document(
-            {
-                "title": title,
-                "tier": tier,
-                # The version travels too: it is how `publish` knows a
-                # person has already pulled and reviewed this edit, and so
-                # may overwrite the page without destroying anything unseen.
-                "confluence": {
-                    "space": space,
-                    "title": title,
-                    "page_id": page.id,
-                    "version": page.version,
-                },
-            },
-            body,
-        )
-        relative = destination.relative_to(root).as_posix()
-
-        # Compared as it will be written. `read_text` folds CRLF on the way
-        # in and `write_text_lf` folds it on the way out, so a page whose
-        # storage body carried one read as changed on every pull until the
-        # rendered side was folded too.
-        rendered = normalise_newlines(rendered)
-        if destination.exists() and destination.read_text(encoding="utf-8") == rendered:
-            report.results.append(PullResult(title=title, path=relative, action=UNCHANGED))
-            continue
-
-        if not dry_run:
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            # A pulled page lands in a tracked tree, where the gate runs
-            # mdformat over it: LF, whatever platform pulled it.
-            write_text_lf(destination, rendered)
-        report.results.append(PullResult(title=title, path=relative, action=WRITTEN))
-
-    return report
 
 
 def pages_from_topics(topics) -> list[tuple[str, str, str]]:

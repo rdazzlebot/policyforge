@@ -50,21 +50,39 @@ class Topic:
     #: Optional — a topic with no published pages simply can't be edited by
     #: title, and says so rather than guessing at one.
     confluence: dict = field(default_factory=dict)
+    #: The general form of the same declaration, one block per kind of
+    #: store, so a topic can be published to more than one:
+    #:     targets:
+    #:       confluence: {space: ENG, pages: {...}}
+    #: `confluence:` above is an alias for `targets.confluence`, and wins
+    #: when both are given.
+    targets: dict = field(default_factory=dict)
 
-    def confluence_pages(self) -> list[tuple[str, str]]:
-        """(tier, page title) for each published document, Policy first.
+    def target(self, kind: str) -> dict:
+        """Where this topic's documents live in one kind of store, or {}."""
+        if kind == "confluence" and self.confluence:
+            return self.confluence
+        block = self.targets.get(kind) if isinstance(self.targets, dict) else None
+        return block if isinstance(block, dict) else {}
+
+    def pages(self, kind: str) -> list[tuple[str, str]]:
+        """(tier, page title) for each document published to `kind`, Policy first.
 
         Ordered Policy -> Standard -> Procedure so a reviewer reads the set
         the way the document hierarchy is meant to be read, rather than in
         whatever order the YAML happened to list them.
         """
-        pages = self.confluence.get("pages") or {}
+        pages = self.target(kind).get("pages") or {}
         order = ("policy", "standard", "procedure")
         ordered = [(tier, pages[tier]) for tier in order if pages.get(tier)]
         ordered += [
             (tier, title) for tier, title in sorted(pages.items()) if tier not in order and title
         ]
         return ordered
+
+    def confluence_pages(self) -> list[tuple[str, str]]:
+        """(tier, page title) for each Confluence page, Policy first."""
+        return self.pages("confluence")
 
 
 class TopicRegistryError(ValueError):
@@ -122,6 +140,7 @@ def parse_topics(data: dict) -> list[Topic]:
                 description=str(raw.get("description") or "").strip(),
                 evidence=[str(e).strip() for e in raw.get("evidence") or []],
                 confluence=dict(raw.get("confluence") or {}),
+                targets=dict(raw.get("targets") or {}),
             )
         )
 

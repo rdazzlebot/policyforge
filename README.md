@@ -1479,7 +1479,10 @@ confluence:
 ```
 
 A file with no `confluence:` block is never published, which is how a draft
-stays a draft.
+stays a draft. `confluence:` is the short spelling of the general form, a
+`targets:` block with one entry per kind of store, `confluence` among them;
+both are read the same way, and `check` reports a file that carries both with
+different contents.
 
 **`check` is the piece that earns its keep.** It runs with no credentials, so
 it works on a pull request from a fork, and it catches what survives review:

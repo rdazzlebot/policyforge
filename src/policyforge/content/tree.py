@@ -79,10 +79,40 @@ class ContentDocument:
     metadata: dict = field(default_factory=dict)
 
     @property
+    def targets(self) -> dict:
+        """Every destination this file declares, keyed by kind of store.
+
+        The general spelling is a `targets:` block with one entry per kind:
+
+            targets:
+              confluence: {space: SEC, title: Access Review Standard}
+
+        `confluence:` at the top level — the spelling every existing tree
+        uses — is an alias for `targets.confluence`, and keeps working. A
+        file that carries both is read from the top-level block, and
+        `check` reports the two when they disagree, so the alias can never
+        silently mean two different pages.
+        """
+        block = self.metadata.get("targets")
+        targets = (
+            {str(kind): entry for kind, entry in block.items() if isinstance(entry, dict)}
+            if isinstance(block, dict)
+            else {}
+        )
+        legacy = self.metadata.get("confluence")
+        if isinstance(legacy, dict):
+            targets["confluence"] = legacy
+        return targets
+
+    def target(self, kind: str) -> dict:
+        """The declared destination of one kind, or {} when there is none."""
+        return self.targets.get(kind) or {}
+
+    @property
     def confluence(self) -> dict:
-        """The `confluence:` frontmatter block, if this file declares one."""
-        block = self.metadata.get("confluence")
-        return block if isinstance(block, dict) else {}
+        """The `confluence:` frontmatter block, if this file declares one,
+        under either spelling."""
+        return self.target("confluence")
 
     @property
     def space(self) -> str:

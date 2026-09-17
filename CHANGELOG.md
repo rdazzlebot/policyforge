@@ -88,6 +88,26 @@
   prints that table so the trade is visible; a test builds such a cascade
   through `get_provider` and holds every discovered flag to the rule.
 
+### One interface between the tree and a live page store
+
+- **`publish`, `wiki-drift` and `pull` run through `export/publisher.py`,
+  a `Publisher` interface with Confluence as its first adapter.** The
+  three guards — a page the round trip would flatten is skipped by name, a
+  page somebody edited since the last publish is reported as moved, a dry
+  run reads and never writes — are stated once over a `LivePage` rather
+  than in Confluence's terms, so a second kind of store (a GitHub wiki is
+  next) gets the same rules rather than a copy of them. No behaviour
+  changes for Confluence: `tests/test_publisher_equivalence.py` runs every
+  scenario the content/git tests exercise through the loops as they stood
+  before and through the new ones, and holds the reports and the exporter
+  calls identical, argument for argument. A document may now declare its
+  destinations under `targets:` keyed by kind, and a topic in the registry
+  likewise; `confluence:` at the top level stays as the alias of
+  `targets.confluence`, and `check` reports a file carrying both with
+  different contents. A pulled page is still written with `confluence:`
+  at the top level, so a tree pulled by this version reads the same under
+  the previous one.
+
 ### A citation tag is recognised by its shape, not by a list of names
 
 - **Every reader of `[NIST AC-2 | HIPAA 164.308(a)(3)(i)]` tags now takes

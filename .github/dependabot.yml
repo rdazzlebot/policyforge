@@ -76,6 +76,13 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
+    # Digest updates within 3.12 only. The image is "the environment CI runs
+    # in", and CI runs 3.12, so a new Python is a decision made in ci.yml
+    # first, not a base-image bump: #54 moved both Dockerfiles to 3.14-slim
+    # and tests/test_container.py rightly failed it.
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     groups:
       base-image:
         patterns:

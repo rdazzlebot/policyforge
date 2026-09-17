@@ -314,13 +314,25 @@ enforced rather than described. See the licensing model in the
 ## Environmental and cost honesty
 
 Model inference has an energy cost, and this tool makes many small calls
-rather than a few large ones. Two things reduce it and are worth stating
-because they were found by measurement rather than assumed: **raising output
-budgets lowered total spend** — truncation triggers a retry at eight times
-the ceiling, so a budget too tight to finish bills twice — and prompt caching
-and batching cut repeat work. A full sweep of the eval suites costs cents,
-not dollars. That is not an environmental claim of any significance; it is
-just the honest scale.
+rather than a few large ones.
+
+**Raising output budgets lowered total spend**, which was measured rather
+than assumed: a budget too tight to finish still bills twice. A reply cut off
+at its budget is retried once at twice that budget, capped at 32,768 tokens,
+and a reply still cut off after that is refused rather than written
+(`llm/effort.py`). Separately, the Anthropic and LiteLLM providers re-send an
+*empty* cut-off reply at eight times the budget, which is the 8x retry this
+paragraph used to describe as the only one.
+
+**Prompt caching and batching are narrower than they sound.** A cacheable
+prefix is marked only by `ssp` and `synthesize`, and only does anything on a
+provider that implements it — the Anthropic and Vertex providers, not
+LiteLLM. Batching is the Batch API, used by `ssp --batch`, Anthropic only.
+Neither has a measured saving to report: epoch 21 recorded zero cached input
+tokens, because both runs went through LiteLLM.
+
+A full sweep of the eval suites costs cents, not dollars. That is not an
+environmental claim of any significance; it is just the honest scale.
 
 ## The limits of the claim
 

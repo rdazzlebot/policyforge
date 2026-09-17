@@ -646,8 +646,19 @@ and runaway-loop protection for the operator's own runs.
 1. **Cost and token counts are recorded per call** in the ledger, so spend is
    attributable to a document rather than discovered on an invoice. Read it
    with `policyforge model-log`.
-1. **Prompt caching and batching**
-   ([`llm/batch.py`](../src/policyforge/llm/batch.py)) reduce repeat spend.
+1. **Prompt caching and batching, on the paths that use them.** A cacheable
+   prefix is marked by `ssp` (the organization block in front of every
+   control, on both the one-at-a-time and `--batch` paths) and by
+   `synthesize` (its system prompt); `generate` and the edit path mark none.
+   The marker only does anything on a provider that implements it —
+   `supports_caching` is true for the Anthropic and Vertex providers and
+   false everywhere else, including LiteLLM, which is the OpenRouter path.
+   Batching is the Batch API in
+   [`llm/batch.py`](../src/policyforge/llm/batch.py), used by `ssp --batch`
+   for half price, and it is Anthropic-only.
+   **No saving is claimed here, because none has been measured:**
+   [MEASUREMENTS.md](../MEASUREMENTS.md) epoch 21 recorded zero cached input
+   tokens on both runs, since both went through LiteLLM.
 1. **Timeouts** on the parser trial run.
 1. **No unbounded agent loop exists** to run away in the first place.
 

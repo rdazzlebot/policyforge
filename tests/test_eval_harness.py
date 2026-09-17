@@ -333,6 +333,7 @@ def test_the_shipped_cases_load_and_are_well_formed():
         "edit_plan",
         "edit_apply",
         "generation",
+        "crosswalk",
     }
     for suite, rows in cases.items():
         assert rows, f"{suite} has no cases"
@@ -362,6 +363,10 @@ def test_the_shipped_cases_load_and_are_well_formed():
                 # would be graded by whichever branch happened to run.
                 assert case.get("synthesis"), f"{case['name']} drafts from nothing"
                 assert case.get("tier") in {"standard", "policy", "procedure"}, case["name"]
+            elif suite == "crosswalk":
+                # A case with neither expectation passes on any answer at all.
+                assert case.get("must_map") or case.get("expect_none"), case["name"]
+                assert case.get("requirement"), f"{case['name']} reads no requirement"
             else:
                 assert case.get("question"), f"{case.get('name')} asks nothing"
 
@@ -702,6 +707,9 @@ def test_every_case_names_a_corpus_that_exists():
                     or "document" in case
                     # Generation drafts from a synthesis, which is neither.
                     or "synthesis" in case
+                    # A crosswalk case reads one requirement from the bundled
+                    # catalogs.
+                    or "requirement" in case
                     or suite
                     in {
                         "routing",
@@ -1098,3 +1106,106 @@ def test_a_policy_that_did_not_compress_is_caught():
 
     assert result.rate == 0.0
     assert "compressed to at most 5" in result.failures[0].detail
+
+
+def test_every_crosswalk_case_can_be_answered_from_its_candidates():
+    """A control the candidate list never offers cannot be mapped, whatever the
+    model does; such a case would fail for the harness's reason, not the model's.
+    Checked offline, against the list production builds, before any run pays."""
+    from evals.runner import _crosswalk_catalogs
+    from policyforge.crosswalk.candidates import candidates_for
+
+    catalogs = _crosswalk_catalogs()
+    for case in load_cases()["crosswalk"]:
+        requirement = catalogs["requirements"].get(case["requirement"])
+        assert requirement is not None, f"{case['name']}: no such requirement"
+        offered = candidates_for(
+            f"{requirement.title} {requirement.text}",
+            published=catalogs["published"].get(requirement.requirement_id, []),
+            entries=catalogs["entries"],
+            index=catalogs["index"],
+        )
+        named = [c for group in case.get("must_map") or [] for c in group]
+        named += case.get("must_not_map") or []
+        assert set(named) <= set(offered), (case["name"], sorted(set(named) - set(offered)))
+
+
+class _Proposer:
+    """Answers a crosswalk case with fixed rows, quoting the real catalog text."""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    def supports_schema(self):
+        return True
+
+    def generate_json(self, **kwargs):
+        import json
+
+        from policyforge.llm.base import LLMResponse
+
+        return LLMResponse(text=json.dumps({"mappings": self.rows}), model="fake")
+
+
+def _row(control, requirement_quote, control_quote):
+    return {
+        "control": control,
+        "relationship": "intersects",
+        "requirement_quote": requirement_quote,
+        "control_quote": control_quote,
+    }
+
+
+_RISK_QUOTE = "Conduct an accurate and thorough assessment of the potential risks"
+
+
+def _control_words(control_id, words=6):
+    from evals.runner import _crosswalk_catalogs
+
+    entry = _crosswalk_catalogs()["entries"][control_id]
+    return " ".join(entry.text.replace("[", " ").replace("]", " ").split()[:words])
+
+
+def test_the_crosswalk_grader_passes_the_obligation_and_fails_the_word_match():
+    from evals.runner import run_crosswalk
+
+    case = {
+        "requirement": "164.308(a)(1)(ii)(A)",
+        "must_map": [["RA-3"]],
+        "must_not_map": ["SC-8", "SC-28"],
+    }
+    right = _Proposer([_row("RA-3", _RISK_QUOTE, _control_words("RA-3"))])
+    assert run_crosswalk(case, right).passed
+
+    trapped = _Proposer(
+        [
+            _row("RA-3", _RISK_QUOTE, _control_words("RA-3")),
+            _row("SC-8", _RISK_QUOTE, _control_words("SC-8")),
+        ]
+    )
+    outcome = run_crosswalk(case, trapped)
+    assert not outcome.passed and "SC-8" in outcome.detail
+
+    missing = _Proposer([])
+    assert not run_crosswalk(case, missing).passed
+
+
+def test_the_crosswalk_grader_counts_only_verified_mappings():
+    """A right control with a fabricated quote is not a mapping anybody could review."""
+    from evals.runner import run_crosswalk
+
+    case = {"requirement": "164.308(a)(1)(ii)(A)", "must_map": [["RA-3"]]}
+    fabricated = _Proposer(
+        [_row("RA-3", _RISK_QUOTE, "employ quantum resistant cryptography everywhere always")]
+    )
+    assert not run_crosswalk(case, fabricated).passed
+
+
+def test_a_crosswalk_case_expecting_nothing_fails_on_any_mapping():
+    from evals.runner import run_crosswalk
+
+    case = {"requirement": "164.318(c)", "expect_none": True}
+    assert run_crosswalk(case, _Proposer([])).passed
+    quote = "A covered health care provider must comply with the applicable requirements"
+    mapped = _Proposer([_row("PL-1", quote, _control_words("PL-1"))])
+    assert not run_crosswalk(case, mapped).passed

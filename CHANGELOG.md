@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Budgets
+
+- **The answering budget is 2048 output tokens, from 1024, and named.**
+  `zardoz/budgets.py` gains `ANSWERING_TOKENS`, overridable with
+  `POLICYFORGE_ANSWERING_TOKENS` like the other short-call budgets. Sized
+  from the truncation re-measure (200 calls at 553d430): deepseek-v4-flash
+  used 1019 and 967 of 1024 on two answering cases and glm-5.3-flash at
+  most 515 — nothing cut off, but two cases within five tokens of the cap.
+  A cut-off answer has been refused rather than shown since 1.2.1, so the
+  headroom costs nothing until a model uses it. The request shape is
+  otherwise unchanged; the answering suite's next epoch is the one to
+  compare against.
+
 ### Tests
 
 - **A new document producer cannot write an empty body unnoticed.**

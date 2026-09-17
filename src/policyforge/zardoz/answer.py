@@ -37,6 +37,7 @@ from policyforge.llm.fence import fence_token as _fence_token
 from policyforge.llm.prompts import Prompt as _Prompt
 from policyforge.llm.prompts import register as _register
 
+from .budgets import ANSWERING_TOKENS
 from .retrieve import Passage
 
 #: What the model is told to return when the passages do not answer the
@@ -627,7 +628,7 @@ def answer_question(
     passages: list[Passage],
     provider,
     *,
-    max_tokens: int = 1024,
+    max_tokens: int = ANSWERING_TOKENS,
 ) -> Answer:
     """Answer `question` from `passages`, or decline to.
 

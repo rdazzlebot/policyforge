@@ -138,10 +138,9 @@ def test_the_command_surface_is_unchanged():
 def test_the_entry_point_still_resolves():
     """pyproject.toml names `policyforge.cli:cli`. A package split that moved
     `cli` would install a `policyforge` command that fails on first use."""
-    import tomllib
+    from tests._pyproject import load_pyproject
 
-    pyproject = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text("utf-8"))
-    target = pyproject["project"]["scripts"]["policyforge"]
+    target = load_pyproject()["project"]["scripts"]["policyforge"]
     module_name, attribute = target.split(":")
 
     import importlib

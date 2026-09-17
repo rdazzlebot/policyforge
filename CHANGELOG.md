@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Fixes
+
+- **`config.yaml` is read as UTF-8 on every platform.** It was opened with
+  the system default, so on Windows an organization, vendor or team name
+  outside the console code page was mis-decoded into generated documents or
+  failed to load.
+- **`pull` no longer reports an unchanged page as changed.** A page whose
+  Confluence body carried a carriage return compared as different on every
+  pull, was rewritten identically and reported as written.
+- **Help text is plain ASCII.** The banner and 38 other help strings carried
+  an em-dash that some Windows consoles showed as a replacement character.
+  A test now refuses non-ASCII characters in command and option help.
+- **The test suite and `etl-*` provenance stamps work on the declared
+  Python 3.10 floor.** Provenance used `datetime.UTC` (3.11+), and the tests
+  imported `tomllib` (3.11+). CI still tests Python 3.12 only.
+
+### Documentation
+
+- **`config/config.example.yaml` shows all six providers**: anthropic,
+  bedrock, vertex, openai-compat, litellm and cascade, with which of them read
+  `api_key_env`. A test builds every example block, so a new provider without
+  an example fails.
+- **CONTRIBUTING says the request capture covers LiteLLM-backed runs only**,
+  and asks a pull request to say how a change to the other providers was
+  checked.
+
 ### Repository hardening
 
 - **The test suite runs on Windows and macOS in CI**, as a

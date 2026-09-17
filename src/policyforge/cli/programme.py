@@ -589,11 +589,17 @@ def frameworks_cmd():
 
     report = check_licences(config)
     if not report.frameworks:
+        # Non-zero, and naming `init` first: from an installed package (Homebrew,
+        # pipx) this is what a new user sees before laying out a project, and a
+        # listing that finds nothing is not a success a script should pass on.
         click.echo(
-            "No frameworks found. Run `policyforge etl-oscal` for 800-53, or point "
-            "`frameworks.search_paths` at your own catalogs."
+            "No frameworks found in this directory. Every command reads "
+            "data/frameworks/ relative to where it runs. Start a project with "
+            "`policyforge init`, fetch 800-53 with `policyforge etl-oscal`, or point "
+            "`frameworks.search_paths` at your own catalogs.",
+            err=True,
         )
-        return
+        raise SystemExit(1)
 
     click.echo(report.format_report())
     if report.allowed:

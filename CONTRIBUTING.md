@@ -209,6 +209,10 @@ A new subpackage goes into `[tool.setuptools] packages`. A new
 and into the package-data list file by file. Never add a glob there.
 `tests/test_scaffold.py` fails until both lists agree with the repository.
 
+The sdist is a build input, not a test distribution: `MANIFEST.in` prunes
+`tests/`, because setuptools would otherwise ship the test modules without
+their fixtures. Run the suite from a clone. Don't add `tests/` back to it.
+
 ## Cutting a release
 
 1. Move the `## Unreleased` changelog entries under the new version. Bump

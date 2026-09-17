@@ -68,6 +68,20 @@
   digest, keeps the allowlist closed, and keeps the runtime lock matched to
   CI's. Dependabot tracks the base image digest.
 
+### `frameworks` outside a project says what to do, and fails
+
+- **Behaviour change: `policyforge frameworks` exits 1 when it finds no
+  catalog.** It printed "No frameworks found" and exited 0, which from an
+  installed package is the first thing a new user sees before `init`, and a
+  script checking for catalogs passed on nothing. The message now names
+  `policyforge init` first, goes to stderr, and the exit code says the
+  listing failed. Inside a project, including one `init` laid out, nothing
+  changes.
+- **The sdist no longer ships `tests/`.** setuptools added `tests/*.py` by
+  default but not `tests/fixtures/`, so a suite run from the sdist failed.
+  `MANIFEST.in` prunes the directory; the sdist is a build input, and tests
+  run from a clone.
+
 ### Markdown is written with LF on every platform
 
 - **Every markdown and diff writer goes through one function,

@@ -29,6 +29,14 @@ updates:
   # would have nothing to open a pull request against. Same cooldown, which
   # the lock now makes meaningful: CI installs what Dependabot proposed and a
   # person merged, not whatever was published an hour ago.
+  #
+  # The same directory holds requirements/runtime.txt, the container image's
+  # lock, so a bump here usually arrives as a pair of pull requests. Both
+  # files are uv universal locks, and Dependabot rewrites them for Linux only:
+  # PR #45 dropped a Windows-only pin that way while CI stayed green. So its
+  # edits are never merged as they stand. The locks are regenerated with the
+  # command in each header, together, and the pull requests are closed in
+  # favour of that.
   - package-ecosystem: "pip"
     directory: "/requirements"
     ignore:
@@ -53,6 +61,25 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
+
+  # The base image of the runtime Dockerfile and of the dev container, pinned
+  # by digest. A digest never moves by itself, which is the point of pinning
+  # it and also why it goes stale: this entry is what brings in a rebuilt
+  # python:3.12-slim with its security fixes. The two must stay the same digest
+  # (tests/test_container.py fails otherwise), so they are one entry and one
+  # group, and move in a single pull request. Same cooldown as the rest.
+  - package-ecosystem: "docker"
+    directories:
+      - "/"
+      - "/.devcontainer"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      base-image:
+        patterns:
+          - "python"
 
   # GitHub Actions used in ci.yml. Actions here are pinned to commit SHAs
   # (see ci.yml) rather than mutable version tags, for supply-chain

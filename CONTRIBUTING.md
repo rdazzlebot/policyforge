@@ -25,12 +25,24 @@ your PATH, and skips it with a note otherwise; CI always runs it. It exits non-z
 it works as a pre-push hook. `pre-commit install` wires the fast subset to
 run on commit.
 
-Python 3.12 in a project `.venv`. Dependencies for CI come from a hashed
-lock (`requirements/ci.txt`); if you add a dependency, regenerate it with the
-command in that file's header rather than editing it by hand. To move semgrep,
-change the version in `requirements/semgrep/semgrep.in` and regenerate
-`semgrep.txt` the same way — and the `rev:` in `.pre-commit-config.yaml` with
-it.
+Python 3.12 in a project `.venv`. Dependencies come from three hashed locks,
+each regenerated with the command in its own header, never edited by hand:
+
+| Lock                               | Installed by                            | Header command                                                                                                                           |
+| ---------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `requirements/ci.txt`              | CI, the dev container                   | `uv pip compile pyproject.toml --extra dev --extra mcp --universal --python-version 3.12 --generate-hashes -o requirements/ci.txt`       |
+| `requirements/runtime.txt`         | the container image                     | `uv pip compile pyproject.toml --extra mcp --universal --python-version 3.12 --generate-hashes -o requirements/runtime.txt`              |
+| `requirements/semgrep/semgrep.txt` | CI, the dev container, `.tools/semgrep` | `uv pip compile requirements/semgrep/semgrep.in --universal --python-version 3.12 --generate-hashes -o requirements/semgrep/semgrep.txt` |
+
+**A change to the dependencies in `pyproject.toml` means regenerating
+`ci.txt` and `runtime.txt` together.** The runtime lock must pin exactly the
+versions CI tests (`tests/test_container.py` checks), so regenerate `ci.txt`
+first and seed `runtime.txt` from it: `cp requirements/ci.txt requirements/runtime.txt`, then run
+the runtime command. uv keeps the versions already in its output file.
+Dependabot's own edits to these locks are Linux-only and are regenerated the
+same way rather than merged. To move semgrep, change the version in
+`requirements/semgrep/semgrep.in`, regenerate `semgrep.txt`, and change the
+`rev:` in `.pre-commit-config.yaml` with it.
 
 ## The one rule that is not about style
 
@@ -150,21 +162,36 @@ its first push for two such reasons: provenance stamps were hashed from
 catalogs with Windows line endings, and a help-text fixture relied on the
 docstring dedenting Python 3.13 does and 3.12 does not.
 
-So if you **restamp a catalog or regenerate a fixture**, run the tests on
-Linux 3.12 before pushing. For example:
+A third reached main with CI green: mcp 2.0 broke `policyforge mcp` on
+startup, and no test started the server.
+
+So if you **restamp a catalog, regenerate a fixture or a lock, touch a
+Dockerfile, or move a dependency**, run CI's checks on Linux 3.12 before
+pushing:
 
 ```bash
-docker run --rm -v "$PWD":/src -w /src python:3.12-slim sh -c "\
-  apt-get update -qq >/dev/null && apt-get install -y -qq git >/dev/null && \
-  pip install -q --root-user-action=ignore --require-hashes -r requirements/ci.txt && \
-  pip install -q --root-user-action=ignore --no-deps -e . && \
-  pytest -q -p no:cacheprovider"
+python scripts/ci_in_docker.py
 ```
 
-`git` is installed first because the slim image has none, and the content-tree
-edit tests shell out to it. Without it, eight tests fail for a reason CI's
-runner does not share. On Git Bash for Windows, prefix the command with
-`MSYS_NO_PATHCONV=1` so `/src` is not rewritten into a Windows path.
+It needs Docker and nothing else installed. It clones your committed HEAD
+into a container, so uncommitted changes are listed and left out, and runs
+CI's steps in CI's order. Then it runs what CI does not check yet: every lock
+must reproduce from its header command, the runtime lock must pin what CI
+tests, and `policyforge mcp` must answer a real client. Last, it builds the
+runtime image from a clean export with private files planted in it (a
+licensed catalog, a `.env`, an org config), checks that none reached the
+build context or the image, and runs the same MCP client against the server inside it.
+`--no-image` skips that last part.
+
+### Working in the dev container
+
+Opening the repository in VS Code with the Dev Containers extension ("Reopen
+in Container") gives the environment CI runs in. Linux and Python 3.12,
+dependencies from the hashed locks, semgrep in its own environment on PATH,
+and `python scripts/check.py` running every check with nothing skipped but
+gitleaks. The environments live in `/opt`, outside the workspace, so your
+host's `.venv` is not touched. A Windows checkout works as it is: the
+container has been run against one with CRLF line endings.
 
 ## Documentation
 

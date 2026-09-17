@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Repository hardening
+
+- **Containers: a runtime image, a dev container, and CI's checks in
+  Docker.** The `Dockerfile` builds the CLI and MCP server from
+  `requirements/runtime.txt`, a new hashed lock of the project's dependencies
+  and the `mcp` extra at exactly the versions CI tests, with no dev tools. It
+  runs as a non-root user from a digest-pinned base, and is documented under
+  "Running in a container". Its build context is an allowlist, so licensed
+  exports, `.env`, the organization's config and `output/` cannot reach an
+  image. `.devcontainer/` opens the repository in CI's environment.
+  `scripts/ci_in_docker.py` runs CI's steps on Linux and Python 3.12 from a
+  clean clone. It adds lock reproduction, a runtime-lock check and a live MCP
+  handshake, then builds the image with private files planted and checks that
+  none got in. `scripts/mcp_smoke.py` is that handshake on its own, for any
+  server command. `tests/test_container.py` keeps the base images on one
+  digest, keeps the allowlist closed, and keeps the runtime lock matched to
+  CI's. Dependabot tracks the base image digest.
+
 ## 1.1.0
 
 Installable without a clone. Until this release PolicyForge ran from a

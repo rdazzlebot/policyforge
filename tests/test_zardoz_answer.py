@@ -1002,3 +1002,158 @@ def test_a_cut_off_answer_is_named_as_such_and_not_shown():
     assert "and also" not in output, "the partial answer must not appear"
     assert "4.1 Account Review" in output, "the passages are still offered"
     assert state.running
+
+
+# --------------------------------------------------------------------------
+# Entailment, when it is switched on
+# --------------------------------------------------------------------------
+
+
+class RecordingEntailer:
+    """Judges every claim the way it was told to, and counts the asking."""
+
+    def __init__(self, label):
+        self.label = label
+        self.calls = []
+
+    def entails(self, premise, hypothesis):
+        from policyforge.entail import Verdict
+
+        self.calls.append((premise, hypothesis))
+        return Verdict(label=self.label, reason="the passage names a different team")
+
+
+def test_no_entailer_means_no_judging_and_no_warning():
+    """The default. Off is off: nothing is asked, and nothing is said about
+    a check that did not run, because a warning nobody can act on is noise."""
+    from policyforge.entail import ENTAILED
+    from policyforge.zardoz.answer import answer_question
+
+    judge = RecordingEntailer(ENTAILED)
+    provider = FakeProvider("Accounts are recertified quarterly. [1]")
+
+    answer = answer_question("how often are accounts recertified?", _passages(), provider)
+
+    assert judge.calls == []
+    assert not [w for w in answer.warnings if "entail" in w or "does not support" in w]
+
+
+def test_an_unsupported_claim_is_reported_as_a_warning():
+    """The failure no other check on this path can see: the marker points at a
+    real passage, the quotation is verbatim, and the passage does not carry the
+    claim built around it."""
+    from policyforge.entail import NEUTRAL
+    from policyforge.zardoz.answer import answer_question
+
+    judge = RecordingEntailer(NEUTRAL)
+    provider = FakeProvider("The Security Officer approves every exception. [1]")
+
+    answer = answer_question("who approves exceptions?", _passages(), provider, entailer=judge)
+
+    assert judge.calls, "a cited sentence should have been judged"
+    unsupported = [w for w in answer.warnings if "does not support" in w]
+    assert len(unsupported) == 1
+    assert "Security Officer" in unsupported[0]
+    assert "the passage names a different team" in unsupported[0]
+    assert answer.text.startswith("The Security Officer"), "the answer itself is untouched"
+
+
+def test_a_supported_claim_produces_no_entailment_warning():
+    from policyforge.entail import ENTAILED
+    from policyforge.zardoz.answer import answer_question
+
+    judge = RecordingEntailer(ENTAILED)
+    provider = FakeProvider("Accounts are recertified quarterly. [1]")
+
+    answer = answer_question(
+        "how often are accounts recertified?", _passages(), provider, entailer=judge
+    )
+
+    assert judge.calls, "the judge is still asked"
+    assert not [w for w in answer.warnings if "does not support" in w]
+
+
+def test_a_judge_that_cannot_run_is_reported_and_the_answer_survives():
+    """`LLMEntailer` refuses rather than degrades when its provider cannot be
+    held to a schema. Losing the answer to that would be the wrong trade, and
+    so would swallowing it: a check nobody can tell did not happen is worse
+    than one that is plainly off."""
+    from policyforge.zardoz.answer import answer_question
+
+    class Refusing:
+        def entails(self, premise, hypothesis):
+            raise RuntimeError("cannot be held to a schema")
+
+    provider = FakeProvider("Accounts are recertified quarterly. [1]")
+
+    answer = answer_question(
+        "how often are accounts recertified?", _passages(), provider, entailer=Refusing()
+    )
+
+    assert answer.text == "Accounts are recertified quarterly. [1]"
+    assert [w for w in answer.warnings if "entailment check did not run" in w]
+    assert [w for w in answer.warnings if "cannot be held to a schema" in w]
+
+
+def test_the_shell_passes_its_judge_and_builds_one_only_when_asked():
+    """The flag is `entail.answering`, and it lives in the block that already
+    holds the judge's model, so there is one place to look."""
+    from policyforge.entail import NEUTRAL
+    from policyforge.zardoz.shell import ShellState, dispatch
+
+    judge = RecordingEntailer(NEUTRAL)
+    state = ShellState(
+        corpus=_corpus(),
+        provider=FakeProvider("Accounts are recertified quarterly. [1]"),
+        entailer=judge,
+    )
+
+    output = dispatch("how often are accounts recertified?", state)
+
+    assert judge.calls, "the shell must hand its judge to the answering path"
+    assert "does not support" in output
+
+
+# --------------------------------------------------------------------------
+# The entailment switch
+# --------------------------------------------------------------------------
+
+
+def _session(tmp_path, config):
+    from policyforge.zardoz.startup import open_session
+
+    topics = tmp_path / "topics.yaml"
+    topics.write_text("topics: []\n", encoding="utf-8")
+    return open_session(
+        topics_path=topics,
+        corpus_dir=tmp_path / "corpus",
+        config=config,
+        provider_factory=lambda cfg: object(),
+    )
+
+
+def test_no_judge_is_built_unless_answering_is_switched_on(tmp_path):
+    """An `entail:` block alone configures the judge; it does not enable it.
+    The cost is a model call per cited sentence, so it is opted into."""
+    session = _session(tmp_path, {"entail": {"model": "openrouter/some/model"}})
+
+    assert session.state.entailer is None
+    assert not [n for n in session.notes if "entailment" in n]
+
+
+def test_answering_on_without_a_block_to_build_from_says_so(tmp_path):
+    """Silently answering as though the check had run and found nothing is the
+    one outcome worth refusing."""
+    session = _session(tmp_path, {"entail": {"answering": True}})
+
+    assert session.state.entailer is None
+    assert [n for n in session.notes if "could not be built" in n or "no entail block" in n]
+
+
+def test_a_judge_that_cannot_be_built_is_reported_not_raised(tmp_path):
+    """`LLMEntailer` refuses a missing model, because it must be a different
+    one from the answerer's. That must not stop the shell opening."""
+    session = _session(tmp_path, {"entail": {"answering": True, "provider": "llm"}})
+
+    assert session.state.entailer is None
+    assert [n for n in session.notes if "entailment" in n]

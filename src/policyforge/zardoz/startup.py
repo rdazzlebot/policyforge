@@ -110,11 +110,29 @@ def open_session(
         # until the test suite stopped carrying a live key.
         provider_note = f"No model configured ({str(exc).splitlines()[0]})"
 
+    # The judge is opt-in and costs a call per cited sentence, so a session
+    # that could not build one says so rather than answering as though the
+    # check had run and found nothing.
+    entailer, entail_note = None, ""
+    if (config.get("entail") or {}).get("answering"):
+        try:
+            from policyforge.entail import get_entailer
+
+            entailer = get_entailer(config)
+            if entailer is None:
+                entail_note = "entail.answering is set but there is no entail block to build from"
+        except (KeyError, ValueError, RuntimeError) as exc:
+            entail_note = f"entailment is on but its judge could not be built ({exc})"
+
     configured_content = (config.get("zardoz") or {}).get("content_dir") or ""
 
     notes = [note for note in (registry_note, corpus_note) if note]
     if provider_note:
         notes.append(f"  ({provider_note} — questions will return passages, not prose)")
+    if entail_note:
+        notes.append(f"  ({entail_note} — answers will not be entailment-checked)")
+    elif entailer is not None:
+        notes.append("  (entailment checking on — one extra model call per cited sentence)")
     if corpus is not None and corpus.is_stale:
         notes.append(f"  (this snapshot is {corpus.age_days:.0f} days old — re-sync, then /reload)")
 

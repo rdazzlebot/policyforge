@@ -18,8 +18,132 @@ themselves, some of which are freely redistributable and some of which are
 not). See [Licensing model](#licensing-model-per-framework) below before you
 add any framework content to this repo.
 
-To install it: `brew install rdazzlebot/tap/policyforge`, then
-`policyforge init` in a new directory — see [Setup](#setup).
+## Quickstart
+
+Install it, lay out a project, and draft one Standard. The commands below
+were run start to finish on a clean directory: two model calls, $0.0070 and
+about 90 seconds on `openrouter/z-ai/glm-5.3-flash`.
+
+```bash
+brew install rdazzlebot/tap/policyforge
+# or, without Homebrew:
+# pipx install git+https://github.com/rdazzlebot/policyforge@v1.2.1
+
+policyforge init my-policies && cd my-policies
+
+cp config/config.example.yaml config/config.yaml   # provider, model, and the NAME of the env var holding your key
+cp config/topics.example.yaml config/topics.yaml   # 20 starter topics, each with an owning team
+export ANTHROPIC_API_KEY=sk-...                    # whichever variable your config names
+policyforge llm-check                              # confirms the key works, and prints what the provider supports
+
+# Cross-reference the catalogs `init` wrote. No model calls.
+policyforge map --controls data/frameworks/nist-800-53-r5/controls.json \
+                --controls data/frameworks/hipaa-security-rule/controls.json \
+                --controls data/frameworks/fedramp/controls.json \
+                --controls data/frameworks/arc-ampe/controls.json
+
+# Merge every control this topic owns into one set of requirements.
+policyforge synthesize --topic-name "Identity Lifecycle & Access Review" \
+                       --controls data/frameworks/nist-800-53-r5/controls.json \
+                       --controls data/frameworks/hipaa-security-rule/controls.json
+
+# Draft the Standard from that synthesis.
+policyforge generate --tier standard \
+                     --synthesis output/synthesis/identity-lifecycle-access-review.md
+```
+
+You get a Standard in `output/standards/`, its synthesis in
+`output/synthesis/`, the version history in `output/.history/`, and an
+account of every model call in `policyforge model-log`.
+
+Expect the draft to name `[Identity Provider]`, `[Ticketing System]` and
+their kin: a role nobody has filled stays a visible placeholder rather than a
+guess. Fill them in under `org:` in `config/config.yaml` (`policyforge roles`
+lists the keys) and generate again. What to do next — the other two tiers,
+publishing to Confluence, asking questions of the result — is in the sections
+below.
+
+**What a full set costs.** Twenty topics at four documents each, measured on
+1.2.1 (MEASUREMENTS.md, epoch 21): **$0.28 and 103 minutes on
+`glm-5.3-flash`**; on `claude-sonnet-5`, five topics cost $3.09, so a full
+set extrapolates to **about $12** — an order of magnitude, not a quote, since
+those five are the first in the registry rather than a random sample. No eval
+graded those documents: the figures say what a run costs, not whether it is
+any good.
+
+## Contents
+
+- [Quickstart](#quickstart) · [Setup](#setup)
+- [The problem this solves](#the-problem-this-solves) ·
+  [One topic, one team](#one-topic-one-team) ·
+  [Company context](#company-context) · [Status](#status)
+- [Your organization's crosswalk](#your-organizations-crosswalk) ·
+  [Input adapters](#input-adapters) ·
+  [Output format priority](#output-format-priority)
+- [Confluence import and local version history](#confluence-import-and-local-version-history)
+  · [Editing a live page](#editing-a-live-page) ·
+  [Zardoz: asking questions instead of running commands](#zardoz-asking-questions-instead-of-running-commands)
+- [The repo as the source of truth](#the-repo-as-the-source-of-truth) ·
+  [Document hierarchy: Policy > Standard > Procedure](#document-hierarchy-policy--standard--procedure)
+  · [Licensing model (per framework)](#licensing-model-per-framework)
+- [Grading the prompts](#grading-the-prompts) ·
+  [Handling a framework update](#handling-a-framework-update) ·
+  [Organization-defined parameters](#organization-defined-parameters) ·
+  [System Security Plan (SSP)](#system-security-plan-ssp)
+- [Architecture](#architecture) ·
+  [Running in a container](#running-in-a-container) ·
+  [Security, compliance and responsible use](#security-compliance-and-responsible-use)
+- [Repo hygiene / scanning](#repo-hygiene--scanning) ·
+  [A note on using this at work](#a-note-on-using-this-at-work) ·
+  [Roadmap](#roadmap)
+
+## Setup
+
+### Installing the command (macOS and Linux)
+
+```bash
+brew install rdazzlebot/tap/policyforge
+```
+
+That installs the `policyforge` command from the
+[rdazzlebot/homebrew-tap](https://github.com/rdazzlebot/homebrew-tap) tap,
+with the core providers; the optional extras (`bedrock`, `vertex`, `litellm`,
+`mcp`) are not included. Without Homebrew, `pipx install git+https://github.com/rdazzlebot/policyforge@v1.2.1` does the same, and
+takes extras as `policyforge[mcp] @ git+…`.
+
+An installed command has no clone around it, and every command reads
+`config/` and `data/frameworks/` relative to where it runs. So start a
+project directory first:
+
+1. `policyforge init my-policies && cd my-policies` — writes the bundled,
+   public-domain catalogs (NIST 800-53, FedRAMP, ARC-AMPE, the HIPAA Security
+   Rule), the example configs, a README for each bring-your-own catalog, and a
+   `.gitignore` that keeps your config, topic registry, licensed exports and
+   drafts out of version control. It never overwrites a file that is already
+   there.
+1. `cp config/config.example.yaml config/config.yaml` and fill in your model choice
+   and the *name* of the environment variable holding your API key (not the key itself).
+1. `export ANTHROPIC_API_KEY=sk-...` (or whatever env var name you configured)
+1. `policyforge llm-check` — confirms your API key and model work.
+
+### From a clone, to work on PolicyForge itself
+
+1. `python -m venv .venv && source .venv/bin/activate`
+1. `pip install --upgrade pip setuptools` — a fresh venv's own pip/setuptools are
+   often a version behind, which otherwise shows up as a confusing false-alarm-feeling
+   failure the first time you run `pip-audit` (see "Running the quality checks" below).
+1. `pip install -e ".[dev]"` — for local work. CI installs from
+   `requirements/ci.txt` instead, a hashed lock resolved for its Linux and
+   Python 3.12 rather than for whatever the machine running it has. Change a
+   dependency in `pyproject.toml` and the lock needs regenerating with the
+   `uv pip compile` command written in its header; Dependabot bumps it
+   otherwise. semgrep is not in the dev extra — it has its own lock and
+   environment (see CONTRIBUTING.md).
+1. `cp config/config.example.yaml config/config.yaml` and fill in your model choice
+   and the *name* of the environment variable holding your API key (not the key itself).
+1. `export ANTHROPIC_API_KEY=sk-...` (or whatever env var name you configured)
+1. `pre-commit install` — sets up the secrets/dependency scanner to run before every commit.
+1. `policyforge llm-check` — confirms your API key and model work.
 
 ## The problem this solves
 
@@ -2081,8 +2205,10 @@ make and asks before making them.
 one at a time, for half the price. This is the path it suits: several
 hundred requests and nobody watching, so waiting on a queue costs nothing
 but the wait. The organization block in front of every control is marked as
-a cacheable prefix either way, so the half of each request that never
-changes is not billed at full price after the first. Results come back in
+a cacheable prefix either way. That marker only does anything on a provider
+that implements caching — the Anthropic and Vertex providers, not LiteLLM —
+and no saving has been measured yet: epoch 21 recorded zero cached input
+tokens, because both runs went through LiteLLM. Results come back in
 whatever order the API finishes them and are matched to controls by ID —
 never by position, which would fill every cell with another control's
 narrative and look entirely plausible. Anthropic provider only; with any
@@ -2090,6 +2216,30 @@ other configured provider `--batch` says so rather than quietly costing
 twice what you asked for.
 
 ## Architecture
+
+Catalogs in, documents out, with every model call classified before it leaves
+and recorded after it returns:
+
+```mermaid
+flowchart LR
+  C["Control catalogs<br/>NIST · HIPAA · FedRAMP<br/>ARC-AMPE · HITRUST · GovRAMP"] --> M["map<br/>crosswalk"]
+  M --> S["synthesize<br/>one topic, merged"]
+  S --> G["generate<br/>Policy · Standard · Procedure"]
+  G --> P["publish<br/>Confluence or the repo"]
+
+  S -.-> LLM(["model call"])
+  G -.-> LLM
+  B["boundary<br/>may this content go<br/>to this provider?"] --> LLM
+  LLM --> L["ledger<br/>provider, model, subject,<br/>tokens, cost, prompt hash"]
+
+  classDef gate fill:#fff3cd,stroke:#8a6d3b,color:#000
+  class B,L gate
+```
+
+`map` makes no model call. The boundary check runs before each call and
+raises rather than warns; the ledger records metadata and never content. Both
+are described in
+[Security, compliance and responsible use](#security-compliance-and-responsible-use).
 
 ```
 config/                  Your local config (model, API key env var name, chosen frameworks)
@@ -2145,54 +2295,6 @@ scripts/
                           control notes (public-domain content only) into this project's
                           data schema.
 ```
-
-## Setup
-
-### Installing the command (macOS and Linux)
-
-```bash
-brew install rdazzlebot/tap/policyforge
-```
-
-That installs the `policyforge` command from the
-[rdazzlebot/homebrew-tap](https://github.com/rdazzlebot/homebrew-tap) tap,
-with the core providers; the optional extras (`bedrock`, `vertex`, `litellm`,
-`mcp`) are not included. Without Homebrew, `pipx install git+https://github.com/rdazzlebot/policyforge@v1.2.1` does the same, and
-takes extras as `policyforge[mcp] @ git+…`.
-
-An installed command has no clone around it, and every command reads
-`config/` and `data/frameworks/` relative to where it runs. So start a
-project directory first:
-
-1. `policyforge init my-policies && cd my-policies` — writes the bundled,
-   public-domain catalogs (NIST 800-53, FedRAMP, ARC-AMPE, the HIPAA Security
-   Rule), the example configs, a README for each bring-your-own catalog, and a
-   `.gitignore` that keeps your config, topic registry, licensed exports and
-   drafts out of version control. It never overwrites a file that is already
-   there.
-1. `cp config/config.example.yaml config/config.yaml` and fill in your model choice
-   and the *name* of the environment variable holding your API key (not the key itself).
-1. `export ANTHROPIC_API_KEY=sk-...` (or whatever env var name you configured)
-1. `policyforge llm-check` — confirms your API key and model work.
-
-### From a clone, to work on PolicyForge itself
-
-1. `python -m venv .venv && source .venv/bin/activate`
-1. `pip install --upgrade pip setuptools` — a fresh venv's own pip/setuptools are
-   often a version behind, which otherwise shows up as a confusing false-alarm-feeling
-   failure the first time you run `pip-audit` (see "Running the quality checks" below).
-1. `pip install -e ".[dev]"` — for local work. CI installs from
-   `requirements/ci.txt` instead, a hashed lock resolved for its Linux and
-   Python 3.12 rather than for whatever the machine running it has. Change a
-   dependency in `pyproject.toml` and the lock needs regenerating with the
-   `uv pip compile` command written in its header; Dependabot bumps it
-   otherwise. semgrep is not in the dev extra — it has its own lock and
-   environment (see CONTRIBUTING.md).
-1. `cp config/config.example.yaml config/config.yaml` and fill in your model choice
-   and the *name* of the environment variable holding your API key (not the key itself).
-1. `export ANTHROPIC_API_KEY=sk-...` (or whatever env var name you configured)
-1. `pre-commit install` — sets up the secrets/dependency scanner to run before every commit.
-1. `policyforge llm-check` — confirms your API key and model work.
 
 ## Running in a container
 
@@ -2406,9 +2508,8 @@ content, org context, or exported policies to this public repo.
 ## Roadmap
 
 Open work is grouped into three themes, followed by the record of what is
-already built. The themes are kinds of work rather than priorities — this is
-a hobby project, and which kind is interesting on a given evening is the real
-scheduler.
+already built. The themes are kinds of work rather than priorities, and are
+not a delivery schedule.
 
 1. [How this project uses models](#1-how-this-project-uses-models) — the
    AI-engineering surface: provider and content classification, cost levers,

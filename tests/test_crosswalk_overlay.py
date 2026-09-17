@@ -432,7 +432,7 @@ def test_check_strict_fails_on_stale_entries(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert "unknown control: 164.308(a)(5)(ii)(B) -> ZZ-9" in result.output
     assert "unreviewed: 164.308(a)(5)(ii)(B) -> RA-3" in result.output
-    assert "1 pair(s) awaiting review" in result.output
+    assert "1 pair(s) needing review" in result.output
 
 
 def test_check_with_no_overlays_says_how_to_start(tmp_path, monkeypatch):

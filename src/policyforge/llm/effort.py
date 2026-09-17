@@ -52,6 +52,10 @@ ENTAILMENT = MEDIUM
 #: over titles rather than requirements, and a wrong group is a proposal a
 #: person declines rather than a document they publish.
 CLUSTERING = MEDIUM
+#: Reading one requirement against candidate controls and quoting the basis
+#: for each mapping. A judgement over requirement text, and the output is a
+#: proposal a person reviews, never a mapping the pipeline reads unreviewed.
+MAPPING = MEDIUM
 #: Merging framework requirements into statements a policy is built from.
 SYNTHESIS = HIGH
 #: Drafting a Standard, Policy or Procedure, and planning or applying an

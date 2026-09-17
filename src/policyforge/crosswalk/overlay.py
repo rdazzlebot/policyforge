@@ -69,6 +69,13 @@ class MappingRow:
     rationale: str = ""
     proposed_by: dict[str, str] = field(default_factory=dict)
     reviewed_by: dict[str, str] = field(default_factory=dict)
+    #: Machine-set notes for a reviewer, such as `not-confirmed-by-model`.
+    #: Never change what reaches the pipeline; only `status` does.
+    flags: list[str] = field(default_factory=list)
+
+    @property
+    def needs_review(self) -> bool:
+        return not self.reviewed_by and (self.status == PROPOSED or bool(self.flags))
 
     def as_record(self) -> dict:
         record: dict = {
@@ -76,7 +83,7 @@ class MappingRow:
             "relationship": self.relationship,
             "status": self.status,
         }
-        for name in ("sources", "evidence", "rationale", "proposed_by", "reviewed_by"):
+        for name in ("sources", "flags", "evidence", "rationale", "proposed_by", "reviewed_by"):
             value = getattr(self, name)
             if value:
                 record[name] = value
@@ -157,6 +164,9 @@ def parse_overlay(data, *, path: Path | None = None) -> Overlay:
             sources = row.get("sources") or []
             if isinstance(sources, str):
                 sources = [sources]
+            flags = row.get("flags") or []
+            if isinstance(flags, str):
+                flags = [flags]
             parsed.append(
                 MappingRow(
                     control=str(row["control"]).strip(),
@@ -167,6 +177,7 @@ def parse_overlay(data, *, path: Path | None = None) -> Overlay:
                     rationale=str(row.get("rationale") or "").strip(),
                     proposed_by=_string_map(row.get("proposed_by"), f"{where} proposed_by"),
                     reviewed_by=_string_map(row.get("reviewed_by"), f"{where} reviewed_by"),
+                    flags=[str(f) for f in flags],
                 )
             )
         overlay.requirements[rid] = parsed
@@ -294,7 +305,7 @@ def check_overlay(overlay: Overlay, controls) -> OverlayCheck:
             (rid, c) for c in published.get(rid, []) if c not in named
         )
         for row in rows:
-            if row.status == PROPOSED:
+            if row.needs_review:
                 check.proposed += 1
             if anchor_ids and row.control not in anchor_ids:
                 check.unknown_controls.append((rid, row.control))

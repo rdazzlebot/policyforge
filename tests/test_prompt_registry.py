@@ -126,6 +126,7 @@ def test_load_all_registers_every_prompt_it_claims_to():
     names = set(prompts.fingerprints())
     assert {
         "zardoz.answer",
+        "crosswalk.propose",
         "edit.plan",
         "edit.apply",
         "entail.judge",

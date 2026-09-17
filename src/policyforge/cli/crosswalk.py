@@ -140,7 +140,7 @@ def crosswalk_check(controls_paths, overlay_dir: Path | None, strict: bool):
         check = check_overlay(overlay, controls)
         click.echo(f"{overlay.path}: {overlay.framework}")
         click.echo(
-            f"  {len(overlay.requirements)} requirements, {check.proposed} pair(s) awaiting review"
+            f"  {len(overlay.requirements)} requirements, {check.proposed} pair(s) needing review"
         )
         for rid in check.unknown_requirements:
             click.echo(

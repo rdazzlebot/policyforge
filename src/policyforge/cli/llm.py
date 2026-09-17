@@ -37,6 +37,15 @@ def llm_check():
         from policyforge.llm.boundary import classify_provider
 
         click.echo(f"Boundary class: {classify_provider(config['llm'])}")
+        # Asked of the provider as configured — through the ledger wrapper,
+        # not around it — because that is the object every command calls.
+        # The one time these went dark on every provider, nothing printed
+        # them, and the downgrade was invisible for two days.
+        from policyforge.llm.base import capabilities
+
+        report = capabilities(provider)
+        summary = ", ".join(f"{name} {'yes' if ok else 'no'}" for name, ok in report.items())
+        click.echo(f"Capabilities: {summary}")
     else:
         click.echo("Provider responded, but the sanity check didn't match expected output.")
         raise SystemExit(1)

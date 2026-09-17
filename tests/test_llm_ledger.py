@@ -420,3 +420,258 @@ def test_the_wrapper_passes_through_attributes_of_the_provider_inside(tmp_path):
     assert wrapped.escalations == 3
     assert wrapped.primary_calls == 40
     assert wrapped.inner is inner
+
+
+# ---- the flags the wrapper must forward -----------------------------------
+#
+# `__getattr__` never reaches a method the base class defines, and every
+# `supports_*` flag is defined there as `return False`. So a flag the wrapper
+# forgets to delegate answers False for every provider — which is how native
+# citations, effort, caching and batching all went dark on Anthropic and
+# Vertex while every test passed. The flags are discovered from the base
+# class rather than listed here: a new one that the wrapper does not forward
+# fails this test before it can fail a user.
+
+from policyforge.llm.base import LLMProvider, capability_flags  # noqa: E402
+
+CAPABILITY_FLAGS = sorted(
+    name
+    for name in dir(LLMProvider)
+    if name.startswith("supports_") and callable(getattr(LLMProvider, name))
+)
+
+
+def _provider_answering(answer: bool) -> LLMProvider:
+    """A real `LLMProvider` subclass, so the base-class defaults are in play."""
+
+    class Flagged(LLMProvider):
+        def generate(self, **kwargs):
+            return LLMResponse(text="ok", model="flagged")
+
+        def check(self):
+            return True
+
+    for name in CAPABILITY_FLAGS:
+        setattr(Flagged, name, lambda self, _answer=answer: _answer)
+    return Flagged()
+
+
+def test_the_flags_are_discovered_not_listed():
+    """An empty discovery would make the parametrized test below pass vacuously."""
+    assert len(CAPABILITY_FLAGS) >= 5
+    assert capability_flags() == CAPABILITY_FLAGS
+
+
+@pytest.mark.parametrize("answer", [True, False])
+@pytest.mark.parametrize("flag", CAPABILITY_FLAGS)
+def test_every_capability_flag_is_answered_by_the_provider_inside(tmp_path, flag, answer):
+    inner = _provider_answering(answer)
+    wrapped = _recorder(tmp_path, inner)
+
+    assert getattr(inner, flag)() is answer
+    assert getattr(wrapped, flag)() is answer
+
+
+def test_effort_and_cache_arguments_travel_through_the_wrapper(tmp_path):
+    """The flags and the arguments go together.
+
+    Once the wrapper says a provider honours effort and caching,
+    `llm/effort.py` passes `effort`, `cache` and `cache_prefix` to
+    `generate`. A wrapper with a fixed signature would turn every such call
+    into a TypeError — and inline the prefix it was supposed to mark.
+    """
+    from policyforge.llm import effort
+
+    class Honours(LLMProvider):
+        seen: dict = {}
+
+        def generate(
+            self,
+            *,
+            system,
+            prompt,
+            max_tokens=4096,
+            temperature=0.2,
+            effort=None,
+            cache=False,
+            cache_prefix=None,
+        ):
+            self.seen = {
+                "prompt": prompt,
+                "effort": effort,
+                "cache": cache,
+                "cache_prefix": cache_prefix,
+            }
+            return LLMResponse(text="ok", model="honours", cached_input_tokens=2048)
+
+        def check(self):
+            return True
+
+        def supports_effort(self):
+            return True
+
+        def supports_caching(self):
+            return True
+
+    inner = Honours()
+    wrapped = _recorder(tmp_path, inner)
+
+    effort.call(wrapped, effort="high", cache=True, cache_prefix="ORG ", system="S", prompt="P")
+
+    assert inner.seen == {"prompt": "P", "effort": "high", "cache": True, "cache_prefix": "ORG "}
+    (record,) = ledger.load(tmp_path / "calls.jsonl")
+    assert record.cached_input_tokens == 2048
+
+
+def test_a_grounded_call_is_recorded_and_its_documents_reach_the_provider(tmp_path):
+    """`generate_grounded` passes through the way `generate_json` does.
+
+    The passages leave the machine as document blocks rather than prompt
+    text, so the call is exposure like any other and belongs in the ledger —
+    and, like a prompt, the passages themselves must not be written to it.
+    """
+
+    class Grounding(LLMProvider):
+        seen = None
+
+        def generate(self, **kwargs):
+            return LLMResponse(text="prose", model="grounding")
+
+        def check(self):
+            return True
+
+        def supports_grounding(self):
+            return True
+
+        def generate_grounded(self, *, system, prompt, documents, **kwargs):
+            self.seen = (documents, kwargs)
+            return LLMResponse(text="cited [1]", model="grounding", citations=[])
+
+    inner = Grounding()
+    wrapped = _recorder(tmp_path, inner)
+    passage = "HITRUST 01.c verbatim requirement text"
+
+    response = wrapped.generate_grounded(
+        system="S", prompt="P", documents=[passage, "another"], effort="low"
+    )
+
+    assert response.citations == []
+    assert inner.seen == ([passage, "another"], {"effort": "low"})
+    (record,) = ledger.load(tmp_path / "calls.jsonl")
+    assert record.model == "grounding"
+    assert passage not in (tmp_path / "calls.jsonl").read_text(encoding="utf-8")
+
+
+def test_a_failed_grounded_call_is_recorded_and_re_raised(tmp_path):
+    class Refusing(LLMProvider):
+        def generate(self, **kwargs):
+            return LLMResponse(text="ok", model="m")
+
+        def check(self):
+            return True
+
+        def supports_grounding(self):
+            return True
+
+        def generate_grounded(self, **kwargs):
+            raise RuntimeError("overloaded")
+
+    wrapped = _recorder(tmp_path, Refusing())
+
+    with pytest.raises(RuntimeError):
+        wrapped.generate_grounded(system="S", prompt="P", documents=[])
+
+    (record,) = ledger.load(tmp_path / "calls.jsonl")
+    assert record.error == "RuntimeError"
+
+
+# ---- the composition production actually runs -----------------------------
+#
+# The wrapper tests above use fakes. Every command builds its provider with
+# `get_provider`, which is `_build_provider` inside `wrap`, and that is the
+# object whose flags decide what a request contains. So the same question is
+# asked of the real thing: for every provider the factory can build without
+# a network, the wrapped object must answer each flag the way the provider
+# inside it does. `scripts/eval_zardoz.py --model` builds a LiteLLMProvider
+# directly and never saw this — which is why the measured request and the
+# production request differed for two days.
+
+_TEST_KEY = "POLICYFORGE_TEST_KEY"
+
+OFFLINE_CONFIGS = {
+    "anthropic": {"provider": "anthropic", "model": "claude-sonnet-5", "api_key_env": _TEST_KEY},
+    "litellm": {
+        "provider": "litellm",
+        "model": "openrouter/deepseek/deepseek-v4-flash",
+        "api_key_env": _TEST_KEY,
+    },
+    "local": {"provider": "local", "model": "qwen3:14b", "base_url": "http://localhost:11434/v1"},
+    "bedrock": {"provider": "bedrock", "model": "anthropic.claude-sonnet-5", "region": "us-east-1"},
+    "vertex": {"provider": "vertex", "model": "claude-sonnet-5", "project_id": "example-project"},
+    "cascade": {
+        "provider": "cascade",
+        "primary": {
+            "provider": "local",
+            "model": "qwen3:14b",
+            "base_url": "http://127.0.0.1:11434/v1",
+        },
+        "escalate_to": {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5",
+            "api_key_env": _TEST_KEY,
+        },
+    },
+}
+
+#: Built from the core dependencies alone. A skip on one of these would be
+#: the test quietly stopping, which is the failure this file exists to catch.
+ALWAYS_CONSTRUCTIBLE = {"anthropic", "local", "cascade"}
+
+
+@pytest.mark.parametrize("name", sorted(OFFLINE_CONFIGS))
+def test_a_provider_built_from_config_keeps_every_flag_of_the_one_inside(
+    tmp_path, monkeypatch, name
+):
+    from policyforge.llm.base import get_provider
+
+    monkeypatch.setenv(_TEST_KEY, "not-a-real-key")
+    config = {"llm": {**OFFLINE_CONFIGS[name], "ledger": {"path": str(tmp_path / "calls.jsonl")}}}
+    try:
+        provider = get_provider(config)
+    except (ImportError, RuntimeError) as exc:
+        if name in ALWAYS_CONSTRUCTIBLE:
+            raise
+        pytest.skip(f"{name} needs an extra this environment lacks: {exc}")
+
+    assert isinstance(provider, RecordingProvider)
+    for flag in CAPABILITY_FLAGS:
+        assert getattr(provider, flag)() == getattr(provider.inner, flag)(), flag
+
+
+def test_the_litellm_provider_keeps_every_flag_through_the_wrapper_without_litellm(tmp_path):
+    """The default provider, held to the rule where CI can run it.
+
+    The `get_provider` case above skips when the `litellm` extra is absent,
+    and CI installs only `.[dev]` — so the provider this bug hit hardest
+    would be the one CI never checked. `LiteLLMProvider` takes an injected
+    `completion` callable precisely so its request handling runs without
+    the package, and the flags are read the same way. This never skips.
+    """
+    from policyforge.llm.base import capabilities
+    from policyforge.llm.litellm_provider import LiteLLMProvider
+
+    inner = LiteLLMProvider(
+        model="openrouter/deepseek/deepseek-v4-flash",
+        completion=lambda **kwargs: None,
+    )
+    wrapped = ledger.wrap(
+        inner,
+        {"llm": {"provider": "litellm", "ledger": {"path": str(tmp_path / "calls.jsonl")}}},
+    )
+
+    assert isinstance(wrapped, RecordingProvider)
+    for flag in CAPABILITY_FLAGS:
+        assert getattr(wrapped, flag)() == getattr(inner, flag)(), flag
+    assert inner.supports_effort() is True
+    assert wrapped.supports_effort() is True
+    assert capabilities(wrapped) == capabilities(inner)

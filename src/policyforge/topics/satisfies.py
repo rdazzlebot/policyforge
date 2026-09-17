@@ -212,6 +212,13 @@ def parse_citations(body: str, frameworks=(), ids=None) -> list[tuple[str, str, 
 
     The section is the nearest heading above the citation, so a reader can
     be pointed at the paragraph rather than the file.
+
+    A heading line is scanned for tags like any other, and is its own
+    section. Procedures put the tag on the step heading — `### Test the
+    contingency plan [NIST CP-4 ... | NIST CP-4(1)-(5)]` — so a scan that
+    read a heading only for its title and moved on lost every citation
+    carried there. Silently: the requirements were simply absent from the
+    report, which is the failure this command exists to catch.
     """
     from policyforge.edit.apply import _SOURCE_TAG_RE
 
@@ -221,8 +228,8 @@ def parse_citations(body: str, frameworks=(), ids=None) -> list[tuple[str, str, 
     for line in body.splitlines():
         heading = _HEADING_RE.match(line.strip())
         if heading:
-            section = heading.group("title")
-            continue
+            # Without the tags, which are traceability rather than title.
+            section = _SOURCE_TAG_RE.sub("", heading.group("title")).strip()
         for tag in _SOURCE_TAG_RE.findall(line):
             for part in tag.strip("[]").split("|"):
                 framework, requirement_id, qualifier = split_citation(part.strip(), known, ids)

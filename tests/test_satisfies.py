@@ -639,3 +639,36 @@ def test_an_abbreviated_framework_is_followed_through_to_the_crosswalk():
         ("arc-ampe", "PE-1", "AE Mandatory"),
         ("nist", "AC-2", ""),
     ]
+
+
+def test_a_citation_on_a_heading_line_is_not_lost():
+    """Procedures put the tag on the step heading, and those citations count.
+
+    The scan used to read a heading for its title and move to the next
+    line, so every requirement cited on a heading was absent from the
+    report — silently, which is worse than being wrong. It cost 27 of 34
+    unresolvable citations in the starter set, all of them in procedures,
+    because that is where step headings carry tags.
+
+    The heading is its own section, and its title is recorded without the
+    tag: the tag is traceability, not part of what the step is called.
+    """
+    body = (
+        "# Contingency\n\n"
+        "### Test the plan [NIST 800-53 IR-3 | HIPAA Security Rule 164.308(a)(6)(ii)]\n\n"
+        "1. Run it. [NIST 800-53 IR-3(1) High]\n"
+    )
+    names = [NIST, HIPAA]
+    ids = {"nist": {"IR-3", "IR-3(1)"}, "hipaa": {"164.308(a)(6)(ii)"}}
+    found = parse_citations(body, names, ids)
+    assert found == [
+        (NIST, "IR-3", "", "Test the plan"),
+        (HIPAA, "164.308(a)(6)(ii)", "", "Test the plan"),
+        (NIST, "IR-3(1)", "High", "Test the plan"),
+    ]
+
+
+def test_an_unresolvable_citation_on_a_heading_is_reported():
+    """The regression that mattered: a bad citation on a heading was invisible."""
+    evidence = _evidence("# X\n\n### Restore testing [NIST 800-53 CP-4(1)-(5)]\n\nSteps follow.\n")
+    assert evidence.unknown == ["NIST 800-53 CP-4(1)-(5)"]

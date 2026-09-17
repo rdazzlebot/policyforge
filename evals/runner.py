@@ -802,6 +802,84 @@ def run_generation(case: dict, provider, corpora: dict | None = None) -> Outcome
     return grade_text(document, case)
 
 
+_CROSSWALK_CATALOGS: dict = {}
+
+
+def _crosswalk_catalogs() -> dict:
+    """The bundled 800-53 and HIPAA catalogs, loaded once per run."""
+    if not _CROSSWALK_CATALOGS:
+        from policyforge.crosswalk.candidates import WordIndex, catalog_entries
+        from policyforge.crosswalk.overlay import published_pairs
+        from policyforge.crosswalk.propose import requirements_of
+        from policyforge.ingest.schema import load_controls
+
+        root = Path(__file__).resolve().parents[1] / "data" / "frameworks"
+        controls = load_controls(root / "nist-800-53-r5" / "controls.json") + load_controls(
+            root / "hipaa-security-rule" / "controls.json"
+        )
+        entries = catalog_entries(controls)
+        _CROSSWALK_CATALOGS.update(
+            entries=entries,
+            index=WordIndex(entries),
+            published=published_pairs(controls, "HIPAA Security Rule"),
+            requirements={
+                r.requirement_id: r for r in requirements_of(controls, "HIPAA Security Rule")
+            },
+        )
+    return _CROSSWALK_CATALOGS
+
+
+def run_crosswalk(case: dict, provider, corpora: dict | None = None) -> Outcome:
+    """Does a proposal map what plainly addresses the requirement, and not a word match?
+
+    Graded on the real `propose_for` against the bundled catalogs, so the
+    candidate list is the one production builds and the quotes go through the
+    same verification. Only pairs whose quotes verified count as asserted.
+
+    Every case is one a careful reader would not dispute, because the
+    published crosswalk is not ground truth here and neither is a model: what
+    is graded is the floor. `must_map` holds groups of which one must be
+    asserted; `must_not_map` is a control sharing the requirement's words and
+    none of its obligation — physical access against logical access, a network
+    disconnect against employee termination. `expect_none` is a requirement
+    that is not a control at all.
+    """
+    from policyforge.crosswalk.propose import propose_for
+
+    catalogs = _crosswalk_catalogs()
+    requirement = catalogs["requirements"][case["requirement"]]
+    proposal = propose_for(
+        requirement,
+        framework="HIPAA Security Rule",
+        published=catalogs["published"].get(requirement.requirement_id, []),
+        entries=catalogs["entries"],
+        index=catalogs["index"],
+        provider=provider,
+    )
+    asserted = [m.control for m in proposal.mappings]
+    shown = ", ".join(asserted) or "(none)"
+    if proposal.error:
+        raise RuntimeError(proposal.error)
+
+    # A trap the candidate list never offers cannot be fallen into, so a case
+    # naming one would pass for the harness's reason, not the model's.
+    unoffered = [c for c in case.get("must_not_map") or [] if c not in proposal.candidates]
+    if unoffered:
+        raise ValueError(f"case forbids {unoffered}, which are not candidates")
+    for group in case.get("must_map") or []:
+        missing = [c for c in group if c not in proposal.candidates]
+        if missing:
+            raise ValueError(f"case expects {missing}, which are not candidates")
+        if not any(control in asserted for control in group):
+            return Outcome(False, f"mapped none of {group}", shown)
+    wrong = [c for c in case.get("must_not_map") or [] if c in asserted]
+    if wrong:
+        return Outcome(False, f"mapped {wrong}, which share words, not the obligation", shown)
+    if case.get("expect_none") and asserted:
+        return Outcome(False, f"mapped {asserted} to a requirement that is not a control", shown)
+    return Outcome(True, output=shown)
+
+
 SUITES = {
     "routing": run_routing,
     # Separate from routing so a chaining regression cannot hide inside a
@@ -831,6 +909,10 @@ SUITES = {
     # policy was unmeasured, and a model that routes perfectly can still
     # turn "shall" into "should consider".
     "generation": run_generation,
+    # A model reading one requirement against 800-53 candidates. Graded on
+    # the floor only: what plainly addresses the requirement is mapped, and
+    # a control that merely shares its words is not.
+    "crosswalk": run_crosswalk,
 }
 
 

@@ -136,6 +136,7 @@ def load_all() -> None:
     that a module which stops registering shows up as an import that stopped
     being needed rather than as a silently smaller registry.
     """
+    from policyforge.crosswalk import propose  # noqa: F401
     from policyforge.edit import apply, plan  # noqa: F401
     from policyforge.entail import llm_entailer  # noqa: F401
     from policyforge.generate import policy_writer  # noqa: F401

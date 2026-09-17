@@ -121,6 +121,12 @@ def _controls(state):
             controls.extend(load_controls(Path(path)))
         except (OSError, ValueError):
             continue
+    # The organization's reviewed crosswalk, as the CLI applies it. Not
+    # caught: an unreadable overlay is reported by `run_skill` as the
+    # analysis failing, rather than answered from the published mapping.
+    from policyforge.crosswalk.overlay import apply_overlays, load_overlays
+
+    apply_overlays(controls, load_overlays())
     return controls
 
 

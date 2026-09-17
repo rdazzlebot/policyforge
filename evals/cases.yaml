@@ -1231,3 +1231,52 @@ generation:
     min_subsections: 4
     must_contain: [Access Control Standard]
 
+# A model reading one HIPAA Security Rule requirement against the 800-53
+# controls production would show it (see crosswalk/candidates.py). Graded on
+# the floor: each case is one a careful reader would not dispute, because
+# neither the published crosswalk nor a model is ground truth for the rest.
+# `must_map` groups need one member asserted with verified quotes;
+# `must_not_map` names a candidate that shares the requirement's words and
+# none of its obligation.
+crosswalk:
+  - name: physical-access-is-not-logical-access
+    requirement: 164.310(a)(1)
+    must_map: [[PE-3]]
+    must_not_map: [AC-3, AC-17]
+
+  - name: a-risk-assessment-is-not-the-data-it-protects
+    # The requirement names confidentiality and integrity; SC-8 and SC-28
+    # protect them in transit and at rest, which is not assessing risk.
+    requirement: 164.308(a)(1)(ii)(A)
+    must_map: [[RA-3]]
+    must_not_map: [SC-8, SC-28]
+
+  - name: ending-employment-is-not-ending-a-connection
+    requirement: 164.308(a)(3)(ii)(C)
+    must_map: [[PS-4]]
+    must_not_map: [SC-10]
+
+  - name: a-backup-plan-is-not-a-configuration-plan
+    requirement: 164.308(a)(7)(ii)(A)
+    must_map: [[CP-9]]
+    must_not_map: [CM-9]
+
+  - name: a-compliance-date-is-not-a-control
+    requirement: 164.318(c)
+    expect_none: true
+
+  - name: automatic-logoff-is-session-termination
+    requirement: 164.312(a)(2)(iii)
+    must_map: [[AC-12]]
+
+  - name: transmission-security-is-transmission-protection
+    requirement: 164.312(e)(1)
+    must_map: [[SC-8, SC-8(1)]]
+
+  - name: encryption-is-a-cryptographic-control
+    requirement: 164.312(a)(2)(iv)
+    must_map: [[SC-13, SC-28(1)]]
+
+  - name: authenticating-a-person-is-identification-and-authentication
+    requirement: 164.312(d)
+    must_map: [[IA-2, IA-8]]

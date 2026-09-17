@@ -9,6 +9,9 @@ config/config.*.yaml
 !config/config.example.yaml
 # Topic registry — names your internal teams (see config/topics.example.yaml)
 config/topics.yaml
+# Crosswalk overlays — your organization's mapping decisions, and from a licensed
+# catalog its quote digests (see `policyforge crosswalk`)
+config/crosswalks/
 
 # Licensed / BYOC content — never redistribute this
 local_content/*
@@ -20,6 +23,7 @@ output/
 # Build artifact: derived entirely from the committed controls.json files by
 # `policyforge map`, so committing it would only invite drift against them.
 data/frameworks/crosswalk.json
+data/frameworks/crosswalk.overlays.json
 
 # Python
 __pycache__/

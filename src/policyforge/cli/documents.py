@@ -185,6 +185,27 @@ def synthesize_cmd(
         controls, filled = apply_to_controls(controls, decisions)
         click.echo(f"Applied {len(decisions)} recorded parameter decision(s): {filled} filled.")
 
+    # The catalogs above carry the organization's crosswalk overlays, but
+    # crosswalk.json is whatever `map` wrote last. Built from different
+    # overlays — before one was added, edited or deleted — it would pull a
+    # rejected pair's requirement into the synthesis or miss a restored one,
+    # so it is refused rather than used. Compared by content: a modification
+    # time can tie, and a deleted overlay has none.
+    from policyforge.crosswalk.overlay import overlay_digests, provenance_path
+
+    current = overlay_digests()
+    record = provenance_path(crosswalk_path)
+    built_from = (
+        json.loads(record.read_text(encoding="utf-8")).get("overlays", {})
+        if record.exists()
+        else None
+    )
+    if (built_from is None and current) or (built_from is not None and built_from != current):
+        raise click.ClickException(
+            f"{crosswalk_path} was not built from the crosswalk overlays now in "
+            "config/crosswalks/, so it may hold pairs they reject or lack pairs they "
+            "accept. Rebuild it with `policyforge map` first."
+        )
     crosswalk = json.loads(crosswalk_path.read_text(encoding="utf-8"))
     synthesis_topic = build_synthesis_topic(topic, nist_ids, controls, crosswalk)
     if not synthesis_topic.controls:

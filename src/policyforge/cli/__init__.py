@@ -9,6 +9,7 @@ write guard. It is now a package split by what the commands are for:
     programme  ownership, coverage, parameters, drift — no model involved
     documents  drafting with a model
     content    the content tree and Confluence
+    crosswalk  an organization's reviewed mapping of a framework onto 800-53
     zardoz     the shell, discovery, corpus sync, the MCP server
     project    `init`, laying out a project for an installed package
 
@@ -58,6 +59,7 @@ def cli():
 # decorates its commands with it.
 from policyforge.cli import (  # noqa: E402
     content,
+    crosswalk,
     documents,
     etl,
     llm,
@@ -75,6 +77,7 @@ __all__ = [
     "_checked_slug",
     "cli",
     "content",
+    "crosswalk",
     "documents",
     "etl",
     "etl_vault",

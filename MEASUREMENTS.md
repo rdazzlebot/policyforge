@@ -51,18 +51,19 @@ ______________________________________________________________________
 
 ### What each suite tests
 
-| Suite               | Asks                                                                                     |
-| ------------------- | ---------------------------------------------------------------------------------------- |
-| `routing`           | does a question reach the analysis that can answer it                                    |
-| `resolution`        | does a follow-up become the question it obviously means                                  |
-| `expansion`         | does query expansion name the document's vocabulary without inventing facts              |
-| `answering`         | grounded prose with citations, and refusal when the passages do not support one          |
-| `answer_paraphrase` | the answering cases in wordings their author did not choose                              |
-| `conversation`      | multi-turn, driven through the real shell                                                |
-| `paraphrase`        | 66 generated rewordings of the routing cases                                             |
-| `edit_plan`         | does the Confluence edit planner plan the operator's change and only that                |
-| `edit_apply`        | does the rewrite make exactly the planned change, graded by `check_edit`                 |
-| `generation`        | does a drafted Standard, Policy or Procedure keep what its synthesis said, and only that |
+| Suite               | Asks                                                                                                              |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `routing`           | does a question reach the analysis that can answer it                                                             |
+| `resolution`        | does a follow-up become the question it obviously means                                                           |
+| `expansion`         | does query expansion name the document's vocabulary without inventing facts                                       |
+| `answering`         | grounded prose with citations, and refusal when the passages do not support one                                   |
+| `answer_paraphrase` | the answering cases in wordings their author did not choose                                                       |
+| `conversation`      | multi-turn, driven through the real shell                                                                         |
+| `paraphrase`        | 66 generated rewordings of the routing cases                                                                      |
+| `edit_plan`         | does the Confluence edit planner plan the operator's change and only that                                         |
+| `edit_apply`        | does the rewrite make exactly the planned change, graded by `check_edit`                                          |
+| `generation`        | does a drafted Standard, Policy or Procedure keep what its synthesis said, and only that                          |
+| `crosswalk`         | does a mapping proposal map what carries a requirement's obligation, and not a control that only shares its words |
 
 ______________________________________________________________________
 
@@ -1016,6 +1017,188 @@ is read as noise, not an effect of the organization block.
 **Open.** deepseek-v4-flash occasionally drops every citation tag from a
 Standard; it did so in both of its failing runs here. glm still sometimes
 settles the undecided lockout count.
+
+### 20. Mapping a framework onto 800-53 — 2026-09-16
+
+A new suite and a new prompt (`crosswalk.propose` v1, `dc1342fdc46a`), so
+nothing here compares with the epochs above.
+
+The commit hashes below are the ones each run reported, taken on the
+`crosswalk-overlays` branch before it was rebased onto main. The merged
+commit with the same subject line has the same code under
+`src/policyforge/crosswalk` and the same crosswalk eval code.
+
+**The probe, before anything was built.** A scratch script, not the shipped
+code: for each of the 75 HIPAA Security Rule requirements, a model was shown
+a candidate list — BM25 top 15 over 800-53, plus NIST's published CPRT pairs
+mixed in unlabelled — and asked which candidates address the requirement,
+with a relationship and a quote from each text. Quotes were verified; an
+unverified mapping was dropped. Cost was not captured for either round.
+
+| Round | Model             | Errors | Asserted | Agree with CPRT | CPRT recall | Quote drops |
+| ----- | ----------------- | ------ | -------- | --------------- | ----------- | ----------- |
+| 1     | `glm-5.3-flash`   | 7      | 159      | 90              | 32%         | 26          |
+| 1     | `claude-sonnet-5` | 0      | 189      | 109             | 39%         | 47          |
+| 2     | `glm-5.3-flash`   | 13     | 165      | 87              | 31%         | 3           |
+| 2     | `claude-sonnet-5` | 0      | 203      | 114             | 41%         | 7           |
+
+CPRT publishes 278 pairs. BM25 alone found 64 of them (23%): crosswalks are
+written by people who know "Security management process" is RA-1, and the
+words do not say so. That is why the published pairs are always candidates.
+
+Round 1's quote check was exact substring matching. Re-scored offline, 45 of
+its 73 drops were sound mappings whose quote read 800-53's
+`[Selection (one or more): confidentiality; integrity]` aloud or joined two
+clauses with an ellipsis; the same checker still refused a fabricated quote
+and a quote with its words reordered. Round 2 changed four things at once:
+word-order quote matching, the parent standard shown with each implementation
+specification, each matched family's `-1` control added as a candidate with a
+rule saying what `-1` controls are, and one retry. Quote drops fell from 26 and
+47 to 3 and 7. **Agreement with CPRT did not move** (32% → 31%, 39% → 41%),
+while the two models' agreement with each other rose from 48% to 58% (Jaccard
+over asserted pairs, on requirements where glm did not error).
+
+glm's round-2 errors were not refusals: 9 replies were the rows inside a
+markdown code fence and 4 were a bare list. The shipped parser reads past both
+wrappers and still validates every row.
+
+**What the disagreements were.** Read by hand, most CPRT pairs neither model
+confirmed link a requirement to a control that *supports* it rather than one
+that carries the obligation: IR-5 and IR-6 for reviewing system activity,
+CA-6 for assigned security responsibility, AC-4 for access authorization.
+Some are a genuine difference in reading: "Protection from malicious
+software" sits under Security Awareness and Training, and CPRT maps it to the
+training controls AT-2 and AT-3. Both models chose SI-3 instead, and still
+did in round 2 with the parent standard in front of them. Pairs both models added that CPRT lacks were mostly defensible —
+IA-5(1) for password management, AC-2(12) for log-in monitoring, SI-3 for
+malware. Neither set is ground truth, so the product does not let a model
+decide: proposals are notes on the organization's overlay, and a person
+reviews them.
+
+**Relationship labels are not reliable.** Across the same pairs, glm called
+93 of 165 `subset` and sonnet called 118 of 203 `intersects`. A reviewer is
+shown the label as the model's suggestion.
+
+**The suite, on the shipped code.** Nine requirements, run through
+`propose_for` against the bundled catalogs, graded on the floor: a control
+that plainly carries the obligation must be mapped, a candidate sharing the
+requirement's words and none of its obligation must not be, and a compliance
+date maps to nothing. `--repeat 3`.
+
+| Model               | commit    | crosswalk        | cost                             |
+| ------------------- | --------- | ---------------- | -------------------------------- |
+| `claude-sonnet-5`   | `1149e42` | 9/9 (27/27 runs) | $0.3479 for 28 calls             |
+| `glm-5.3-flash`     | `1149e42` | 9/9 (27/27 runs) | $0.0265 for 28 calls             |
+| `deepseek-v4-flash` | `1149e42` | 6/9 (24/27 runs) | $0.0217 for 28 calls (+3 raised) |
+| `deepseek-v4-flash` | `e1ec80c` | 9/9 (27/27 runs) | $0.0328 for 29 calls (+1 raised) |
+| `glm-5.3-flash`     | `e1ec80c` | 9/9 (27/27 runs) | $0.0112 for 28 calls             |
+
+`1149e42` predates the retry below; `e1ec80c` has it. Both were measured
+with `eval_zardoz.py --model` before the harness built its provider through
+`get_provider`, and both were later rebased; the rebases changed nothing
+under `src/policyforge/crosswalk`, the prompt, or the eval runner's crosswalk
+code. At `e1ec80c` flash's one unreadable reply was asked again and
+answered, and every case passed. All three flash failures at `1149e42` were the same
+malformed reply — `{` then `{"mappings": …` — with the right answer inside
+it (PS-4, an empty list for the compliance date, SC-7(4) with SC-8), the
+defect epoch 16 saw on the edit planner. None was a wrong mapping.
+
+**This suite does not separate these models on judgement.** Every graded
+mapping all three returned was right; the failures were formatting. It is a
+floor: it catches a prompt change that starts mapping on shared words, or
+stops mapping what carries the obligation. Telling a better mapper from a
+worse one needs cases with a defensible answer on both sides, which is the
+review step's job rather than a grader's.
+
+**The whole framework, live.** `policyforge crosswalk propose` on the bundled
+catalogs with `glm-5.3-flash`, from `e4876d1` ("Add `crosswalk propose` and
+`crosswalk review`", before the retry). Commits and a rebase landed in that worktree during the
+run. The rebase brought in only `ingest/provenance.py`, which this path does
+not import; of the modules already imported, only `crosswalk/overlay.py` was
+edited, gaining a function `propose` does not call:
+
+- 75 calls, $0.1943 for the 62 the ledger priced, every call attributed to
+  `crosswalk/hipaa-security-rule`.
+- **No effort level was sent**, although the suite runs above sent one. The
+  command builds its provider through `get_provider`, whose ledger wrapper
+  hides `supports_effort` from callers (reported by policyforge-80, confirmed
+  here for LiteLLM: the wrapper answers False, the provider inside answers
+  True). The eval harness's `--model` path builds the provider directly.
+  So this run is what a config-built run sent at the time, and the suite rows
+  are the request intended; they are not the same request. Fixed on main in
+  `82d4b26`, after which the two agree.
+- 84 published pairs confirmed with quotes, 138 flagged not confirmed, 94 new
+  pairs proposed, 16 mappings refused for unverifiable quotes; `crosswalk check` then reported 232 pairs needing review and no unknown ids.
+- 13 replies were not the schema's JSON. The parser recovered 7; the other 6
+  were glm's reasoning in prose ("Let me analyze the requirement carefully…")
+  with no rows in them, and those requirements were left untouched. That is
+  what the retry in `e1ec80c` is for: re-run on exactly those six, all six
+  produced proposals and none failed.
+- 38 of the 94 proposals are `-1` policy controls, most on the two
+  documentation requirements under 164.316 — one received 12. Rule 5 makes
+  that defensible, and NIST's own pairs for 164.316(b)(2)(ii) are 20 `-1`
+  controls, but it is reviewer load.
+- One requirement's quotes varied between runs: 164.316(b)(2)(ii) had 19
+  mappings refused in the six-requirement re-run and 19 accepted with
+  verified quotes on a direct call immediately after. The refused quotes were
+  not captured, so whether that run's quotes were fabricated or the checker
+  was too strict is not known.
+
+**After review — which rows describe the code that ships.** policyforge-1d's
+review of `c514059` changed two things that bear on these numbers, both in
+`1683d65`. The quote matcher now aligns words by longest common subsequence,
+so a word a quote adds no longer fails every word after it, and a
+specification shorter than four words is quotable only whole (R8). And a
+model's relationship is recorded as `proposed_relationship` for review rather
+than written to `relationship` (R1).
+
+- Every row the probe recorded, replayed through the checks at `c514059` and at
+  `1683d65` with no model calls: glm-5.3-flash keeps 165 of 168 under both;
+  claude-sonnet-5 keeps 203 of 210 before and 204 after. The one added is
+  IR-1 for 164.308(a)(6)(i), whose control quote joins two clauses of IR-1's
+  text; none is newly refused.
+- The suite with glm-5.3-flash, `--repeat 3`, built through `get_provider` as
+  the harness has done since P1b. At `1683d65`: 8/9 (24/27 runs, $0.0304 for
+  28 calls) — `ending-employment-is-not-ending-a-connection` failed every run
+  with PS-4 unmapped. On two direct calls glm quoted PS-4 as "Personnel
+  Termination ... Disable system access within", and the rule that each
+  ellipsis fragment carry three words refused the title fragment. That rule predates the review;
+  the passes above were glm quoting differently. `a332ba9` drops a fragment
+  equal to the item's own title before matching, and the suite there is 9/9
+  (27/27 runs, $0.0242 for 28 calls). The replay above gives the same counts
+  at `a332ba9` as at `1683d65`.
+- A second review found that `a332ba9` had stopped counting the title's words
+  toward the four-word minimum, so "Policy and Procedures ... access control
+  policy" — the shape rule 5 invites for a `-1` control — was refused. At
+  `35800da` a leading title followed by other fragments counts its words and
+  is set aside; nothing else is. The replay gives the same counts there as at
+  `1683d65`, and the glm suite is 9/9 (27/27 runs, $0.0438 for 28 calls).
+- A third review found that change let a title ground a quote by itself:
+  "Policy and Procedures ... policy", or the title repeated, verified a
+  mapping to any `-1` control. At `0e1570b` the rest of a quote after a
+  leading title must carry three words of its own, be found in the text after
+  the title, and not repeat it. The replay gives the same counts there, and the
+  glm suite is 9/9 (27/27 runs, $0.0452 for 28 calls; every call's
+  `stop_reason` in the eval ledger is `stop`).
+- Rebased onto 1.2.1 (`75e8e4c`), where `effort.call_json` raises on a reply
+  cut off twice. A cut-off proposal is now left alone per requirement, named
+  in the summary, and exits non-zero rather than being retried again. The
+  replay is unchanged again. The suite there: `claude-sonnet-5` 9/9 (27/27
+  runs, $0.3416), `glm-5.3-flash` 8/9 (24/27 runs, $0.0573). glm failed
+  `encryption-is-a-cryptographic-control` on every run, and on two direct
+  calls as well, by returning rows with a relationship and both quotes and no
+  `control` field — which the schema requires and OpenRouter does not
+  enforce. It passed on five earlier commits with the same prompt and schema,
+  and sonnet passes it on this one, so this is the model, not the code. The
+  product's answer is to ask once more and then leave the requirement
+  unproposed, name it, and exit non-zero; the case stays as it is, since
+  catching exactly this is what a floor suite is for.
+- The rows above at `1149e42` and `e1ec80c`, and the live run, describe the
+  code before review; `75e8e4c` is the code submitted, rebased onto 1.2.1. Before review,
+  the live run's 84 confirmations also wrote their relationships straight into
+  `relationship`, where coverage reads them. From `1683d65` the same run leaves
+  each recorded relationship as it was, flags every difference for review, and
+  changes no report.
 
 ______________________________________________________________________
 

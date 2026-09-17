@@ -43,7 +43,18 @@ def map_cmd(controls_paths, out: Path):
 
     crosswalk = build_crosswalk(controls)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(crosswalk, indent=2), encoding="utf-8")
+    from policyforge.textfile import write_text_lf
+
+    # LF on every platform, so a rebuilt crosswalk.json diffs only where the
+    # crosswalk changed.
+    write_text_lf(out, json.dumps(crosswalk, indent=2))
+    # Which overlays this crosswalk reflects, by content, so `synthesize` can
+    # tell a crosswalk built before an overlay changed from a current one.
+    from policyforge.crosswalk.overlay import overlay_digests, provenance_path
+
+    write_text_lf(
+        provenance_path(out), json.dumps({"overlays": overlay_digests()}, indent=2, sort_keys=True)
+    )
 
     frameworks = sorted({f for entry in crosswalk.values() for f in entry})
     click.echo(f"Built crosswalk for {len(crosswalk)} NIST controls -> {out}")
@@ -235,6 +246,8 @@ def coverage_cmd(
                 "with baseline profiles (see `policyforge etl-oscal`)?"
             )
 
+    from policyforge.crosswalk.overlay import accepted_relationships, load_overlays
+
     report = analyze_coverage(
         topics,
         scoped,
@@ -242,6 +255,8 @@ def coverage_cmd(
         scope=scope,
         other_controls=other_controls,
         crosswalk=build_crosswalk(all_controls) if other_controls else None,
+        # Already read by load_catalogs above, which refuses an unreadable one.
+        relationships=accepted_relationships(load_overlays()),
     )
 
     if as_json:

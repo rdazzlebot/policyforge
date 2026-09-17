@@ -34,6 +34,20 @@ ______________________________________________________________________
   counted until that was fixed.
 - **Third-party routing varies.** Models reached through OpenRouter may be
   served by different upstreams between runs, with different quantisation.
+- **From `7241d90` (2026-09-14) to `82d4b26`, the harness and the CLI did not
+  send the same request.** Every provider built from config came back wrapped
+  in the call ledger's `RecordingProvider`, which answered False for
+  `supports_effort`, `supports_caching`, `supports_batch` and
+  `supports_grounding` whatever the provider inside said. A config-built run
+  on LiteLLM/OpenRouter, Anthropic or Vertex therefore sent no effort level,
+  and Anthropic and Vertex also sent no native citations and marked no cache
+  prefix (the per-provider list is in CHANGELOG under 1.2.0).
+  `scripts/eval_zardoz.py --model` built its LiteLLM provider directly, with no
+  wrapper, so an epoch measured that way sent effort. Such rows describe the
+  request the code is meant to send — and, since `82d4b26`, the request a
+  config-built run does send — but not what a config-built run sent inside
+  the window. Epochs 15–18 were measured with `--model` and each says so.
+  Found by policyforge-80.
 
 ### What each suite tests
 
@@ -645,6 +659,11 @@ was actually broken.
 
 ### 15. The harness was measuring the fallback — and chaining — 2026-09-16
 
+*Provider path:* `eval_zardoz.py --model`, LiteLLM built directly, so schema
+and effort were both used. A config-built run in this window reached the
+schema path too — `supports_schema` was forwarded — but sent no effort; see
+Method, and what to distrust.
+
 **A correction to every routing number above, starting with epoch 5.**
 
 `scripts/eval_zardoz.py` wraps the provider in `_Metered` to count cost. The
@@ -696,6 +715,12 @@ so single-intent cases grade the count strictly.
 Cost was not captured for this run.
 
 ### 16. The production request, re-measured — 2026-09-16
+
+*Provider path:* `eval_zardoz.py --model`, LiteLLM built directly. "The
+production request" below means the request the code builds for a provider
+that reports its capabilities truthfully. A config-built provider in this
+window did not report effort, so a CLI run sent none; these rows are that
+request only since `82d4b26`. See Method, and what to distrust.
 
 The first epoch whose report can name every prompt it graded. Until `28d066a`
 the registry held five prompts; the edit rewriter, the three generation
@@ -832,6 +857,11 @@ epoch 15, so answering and generation carry the effort level production
 sends. **Not comparable with any earlier row for these suites**; they are a
 new baseline, not a change.
 
+*Provider path, added after `82d4b26`:* `eval_zardoz.py --model`. "The
+effort level production sends" held for the harness's provider only: a
+config-built run in this window sent no effort. See Method, and what to
+distrust.
+
 | Suite        | `glm-5.3-flash`              | `deepseek-v4-flash`        |
 | ------------ | ---------------------------- | -------------------------- |
 | `answering`  | 25/27 (76/81 runs) $0.0084   | 24/27 (78/81 runs) $0.0100 |
@@ -877,6 +907,10 @@ Epoch 17's open problem, explained and fixed by policyforge-ba. Prompts:
 `f45b924` and `72d167b`, which differ only in the eval cases and grader.
 Every run was from a pinned worktree, and its output held no rate-limit or
 API errors.
+
+*Provider path:* `eval_zardoz.py --model`, so effort was sent; a
+config-built `policyforge generate` in this window sent none. "The production
+request" in the probe below means effort on. See Method, and what to distrust.
 
 **The cause was the prompt, not the effort level.** Probed on the two
 failing cases with the production request: effort on, the Procedure failed

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Evals
+
+- **The eval report says, per run, why each reply stopped and how long it
+  was.** The truncation re-measure had one `length` stop in 200 calls and
+  no way to tell whether it was the run that failed: the harness recorded
+  pass or fail, the ledger recorded stop reasons, and nothing joined them.
+  The meter now keeps every reply's stop reason, output tokens and model;
+  `run_case` attaches each run's slice to its outcome; a failed case's
+  first failure prints `replies: stop=length out=1019, ...`; and the
+  summary counts the runs that had a reply cut off at its budget — said
+  even when every case passed, because a reply that stopped at its budget
+  and was retried into a pass is a budget one paraphrase from a failure.
+
 ### Budgets
 
 - **The answering budget is 2048 output tokens, from 1024, and named.**

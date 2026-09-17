@@ -112,6 +112,14 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
+    # bash on every leg. On Windows `run:` defaults to pwsh, which does not stop
+    # on a failing native command mid-step and only checks the last one's exit
+    # code: a failed hashed install followed by a working `pip install -e .`
+    # would go green and hide exactly the lock failure this job is here for.
+    # Git Bash is on the Windows runners and runs with -e, as on Linux.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 

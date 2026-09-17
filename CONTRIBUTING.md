@@ -164,7 +164,11 @@ Identical means the numbers in MEASUREMENTS.md stay comparable. A
 difference is either the point of the change, in which case the pull
 request says so and a new epoch follows, or a finding. Do this for any
 change under `evals/`, `scripts/eval_zardoz.py`, `llm/`, or a prompt's
-call site.
+call site. The capture stands in for `litellm.completion` and nothing
+else, so it sees only LiteLLM-backed runs — the `--model` path, which is
+what MEASUREMENTS.md was measured with. A change to the Anthropic,
+Vertex, Bedrock or OpenAI-compatible providers is not covered by it;
+say in the pull request how that request shape was checked instead.
 
 ## Regenerating a catalog
 

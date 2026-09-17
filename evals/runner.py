@@ -918,6 +918,7 @@ def run_case(
     suite: str, case: dict, provider, *, repeat: int = 1, corpora: dict | None = None
 ) -> CaseResult:
     from policyforge.llm import ledger
+    from policyforge.llm.base import TruncatedResponse
 
     result = CaseResult(suite=suite, name=case.get("name") or case.get("question", "?"))
     for _ in range(repeat):
@@ -935,6 +936,14 @@ def run_case(
             # graded rather than as `(unattributed)`.
             with ledger.about(f"{suite}/{result.name}", site="eval"):
                 result.outcomes.append(SUITES[suite](case, provider, corpora))
+        except TruncatedResponse as exc:
+            # A failure, never a pass and never infrastructure noise: the
+            # model answered, and its answer was cut off at the budget after
+            # a retry. Graded as such so a budget that is too small for a
+            # case shows up as that case failing with the reason on it.
+            result.outcomes.append(
+                Outcome(False, f"truncated at {exc.budget} tokens ({exc.stop_reason})", exc.text)
+            )
         except Exception as exc:  # noqa: BLE001 - one bad case must not end the run
             detail = f"{type(exc).__name__}: {exc}"
             infrastructure = any(hint in detail.lower() for hint in _INFRASTRUCTURE)

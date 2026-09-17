@@ -34,7 +34,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from policyforge.llm.base import SchemaReplyError
+from policyforge.llm import effort
+from policyforge.llm.base import SchemaReplyError, TruncatedResponse
 from policyforge.llm.prompts import Prompt, register
 
 from .budgets import ROUTING_TOKENS
@@ -696,7 +697,12 @@ def _route_with_schema(question: str, catalog: str, provider) -> str | None:
         },
     }
     try:
-        response = provider.generate_json(
+        # Through the helper, not the provider directly: that is where a
+        # cut-off reply is retried once and then refused, and a routing
+        # call that silently fell through to prose after a truncation was
+        # measured as a route, not as the failure it was.
+        response = effort.call_json(
+            provider,
             system=ROUTER_SYSTEM_PROMPT,
             prompt=f"ANALYSES\n\n{catalog}\n\nQUESTION\n\n{question.strip()}",
             schema=schema,
@@ -704,6 +710,8 @@ def _route_with_schema(question: str, catalog: str, provider) -> str | None:
             max_tokens=ROUTING_TOKENS,
         )
         choice = json.loads(response.text).get("analysis")
+    except TruncatedResponse:
+        raise
     except Exception:  # noqa: BLE001 - a failed optimisation is not a failed route
         return None
     # Belt and braces. `strict` should make an off-enum value impossible,
@@ -795,7 +803,8 @@ def _fill_arguments(question: str, skill_name: str, provider) -> dict:
         },
     }
     try:
-        response = provider.generate_json(
+        response = effort.call_json(
+            provider,
             system=ARGUMENT_PROMPT,
             prompt=(
                 f"ANALYSIS\n\n{skill_name}: {SKILLS[skill_name].answers}\n\n"
@@ -806,6 +815,8 @@ def _fill_arguments(question: str, skill_name: str, provider) -> dict:
             max_tokens=ROUTING_TOKENS,
         )
         parsed = json.loads(response.text)
+    except TruncatedResponse:
+        raise
     except Exception:  # noqa: BLE001 - unnarrowed is a worse answer, not a wrong one
         return {}
 
@@ -962,7 +973,8 @@ def _route_also(question: str, first: str, provider) -> str:
         f"OTHER ANALYSES\n\n{catalog}\n\nQUESTION\n\n{question.strip()}"
     )
     try:
-        response = provider.generate_json(
+        response = effort.call_json(
+            provider,
             system=ALSO_PROMPT,
             prompt=prompt,
             schema=schema,
@@ -970,6 +982,8 @@ def _route_also(question: str, first: str, provider) -> str:
             max_tokens=ROUTING_TOKENS,
         )
         choice = json.loads(response.text).get("also", "none")
+    except TruncatedResponse:
+        raise
     except SchemaReplyError as exc:
         # The model answered, just not as JSON. Read that answer first; ask
         # again only if it is not a word from the list.
@@ -1011,12 +1025,15 @@ def _also_in_prose(prompt: str, provider) -> str:
     cannot invent an analysis — only recover one the model already chose.
     """
     try:
-        response = provider.generate(
+        response = effort.call(
+            provider,
             system=ALSO_PROMPT,
             prompt=f"{prompt}\n\nReply with exactly one word: the analysis name, or none.",
             temperature=0.0,
             max_tokens=ROUTING_TOKENS,
         )
+    except TruncatedResponse:
+        raise
     except Exception:  # noqa: BLE001 - a missed second report is a follow-up, not an error
         return "none"
     return _first_word(response.text)
@@ -1073,8 +1090,6 @@ def _route_by_name(question: str, provider) -> str:
         if routed is not None:
             return routed
 
-    from policyforge.llm import effort
-
     try:
         response = effort.call(
             provider,
@@ -1091,6 +1106,10 @@ def _route_by_name(question: str, provider) -> str:
             # the lever that should eventually make the budget unnecessary.
             max_tokens=ROUTING_TOKENS,
         )
+    except TruncatedResponse:
+        # Retried once already. Routing offline here would grade — and
+        # answer — a cut-off reply as a decision about the question.
+        raise
     except Exception:  # noqa: BLE001 - a routing failure is not a session failure
         return route_offline(question)
 

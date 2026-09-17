@@ -312,9 +312,21 @@ def generate_standard(
         system=_STANDARD_SYSTEM_PROMPT,
         prompt=prompt,
         temperature=0.2,
-        max_tokens=8192,
+        max_tokens=LONG_DOCUMENT_TOKENS,
     )
     return response.text.strip()
+
+
+#: A Standard or a Procedure. From the first 20-topic cost run
+#: (glm-5.3-flash, 2026-09-17): at 8192, Standards ran a median of 4,149
+#: output tokens with p90 8,088 and two of twenty cut off at the ceiling;
+#: Procedures a median of 4,065, p90 7,966, two of twenty cut off. A p90
+#: at the budget means one document in ten was about to be truncated, so
+#: the budget is doubled; `llm/effort.py` retries once at twice this.
+LONG_DOCUMENT_TOKENS = 16384
+#: A Policy compresses the Standard rather than enumerating it: same run,
+#: median 582, maximum 1,104, none cut off.
+POLICY_TOKENS = 4096
 
 
 def generate_policy(
@@ -350,7 +362,7 @@ def generate_policy(
         system=_POLICY_SYSTEM_PROMPT,
         prompt=prompt,
         temperature=0.2,
-        max_tokens=4096,
+        max_tokens=POLICY_TOKENS,
     )
     return response.text.strip()
 
@@ -388,6 +400,6 @@ def generate_procedure(
         system=_PROCEDURE_SYSTEM_PROMPT,
         prompt=prompt,
         temperature=0.2,
-        max_tokens=8192,
+        max_tokens=LONG_DOCUMENT_TOKENS,
     )
     return response.text.strip()

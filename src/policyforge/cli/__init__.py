@@ -27,10 +27,29 @@ from __future__ import annotations
 import click
 
 from policyforge.config import load_config
-from policyforge.llm.base import get_provider
+from policyforge.llm.base import TruncatedResponse, get_provider
 
 
-@click.group()
+class _Group(click.Group):
+    """The command group, with one refusal every command inherits.
+
+    A model reply cut off at its output budget is refused by `llm/effort.py`
+    after one retry, as `TruncatedResponse`. Translated here, once, into a
+    clean non-zero exit that names the document and the budget — so a new
+    command that drafts something is covered the day it is written, rather
+    than the day somebody notices its traceback. Every writer runs its model
+    calls before its file writes, so nothing partial is on disk when this
+    fires; `tests/test_truncation.py` holds the writers to that.
+    """
+
+    def invoke(self, ctx):
+        try:
+            return super().invoke(ctx)
+        except TruncatedResponse as exc:
+            raise click.ClickException(str(exc)) from exc
+
+
+@click.group(cls=_Group)
 def cli():
     """PolicyForge - cross-mapped compliance policy/procedure generation."""
 

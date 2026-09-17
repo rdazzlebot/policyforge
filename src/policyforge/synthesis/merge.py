@@ -194,8 +194,24 @@ def synthesize_topic(topic: SynthesisTopic, provider: LLMProvider) -> str:
         system=_SYSTEM_PROMPT,
         prompt=prompt,
         temperature=0.1,
+        max_tokens=SYNTHESIS_TOKENS,
     )
     return response.text.strip()
+
+
+#: The output budget for one topic's merged requirement list.
+#:
+#: Sized from the first 20-topic cost run (glm-5.3-flash via OpenRouter,
+#: 2026-09-17, the 20 starter topics over NIST, FedRAMP, ARC-AMPE and
+#: HIPAA). With no budget named, the 4096 default applied and 11 of 20
+#: syntheses stopped at it and were written as finished. The nine that
+#: completed used a median of 4096 and up to 13,569 output tokens, p90
+#: 12,170 — a reasoning model spends part of the budget thinking before
+#: it writes, and the ledger counts both. So a topic that finishes needs
+#: room for about 14k, and `llm/effort.py` retries a cut-off reply once at
+#: twice this before refusing. Measured, and to be re-measured when the
+#: cost table is re-run on this budget.
+SYNTHESIS_TOKENS = 16384
 
 
 def build_synthesis_topic(

@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+### A reply cut off at its budget is refused, not written
+
+- **If you generated documents with 1.2.0 or earlier, check them.** The
+  first 20-topic cost run found that a reply the model stopped at its
+  output budget was written to disk as a finished document, with exit 0
+  and no warning: 11 of 20 syntheses stopped at the 4096-token default
+  (one ended "...(PII) and support"), 4 of 60 drafts stopped at 8192 (a
+  risk Standard ended "shall make risk"), and every Policy and Procedure
+  drafted from a truncated synthesis silently lacks the requirements it
+  never saw. It applied to every provider. To find affected files, run
+  `policyforge model-log --by subject` and look at the `stop_reason`
+  column of the underlying `output/.model-log/calls.jsonl` rows: a value
+  of `length` (LiteLLM, OpenAI-compatible) or `max_tokens` (Anthropic,
+  Vertex, Bedrock) on a `synthesize`, `generate`, `edit` or `ssp` call
+  names a document to regenerate. The ledger recorded the stop reason all
+  along; nothing read it.
+- **Now, centrally:** `LLMResponse.truncated` normalises every vendor's
+  spelling, and `llm/effort.py` — the one path every model call takes —
+  retries a cut-off reply once at twice its budget (capped at 32768) and
+  raises `TruncatedResponse` if it is still cut off. The CLI group turns
+  that into a non-zero exit naming the document and the budget, so every
+  command is covered, including ones written later. No writer writes
+  before its model calls return, so nothing partial is left on disk; both
+  billed calls are in the ledger.
+- **Budgets sized from the run.** A synthesis that completed used up to
+  13,569 output tokens on the recommended model (a reasoning model spends
+  part of the budget thinking, and the ledger counts both), so synthesis
+  gets an explicit 16384 instead of the 4096 default. Standards and
+  Procedures ran a p90 of about 8,000 against an 8192 budget with two of
+  twenty cut off each, so both move to 16384. Policies stay at 4096: the
+  largest was 1,104. Each figure sits beside the constant it justifies.
+- **No silent fallback.** The four Zardoz routing calls that went to the
+  provider directly now go through the helper, and their catch-all
+  handlers re-raise a truncation instead of routing to the documents;
+  query expansion does the same. In the eval harness a truncated reply
+  grades as a failure with the reason `truncated at N tokens`, never as a
+  pass and never as infrastructure noise. Batch SSP narratives are
+  checked by control id, since a batch cannot be retried one item at a
+  time.
+
 ### Fixes
 
 - **`config.yaml` is read as UTF-8 on every platform.** It was opened with

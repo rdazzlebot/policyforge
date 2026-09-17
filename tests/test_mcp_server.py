@@ -277,7 +277,6 @@ def test_the_bundle_tool_reaches_the_registry(tmp_path):
             }
         ),
         encoding="utf-8",
-        errors="replace",  # the server logs in the platform encoding
     )
     state = build_state({}, corpus_dir=tmp_path / "corpus", topics_path=topics_path)
     assert "Access Review" in call_tool(state, "topics", {})

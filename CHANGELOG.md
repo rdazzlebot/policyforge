@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Repository hardening
+
+- **The Confluence publish job skips unless a wiki is configured.** This
+  repository has no `CONFLUENCE_HOST` and no credentials, so every push
+  touching `docs/` failed at the Plan step and left a red workflow on `main`
+  that means nothing. It now runs only when the variable is set, with a
+  comment saying publishing is off until then, so a skipped job is not read
+  as a successful publish. The `check` job still runs on every pull request.
+
 ## 1.2.1
 
 A correctness release. Nothing new to learn, one thing to check.

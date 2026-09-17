@@ -57,7 +57,21 @@ jobs:
   publish:
     name: publish to Confluence
     needs: check
-    if: github.event_name == 'push' && github.repository == 'rdazzlebot/policyforge'
+    # Only where a wiki is actually configured. This repository publishes
+    # nowhere: the `confluence` environment has no CONFLUENCE_HOST and no
+    # credentials, so every push touching docs/ failed at the Plan step with
+    # "No Confluence host" — the red job people learn to scroll past, which
+    # this project's own documents warn about twice. It is a fork's or an
+    # adopter's job to point this at their wiki.
+    #
+    # **Publishing is off until `CONFLUENCE_HOST` is set.** A green run of
+    # this workflow with the job skipped means nothing was published, not
+    # that a publish succeeded. `check` above still runs on every pull
+    # request and still gates the tree.
+    if: >-
+      github.event_name == 'push'
+      && github.repository == 'rdazzlebot/policyforge'
+      && vars.CONFLUENCE_HOST != ''
     runs-on: ubuntu-latest
     # Gate the token behind an environment so a publish can require review
     # and so the secret is not readable by every other job in the repo.

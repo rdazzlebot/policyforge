@@ -257,6 +257,40 @@ def test_etl_arc_ampe_version_option_reaches_the_parser(tmp_path, monkeypatch):
     assert seen["version"] == "v9.99"
 
 
+def test_the_help_surface_is_ascii():
+    """Every console can show it.
+
+    `policyforge --help` opened with an em-dash that a Windows console on a
+    legacy code page, or a piped Python process, printed as a replacement
+    character; thirty-eight commands and options carried the same one. Help
+    text is the first thing a new user reads, on whatever terminal they
+    have, so it stays within ASCII. Runtime messages are not held to this.
+    """
+    import re
+
+    from policyforge.cli import cli
+
+    offenders = []
+
+    def scan(where, text):
+        for ch in sorted(set(re.findall(r"[^\x00-\x7F]", text or ""))):
+            offenders.append(f"{where}: U+{ord(ch):04X}")
+
+    def walk(group, prefix):
+        for name, command in sorted(group.commands.items()):
+            path = " ".join([*prefix, name])
+            scan(f"{path} (help)", command.help)
+            for param in command.params:
+                scan(f"{path} --{param.name}", getattr(param, "help", None))
+            if isinstance(command, click.Group):
+                walk(command, [*prefix, name])
+
+    scan("policyforge (help)", cli.help)
+    walk(cli, [])
+
+    assert offenders == [], "non-ASCII in help text: " + ", ".join(offenders)
+
+
 if __name__ == "__main__":
     FIXTURE.parent.mkdir(parents=True, exist_ok=True)
     FIXTURE.write_text(json.dumps(_live(), indent=2, sort_keys=True) + "\n", encoding="utf-8")

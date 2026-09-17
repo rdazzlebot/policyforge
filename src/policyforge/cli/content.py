@@ -409,7 +409,7 @@ def _edit_run(
     type=click.Choice(["policy", "standard", "procedure"]),
     default=None,
     help="Which document tier this page is. Tells the planner what altitude to "
-    "edit at — a threshold change belongs in a Standard, not a Policy.",
+    "edit at - a threshold change belongs in a Standard, not a Policy.",
 )
 @click.option(
     "--apply",
@@ -560,7 +560,7 @@ def edit_topic_cmd(
     tier: the Standard states the requirement, the Procedure carries the
     steps, and the Policy usually shouldn't change at all. Each page is
     planned separately and tier-aware, but reviewed and published as one
-    change — and a page whose plan comes back empty is left alone rather than
+    change - and a page whose plan comes back empty is left alone rather than
     having an edit forced into it.
     """
     from policyforge.edit.session import EditTarget
@@ -785,7 +785,7 @@ def _edit_tree_run(
     "--tier",
     type=click.Choice(["standard", "policy", "procedure"]),
     required=True,
-    help="Which document tier this Confluence page corresponds to — determines which "
+    help="Which document tier this Confluence page corresponds to - determines which "
     "local version-history stream the import is recorded into.",
 )
 @click.option(
@@ -807,7 +807,7 @@ def _edit_tree_run(
     default=None,
     type=click.Path(path_type=Path),
     help="Where to write the imported markdown "
-    "(default: output/<tier>s/<name>.imported.md — deliberately not the same "
+    "(default: output/<tier>s/<name>.imported.md - deliberately not the same "
     "filename `generate` writes, so an import never silently overwrites a fresh draft).",
 )
 @click.option(
@@ -821,7 +821,7 @@ def import_confluence_cmd(
 ):
     """Pull a page's current content back out of Confluence, converting it to
     markdown, and record it into the same local version-history stream
-    `generate` uses for --tier/--name — so you can diff what this tool last
+    `generate` uses for --tier/--name - so you can diff what this tool last
     generated against what's actually live (e.g. after a manual edit)."""
     from policyforge.export.confluence_importer import import_from_confluence
     from policyforge.history.version_store import load_history, record_version
@@ -885,7 +885,7 @@ def check_cmd(content_dir: Path | None, synthesis_dir: Path, strict: bool):
     """Check the content tree before anything is published.
 
     Entirely offline, so it runs on a pull request from a fork with no
-    credentials — which is where you want it. Catches the mistakes that
+    credentials - which is where you want it. Catches the mistakes that
     survive review and fail later: two files claiming one Confluence page,
     a link to a document somebody renamed, a rewrite that dropped the
     framework citations a document exists to carry.

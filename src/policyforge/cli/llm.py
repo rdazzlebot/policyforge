@@ -63,8 +63,8 @@ def llm_check():
 def boundary_cmd(paths: tuple[Path, ...]):
     """Show what may be sent to the configured model, and why.
 
-    Providers are classified by where the bytes end up — local, self-hosted,
-    or a third-party processor — and content by who may hold it. The table is
+    Providers are classified by where the bytes end up - local, self-hosted,
+    or a third-party processor - and content by who may hold it. The table is
     the pairing between them, and it is checked before a call rather than
     described in a README.
 
@@ -138,7 +138,7 @@ def model_log_cmd(
 ):
     """What was sent to which model, when, and at what cost.
 
-    Every model call this tool makes is recorded — provider, model, the
+    Every model call this tool makes is recorded - provider, model, the
     document or control it was about, token counts, cost, and a hash of the
     prompt. Not the prompt and not the reply: a record that quoted what it
     saw would copy licensed content into a file, which is the leak it exists

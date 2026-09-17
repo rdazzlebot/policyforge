@@ -17,5 +17,5 @@ notes: 'Published by CMS, a federal agency, with no copyright notice or redistri
   — pass it to `etl-arc-ampe --export` if you have it.'
 source_ref: v1.02
 source_url: https://www.cms.gov/files/document/arc-ampevol2sspp-aca-aev102-50803212025.xlsx
-content_sha256: d78cbfc2efdf1016675137f0d6c4a4264c15a80b858a52a5372671048a74cb2f
+content_sha256: 35dae6bef0f4a123f55d2139854e9992941835b72ed43723ebd35f09b3363e9c
 fetched_at: '2026-09-16'

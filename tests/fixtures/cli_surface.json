@@ -1,7 +1,7 @@
 {
   "commands": {
     "addresses": {
-      "help": "Who answers for one requirement, and which document says so.\n\nThe assessor's direction of travel. Name any requirement \u2014 NIST, HIPAA,\nHITRUST \u2014 and this resolves it through the crosswalk to the topics the\nregistry anchors, then names the owner and the pages.\n\nEvery claim says how it was reached: anchored directly, inherited from a\nparent control, or reached through a published crosswalk. The last is\nthe weakest and is labelled as such, because a mapping is not evidence\nthat anybody wrote the requirement down.\n",
+      "help": "Who answers for one requirement, and which document says so.\n\nThe assessor's direction of travel. Name any requirement \u2014 NIST, HIPAA,\nHITRUST \u2014 and this resolves it through the crosswalk to the topics the\nregistry anchors, then names the owner and the pages.\n\nEvery claim says how it was reached: anchored directly, inherited from a\nparent control, or reached through a published crosswalk. The last is\nthe weakest and is labelled as such, because a mapping is not evidence\nthat anybody wrote the requirement down.",
       "name": "addresses",
       "params": [
         {
@@ -64,7 +64,7 @@
       ]
     },
     "boundary": {
-      "help": "Show what may be sent to the configured model, and why.\n\nProviders are classified by where the bytes end up \u2014 local, self-hosted,\nor a third-party processor \u2014 and content by who may hold it. The table is\nthe pairing between them, and it is checked before a call rather than\ndescribed in a README.\n\nRun it to answer \"can this configuration work offline\" without having to\nremember, and to see a refusal's reasoning before a command hits it.\n",
+      "help": "Show what may be sent to the configured model, and why.\n\nProviders are classified by where the bytes end up \u2014 local, self-hosted,\nor a third-party processor \u2014 and content by who may hold it. The table is\nthe pairing between them, and it is checked before a call rather than\ndescribed in a README.\n\nRun it to answer \"can this configuration work offline\" without having to\nremember, and to see a refusal's reasoning before a command hits it.",
       "name": "boundary",
       "params": [
         {
@@ -91,7 +91,7 @@
       ]
     },
     "bundle": {
-      "help": "Everything one team answers for: topics, requirements, documents, cadence.\n\nThe question a team lead asks, which `coverage` answers only by being\nread whole and filtered by eye. Set arithmetic over the registry \u2014 no\nmodel involved, and the answer is exactly as good as the registry is.\n",
+      "help": "Everything one team answers for: topics, requirements, documents, cadence.\n\nThe question a team lead asks, which `coverage` answers only by being\nread whole and filtered by eye. Set arithmetic over the registry \u2014 no\nmodel involved, and the answer is exactly as good as the registry is.",
       "name": "bundle",
       "params": [
         {
@@ -154,7 +154,7 @@
       ]
     },
     "check": {
-      "help": "Check the content tree before anything is published.\n\nEntirely offline, so it runs on a pull request from a fork with no\ncredentials \u2014 which is where you want it. Catches the mistakes that\nsurvive review and fail later: two files claiming one Confluence page,\na link to a document somebody renamed, a rewrite that dropped the\nframework citations a document exists to carry.\n",
+      "help": "Check the content tree before anything is published.\n\nEntirely offline, so it runs on a pull request from a fork with no\ncredentials \u2014 which is where you want it. Catches the mistakes that\nsurvive review and fail later: two files claiming one Confluence page,\na link to a document somebody renamed, a rewrite that dropped the\nframework citations a document exists to carry.",
       "name": "check",
       "params": [
         {
@@ -220,7 +220,7 @@
       ]
     },
     "coverage": {
-      "help": "Report which in-scope controls no topic owns, and which two topics claim.\n\nOrphaned controls mean nobody is doing the work. Contested controls are\nworse: it looks covered while each owner assumes the other has it. Both\nare pure set arithmetic over the topic registry \u2014 no LLM involved. See\nREADME's \"One topic, one team\".\n",
+      "help": "Report which in-scope controls no topic owns, and which two topics claim.\n\nOrphaned controls mean nobody is doing the work. Contested controls are\nworse: it looks covered while each owner assumes the other has it. Both\nare pure set arithmetic over the topic registry \u2014 no LLM involved. See\nREADME's \"One topic, one team\".",
       "name": "coverage",
       "params": [
         {
@@ -346,7 +346,7 @@
       ]
     },
     "drift": {
-      "help": "Report what a framework update changed, and what it reaches.\n\nA catalog bump touches a few dozen controls out of a thousand, and behind\nthose sit a handful of your topics and a smaller handful of your\ndocuments. Everything else is unaffected and should stay unread.\n\nRun the ETL, then run this \u2014 the ETL overwrites the catalog in place and\ngit is still holding the version you had, so no snapshot is needed:\n\n    policyforge etl-oscal\n    policyforge drift --controls data/frameworks/nist-800-53-r5/controls.json\n",
+      "help": "Report what a framework update changed, and what it reaches.\n\nA catalog bump touches a few dozen controls out of a thousand, and behind\nthose sit a handful of your topics and a smaller handful of your\ndocuments. Everything else is unaffected and should stay unread.\n\nRun the ETL, then run this \u2014 the ETL overwrites the catalog in place and\ngit is still holding the version you had, so no snapshot is needed:\n\n    policyforge etl-oscal\n    policyforge drift --controls data/frameworks/nist-800-53-r5/controls.json",
       "name": "drift",
       "params": [
         {
@@ -511,7 +511,7 @@
       ]
     },
     "edit-confluence": {
-      "help": "Edit one live Confluence page from a plain-language instruction.\n\nFetches the page, plans the edits, shows you the plan and the resulting\ndiff, and publishes only if you pass --apply and confirm. The page's\n\"before\" state is recorded to local version history either way, and the\nplan is saved alongside the revision, so there is always something to\ndiff against and a record of why it changed.\n",
+      "help": "Edit one live Confluence page from a plain-language instruction.\n\nFetches the page, plans the edits, shows you the plan and the resulting\ndiff, and publishes only if you pass --apply and confirm. The page's\n\"before\" state is recorded to local version history either way, and the\nplan is saved alongside the revision, so there is always something to\ndiff against and a record of why it changed.",
       "name": "edit-confluence",
       "params": [
         {
@@ -727,7 +727,7 @@
       ]
     },
     "edit-topic": {
-      "help": "Apply one instruction across a topic's whole document set.\n\nA change like \"access reviews move to monthly\" lands differently in each\ntier: the Standard states the requirement, the Procedure carries the\nsteps, and the Policy usually shouldn't change at all. Each page is\nplanned separately and tier-aware, but reviewed and published as one\nchange \u2014 and a page whose plan comes back empty is left alone rather than\nhaving an edit forced into it.\n",
+      "help": "Apply one instruction across a topic's whole document set.\n\nA change like \"access reviews move to monthly\" lands differently in each\ntier: the Standard states the requirement, the Procedure carries the\nsteps, and the Policy usually shouldn't change at all. Each page is\nplanned separately and tier-aware, but reviewed and published as one\nchange \u2014 and a page whose plan comes back empty is left alone rather than\nhaving an edit forced into it.",
       "name": "edit-topic",
       "params": [
         {
@@ -961,7 +961,7 @@
       ]
     },
     "etl-arc-ampe": {
-      "help": "Fetch CMS's ARC-AMPE Volume II baseline and parse it into this schema.\n\nPublic domain \u2014 published by CMS, a federal agency, with no copyright\nnotice or redistribution restriction, same basis as the NIST and eCFR\nsources.\n\nNote which volume this reads. Volume I is the narrative PDF and holds no\ncontrols; Volume II is the System Security and Privacy Plan workbook,\nand its `AE Mandatory Baseline` sheet is the catalog \u2014 402 controls\nrequired of an ACA Administering Entity, with CMS's parameter decisions\nalready written into the control text. The sheet is found by its shape\nrather than its name, so the Direct Enrollment Entity workbook reads the\nsame way via --export. See ingest/arc_ampe.py.\n",
+      "help": "Fetch CMS's ARC-AMPE Volume II baseline and parse it into this schema.\n\nPublic domain \u2014 published by CMS, a federal agency, with no copyright\nnotice or redistribution restriction, same basis as the NIST and eCFR\nsources.\n\nNote which volume this reads. Volume I is the narrative PDF and holds no\ncontrols; Volume II is the System Security and Privacy Plan workbook,\nand its `AE Mandatory Baseline` sheet is the catalog \u2014 402 controls\nrequired of an ACA Administering Entity, with CMS's parameter decisions\nalready written into the control text. The sheet is found by its shape\nrather than its name, so the Direct Enrollment Entity workbook reads the\nsame way via --export. See ingest/arc_ampe.py.",
       "name": "etl-arc-ampe",
       "params": [
         {
@@ -1048,7 +1048,7 @@
       ]
     },
     "etl-fedramp": {
-      "help": "Fetch FedRAMP's published control tailoring and apply it to 800-53.\n\nPublic domain \u2014 a US federal program, same basis as the NIST and eCFR\nsources. Read from `fedramp-consolidated-rules.json` in `FedRAMP/rules`,\nwhich that repository calls its canonical rules dataset.\n\nThis writes a profile, not a baseline. FedRAMP's machine-readable\nLow/Moderate/High baseline selection used to live in\n`GSA/fedramp-automation`, and that repository no longer exists \u2014 so\nnothing here says which controls a given system must implement, and\n`Control.baseline` is deliberately left unset rather than guessed. What\nit does carry is FedRAMP's own two additions to the controls it does\nspeak to: the organization-defined values FedRAMP has already decided,\nand the guidance it layers on top. See ingest/fedramp.py.\n",
+      "help": "Fetch FedRAMP's published control tailoring and apply it to 800-53.\n\nPublic domain \u2014 a US federal program, same basis as the NIST and eCFR\nsources. Read from `fedramp-consolidated-rules.json` in `FedRAMP/rules`,\nwhich that repository calls its canonical rules dataset.\n\nThis writes a profile, not a baseline. FedRAMP's machine-readable\nLow/Moderate/High baseline selection used to live in\n`GSA/fedramp-automation`, and that repository no longer exists \u2014 so\nnothing here says which controls a given system must implement, and\n`Control.baseline` is deliberately left unset rather than guessed. What\nit does carry is FedRAMP's own two additions to the controls it does\nspeak to: the organization-defined values FedRAMP has already decided,\nand the guidance it layers on top. See ingest/fedramp.py.",
       "name": "etl-fedramp",
       "params": [
         {
@@ -1096,7 +1096,7 @@
       ]
     },
     "etl-govramp": {
-      "help": "Parse your own GovRAMP controls matrix into this project's schema.\n\nGovRAMP's Terms & Conditions claim ownership of the documents published\non their site, and no redistribution grant was found \u2014 so, like HITRUST,\nthis project never bundles the matrix and never fetches it. You supply\nthe workbook and it is parsed locally, in memory. Nothing is written\nunless you pass --out.\n\nPass the workbook as GovRAMP publishes it rather than an extract of it:\nthe controls sheet is found among the template's other thirteen by its\nheader captions, so the Low, Moderate and High workbooks all read\nwithout being told which they are.\n\nWhat this gives you that the 800-53 catalog does not is the profile's\nown two additions \u2014 the parameter values GovRAMP has already decided\n(\"at least every 3 years\"), which `policyforge parameters` would\notherwise leave open for you to answer, and the requirements it layers\non top of a control \u2014 across the Core/Ready/Authorized tiers. Those\ntiers are *not* impact levels: one Moderate matrix holds all three, and\n60 of its 319 controls stand between a service offering and Core.\n\nSee ingest/govramp.py for the framework's structure and\ningest/govramp_export.py for how the sheet and its two-row header are\nfound. If detection fails on your workbook, `policyforge generate-parser\n--framework govramp` drafts a loader for it from a sample.\n",
+      "help": "Parse your own GovRAMP controls matrix into this project's schema.\n\nGovRAMP's Terms & Conditions claim ownership of the documents published\non their site, and no redistribution grant was found \u2014 so, like HITRUST,\nthis project never bundles the matrix and never fetches it. You supply\nthe workbook and it is parsed locally, in memory. Nothing is written\nunless you pass --out.\n\nPass the workbook as GovRAMP publishes it rather than an extract of it:\nthe controls sheet is found among the template's other thirteen by its\nheader captions, so the Low, Moderate and High workbooks all read\nwithout being told which they are.\n\nWhat this gives you that the 800-53 catalog does not is the profile's\nown two additions \u2014 the parameter values GovRAMP has already decided\n(\"at least every 3 years\"), which `policyforge parameters` would\notherwise leave open for you to answer, and the requirements it layers\non top of a control \u2014 across the Core/Ready/Authorized tiers. Those\ntiers are *not* impact levels: one Moderate matrix holds all three, and\n60 of its 319 controls stand between a service offering and Core.\n\nSee ingest/govramp.py for the framework's structure and\ningest/govramp_export.py for how the sheet and its two-row header are\nfound. If detection fails on your workbook, `policyforge generate-parser\n--framework govramp` drafts a loader for it from a sample.",
       "name": "etl-govramp",
       "params": [
         {
@@ -1204,7 +1204,7 @@
       ]
     },
     "etl-hipaa": {
-      "help": "Fetch the HIPAA Security Rule (45 CFR 164 Subpart C) from eCFR's public\nAPI and parse it into this project's data schema. Public domain \u2014 a US\nfederal regulation, same basis as NIST/FedRAMP/ARC-AMPE \u2014 so unlike\nHITRUST/GovRAMP this is safe to bundle directly. See\ningest/hipaa_loader.py for parsing details.\n",
+      "help": "Fetch the HIPAA Security Rule (45 CFR 164 Subpart C) from eCFR's public\nAPI and parse it into this project's data schema. Public domain \u2014 a US\nfederal regulation, same basis as NIST/FedRAMP/ARC-AMPE \u2014 so unlike\nHITRUST/GovRAMP this is safe to bundle directly. See\ningest/hipaa_loader.py for parsing details.",
       "name": "etl-hipaa",
       "params": [
         {
@@ -1249,7 +1249,7 @@
       ]
     },
     "etl-hipaa-crosswalk": {
-      "help": "Attach NIST's official HIPAA-Security-Rule-to-SP-800-53-Rev-5 crosswalk\nto the HIPAA control data, so `map`/`synthesize` can pull HIPAA\nrequirements into a NIST-anchored topic.\n\nSource is NIST's Cybersecurity and Privacy Reference Tool (CPRT), not SP\n800-66r2's PDF \u2014 Appendix D of that document states the mapping table was\nremoved from the PDF and published in CPRT instead. See\ningest/hipaa_crosswalk_loader.py.\n",
+      "help": "Attach NIST's official HIPAA-Security-Rule-to-SP-800-53-Rev-5 crosswalk\nto the HIPAA control data, so `map`/`synthesize` can pull HIPAA\nrequirements into a NIST-anchored topic.\n\nSource is NIST's Cybersecurity and Privacy Reference Tool (CPRT), not SP\n800-66r2's PDF \u2014 Appendix D of that document states the mapping table was\nremoved from the PDF and published in CPRT instead. See\ningest/hipaa_crosswalk_loader.py.",
       "name": "etl-hipaa-crosswalk",
       "params": [
         {
@@ -1318,7 +1318,7 @@
       ]
     },
     "etl-hitrust": {
-      "help": "Parse your own licensed HITRUST CSF export into this project's schema.\n\nHITRUST CSF is licensed content. This project never bundles it and never\nfetches it: you supply an export from your own MyCSF licence and it is\nparsed locally, in memory. Nothing is written unless you pass --out.\n\nPrefer a CSV export where you have the choice. The rendered HTML/MHTML of\nthe same report is more clearly labelled but carries markedly fewer\nauthoritative-source mappings, which is most of what makes a CSF export\nworth ingesting.\n\nSee ingest/hitrust.py for the framework's structure and\ningest/hitrust_export.py for how the columns are identified. If detection\nfails on your export, `policyforge generate-parser --framework hitrust`\ndrafts a loader for it from a sample.\n",
+      "help": "Parse your own licensed HITRUST CSF export into this project's schema.\n\nHITRUST CSF is licensed content. This project never bundles it and never\nfetches it: you supply an export from your own MyCSF licence and it is\nparsed locally, in memory. Nothing is written unless you pass --out.\n\nPrefer a CSV export where you have the choice. The rendered HTML/MHTML of\nthe same report is more clearly labelled but carries markedly fewer\nauthoritative-source mappings, which is most of what makes a CSF export\nworth ingesting.\n\nSee ingest/hitrust.py for the framework's structure and\ningest/hitrust_export.py for how the columns are identified. If detection\nfails on your export, `policyforge generate-parser --framework hitrust`\ndrafts a loader for it from a sample.",
       "name": "etl-hitrust",
       "params": [
         {
@@ -1402,7 +1402,7 @@
       ]
     },
     "etl-oscal": {
-      "help": "Fetch NIST's official OSCAL edition of SP 800-53 Rev 5 (plus the\nLow/Moderate/High baseline profiles) and parse it into this project's\ndata schema.\n\nPublic domain \u2014 a US government work, same basis as the eCFR and CPRT\nsources. Unlike `etl-vault`, this needs no pre-existing vault, so it's\nthe way to populate 800-53 data from scratch. See ingest/oscal_loader.py.\n",
+      "help": "Fetch NIST's official OSCAL edition of SP 800-53 Rev 5 (plus the\nLow/Moderate/High baseline profiles) and parse it into this project's\ndata schema.\n\nPublic domain \u2014 a US government work, same basis as the eCFR and CPRT\nsources. Unlike `etl-vault`, this needs no pre-existing vault, so it's\nthe way to populate 800-53 data from scratch. See ingest/oscal_loader.py.",
       "name": "etl-oscal",
       "params": [
         {
@@ -1447,7 +1447,7 @@
       ]
     },
     "etl-vault": {
-      "help": "Parse NIST 800-53 control notes from an existing vault into this\nproject's data schema. Public-domain content only \u2014 see\ningest/nist_vault_loader.py for what crosswalk columns are stripped\nby default and why.\n",
+      "help": "Parse NIST 800-53 control notes from an existing vault into this\nproject's data schema. Public-domain content only \u2014 see\ningest/nist_vault_loader.py for what crosswalk columns are stripped\nby default and why.",
       "name": "etl-vault",
       "params": [
         {
@@ -1612,7 +1612,7 @@
       ]
     },
     "frameworks": {
-      "help": "List the framework catalogs on disk, and their licence position.\n\nA catalog is public domain or it is licensed, and that decides which\nrepository may hold a copy of it. This repository may hold only the\nformer; your own private repository can very often hold both, because\nyour MyCSF or GovRAMP licence permits internal use.\n\nLicensed content committed to a repository that has not declared the\nright to hold it is reported as an error \u2014 set\n`frameworks.allow_licensed_in_repo: true` in config.yaml if your licence\npermits yours to carry it.\n",
+      "help": "List the framework catalogs on disk, and their licence position.\n\nA catalog is public domain or it is licensed, and that decides which\nrepository may hold a copy of it. This repository may hold only the\nformer; your own private repository can very often hold both, because\nyour MyCSF or GovRAMP licence permits internal use.\n\nLicensed content committed to a repository that has not declared the\nright to hold it is reported as an error \u2014 set\n`frameworks.allow_licensed_in_repo: true` in config.yaml if your licence\npermits yours to carry it.",
       "name": "frameworks",
       "params": []
     },
@@ -1731,7 +1731,7 @@
       ]
     },
     "generate-parser": {
-      "help": "Generate a deterministic ETL parser for a BYOC framework export via your\nconfigured LLM, from a real sample export file.\n\nThe sample is part of the prompt, so the code that comes back was written\nunder the influence of a file this tool did not write \u2014 and it is about\nto run over a licensed one. So it is checked before it runs, run once\nunder watch, and kept out of the package until you promote it. Nothing\nunder ingest/*_loader.py calls the LLM at parse time \u2014 only this command\ndoes, and only when you run it.\n",
+      "help": "Generate a deterministic ETL parser for a BYOC framework export via your\nconfigured LLM, from a real sample export file.\n\nThe sample is part of the prompt, so the code that comes back was written\nunder the influence of a file this tool did not write \u2014 and it is about\nto run over a licensed one. So it is checked before it runs, run once\nunder watch, and kept out of the package until you promote it. Nothing\nunder ingest/*_loader.py calls the LLM at parse time \u2014 only this command\ndoes, and only when you run it.",
       "name": "generate-parser",
       "params": [
         {
@@ -2143,7 +2143,7 @@
       ]
     },
     "mcp": {
-      "help": "Serve the read-only analyses as MCP tools over stdio.\n\nLets Claude Code, Claude Desktop or any MCP client ask this repository\nwhich controls nobody owns, what a team is accountable for, or where a\nHIPAA citation is addressed \u2014 with the content boundary, the ledger and\nthe citation checks all still in the path, because the answers come from\nthe same functions the CLI calls.\n\nRead-only, structurally: a test walks this package's AST and fails if any\nmodule so much as names the publish path. Editing a live policy page\nstays here in the CLI, behind its dry run, macro check, version guard and\nexplicit confirmation.\n\nThis speaks stdio and is spawned by a client; it binds no port. Configure\nit as a command, not a URL.\n",
+      "help": "Serve the read-only analyses as MCP tools over stdio.\n\nLets Claude Code, Claude Desktop or any MCP client ask this repository\nwhich controls nobody owns, what a team is accountable for, or where a\nHIPAA citation is addressed \u2014 with the content boundary, the ledger and\nthe citation checks all still in the path, because the answers come from\nthe same functions the CLI calls.\n\nRead-only, structurally: a test walks this package's AST and fails if any\nmodule so much as names the publish path. Editing a live policy page\nstays here in the CLI, behind its dry run, macro check, version guard and\nexplicit confirmation.\n\nThis speaks stdio and is spawned by a client; it binds no port. Configure\nit as a command, not a URL.",
       "name": "mcp",
       "params": [
         {
@@ -2191,7 +2191,7 @@
       ]
     },
     "model-log": {
-      "help": "What was sent to which model, when, and at what cost.\n\nEvery model call this tool makes is recorded \u2014 provider, model, the\ndocument or control it was about, token counts, cost, and a hash of the\nprompt. Not the prompt and not the reply: a record that quoted what it\nsaw would copy licensed content into a file, which is the leak it exists\nto disprove.\n\nThis is the answer to \"which documents did that model touch\", asked the\nday a model turns out to have been weakening the requirements it cited.\n",
+      "help": "What was sent to which model, when, and at what cost.\n\nEvery model call this tool makes is recorded \u2014 provider, model, the\ndocument or control it was about, token counts, cost, and a hash of the\nprompt. Not the prompt and not the reply: a record that quoted what it\nsaw would copy licensed content into a file, which is the leak it exists\nto disprove.\n\nThis is the answer to \"which documents did that model touch\", asked the\nday a model turns out to have been weakening the requirements it cited.",
       "name": "model-log",
       "params": [
         {
@@ -2298,7 +2298,7 @@
       ]
     },
     "parameters": {
-      "help": "Record one decided value per organization-defined parameter.\n\nSP 800-53 does not say how often to review accounts \u2014 it says\n[Assignment: organization-defined frequency] and leaves it to you, 1,210\ntimes across the catalog. Today those get decided implicitly inside\ngenerated prose, by a model with no memory of what it chose for the\nneighbouring control, so the Access Control Standard says quarterly and\nthe SSP says annually and nobody decided anything.\n\nA value recorded here is substituted into the control text before\nsynthesis, so every document drawn from that control agrees, and the\nreasoning stays next to the value where an assessor can find it.\n",
+      "help": "Record one decided value per organization-defined parameter.\n\nSP 800-53 does not say how often to review accounts \u2014 it says\n[Assignment: organization-defined frequency] and leaves it to you, 1,210\ntimes across the catalog. Today those get decided implicitly inside\ngenerated prose, by a model with no memory of what it chose for the\nneighbouring control, so the Access Control Standard says quarterly and\nthe SSP says annually and nobody decided anything.\n\nA value recorded here is substituted into the control text before\nsynthesis, so every document drawn from that control agrees, and the\nreasoning stays next to the value where an assessor can find it.",
       "name": "parameters",
       "params": [
         {
@@ -2427,7 +2427,7 @@
       ]
     },
     "publish": {
-      "help": "Publish the content tree to the pages its frontmatter declares.\n\nEach document names its own destination, so the file-to-page mapping\nlives in the repository under review rather than in a workflow argument.\nA document with no `confluence:` block is not published, which is how a\ndraft stays a draft.\n\nA page somebody edited on the wiki since this tool last wrote it is not\noverwritten: it is reported as moved and the run exits non-zero, so a CI\njob fails where it would otherwise have destroyed the edit in silence.\n\nPlans by default and writes nothing; pass --apply once you have read it.\n",
+      "help": "Publish the content tree to the pages its frontmatter declares.\n\nEach document names its own destination, so the file-to-page mapping\nlives in the repository under review rather than in a workflow argument.\nA document with no `confluence:` block is not published, which is how a\ndraft stays a draft.\n\nA page somebody edited on the wiki since this tool last wrote it is not\noverwritten: it is reported as moved and the run exits non-zero, so a CI\njob fails where it would otherwise have destroyed the edit in silence.\n\nPlans by default and writes nothing; pass --apply once you have read it.",
       "name": "publish",
       "params": [
         {
@@ -2544,7 +2544,7 @@
       ]
     },
     "pull": {
-      "help": "Bring live Confluence pages down into the tree as markdown.\n\nThe way back. Somebody will edit the wiki directly - that is what a wiki\nis for - and without this, every such edit is either lost on the next\npublish or quietly makes the repo wrong. Pulling turns it into a diff on\na branch.\n\nPages using macros this tool cannot round-trip are refused rather than\nwritten, because the file would look correct and destroy them on the\nfirst publish.\n",
+      "help": "Bring live Confluence pages down into the tree as markdown.\n\nThe way back. Somebody will edit the wiki directly - that is what a wiki\nis for - and without this, every such edit is either lost on the next\npublish or quietly makes the repo wrong. Pulling turns it into a diff on\na branch.\n\nPages using macros this tool cannot round-trip are refused rather than\nwritten, because the file would look correct and destroy them on the\nfirst publish.",
       "name": "pull",
       "params": [
         {
@@ -2706,7 +2706,7 @@
       ]
     },
     "roles": {
-      "help": "List the tool and team roles config can assign.\n\nThese keys go under `org.vendors` and `org.teams` in config.yaml, and\nnaming a role is what makes substitution deterministic: the generator is\ntold what a tool is *for* rather than inferring it from a product name,\nand every placeholder for a filled role is then replaced exactly.\n\nThe lists are not exhaustive. They cover what NIST 800-53 and HIPAA\nSecurity Rule procedures actually reference; a tool fitting none of them\ncan still be passed as a plain list.\n",
+      "help": "List the tool and team roles config can assign.\n\nThese keys go under `org.vendors` and `org.teams` in config.yaml, and\nnaming a role is what makes substitution deterministic: the generator is\ntold what a tool is *for* rather than inferring it from a product name,\nand every placeholder for a filled role is then replaced exactly.\n\nThe lists are not exhaustive. They cover what NIST 800-53 and HIPAA\nSecurity Rule procedures actually reference; a tool fitting none of them\ncan still be passed as a plain list.",
       "name": "roles",
       "params": [
         {
@@ -2736,7 +2736,7 @@
       ]
     },
     "ssp": {
-      "help": "Build a NIST 800-53 System Security Plan as a spreadsheet workbook.\n\nWrites .xlsx \u2014 an open ISO standard that LibreOffice Calc opens and edits\nnatively, so no Excel licence is needed. Control text is copied verbatim\nfrom the catalog; only the implementation narratives are LLM-drafted, and\nthose are marked as drafts requiring review. See ssp/workbook.py.\n",
+      "help": "Build a NIST 800-53 System Security Plan as a spreadsheet workbook.\n\nWrites .xlsx \u2014 an open ISO standard that LibreOffice Calc opens and edits\nnatively, so no Excel licence is needed. Control text is copied verbatim\nfrom the catalog; only the implementation narratives are LLM-drafted, and\nthose are marked as drafts requiring review. See ssp/workbook.py.",
       "name": "ssp",
       "params": [
         {
@@ -2882,7 +2882,7 @@
       ]
     },
     "synthesize": {
-      "help": "Merge/dedupe controls for one topic into synthesized requirement prose.\n\nEither `--topic-name <registry topic>`, which takes the anchor controls and\nthe owning team from config/topics.yaml, or `--topic` plus\n`--nist-controls` for a one-off topic that isn't in the registry.\n",
+      "help": "Merge/dedupe controls for one topic into synthesized requirement prose.\n\nEither `--topic-name <registry topic>`, which takes the anchor controls and\nthe owning team from config/topics.yaml, or `--topic` plus\n`--nist-controls` for a one-off topic that isn't in the registry.",
       "name": "synthesize",
       "params": [
         {
@@ -3047,7 +3047,7 @@
       ]
     },
     "wiki-drift": {
-      "help": "Which published pages changed on the wiki since this tool wrote them.\n\nThe question a policy owner asks before a review cycle. `publish` answers\nit too, but only as the reason it refused to write, which is the wrong\nmoment to find out. This writes nothing and prints the `pull` command\nthat would bring each edit into the repository as a reviewable diff.\n\nA page whose body already says what the repository says is in sync,\nwhoever wrote its latest version.\n",
+      "help": "Which published pages changed on the wiki since this tool wrote them.\n\nThe question a policy owner asks before a review cycle. `publish` answers\nit too, but only as the reason it refused to write, which is the wrong\nmoment to find out. This writes nothing and prints the `pull` command\nthat would bring each edit into the repository as a reviewable diff.\n\nA page whose body already says what the repository says is in sync,\nwhoever wrote its latest version.",
       "name": "wiki-drift",
       "params": [
         {
@@ -3130,7 +3130,7 @@
     "zardoz": {
       "commands": {
         "discover": {
-          "help": "Propose a topic registry from a space nobody has catalogued.\n\nMost of the grouping is already written down, just not as data: a\ngovernance space names its pages by convention (Access Control Policy,\nAccess Control Standard) and cites the same controls throughout a related\nset. Those signals are exact and free, and they place the majority of a\nreal space with no model involved. The LLM is used only for the residue.\n\nEvery proposed owner is [UNASSIGNED]. Nothing in a page reliably says\nwhich team is accountable for it, and a wrong owner in a compliance\nartifact is worse than a blank one.\n",
+          "help": "Propose a topic registry from a space nobody has catalogued.\n\nMost of the grouping is already written down, just not as data: a\ngovernance space names its pages by convention (Access Control Policy,\nAccess Control Standard) and cites the same controls throughout a related\nset. Those signals are exact and free, and they place the majority of a\nreal space with no model involved. The LLM is used only for the residue.\n\nEvery proposed owner is [UNASSIGNED]. Nothing in a page reliably says\nwhich team is accountable for it, and a wrong owner in a compliance\nartifact is worse than a blank one.",
           "name": "discover",
           "params": [
             {
@@ -3229,7 +3229,7 @@
           ]
         },
         "sync": {
-          "help": "Build the local snapshot Zardoz answers from.\n\nReads a markdown content tree, a Confluence space, or both. Markdown\nneeds no credentials at all, so a repo-backed document set can be synced\nand questioned offline. Where both are configured the tree wins: in that\narrangement the file is the source of truth and the page is a copy of it.\n\nDocuments that know their owner \u2014 from the topic registry, or from their\nown frontmatter \u2014 are trusted; everything else is supporting context that\nanswers may use and will say they used.\n",
+          "help": "Build the local snapshot Zardoz answers from.\n\nReads a markdown content tree, a Confluence space, or both. Markdown\nneeds no credentials at all, so a repo-backed document set can be synced\nand questioned offline. Where both are configured the tree wins: in that\narrangement the file is the source of truth and the page is a copy of it.\n\nDocuments that know their owner \u2014 from the topic registry, or from their\nown frontmatter \u2014 are trusted; everything else is supporting context that\nanswers may use and will say they used.",
           "name": "sync",
           "params": [
             {
@@ -3328,7 +3328,7 @@
           ]
         }
       },
-      "help": "Ask questions about your published policy set, conversationally.\n\nRun with no subcommand to open the shell. Zardoz reads; it does not\nwrite. It can draft a `policyforge edit-topic` command for you to run,\nbut every change to a live page still goes through that command's gates.\n",
+      "help": "Ask questions about your published policy set, conversationally.\n\nRun with no subcommand to open the shell. Zardoz reads; it does not\nwrite. It can draft a `policyforge edit-topic` command for you to run,\nbut every change to a live page still goes through that command's gates.",
       "invoke_without_command": true,
       "name": "zardoz",
       "params": [

@@ -6,5 +6,5 @@ notes: A US government work, so freely redistributable. Bundled with this projec
   to commit to any repository.
 source_ref: v1.5.0
 source_url: https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json
-content_sha256: 08c7229b446f5be3286ca5a0e939784a373862e4c463a1072f39d3baede56a3e
+content_sha256: 06ba18546f9cdf6646b3820adba055ceed21dcc4b8afb3c91b950b186b1af142
 fetched_at: '2026-09-16'

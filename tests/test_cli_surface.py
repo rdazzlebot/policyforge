@@ -18,6 +18,7 @@ and let the fixture's diff be the review of that change.
 
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 
@@ -81,7 +82,10 @@ def surface(command: click.Command, name: str = "") -> dict:
     """Everything about a command that a user or a script depends on."""
     described = {
         "name": name or command.name,
-        "help": command.help or "",
+        # Cleaned because Python 3.13 strips docstring indentation at compile
+        # time and 3.12 does not: the fixture was written on one and CI runs
+        # the other, so raw help text differed on every command.
+        "help": inspect.cleandoc(command.help or ""),
         "params": [_param(p) for p in command.params],
     }
     if isinstance(command, click.Group):

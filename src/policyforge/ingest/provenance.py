@@ -42,7 +42,15 @@ PROVENANCE_KEYS = ("source_ref", "source_url", "content_sha256", "fetched_at")
 
 
 def content_digest(content: bytes) -> str:
-    return hashlib.sha256(content).hexdigest()
+    """The hash of a catalog with its line endings normalised to LF.
+
+    The etl-* commands write with `write_text`, which on Windows emits CRLF,
+    and git checks the same file out as LF on Linux. Hashing raw bytes made
+    every stamp recorded on Windows a MISMATCH in CI — the same catalog, byte
+    for byte apart from line endings. JSON cannot carry a raw CR inside a
+    string, so normalising touches only whitespace between tokens.
+    """
+    return hashlib.sha256(content.replace(b"\r\n", b"\n")).hexdigest()
 
 
 def record_source_provenance(

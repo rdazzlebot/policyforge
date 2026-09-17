@@ -99,9 +99,12 @@ reconcile it. A model's memory of a catalog is exactly the unreliable thing;
 its ability to work over text in front of it is not.
 
 **2. Every statement carries its source, and the tag is enforced.** Generated
-documents tag statements back to the controls they came from. `policyforge check` **blocks a rewrite that dropped a traceability tag** — a change no
-reviewer reading a prose diff would ever catch, and one that silently
-destroys the only thing making the document auditable.
+documents tag statements back to the controls they came from. `policyforge check` **reports a rewrite that dropped a traceability tag**, and fails the
+build under `--strict` — a change no reviewer reading a prose diff would ever
+catch, and one that silently destroys the only thing making the document
+auditable. Two limits worth stating: it is a warning unless you ask for
+`--strict`, and it compares the document against the synthesis it came from,
+so a tag that is wrong in both matches itself and passes.
 
 **3. Claims are verified rather than requested.** Citation markers are parsed
 and checked against the passages actually supplied; fabricated ones are

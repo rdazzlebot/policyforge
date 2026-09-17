@@ -91,8 +91,9 @@ how the drafting is constrained:
 - **Grounded in the catalog text you supply**, never the model's
   recollection of a framework
   ([LLM09](owasp-llm-top-10.md#llm09--misinformation)).
-- **Every statement carries its control attribution**, and a rewrite that
-  drops the tag fails an offline check before publication
+- **Every statement carries its control attribution**, and an offline check
+  reports a rewrite that drops the tag before publication — as a warning, or
+  a failure under `--strict`
   ([C-08](commitments.md#c-08--traceability-cannot-be-dropped-silently)).
 - **Values nobody decided stay visible.** An unfilled parameter stays
   `[Assignment: organization-defined frequency]` rather than becoming a

@@ -207,3 +207,83 @@ def test_a_case_is_recorded_under_its_suite_and_name(tmp_path, monkeypatch):
     assert record.subject == "probe/the-case"
     assert record.site == EVAL_SITE
     assert provider.calls == 1
+
+
+# ---- the provider --model always builds, held to parity where CI runs -----
+#
+# The `litellm` case above skips wherever the extra is absent, and CI
+# installs only the dev extras — so the one provider `--model` always builds
+# would be the one CI never compared. `get_provider` takes no injected
+# completion, so the module itself is stubbed: `LiteLLMProvider` reads
+# `completion`, `BadRequestError`, `supports_response_schema` and sets
+# `suppress_debug_info` on it, and nothing else. `monkeypatch.setitem`
+# undoes the stub, so a real litellm elsewhere in the run is untouched.
+
+
+@pytest.fixture
+def litellm_stub(monkeypatch):
+    import sys
+    import types
+
+    stub = types.ModuleType("litellm")
+    stub.completion = lambda **kwargs: None
+    stub.BadRequestError = type("BadRequestError", (Exception,), {})
+    stub.supports_response_schema = lambda model: True
+    stub.suppress_debug_info = False
+    monkeypatch.setitem(sys.modules, "litellm", stub)
+    return stub
+
+
+def _assert_parity(measured, production):
+    from policyforge.llm.litellm_provider import LiteLLMProvider
+
+    assert isinstance(measured, Metered)
+    assert isinstance(measured.provider, RecordingProvider)
+    assert type(_real_provider(measured)) is LiteLLMProvider
+    assert type(_real_provider(production)) is LiteLLMProvider
+    for flag in FLAGS:
+        assert getattr(measured, flag)() == getattr(production, flag)(), flag
+    for decide in DECISIONS:
+        assert decide(measured) == decide(production), decide.__name__
+    # The flag this bug hit hardest: LiteLLM advertises effort, and both
+    # paths must say so.
+    assert effort.accepts_effort(measured) is True
+    assert effort.accepts_effort(production) is True
+
+
+def test_the_litellm_config_builds_the_same_both_ways_without_litellm(
+    tmp_path, monkeypatch, litellm_stub
+):
+    monkeypatch.setenv(_KEY, "not-a-real-key")
+    base = {"llm": {**OFFLINE_CONFIGS["litellm"], "ledger": {"path": str(tmp_path / "c.jsonl")}}}
+
+    production = get_provider(base)
+    measured = build_provider(eval_config(base=base))
+
+    _assert_parity(measured, production)
+
+
+def test_the_model_flag_builds_the_same_provider_production_would_without_litellm(
+    tmp_path, monkeypatch, litellm_stub
+):
+    """`--model openrouter/…` against the config a user would write for it."""
+    model = "openrouter/deepseek/deepseek-v4-flash"
+    ledger_file = str(tmp_path / "c.jsonl")
+
+    measured = build_provider(
+        eval_config(model=model, min_interval=1.5, base={"llm": {"ledger": {"path": ledger_file}}})
+    )
+    production = get_provider(
+        {
+            "llm": {
+                "provider": "litellm",
+                "model": model,
+                "min_interval_seconds": 1.5,
+                "ledger": {"path": ledger_file},
+            }
+        }
+    )
+
+    _assert_parity(measured, production)
+    assert _real_provider(measured).model == model
+    assert _real_provider(measured).min_interval_seconds == 1.5

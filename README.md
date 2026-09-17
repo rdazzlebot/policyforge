@@ -96,6 +96,9 @@ any good.
 - [Repo hygiene / scanning](#repo-hygiene--scanning) ·
   [A note on using this at work](#a-note-on-using-this-at-work) ·
   [Roadmap](#roadmap)
+- Also in `docs/`: [Where PolicyForge sits](docs/positioning.md) (against a
+  compliance platform, and against MyCSF) ·
+  [System card](docs/system-card.md) · [Commitments](docs/commitments.md)
 
 ## Setup
 
@@ -437,7 +440,8 @@ deterministic instead of inferred. See the roadmap.
 
 The full pipeline is functional end-to-end: `etl-oscal` -> `map` ->
 `synthesize` -> `generate` -> `export-confluence` (optional), plus `ssp` as a
-separate output path. All three LLM providers (Anthropic, Bedrock, Vertex),
+separate output path. All six LLM providers (Anthropic, Bedrock, Vertex,
+openai-compat/local, LiteLLM and cascade),
 the control loaders, crosswalk builder, LLM-driven synthesis/generation
 stages, Confluence export/import, and local version history are all wired up
 and tested. HITRUST CSF and GovRAMP are both implemented as
@@ -2396,6 +2400,9 @@ policyforge boundary    # what may be sent to which provider, and why
 policyforge model-log   # what was actually sent where, and what it cost
 ```
 
+- **[Where PolicyForge sits](docs/positioning.md)** — how this compares with
+  a compliance automation platform and with HITRUST MyCSF, each quoted from
+  its own description, plus the one-page pitch and who it is for.
 - **[System card](docs/system-card.md)** — the one-page version: intended
   use, prohibited uses, known limitations, data handling. Written to be
   pasted into an AI inventory or a vendor questionnaire. Start here.

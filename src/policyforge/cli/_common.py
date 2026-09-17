@@ -129,10 +129,21 @@ def load_catalogs(paths) -> list:
     Six commands carried this loop. Order is preserved because callers
     depend on it: a crosswalk and a coverage report are built from whichever
     catalog names a control first.
+
+    The organization's crosswalk overlays (`config/crosswalks/*.yaml`) are
+    applied here, once, so every command that builds a crosswalk sees the
+    mappings the organization accepted rather than the published ones. An
+    overlay that cannot be read stops the command: running on the published
+    mapping when a reviewed one exists would be a quiet wrong answer.
     """
+    from policyforge.crosswalk.overlay import OverlayError, apply_overlays, load_overlays
     from policyforge.ingest.schema import load_controls
 
     controls: list = []
     for path in paths:
         controls.extend(load_controls(path))
+    try:
+        apply_overlays(controls, load_overlays())
+    except OverlayError as exc:
+        raise click.ClickException(str(exc)) from exc
     return controls

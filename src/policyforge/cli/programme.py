@@ -235,6 +235,8 @@ def coverage_cmd(
                 "with baseline profiles (see `policyforge etl-oscal`)?"
             )
 
+    from policyforge.crosswalk.overlay import accepted_relationships, load_overlays
+
     report = analyze_coverage(
         topics,
         scoped,
@@ -242,6 +244,8 @@ def coverage_cmd(
         scope=scope,
         other_controls=other_controls,
         crosswalk=build_crosswalk(all_controls) if other_controls else None,
+        # Already read by load_catalogs above, which refuses an unreadable one.
+        relationships=accepted_relationships(load_overlays()),
     )
 
     if as_json:

@@ -255,6 +255,82 @@ def test_owned_nist_controls_pull_other_frameworks_in_via_the_crosswalk():
     assert hipaa_coverage.uncovered == ["164.318(a)"]
 
 
+def _reach(relationships, owned=("AC-2", "AU-6")):
+    from policyforge.mapping.crosswalk import build_crosswalk
+    from policyforge.topics.coverage import analyze_coverage
+
+    nist = [_control("AC-2"), _control("AU-6")]
+    hipaa = _control("164.308(a)(3)(i)", framework="HIPAA Security Rule", baseline="")
+    hipaa.source_crosswalk = {"nist": "AC-2, AU-6"}
+    report = analyze_coverage(
+        [_topic("Access", "IAM", list(owned))],
+        nist,
+        other_controls=[hipaa],
+        crosswalk=build_crosswalk(nist + [hipaa]),
+        relationships=relationships,
+    )
+    (coverage,) = report.framework_coverage
+    return coverage
+
+
+def test_a_requirement_reached_only_in_part_is_reported_apart():
+    """Two controls that each cover part of a requirement are not one that covers it."""
+    coverage = _reach(
+        {
+            ("hipaa", "164.308(a)(3)(i)", "AC-2"): "superset",
+            ("hipaa", "164.308(a)(3)(i)", "AU-6"): "intersects",
+        }
+    )
+    assert coverage.covered == []
+    assert coverage.partial == ["164.308(a)(3)(i)"]
+    assert coverage.uncovered == []
+    assert coverage.total == 1
+
+
+def test_one_owned_control_recorded_as_covering_it_is_enough():
+    coverage = _reach(
+        {
+            ("hipaa", "164.308(a)(3)(i)", "AC-2"): "superset",
+            ("hipaa", "164.308(a)(3)(i)", "AU-6"): "subset",
+        }
+    )
+    assert coverage.covered == ["164.308(a)(3)(i)"]
+    assert coverage.partial == []
+
+
+def test_a_pair_with_no_recorded_relationship_counts_as_it_always_did():
+    assert _reach({}).covered == ["164.308(a)(3)(i)"]
+    unspecified = {("hipaa", "164.308(a)(3)(i)", "AC-2"): "unspecified"}
+    assert _reach(unspecified, owned=("AC-2",)).covered == ["164.308(a)(3)(i)"]
+
+
+def test_only_owned_controls_decide_it():
+    """An unowned control recorded as covering the requirement reaches nothing."""
+    coverage = _reach(
+        {
+            ("hipaa", "164.308(a)(3)(i)", "AC-2"): "intersects",
+            ("hipaa", "164.308(a)(3)(i)", "AU-6"): "equal",
+        },
+        owned=("AC-2",),
+    )
+    assert coverage.partial == ["164.308(a)(3)(i)"]
+
+
+def test_the_report_names_the_partly_reached_requirements():
+    from policyforge.topics.coverage import CoverageReport, FrameworkCoverage, format_report
+
+    report = CoverageReport(scope="all controls")
+    report.framework_coverage = [
+        FrameworkCoverage("hipaa", covered=["a"], partial=["164.308(a)(3)(i)"], uncovered=["b"])
+    ]
+
+    text = format_report(report)
+
+    assert "1 of 3 requirements map to an owned NIST control" in text
+    assert "1 more are reached only in part" in text
+    assert "164.308(a)(3)(i)" in text
+
+
 # --------------------------------------------------------------------------
 # The shipped starter registry, against the real catalog
 # --------------------------------------------------------------------------

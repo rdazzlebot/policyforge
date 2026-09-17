@@ -22,6 +22,16 @@ the crosswalk means a claimed NIST control also accounts for the HIPAA (or
 FedRAMP, or HITRUST) requirements mapped to it. `framework_coverage`
 reports, per framework, which requirements are reachable from some topic and
 which aren't — the same orphan question asked from the assessor's side.
+
+**Reached is not the same as covered.** Where an organization's crosswalk
+overlay records how a pair relates, a requirement reached only through
+controls recorded as `superset` (the requirement asks for more than the
+control does) or `intersects` is reported apart, as reached in part. It may
+be fully met by several such controls together, and it may not; no single
+owned control is recorded as covering it, and that is a question for a
+person, not a count to fold into "covered". A pair with no recorded
+relationship counts as reaching the requirement, which is what every pair
+did before relationships were recorded.
 """
 
 from __future__ import annotations
@@ -35,6 +45,9 @@ from policyforge.topics.registry import Topic
 
 _ENHANCEMENT_RE = re.compile(r"^([A-Za-z]{2}-\d+)\(\d+\)$")
 
+#: Relationships under which one control covers only part of a requirement.
+PARTIAL_RELATIONSHIPS = frozenset({"superset", "intersects"})
+
 
 @dataclass
 class FrameworkCoverage:
@@ -43,10 +56,13 @@ class FrameworkCoverage:
     framework: str
     covered: list[str] = field(default_factory=list)
     uncovered: list[str] = field(default_factory=list)
+    #: Reached only through owned controls recorded as covering part of the
+    #: requirement (`superset` or `intersects`).
+    partial: list[str] = field(default_factory=list)
 
     @property
     def total(self) -> int:
-        return len(self.covered) + len(self.uncovered)
+        return len(self.covered) + len(self.partial) + len(self.uncovered)
 
 
 @dataclass
@@ -100,6 +116,7 @@ def analyze_coverage(
     scope: str = "all controls",
     other_controls: list[Control] | None = None,
     crosswalk: dict[str, dict[str, list[str]]] | None = None,
+    relationships: dict[tuple[str, str, str], str] | None = None,
 ) -> CoverageReport:
     """Compute ownership coverage of `nist_controls` by `topics`.
 
@@ -108,6 +125,10 @@ def analyze_coverage(
     a defined scope. Pass the full, unfiltered catalog as `catalog` so an
     anchor that's merely out of scope can be told apart from one that's a
     typo; without it, every anchor outside the scope looks like a bad ID.
+
+    `relationships` maps (framework, requirement id, NIST id) to the
+    relationship an organization recorded for that pair — see
+    `crosswalk.overlay.accepted_relationships`.
     """
     report = CoverageReport(scope=scope)
     report.in_scope = _in_scope_ids(nist_controls)
@@ -158,7 +179,10 @@ def analyze_coverage(
 
     if other_controls and crosswalk:
         report.framework_coverage = _framework_coverage(
-            other_controls, crosswalk, owned=set(report.covered) | set(report.contested)
+            other_controls,
+            crosswalk,
+            owned=set(report.covered) | set(report.contested),
+            relationships=relationships or {},
         )
 
     return report
@@ -169,12 +193,19 @@ def _framework_coverage(
     crosswalk: dict[str, dict[str, list[str]]],
     *,
     owned: set[str],
+    relationships: dict[tuple[str, str, str], str],
 ) -> list[FrameworkCoverage]:
     """Which non-NIST requirements are reachable from an owned NIST control."""
     reachable: dict[str, set[str]] = {}
+    in_part: dict[str, set[str]] = {}
     for nist_id in owned:
         for framework, equivalent_ids in crosswalk.get(nist_id, {}).items():
-            reachable.setdefault(framework, set()).update(equivalent_ids)
+            for requirement_id in equivalent_ids:
+                relationship = relationships.get((framework, requirement_id, nist_id))
+                if relationship in PARTIAL_RELATIONSHIPS:
+                    in_part.setdefault(framework, set()).add(requirement_id)
+                else:
+                    reachable.setdefault(framework, set()).add(requirement_id)
 
     by_framework: dict[str, list[str]] = {}
     for control in other_controls:
@@ -186,11 +217,13 @@ def _framework_coverage(
     coverage: list[FrameworkCoverage] = []
     for framework, requirement_ids in sorted(by_framework.items()):
         hit = reachable.get(framework, set())
+        part = in_part.get(framework, set()) - hit
         coverage.append(
             FrameworkCoverage(
                 framework=framework,
                 covered=sorted(r for r in requirement_ids if r in hit),
-                uncovered=sorted(r for r in requirement_ids if r not in hit),
+                partial=sorted(r for r in requirement_ids if r in part),
+                uncovered=sorted(r for r in requirement_ids if r not in hit and r not in part),
             )
         )
     return coverage
@@ -259,6 +292,16 @@ def format_report(report: CoverageReport, *, show_all: bool = False) -> str:
             f"  {len(framework.covered)} of {framework.total} requirements map to an "
             "owned NIST control"
         )
+        if framework.partial:
+            lines.append(
+                f"  {len(framework.partial)} more are reached only in part — no owned control "
+                "is recorded as covering all of the requirement:"
+            )
+            shown = framework.partial if show_all else framework.partial[:12]
+            for index in range(0, len(shown), 4):
+                lines.append("    " + ", ".join(shown[index : index + 4]))
+            if len(shown) < len(framework.partial):
+                lines.append(f"    ... and {len(framework.partial) - len(shown)} more (--show-all)")
         if framework.uncovered:
             shown = framework.uncovered if show_all else framework.uncovered[:12]
             lines.append("  Not reached:")

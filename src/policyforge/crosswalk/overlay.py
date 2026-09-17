@@ -310,3 +310,22 @@ def check_overlay(overlay: Overlay, controls) -> OverlayCheck:
             if anchor_ids and row.control not in anchor_ids:
                 check.unknown_controls.append((rid, row.control))
     return check
+
+
+def accepted_relationships(overlays: list[Overlay]) -> dict[tuple[str, str, str], str]:
+    """(framework, requirement id, anchor id) -> relationship, for accepted rows.
+
+    Keyed by the normalized framework name `mapping/crosswalk.py` files a
+    requirement under, so a coverage report can look a pair up by the same
+    key it reached the requirement with.
+    """
+    from policyforge.mapping.crosswalk import normalize_framework
+
+    found = {}
+    for overlay in overlays:
+        framework = normalize_framework(overlay.framework)
+        for requirement_id, rows in overlay.requirements.items():
+            for row in rows:
+                if row.status == ACCEPTED:
+                    found[(framework, requirement_id, row.control)] = row.relationship
+    return found

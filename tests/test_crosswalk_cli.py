@@ -220,3 +220,57 @@ def test_review_without_an_overlay_says_what_to_run(tmp_path, monkeypatch):
     result = run("crosswalk", "review")
     assert result.exit_code != 0
     assert "crosswalk propose" in result.output
+
+
+def test_accepted_relationships_are_keyed_as_the_crosswalk_files_requirements():
+    from policyforge.crosswalk.overlay import accepted_relationships, parse_overlay
+
+    overlay = parse_overlay(
+        {
+            "framework": HIPAA,
+            "requirements": {
+                RID: [
+                    {"control": "SI-3", "relationship": "intersects", "status": "accepted"},
+                    {"control": "AT-2", "relationship": "equal", "status": "rejected"},
+                    {"control": "IR-6", "relationship": "subset", "status": "proposed"},
+                ]
+            },
+        }
+    )
+
+    assert accepted_relationships([overlay]) == {("hipaa", RID, "SI-3"): "intersects"}
+
+
+def test_coverage_reports_a_requirement_the_overlay_records_as_reached_in_part(
+    tmp_path, monkeypatch
+):
+    run, _ = _setup(tmp_path, monkeypatch, Mapper())
+    topics = tmp_path / "topics.yaml"
+    topics.write_text(
+        "topics:\n"
+        "  - name: Endpoint Protection\n"
+        "    owner: Endpoint Engineering\n"
+        "    nist_controls: [SI-3]\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "config" / "crosswalks").mkdir(parents=True)
+    overlay = tmp_path / OVERLAY
+    overlay.write_text(
+        "framework: HIPAA Security Rule\n"
+        "requirements:\n"
+        f"  {RID}:\n"
+        "    - {control: SI-3, relationship: intersects, status: accepted}\n",
+        encoding="utf-8",
+    )
+
+    partly = run("coverage", "--topics", str(topics))
+
+    assert partly.exit_code == 0, partly.output
+    assert "0 of 2 requirements map to an owned NIST control" in partly.output
+    assert "1 more are reached only in part" in partly.output
+
+    overlay.write_text(overlay.read_text(encoding="utf-8").replace("intersects", "subset"), "utf-8")
+    fully = run("coverage", "--topics", str(topics))
+
+    assert "1 of 2 requirements map to an owned NIST control" in fully.output
+    assert "reached only in part" not in fully.output

@@ -1,23 +1,83 @@
 # Changelog
 
-## Unreleased
+## 1.2.1
+
+A correctness release. Nothing new to learn, one thing to check.
+
+**If you generated documents with 1.1.0 or 1.2.0, check them for
+truncation.** Those versions saved a model reply that stopped at its output
+limit as if it were finished: a synthesis or document cut off mid-sentence,
+written with exit 0 and no warning, so anything built from it silently lacks
+the requirements that were cut. 1.2.1 retries once with a larger budget and
+otherwise refuses, naming the document, without writing anything.
+
+Every model call is in the call ledger, on by default at
+`output/.model-log/calls.jsonl` (or wherever `llm.ledger.path` points).
+`policyforge model-log` shows totals but not why a call stopped, so search the
+file for cut-off calls:
+
+```bash
+grep -E '"stop_reason": *"(length|max_tokens)"' output/.model-log/calls.jsonl
+```
+
+PowerShell:
+`Select-String -Path output\.model-log\calls.jsonl -Pattern '"stop_reason": *"(length|max_tokens)"'`
+
+`length` is how LiteLLM and OpenRouter report it; `max_tokens` is
+Anthropic's, Vertex's and Bedrock's. For each matching line:
+
+- `"site": "synthesize"`, `"subject": "synthesis/<topic>"`: that topic's
+  synthesis is incomplete. Regenerate it, then every Standard, Policy and
+  Procedure generated from it.
+- `"site": "generate"`, `"subject": "<tier>/<name>"` (for example
+  `standard/access-control`): that document is incomplete. Regenerate it.
+- `"site": "ssp"`: the SSP narrative for the control named in `subject`
+  (`ssp/<system>` for a batch run). Regenerate the workbook.
+- `"site": null` and `"subject": null`: an edit (`edit-topic`,
+  `edit-confluence`), which 1.2.0 didn't attribute. Match its `timestamp` to
+  the edit you ran, and review that revision before it's published.
+
+**An empty reply was also saved without warning**, and it leaves no signal in
+the ledger (its stop reason is a normal `stop`). Look for a synthesis or
+document file that has frontmatter and nothing after it, and regenerate it.
+1.2.1 refuses an empty document reply by name.
+
+Not covered by the search, all of it about what 1.1.0 and 1.2.0 recorded
+rather than what 1.2.1 detects: runs on the `openai-compat` provider (a local
+server such as Ollama, vLLM or LM Studio), which those versions did not
+record a stop reason for at all; runs with `llm.ledger.enabled: false`; and
+anything generated with 1.0.0, which had no ledger. For those, regenerate
+large topics, or read the end of each file for a sentence that stops mid-way.
+
+**1.2.1 detects a cut-off reply on every provider**, including
+OpenAI-compatible and local servers, which is the setup the documentation
+recommends for licensed content. A contract test holds each provider to its
+own vendor's signal — `stop_reason`, `stopReason` or `finish_reason` — by
+driving it with a fake at its SDK or transport boundary, so a provider that
+stops reporting truncation fails the suite rather than writing a short
+document.
+
+**What changes in use:** synthesis, Standards and Procedures now request up
+to 16384 output tokens, retried once at 32768. That was verified on
+glm-5.3-flash and deepseek-v4-flash through OpenRouter. A provider or model
+with a lower output cap may reject the request.
+
+Also in this release: config files read as UTF-8, ASCII help text, `pull` no
+longer reporting unchanged pages as changed, the test suite and provenance
+stamps on Python 3.10, and the test suite now running on Windows and macOS in
+CI.
 
 ### A reply cut off at its budget is refused, not written
 
-- **If you generated documents with 1.2.0 or earlier, check them.** The
+- **1.1.0 and 1.2.0 wrote cut-off replies as finished documents.** The
   first 20-topic cost run found that a reply the model stopped at its
-  output budget was written to disk as a finished document, with exit 0
-  and no warning: 11 of 20 syntheses stopped at the 4096-token default
-  (one ended "...(PII) and support"), 4 of 60 drafts stopped at 8192 (a
-  risk Standard ended "shall make risk"), and every Policy and Procedure
-  drafted from a truncated synthesis silently lacks the requirements it
-  never saw. It applied to every provider. To find affected files, run
-  `policyforge model-log --by subject` and look at the `stop_reason`
-  column of the underlying `output/.model-log/calls.jsonl` rows: a value
-  of `length` (LiteLLM, OpenAI-compatible) or `max_tokens` (Anthropic,
-  Vertex, Bedrock) on a `synthesize`, `generate`, `edit` or `ssp` call
-  names a document to regenerate. The ledger recorded the stop reason all
-  along; nothing read it.
+  output budget was written to disk with exit 0 and no warning: 11 of 20
+  syntheses stopped at the 4096-token default (one ended "...(PII) and
+  support"), 4 of 60 drafts stopped at 8192 (a risk Standard ended "shall
+  make risk"), and every Policy and Procedure drafted from a truncated
+  synthesis silently lacks the requirements it never saw. It applied to
+  every provider. How to find affected documents is at the top of this
+  release's notes.
 - **Now, centrally:** `LLMResponse.truncated` normalises every vendor's
   spelling, and `llm/effort.py` — the one path every model call takes —
   retries a cut-off reply once at twice its budget (capped at 32768) and

@@ -2088,7 +2088,7 @@ brew install rdazzlebot/tap/policyforge
 That installs the `policyforge` command from the
 [rdazzlebot/homebrew-tap](https://github.com/rdazzlebot/homebrew-tap) tap,
 with the core providers; the optional extras (`bedrock`, `vertex`, `litellm`,
-`mcp`) are not included. Without Homebrew, `pipx install git+https://github.com/rdazzlebot/policyforge@v1.2.0` does the same, and
+`mcp`) are not included. Without Homebrew, `pipx install git+https://github.com/rdazzlebot/policyforge@v1.2.1` does the same, and
 takes extras as `policyforge[mcp] @ git+…`.
 
 An installed command has no clone around it, and every command reads

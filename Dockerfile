@@ -11,7 +11,7 @@
 # is used by .devcontainer/Dockerfile and scripts/ci_in_docker.py, and
 # tests/test_container.py fails if they drift apart.
 
-FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea AS build
+FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS build
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
@@ -36,7 +36,7 @@ RUN PYTHONPATH=/app/src /opt/venv/bin/python -m policyforge.cli map \
       --out data/frameworks/crosswalk.json
 
 
-FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6
 
 LABEL org.opencontainers.image.title="policyforge" \
       org.opencontainers.image.source="https://github.com/rdazzlebot/policyforge" \

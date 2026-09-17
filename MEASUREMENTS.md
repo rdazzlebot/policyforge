@@ -1018,6 +1018,36 @@ is read as noise, not an effect of the organization block.
 Standard; it did so in both of its failing runs here. glm still sometimes
 settles the undecided lockout count.
 
+**After review — which rows describe the code that ships.** policyforge-1d's
+review of `c514059` changed two things that bear on these numbers, both in
+`1683d65`. The quote matcher now aligns words by longest common subsequence,
+so a word a quote adds no longer fails every word after it, and a
+specification shorter than four words is quotable only whole (R8). And a
+model's relationship is recorded as `proposed_relationship` for review rather
+than written to `relationship` (R1).
+
+- Every row the probe recorded, replayed through the checks at `c514059` and at
+  `1683d65` with no model calls: glm-5.3-flash keeps 165 of 168 under both;
+  claude-sonnet-5 keeps 203 of 210 before and 204 after. The one added is
+  IR-1 for 164.308(a)(6)(i), whose control quote joins two clauses of IR-1's
+  text; none is newly refused.
+- The suite with glm-5.3-flash, `--repeat 3`, built through `get_provider` as
+  the harness has done since P1b. At `1683d65`: 8/9 (24/27 runs, $0.0304 for
+  28 calls) — `ending-employment-is-not-ending-a-connection` failed every run
+  with PS-4 unmapped. On two direct calls glm quoted PS-4 as "Personnel
+  Termination ... Disable system access within", and the rule that each
+  ellipsis fragment carry three words refused the title fragment. That rule predates the review;
+  the passes above were glm quoting differently. `a332ba9` drops a fragment
+  equal to the item's own title before matching, and the suite there is 9/9
+  (27/27 runs, $0.0242 for 28 calls). The replay above gives the same counts
+  at `a332ba9` as at `1683d65`.
+- The rows above at `1149e42` and `e1ec80c`, and the live run, describe the
+  code before review; `a332ba9` is the code submitted after it. Before review,
+  the live run's 84 confirmations also wrote their relationships straight into
+  `relationship`, where coverage reads them. From `1683d65` the same run leaves
+  each recorded relationship as it was, flags every difference for review, and
+  changes no report.
+
 ______________________________________________________________________
 
 ## Two ways a run can lie, found the hard way

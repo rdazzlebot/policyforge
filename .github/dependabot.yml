@@ -5,6 +5,25 @@ updates:
   # project depends on — continuous, unlike pip-audit's point-in-time CI checks.
   - package-ecosystem: "pip"
     directory: "/"
+    # Pinned by what depends on them, not by this project: semgrep holds
+    # boltons, exceptiongroup, opentelemetry-* and wcmatch to ~= ranges, and
+    # pydantic pins pydantic-core exactly. Minor and major bumps of these can
+    # never install, so every such pull request failed CI. They move when
+    # semgrep or pydantic does. Patch bumps still come, so a fix inside the
+    # allowed range still arrives.
+    ignore:
+      - dependency-name: "boltons"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "exceptiongroup"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "opentelemetry-*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "wcmatch"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "importlib-metadata"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "pydantic-core"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     schedule:
       interval: "weekly"
     # Wait before proposing an update to a newly published version — gives
@@ -20,6 +39,20 @@ updates:
   # person merged, not whatever was published an hour ago.
   - package-ecosystem: "pip"
     directory: "/requirements"
+    # Same packages as above, for the lock.
+    ignore:
+      - dependency-name: "boltons"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "exceptiongroup"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "opentelemetry-*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "wcmatch"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "importlib-metadata"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "pydantic-core"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     schedule:
       interval: "weekly"
     cooldown:

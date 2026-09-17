@@ -36,7 +36,12 @@ def load_config(path: Path | None = None) -> dict:
             f"{path} not found. Copy config/config.example.yaml to "
             f"{path} and fill in your model/provider choices."
         )
-    with path.open() as f:
+    # UTF-8 by name, not by the platform default. Every other text read in
+    # this package says so; this one did not, and on Windows the default is
+    # the console code page — so an organization or team name with a
+    # character outside it, which is exactly what this file holds, either
+    # mis-decoded silently or raised from inside yaml.
+    with path.open(encoding="utf-8") as f:
         loaded = yaml.safe_load(f)
 
     # An empty or comment-only file parses to None, and a stray top-level

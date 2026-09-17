@@ -141,3 +141,48 @@ def test_a_whole_four_word_title_is_matched_like_any_quote():
 def test_a_title_fragment_after_the_first_is_held_to_the_minimum():
     quote = "Disable system access within ... Personnel Termination"
     assert not grounded(quote, PS_4, heading="Personnel Termination")
+
+
+# ---- a set-aside title never grounds a quote by itself (third review) ------
+
+
+def _bundled(control_id):
+    """Title and text exactly as `propose_for` builds them for this control."""
+    from pathlib import Path
+
+    from policyforge.crosswalk.candidates import catalog_entries
+    from policyforge.ingest.schema import load_controls
+
+    root = Path(__file__).resolve().parents[1] / "data" / "frameworks"
+    entry = catalog_entries(load_controls(root / "nist-800-53-r5" / "controls.json"))[control_id]
+    return entry.title, f"{entry.title} {entry.text}"
+
+
+@pytest.mark.parametrize("control_id", ["AC-1", "SI-1", "IR-1", "PS-4"])
+@pytest.mark.parametrize(
+    "shape",
+    [
+        "{t} ... {t}",
+        "{t} ... policy",
+        "{t} ... {t} ... {t}",
+        "{t}",
+    ],
+)
+def test_a_title_cannot_ground_a_quote_by_itself(control_id, shape):
+    title, text = _bundled(control_id)
+    assert not grounded(shape.format(t=title), text, heading=title)
+
+
+def test_a_title_then_the_controls_own_words_still_grounds():
+    title, text = _bundled("AC-1")
+    assert grounded("Policy and Procedures ... access control policy", text, heading=title)
+    title, text = _bundled("PS-4")
+    assert grounded("Personnel Termination ... Disable system access within", text, heading=title)
+
+
+def test_a_requirement_heading_is_held_to_the_same_rules():
+    title = "Security incident procedures"
+    text = f"{title} Implement policies and procedures to address security incidents."
+    for shape in ("{t} ... {t}", "{t} ... incidents", "{t} ... {t} ... {t}"):
+        assert not grounded(shape.format(t=title), text, heading=title)
+    assert grounded(f"{title} ... address security incidents", text, heading=title)

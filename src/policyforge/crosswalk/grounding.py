@@ -98,34 +98,49 @@ def _match_after(fragment: list[str], tokens: list[str], start_at: int) -> int:
     return -1
 
 
+def _without_heading(tokens: list[str], title: list[str]) -> list[str]:
+    """`tokens` with the title removed from the front, where it opens them."""
+    return tokens[len(title) :] if title and tokens[: len(title)] == title else tokens
+
+
 def grounded(quote: str, text: str, *, min_words: int = MIN_QUOTE_WORDS, heading: str = "") -> bool:
     """Whether `quote` is words of `text`, in order.
 
-    `heading` is the title the text sits under. When a quote opens with that
+    `heading` is the title `text` opens with. When a quote opens with that
     title as its own fragment — "Personnel Termination ... Disable system
-    access within" — the title is taken as naming the item, not as a fragment
-    to hold to the three-word minimum: it is set aside before matching, and
-    its words still count toward the quote's length, since they are words of
-    the item. Only a leading title is treated this way, and only when other
-    fragments follow, so a title on its own is matched like any quote.
-    Measured: glm-5.3-flash left PS-4 unmapped on all three runs of the
-    termination case, and on two direct calls its PS-4 quote had this shape
-    and was refused by the fragment minimum.
+    access within" — the title names the item rather than quoting it, so it is
+    set aside and held to nothing. What follows must then stand on its own:
+    at least `MIN_FRAGMENT_WORDS` words, found in the text *after* the title,
+    and never the title again. Measured: glm-5.3-flash left PS-4 unmapped on
+    all three runs of the termination case, and on two direct calls its PS-4
+    quote had this shape and was refused by the fragment minimum.
+
+    Each condition closes a hole review found in a looser version. Counting
+    the title's words toward the minimum let "Policy and Procedures ...
+    policy" verify a mapping to any `-1` control; matching the rest against
+    text that still began with the title let "Policy and Procedures ...
+    Policy and Procedures" verify itself. `-1` controls are the ones prompt
+    rule 5 points models at.
     """
     fragments = [words(f, drop_parameters=True) for f in _ELLIPSIS.split(quote)]
     fragments = [f for f in fragments if f]
     title = words(heading, drop_parameters=True)
-    title_words = 0
-    if title and len(fragments) > 1 and fragments[0] == title:
-        title_words = len(title)
+    named = bool(title) and len(fragments) > 1 and fragments[0] == title
+    if named:
         fragments = fragments[1:]
-    if not fragments or title_words + sum(len(f) for f in fragments) < min_words:
+        if any(f == title for f in fragments):
+            return False
+        if sum(len(f) for f in fragments) < max(MIN_FRAGMENT_WORDS, min_words - len(title)):
+            return False
+    elif not fragments or sum(len(f) for f in fragments) < min_words:
         return False
     if len(fragments) > 1 and any(len(f) < MIN_FRAGMENT_WORDS for f in fragments):
         return False
     # Against the text both without and with its parameter brackets: a model
     # may read the brackets aloud or quote their contents.
     for tokens in (words(text, drop_parameters=True), words(text)):
+        if named:
+            tokens = _without_heading(tokens, title)
         position = 0
         for fragment in fragments:
             position = _match_after(fragment, tokens, position)

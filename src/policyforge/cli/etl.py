@@ -28,7 +28,7 @@ from policyforge.cli._common import (
 )
 def etl_vault(controls_dir: Path, out: Path):
     """Parse NIST 800-53 control notes from an existing vault into this
-    project's data schema. Public-domain content only — see
+    project's data schema. Public-domain content only - see
     ingest/nist_vault_loader.py for what crosswalk columns are stripped
     by default and why.
     """
@@ -64,7 +64,7 @@ def etl_oscal(out: Path, no_baselines: bool):
     Low/Moderate/High baseline profiles) and parse it into this project's
     data schema.
 
-    Public domain — a US government work, same basis as the eCFR and CPRT
+    Public domain - a US government work, same basis as the eCFR and CPRT
     sources. Unlike `etl-vault`, this needs no pre-existing vault, so it's
     the way to populate 800-53 data from scratch. See ingest/oscal_loader.py.
     """
@@ -128,8 +128,8 @@ def etl_oscal(out: Path, no_baselines: bool):
 )
 def etl_hipaa(date: str | None, out: Path):
     """Fetch the HIPAA Security Rule (45 CFR 164 Subpart C) from eCFR's public
-    API and parse it into this project's data schema. Public domain — a US
-    federal regulation, same basis as NIST/FedRAMP/ARC-AMPE — so unlike
+    API and parse it into this project's data schema. Public domain - a US
+    federal regulation, same basis as NIST/FedRAMP/ARC-AMPE - so unlike
     HITRUST/GovRAMP this is safe to bundle directly. See
     ingest/hipaa_loader.py for parsing details.
     """
@@ -318,7 +318,7 @@ def _guard_licensed_write(out: Path, *, force: bool, product: str, licence: str,
     "version",
     default="",
     help='CSF release this export is of, e.g. "v11.7". Default: read from the '
-    "filename if it names one — a MyCSF export states its release nowhere inside.",
+    "filename if it names one - a MyCSF export states its release nowhere inside.",
 )
 @click.option(
     "--out",
@@ -430,7 +430,7 @@ def etl_govramp(export_path: Path, impact_level: str | None, version: str, out: 
     """Parse your own GovRAMP controls matrix into this project's schema.
 
     GovRAMP's Terms & Conditions claim ownership of the documents published
-    on their site, and no redistribution grant was found — so, like HITRUST,
+    on their site, and no redistribution grant was found - so, like HITRUST,
     this project never bundles the matrix and never fetches it. You supply
     the workbook and it is parsed locally, in memory. Nothing is written
     unless you pass --out.
@@ -441,10 +441,10 @@ def etl_govramp(export_path: Path, impact_level: str | None, version: str, out: 
     without being told which they are.
 
     What this gives you that the 800-53 catalog does not is the profile's
-    own two additions — the parameter values GovRAMP has already decided
+    own two additions - the parameter values GovRAMP has already decided
     ("at least every 3 years"), which `policyforge parameters` would
     otherwise leave open for you to answer, and the requirements it layers
-    on top of a control — across the Core/Ready/Authorized tiers. Those
+    on top of a control - across the Core/Ready/Authorized tiers. Those
     tiers are *not* impact levels: one Moderate matrix holds all three, and
     60 of its 319 controls stand between a service offering and Core.
 
@@ -522,7 +522,7 @@ def etl_hipaa_crosswalk(controls_path: Path, fixture_path: Path | None, out: Pat
     requirements into a NIST-anchored topic.
 
     Source is NIST's Cybersecurity and Privacy Reference Tool (CPRT), not SP
-    800-66r2's PDF — Appendix D of that document states the mapping table was
+    800-66r2's PDF - Appendix D of that document states the mapping table was
     removed from the PDF and published in CPRT instead. See
     ingest/hipaa_crosswalk_loader.py.
     """
@@ -608,13 +608,13 @@ def etl_hipaa_crosswalk(controls_path: Path, fixture_path: Path | None, out: Pat
 def etl_fedramp(nist_path: Path, out: Path):
     """Fetch FedRAMP's published control tailoring and apply it to 800-53.
 
-    Public domain — a US federal program, same basis as the NIST and eCFR
+    Public domain - a US federal program, same basis as the NIST and eCFR
     sources. Read from `fedramp-consolidated-rules.json` in `FedRAMP/rules`,
     which that repository calls its canonical rules dataset.
 
     This writes a profile, not a baseline. FedRAMP's machine-readable
     Low/Moderate/High baseline selection used to live in
-    `GSA/fedramp-automation`, and that repository no longer exists — so
+    `GSA/fedramp-automation`, and that repository no longer exists - so
     nothing here says which controls a given system must implement, and
     `Control.baseline` is deliberately left unset rather than guessed. What
     it does carry is FedRAMP's own two additions to the controls it does
@@ -694,7 +694,7 @@ def etl_fedramp(nist_path: Path, out: Path):
     help="The 800-53 catalog to crosswalk against. ARC-AMPE numbers its "
     "controls with 800-53 identifiers, so each one that resolves here is "
     "anchored on its equivalent. If absent, prints a notice and carries on "
-    "without a crosswalk — the catalog is usable alone, just invisible to "
+    "without a crosswalk - the catalog is usable alone, just invisible to "
     "`policyforge map`.",
 )
 @click.option(
@@ -706,13 +706,13 @@ def etl_fedramp(nist_path: Path, out: Path):
 def etl_arc_ampe(export_path: Path | None, version: str, nist_path: Path, out: Path):
     """Fetch CMS's ARC-AMPE Volume II baseline and parse it into this schema.
 
-    Public domain — published by CMS, a federal agency, with no copyright
+    Public domain - published by CMS, a federal agency, with no copyright
     notice or redistribution restriction, same basis as the NIST and eCFR
     sources.
 
     Note which volume this reads. Volume I is the narrative PDF and holds no
     controls; Volume II is the System Security and Privacy Plan workbook,
-    and its `AE Mandatory Baseline` sheet is the catalog — 402 controls
+    and its `AE Mandatory Baseline` sheet is the catalog - 402 controls
     required of an ACA Administering Entity, with CMS's parameter decisions
     already written into the control text. The sheet is found by its shape
     rather than its name, so the Direct Enrollment Entity workbook reads the
@@ -802,7 +802,7 @@ _PARSER_PACKAGE_DIR = Path("src/policyforge/ingest")
     required=True,
     type=click.Path(exists=True, path_type=Path),
     help="Path to a real sample export from your own license (e.g. a MyCSF CSV/Excel "
-    "export). Its full content is sent to your configured LLM provider — confirm "
+    "export). Its full content is sent to your configured LLM provider - confirm "
     "your license terms permit that before running this.",
 )
 @click.option(
@@ -838,10 +838,10 @@ def generate_parser_cmd(
     configured LLM, from a real sample export file.
 
     The sample is part of the prompt, so the code that comes back was written
-    under the influence of a file this tool did not write — and it is about
+    under the influence of a file this tool did not write - and it is about
     to run over a licensed one. So it is checked before it runs, run once
     under watch, and kept out of the package until you promote it. Nothing
-    under ingest/*_loader.py calls the LLM at parse time — only this command
+    under ingest/*_loader.py calls the LLM at parse time - only this command
     does, and only when you run it.
     """
     from policyforge.ingest.parser_codegen import generate_byoc_parser

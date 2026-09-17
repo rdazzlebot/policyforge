@@ -226,25 +226,41 @@ def propose_for(
         index=index,
     )
     proposal = Proposal(requirement.requirement_id, candidates)
-    try:
-        response = effort.call_json(
-            provider,
-            effort=effort.MAPPING,
-            system=PROPOSE_PROMPT,
-            prompt=_render(requirement, framework, candidates, entries),
-            schema=_schema(candidates),
-            temperature=0.0,
-            max_tokens=6000,
-        )
-        rows = parse_reply(response.text)
-    except SchemaReplyError as exc:
+    rows = None
+    # Two attempts, and only for a reply that could not be read at all. On
+    # the full HIPAA run glm-5.3-flash answered 6 of 75 requirements with its
+    # reasoning in prose ("Let me analyze the requirement carefully…") and no
+    # rows anywhere in it; one failure in twelve is a requirement nobody gets
+    # a proposal for. A timeout or a refused request is not retried.
+    for _attempt in range(2):
         try:
-            rows = parse_reply(exc.text)
-        except ValueError:
-            proposal.error = str(exc)[:300]
+            response = effort.call_json(
+                provider,
+                effort=effort.MAPPING,
+                system=PROPOSE_PROMPT,
+                prompt=_render(requirement, framework, candidates, entries),
+                schema=_schema(candidates),
+                temperature=0.0,
+                max_tokens=6000,
+            )
+            rows = parse_reply(response.text)
+        except SchemaReplyError as exc:
+            try:
+                rows = parse_reply(exc.text)
+            except ValueError:
+                proposal.error = str(exc)[:300]
+        except ValueError as exc:
+            proposal.error = f"{type(exc).__name__}: {exc}"[:300]
+        except Exception as exc:  # noqa: BLE001 - one requirement's failure must not end the run
+            # Provider SDKs raise their own types (LiteLLM's rate-limit error
+            # is not a RuntimeError), and a 75-call run that stops on the
+            # first one loses the rest. Recorded, not retried.
+            proposal.error = f"{type(exc).__name__}: {exc}"[:300]
             return proposal
-    except (ValueError, RuntimeError) as exc:
-        proposal.error = f"{type(exc).__name__}: {exc}"[:300]
+        if rows is not None:
+            proposal.error = ""
+            break
+    if rows is None:
         return proposal
 
     requirement_words = f"{requirement.title} {requirement.text} {requirement.parent}"

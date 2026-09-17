@@ -188,6 +188,81 @@ def test_a_failure_is_recorded_not_read_as_no_mappings(failure):
     assert proposal.mappings == []
 
 
+class Sequence(Replies):
+    """Gives each reply in turn: text is returned, an exception is raised."""
+
+    def __init__(self, *replies):
+        super().__init__(None)
+        self.replies = list(replies)
+
+    def generate_json(self, *, prompt, **kwargs):
+        self.prompts.append(prompt)
+        reply = self.replies[min(len(self.prompts), len(self.replies)) - 1]
+        if isinstance(reply, Exception):
+            raise reply
+        return LLMResponse(text=reply, model="fake")
+
+
+def _propose_with(provider):
+    controls = _catalogs()
+    entries = catalog_entries(controls)
+    requirement = next(r for r in requirements_of(controls, HIPAA) if r.requirement_id == RID)
+    return propose_for(
+        requirement,
+        framework=HIPAA,
+        published=["AT-2"],
+        entries=entries,
+        index=WordIndex(entries),
+        provider=provider,
+    )
+
+
+PROSE = SchemaReplyError("not the schema", text="Let me analyze the requirement carefully.")
+
+
+def test_an_unreadable_reply_is_asked_again_once():
+    """glm answered 6 of 75 requirements with prose reasoning and no rows."""
+    provider = Sequence(PROSE, json.dumps({"mappings": [SI3]}))
+
+    proposal = _propose_with(provider)
+
+    assert [m.control for m in proposal.mappings] == ["SI-3"]
+    assert proposal.error == ""
+    assert len(provider.prompts) == 2
+
+
+def test_two_unreadable_replies_are_an_error_after_two_calls():
+    provider = Sequence(PROSE, PROSE, json.dumps({"mappings": [SI3]}))
+
+    proposal = _propose_with(provider)
+
+    assert proposal.error and proposal.mappings == []
+    assert len(provider.prompts) == 2
+
+
+class RateLimitError(Exception):
+    """Like LiteLLM's: not a RuntimeError."""
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("timeout"), RateLimitError("rate limit")])
+def test_a_provider_failure_is_recorded_not_retried_and_does_not_raise(failure):
+    provider = Sequence(failure, json.dumps({"mappings": [SI3]}))
+
+    proposal = _propose_with(provider)
+
+    assert str(failure) in proposal.error
+    assert len(provider.prompts) == 1
+
+
+def test_a_readable_empty_answer_is_not_retried():
+    provider = Sequence(json.dumps({"mappings": []}), json.dumps({"mappings": [SI3]}))
+
+    proposal = _propose_with(provider)
+
+    assert proposal.mappings == [] and proposal.error == ""
+    assert len(provider.prompts) == 1
+
+
 # ---- merge: notes for a reviewer, never decisions -------------------------
 
 

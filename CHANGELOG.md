@@ -100,7 +100,7 @@ overclaimed:
   to click 8.5.0, jsonschema 4.26.0 and pywin32 312 (Windows only),
   regenerated from its header command rather than merged from Dependabot's
   paired pull requests, which each edited the same lock. **mcp is held below
-  2**, in the extra and in Dependabot's ignores: mcp 2.0 removed the
+  2** (at 1.30.0), in the extra and in Dependabot's ignores: mcp 2.0 removed the
   `Server.list_tools` decorator `serve()` is built on, so `policyforge mcp`
   died on startup — with CI green, because no test ever started the server.
   `test_the_server_answers_a_client_over_stdio` now spawns it and speaks

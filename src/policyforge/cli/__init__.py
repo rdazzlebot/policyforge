@@ -10,6 +10,7 @@ write guard. It is now a package split by what the commands are for:
     documents  drafting with a model
     content    the content tree and Confluence
     zardoz     the shell, discovery, corpus sync, the MCP server
+    project    `init`, laying out a project for an installed package
 
 The split was a pure move. Every definition was copied byte for byte, and the
 command surface — every command, option, default and help string — was pinned
@@ -42,6 +43,7 @@ from policyforge.cli import (  # noqa: E402
     etl,
     llm,
     programme,
+    project,
     zardoz,
 )
 from policyforge.cli._common import _checked_slug  # noqa: E402
@@ -61,5 +63,6 @@ __all__ = [
     "llm",
     "load_config",
     "programme",
+    "project",
     "zardoz",
 ]

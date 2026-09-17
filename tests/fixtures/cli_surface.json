@@ -2087,6 +2087,30 @@
         }
       ]
     },
+    "init": {
+      "help": "Lay out a PolicyForge project: bundled catalogs, example configs, .gitignore.\n\nEvery command reads `config/` and `data/frameworks/` relative to where it\nruns. A clone of the repository already has them; an installed package\n(Homebrew, pipx, pip) does not, and this writes them. The public-domain\ncatalogs are copied in \u2014 NIST 800-53, FedRAMP, ARC-AMPE, the HIPAA\nSecurity Rule \u2014 with a README for each bring-your-own one.\n\nNever overwrites: a file that already exists is kept, so running it again,\nor inside a clone, changes nothing you have edited.",
+      "name": "init",
+      "params": [
+        {
+          "default": ".",
+          "kind": "Argument",
+          "multiple": false,
+          "name": "directory",
+          "nargs": 1,
+          "opts": [
+            "directory"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": false,
+            "name": "directory"
+          }
+        }
+      ]
+    },
     "llm-check": {
       "help": "Confirm your configured API key + model actually work.",
       "name": "llm-check",

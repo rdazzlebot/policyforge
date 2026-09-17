@@ -173,6 +173,34 @@ every tracked `*.md`. If you change behaviour described in [docs/](docs/),
 change the doc in the same PR — the docs claim to be checkable, and a claim
 pointing at code that moved is worse than no claim.
 
+## Adding a package or a catalog
+
+`pyproject.toml` lists packages and bundled files by hand, because the
+catalogs are mapped into the package from `data/frameworks/`, outside `src/`.
+A new subpackage goes into `[tool.setuptools] packages`. A new
+**public-domain** catalog goes into `policyforge.scaffold.BUNDLED_CATALOGS`
+and into the package-data list file by file. Never add a glob there.
+`tests/test_scaffold.py` fails until both lists agree with the repository.
+
+## Cutting a release
+
+1. Move the `## Unreleased` changelog entries under the new version. Bump
+   `version` in `pyproject.toml` and `__version__` in
+   `src/policyforge/__init__.py` together; a test compares them.
+1. Merge that to `main`, then tag the merge commit `vX.Y.Z` and publish a
+   GitHub Release from the tag.
+1. Update `Formula/policyforge.rb` in
+   [rdazzlebot/homebrew-tap](https://github.com/rdazzlebot/homebrew-tap):
+   point `url` at
+   `https://github.com/rdazzlebot/policyforge/archive/refs/tags/vX.Y.Z.tar.gz`
+   and set `sha256` to that tarball's hash (`curl -sL <url> | shasum -a 256`).
+   If a runtime dependency changed, regenerate the `resource` blocks with
+   `brew update-python-resources policyforge`, not by hand.
+1. Before pushing the formula, run `brew install --build-from-source`,
+   `brew test policyforge` and `brew audit --strict policyforge` on macOS or
+   Linux. None of these run on Windows; the `homebrew/brew` Docker image has
+   Linux Homebrew.
+
 ## Licensed content
 
 Never commit HITRUST CSF, GovRAMP, or any licensed export. Keep it in

@@ -301,15 +301,20 @@ def crosswalk_propose(framework: str, controls_paths, overlay: Path | None, only
             total.rejected_again += step.rejected_again
             total.errors.extend(step.errors)
             total.truncated.extend(step.truncated)
+            refused = ""
+            if proposal.refused:
+                why = "unverifiable quotes"
+                if proposal.nameless:
+                    why = f"{proposal.nameless} naming no candidate control, rest on quotes"
+                refused = f", {len(proposal.refused)} refused ({why})"
             if proposal.error:
-                outcome = f"error: {proposal.error}"
+                outcome = f"error: {proposal.error}{refused}"
             else:
                 outcome = (
                     f"{step.confirmed} confirmed, {step.not_confirmed} not confirmed, "
                     f"{step.proposed} new"
                 )
-                if proposal.refused:
-                    outcome += f", {len(proposal.refused)} refused for unverifiable quotes"
+                outcome += refused
             click.echo(f"[{number}/{len(requirements)}] {requirement.requirement_id}: {outcome}")
 
     click.echo(

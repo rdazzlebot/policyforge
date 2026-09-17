@@ -651,3 +651,92 @@ def test_a_cut_off_reply_is_recorded_as_truncated_not_as_an_unreadable_one():
 def test_a_run_with_no_failures_still_exits_zero(tmp_path, monkeypatch):
     run, _ = _setup(tmp_path, monkeypatch, Mapper())
     assert run("crosswalk", "propose").exit_code == 0
+
+
+# ---- a reply that names no control (measured on glm, 2026-09-17) ----------
+
+
+NAMELESS = {
+    "relationship": "superset",
+    "requirement_quote": "guarding against, detecting, and reporting malicious software",
+    "control_quote": "malicious code protection mechanisms at system entry",
+}
+
+
+class Nameless(Mapper):
+    """Answers the malware specification with rows that omit `control`."""
+
+    def __init__(self, then_answer=False):
+        super().__init__()
+        self.then_answer = then_answer
+        self.asked = 0
+
+    def generate_json(self, *, prompt, **kwargs):
+        if "Protection from malicious software" in prompt:
+            self.asked += 1
+            if self.then_answer and self.asked > 1:
+                return super().generate_json(prompt=prompt, **kwargs)
+            return LLMResponse(text=json.dumps({"mappings": [NAMELESS]}), model="fake")
+        return super().generate_json(prompt=prompt, **kwargs)
+
+
+def _propose_malware(provider, published=("AT-2",)):
+    from policyforge.crosswalk.candidates import WordIndex, catalog_entries
+    from policyforge.crosswalk.propose import propose_for, requirements_of
+
+    controls = _catalogs()
+    entries = catalog_entries(controls)
+    requirement = next(r for r in requirements_of(controls, HIPAA) if r.requirement_id == RID)
+    return propose_for(
+        requirement,
+        framework=HIPAA,
+        published=list(published),
+        entries=entries,
+        index=WordIndex(entries),
+        provider=provider,
+    )
+
+
+def test_a_reply_naming_no_control_is_asked_again_once():
+    """Measured on glm: relationship and both quotes present, `control` absent."""
+    provider = Nameless(then_answer=True)
+
+    proposal = _propose_malware(provider)
+
+    assert [m.control for m in proposal.mappings] == ["SI-3"]
+    assert provider.asked == 2
+    assert proposal.error == ""
+
+
+def test_a_reply_naming_no_control_twice_leaves_the_requirement_unproposed():
+    provider = Nameless()
+
+    proposal = _propose_malware(provider)
+
+    assert proposal.mappings == []
+    assert proposal.error and "named no control" in proposal.error
+    assert provider.asked == 2
+    # What was refused is still reported, and counted as nameless.
+    assert len(proposal.refused) == 1 and proposal.nameless == 1
+
+
+def test_an_empty_list_of_mappings_is_an_answer_not_an_unusable_reply():
+    class Empty(Mapper):
+        def generate_json(self, *, prompt, **kwargs):
+            self.calls += 1
+            return LLMResponse(text=json.dumps({"mappings": []}), model="fake")
+
+    provider = Empty()
+    proposal = _propose_malware(provider)
+
+    assert proposal.mappings == [] and proposal.error == ""
+    assert provider.calls == 1
+
+
+def test_the_run_says_why_rows_were_refused(tmp_path, monkeypatch):
+    run, _ = _setup(tmp_path, monkeypatch, Nameless())
+
+    result = run("crosswalk", "propose")
+
+    assert "naming no candidate control" in result.output
+    assert result.exit_code == 1

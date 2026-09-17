@@ -131,6 +131,9 @@ class Proposal:
     #: has no proposal rather than a partial one. Reported apart from other
     #: failures: it is the one a larger budget would fix.
     truncated: bool = False
+    #: Rows that named no control on the candidate list — usually no `control`
+    #: key at all, which the schema requires and a provider may not enforce.
+    nameless: int = 0
 
 
 def requirements_of(controls, framework: str) -> list[Requirement]:
@@ -191,6 +194,18 @@ def _schema(candidates: list[str]) -> dict:
     }
 
 
+def _named_nothing(rows, candidates) -> bool:
+    """Whether a non-empty reply named no candidate control anywhere.
+
+    An empty list is a real answer — the model was asked to return nothing
+    when nothing addresses the requirement — so only a reply with rows in it
+    can be unusable this way.
+    """
+    return bool(rows) and not any(
+        isinstance(row, dict) and row.get("control") in candidates for row in rows
+    )
+
+
 _FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
 
 
@@ -241,6 +256,7 @@ def propose_for(
     )
     proposal = Proposal(requirement.requirement_id, candidates)
     rows = None
+    unusable = None
     # Two attempts, and only for a reply that could not be read at all. On
     # the full HIPAA run glm-5.3-flash answered 6 of 75 requirements with its
     # reasoning in prose ("Let me analyze the requirement carefully…") and no
@@ -258,6 +274,18 @@ def propose_for(
                 max_tokens=6000,
             )
             rows = parse_reply(response.text)
+            if _named_nothing(rows, candidates):
+                # Every row left out the control it was about, so there is
+                # nothing to map and nothing to guess from. glm-5.3-flash
+                # answered the encryption specification this way on three
+                # runs and two direct calls, with relationship and both
+                # quotes present and `control` absent, which the schema
+                # requires and OpenRouter does not enforce. Read as an
+                # unusable reply and asked once more, like an unreadable one.
+                unusable = rows
+                rows = None
+                proposal.error = "every row named no control on the candidate list"
+                continue
         except TruncatedResponse as exc:
             # Never retried here. `effort.call_json` has already asked again
             # at a larger budget, so a second attempt would buy a third
@@ -283,8 +311,17 @@ def propose_for(
             proposal.error = ""
             break
     if rows is None:
+        # Nothing usable, but what was refused is still worth reporting.
+        if unusable is not None:
+            _read_rows(unusable, proposal, requirement, entries, candidates)
         return proposal
 
+    _read_rows(rows, proposal, requirement, entries, candidates)
+    return proposal
+
+
+def _read_rows(rows, proposal, requirement, entries, candidates) -> None:
+    """Keep the rows that name a candidate and quote both texts; refuse the rest."""
     requirement_words = f"{requirement.title} {requirement.text} {requirement.parent}"
     seen = set()
     for row in rows:
@@ -310,6 +347,8 @@ def propose_for(
         )
         if not valid:
             proposal.refused.append(row if isinstance(row, dict) else {"row": row})
+            if control not in candidates:
+                proposal.nameless += 1
             continue
         seen.add(control)
         proposal.mappings.append(
@@ -320,7 +359,6 @@ def propose_for(
                 control_quote=control_quote,
             )
         )
-    return proposal
 
 
 @dataclass

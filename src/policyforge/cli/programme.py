@@ -95,7 +95,7 @@ def bundle_cmd(owner: str, topics_path: Path, controls_paths):
     """Everything one team answers for: topics, requirements, documents, cadence.
 
     The question a team lead asks, which `coverage` answers only by being
-    read whole and filtered by eye. Set arithmetic over the registry — no
+    read whole and filtered by eye. Set arithmetic over the registry - no
     model involved, and the answer is exactly as good as the registry is.
     """
     from policyforge.mapping.crosswalk import build_crosswalk
@@ -120,14 +120,14 @@ def bundle_cmd(owner: str, topics_path: Path, controls_paths):
     required=True,
     multiple=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Path to a controls.json. Repeatable — pass the framework the "
+    help="Path to a controls.json. Repeatable - pass the framework the "
     "requirement belongs to as well as the NIST catalog.",
 )
 def addresses_cmd(requirement: str, topics_path: Path, controls_paths):
     """Who answers for one requirement, and which document says so.
 
-    The assessor's direction of travel. Name any requirement — NIST, HIPAA,
-    HITRUST — and this resolves it through the crosswalk to the topics the
+    The assessor's direction of travel. Name any requirement - NIST, HIPAA,
+    HITRUST - and this resolves it through the crosswalk to the topics the
     registry anchors, then names the owner and the pages.
 
     Every claim says how it was reached: anchored directly, inherited from a
@@ -164,7 +164,7 @@ def addresses_cmd(requirement: str, topics_path: Path, controls_paths):
     required=True,
     multiple=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Path to a controls.json. Repeatable — pass the NIST 800-53 file plus any "
+    help="Path to a controls.json. Repeatable - pass the NIST 800-53 file plus any "
     "other framework you want reachability reported for.",
 )
 @click.option(
@@ -181,7 +181,7 @@ def addresses_cmd(requirement: str, topics_path: Path, controls_paths):
     "--strict",
     is_flag=True,
     help="Exit non-zero if anything is orphaned, contested, or anchored to an unknown "
-    "control — for use as a CI gate.",
+    "control - for use as a CI gate.",
 )
 @click.option(
     "--json",
@@ -201,7 +201,7 @@ def coverage_cmd(
 
     Orphaned controls mean nobody is doing the work. Contested controls are
     worse: it looks covered while each owner assumes the other has it. Both
-    are pure set arithmetic over the topic registry — no LLM involved. See
+    are pure set arithmetic over the topic registry - no LLM involved. See
     README's "One topic, one team".
     """
     import dataclasses
@@ -265,7 +265,7 @@ def coverage_cmd(
 @click.option(
     "--name",
     required=True,
-    help="Document slug/filename stem — the stem of the file `policyforge generate` "
+    help="Document slug/filename stem - the stem of the file `policyforge generate` "
     "wrote via --out (e.g. 'authenticator-mgmt' for authenticator-mgmt.md), the "
     "--name given to `import-confluence`, or for --tier confluence, the page title "
     "slugified (e.g. 'access-control-standard').",
@@ -397,7 +397,7 @@ def drift_cmd(
     those sit a handful of your topics and a smaller handful of your
     documents. Everything else is unaffected and should stay unread.
 
-    Run the ETL, then run this — the ETL overwrites the catalog in place and
+    Run the ETL, then run this - the ETL overwrites the catalog in place and
     git is still holding the version you had, so no snapshot is needed:
 
         policyforge etl-oscal
@@ -487,7 +487,7 @@ def drift_cmd(
     "topics_path",
     default=None,
     type=click.Path(path_type=Path),
-    help="Only controls your topic registry anchors — the narrowest useful scope.",
+    help="Only controls your topic registry anchors - the narrowest useful scope.",
 )
 @click.option(
     "--group",
@@ -512,7 +512,7 @@ def parameters_cmd(
 ):
     """Record one decided value per organization-defined parameter.
 
-    SP 800-53 does not say how often to review accounts — it says
+    SP 800-53 does not say how often to review accounts - it says
     [Assignment: organization-defined frequency] and leaves it to you, 1,210
     times across the catalog. Today those get decided implicitly inside
     generated prose, by a model with no memory of what it chose for the
@@ -579,7 +579,7 @@ def frameworks_cmd():
     your MyCSF or GovRAMP licence permits internal use.
 
     Licensed content committed to a repository that has not declared the
-    right to hold it is reported as an error — set
+    right to hold it is reported as an error - set
     `frameworks.allow_licensed_in_repo: true` in config.yaml if your licence
     permits yours to carry it.
     """

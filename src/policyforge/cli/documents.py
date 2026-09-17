@@ -106,7 +106,7 @@ def _most_restrictive(classified) -> str | None:
     default=Path("config/parameters.yaml"),
     type=click.Path(path_type=Path),
     help="Ledger of decided organization-defined parameter values. Missing is "
-    "fine — undecided parameters stay as [Assignment: ...] placeholders.",
+    "fine - undecided parameters stay as [Assignment: ...] placeholders.",
 )
 @click.option(
     "--out-dir",
@@ -245,7 +245,7 @@ def synthesize_cmd(
     required=True,
     multiple=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Path to a controls.json. Repeatable — pass the NIST 800-53 file plus any "
+    help="Path to a controls.json. Repeatable - pass the NIST 800-53 file plus any "
     "other framework whose mappings you want shown as crosswalk columns.",
 )
 @click.option(
@@ -291,7 +291,7 @@ def ssp_cmd(
 ):
     """Build a NIST 800-53 System Security Plan as a spreadsheet workbook.
 
-    Writes .xlsx — an open ISO standard that LibreOffice Calc opens and edits
+    Writes .xlsx - an open ISO standard that LibreOffice Calc opens and edits
     natively, so no Excel licence is needed. Control text is copied verbatim
     from the catalog; only the implementation narratives are LLM-drafted, and
     those are marked as drafts requiring review. See ssp/workbook.py.

@@ -22,8 +22,8 @@ def init_cmd(directory: Path):
     Every command reads `config/` and `data/frameworks/` relative to where it
     runs. A clone of the repository already has them; an installed package
     (Homebrew, pipx, pip) does not, and this writes them. The public-domain
-    catalogs are copied in — NIST 800-53, FedRAMP, ARC-AMPE, the HIPAA
-    Security Rule — with a README for each bring-your-own one.
+    catalogs are copied in - NIST 800-53, FedRAMP, ARC-AMPE, the HIPAA
+    Security Rule - with a README for each bring-your-own one.
 
     Never overwrites: a file that already exists is kept, so running it again,
     or inside a clone, changes nothing you have edited.

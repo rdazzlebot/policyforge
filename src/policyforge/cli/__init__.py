@@ -32,7 +32,7 @@ from policyforge.llm.base import get_provider
 
 @click.group()
 def cli():
-    """PolicyForge — cross-mapped compliance policy/procedure generation."""
+    """PolicyForge - cross-mapped compliance policy/procedure generation."""
 
 
 # Registering the commands. Imported after `cli` exists, because each module

@@ -35,7 +35,7 @@ def mcp_cmd(corpus_dir: Path | None, topics_path: Path | None):
 
     Lets Claude Code, Claude Desktop or any MCP client ask this repository
     which controls nobody owns, what a team is accountable for, or where a
-    HIPAA citation is addressed — with the content boundary, the ledger and
+    HIPAA citation is addressed - with the content boundary, the ledger and
     the citation checks all still in the path, because the answers come from
     the same functions the CLI calls.
 
@@ -76,7 +76,7 @@ def mcp_cmd(corpus_dir: Path | None, topics_path: Path | None):
     "--plain",
     is_flag=True,
     help="Drop the Zardoz voice from the shell chrome entirely. Answers are "
-    "plain either way — this only affects greetings, prompts and errors.",
+    "plain either way - this only affects greetings, prompts and errors.",
 )
 @click.pass_context
 def zardoz_cmd(ctx, topics_path: Path, corpus_dir: Path, no_art: bool, plain: bool):
@@ -133,7 +133,7 @@ def zardoz_cmd(ctx, topics_path: Path, corpus_dir: Path, no_art: bool, plain: bo
     "--out",
     default=Path("config/topics.proposed.yaml"),
     type=click.Path(path_type=Path),
-    help="Where to write the proposal. Deliberately not topics.yaml — it needs "
+    help="Where to write the proposal. Deliberately not topics.yaml - it needs "
     "owners set before it is usable.",
 )
 @click.option(
@@ -241,8 +241,8 @@ def zardoz_sync(
     and questioned offline. Where both are configured the tree wins: in that
     arrangement the file is the source of truth and the page is a copy of it.
 
-    Documents that know their owner — from the topic registry, or from their
-    own frontmatter — are trusted; everything else is supporting context that
+    Documents that know their owner - from the topic registry, or from their
+    own frontmatter - are trusted; everything else is supporting context that
     answers may use and will say they used.
     """
     from policyforge.zardoz.corpus import sync_corpus

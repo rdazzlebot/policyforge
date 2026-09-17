@@ -21,6 +21,17 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def normalise_newlines(text: str) -> str:
+    """`text` with every `\\r\\n` and bare `\\r` folded to `\\n`.
+
+    What `write_text_lf` writes, exposed so a caller can compare text it is
+    about to write against a file it reads back through universal newlines
+    — `Path.read_text` folds CRLF on the way in, and a comparison against
+    the unfolded string reads an unchanged file as changed every time.
+    """
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def write_text_lf(path: Path, text: str) -> Path:
     """Write `text` to `path` as UTF-8 with LF line endings, whatever the OS.
 
@@ -29,7 +40,6 @@ def write_text_lf(path: Path, text: str) -> Path:
     page, or a file a person edited, any of which can carry CRLF, and the
     guarantee callers want is "no CR in the file", not "no CR added".
     """
-    normalised = text.replace("\r\n", "\n").replace("\r", "\n")
     with path.open("w", encoding="utf-8", newline="\n") as handle:
-        handle.write(normalised)
+        handle.write(normalise_newlines(text))
     return path

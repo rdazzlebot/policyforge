@@ -210,3 +210,53 @@ def test_plan_files_beside_revisions_are_lf_too(tmp_path):
 
     assert b"\r" not in path.read_bytes()
     assert json.loads(path.read_text(encoding="utf-8")) == {"a": 1}
+
+
+def test_a_page_carrying_crlf_pulls_as_unchanged_the_second_time(tmp_path, monkeypatch):
+    """`read_text` folds CRLF on the way in; the comparison must fold too.
+
+    Paragraph text has its whitespace collapsed on the way to markdown, but
+    a `<pre>` block or a code macro keeps what the editor pasted, carriage
+    returns included. Such a page rendered to a string with CRLF, was
+    written as LF, and was then compared against the LF file it had just
+    written: changed on every pull, forever.
+    """
+    from policyforge.export.pull import UNCHANGED, WRITTEN, pull_pages
+
+    class FakePage:
+        id = "id-1"
+        title = "Access Control Standard"
+        version = 3
+        webui_url = "https://x/wiki/page"
+        labels: list = []
+        storage_body = (
+            "<h1>Access Control Standard</h1><p>Reviews happen quarterly.</p>"
+            "<pre>export the user list\r\nreconcile it against HR</pre>"
+        )
+
+    monkeypatch.setattr(
+        "policyforge.export.confluence_importer.fetch_confluence_page",
+        lambda *, space, title, host, **kwargs: FakePage(),
+    )
+    monkeypatch.setattr(
+        "policyforge.export.confluence_search.fetch_user_names", lambda ids, **kw: {}
+    )
+    targets = [("SEC", "Access Control Standard", "standard")]
+
+    first = pull_pages(targets, root=tmp_path, host="https://x", dry_run=False)
+    second = pull_pages(targets, root=tmp_path, host="https://x", dry_run=False)
+
+    assert [r.action for r in first.results] == [WRITTEN]
+    assert [r.action for r in second.results] == [UNCHANGED]
+    (written,) = tmp_path.rglob("*.md")
+    assert b"\r" not in written.read_bytes()
+
+
+def test_normalise_newlines_is_what_the_writer_applies(tmp_path):
+    from policyforge.textfile import normalise_newlines
+
+    text = "a\r\nb\rc\n"
+    path = write_text_lf(tmp_path / "x.md", text)
+
+    assert normalise_newlines(text) == "a\nb\nc\n"
+    assert path.read_bytes().decode("utf-8") == normalise_newlines(text)

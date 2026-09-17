@@ -51,8 +51,12 @@ bedrock = [
 # transitive dependency of semgrep, a dev tool, and building against that
 # would give a feature that works for anyone who installed the dev extras and
 # fails for everyone else. The CI lock includes this extra by name.
+#
+# Below 2: mcp 2.0 removed the `Server.list_tools` / `call_tool` decorators
+# `serve()` is built on, and the server dies on startup. Lift this with the
+# port, which `test_the_server_answers_a_client_over_stdio` will prove.
 mcp = [
-    "mcp>=1.29",
+    "mcp>=1.29,<2",
 ]
 vertex = [
     "anthropic[vertex]>=0.40",

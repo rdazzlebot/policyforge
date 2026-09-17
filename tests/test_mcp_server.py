@@ -277,6 +277,7 @@ def test_the_bundle_tool_reaches_the_registry(tmp_path):
             }
         ),
         encoding="utf-8",
+        errors="replace",  # the server logs in the platform encoding
     )
     state = build_state({}, corpus_dir=tmp_path / "corpus", topics_path=topics_path)
     assert "Access Review" in call_tool(state, "topics", {})
@@ -317,3 +318,112 @@ def test_only_one_tool_calls_a_model_and_says_so():
     these descriptions."""
     costly = [t for t in TOOLS if "calls a language model" in t.description]
     assert [t.name for t in costly] == ["ask_documents"]
+
+
+# ---- the server itself, spoken to over stdio ---------------------------
+
+
+def test_the_server_answers_a_client_over_stdio(tmp_path):
+    """Spawn `policyforge mcp` and speak JSON-RPC to it, as a client would.
+
+    Everything above calls `call_tool` directly, and none of it touches the
+    MCP SDK: `serve()` is the only code that does. So the SDK could move out
+    from under it and the suite stay green — which is what happened with
+    mcp 2.0, where `Server.list_tools` no longer exists and the server died
+    on startup while every test here passed. This is the test that notices.
+    """
+    pytest.importorskip("mcp")
+    import json
+    import queue
+    import subprocess
+    import sys
+    import threading
+
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "policyforge.cli",
+            "mcp",
+            "--corpus-dir",
+            str(tmp_path / "corpus"),
+            "--topics",
+            str(tmp_path / "topics.yaml"),
+        ],
+        # No config.yaml here, and the credentials are already stripped from
+        # the environment this inherits: the server takes its no-model path.
+        cwd=tmp_path,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",  # the server logs in the platform encoding
+    )
+    lines: queue.Queue = queue.Queue()
+
+    def pump() -> None:
+        for line in proc.stdout:
+            lines.put(line)
+        lines.put(None)  # stdout closed: the server is gone
+
+    threading.Thread(target=pump, daemon=True).start()
+
+    def send(message: dict) -> None:
+        proc.stdin.write(json.dumps(message) + "\n")
+        proc.stdin.flush()
+
+    def reply(want_id: int) -> dict:
+        while True:
+            try:
+                line = lines.get(timeout=60)
+            except queue.Empty:
+                pytest.fail(f"no reply to request {want_id} within 60s")
+            if line is None:
+                proc.wait(timeout=10)
+                pytest.fail(f"server exited before replying to {want_id}:\n{proc.stderr.read()}")
+            message = json.loads(line)
+            if message.get("id") == want_id:
+                return message
+
+    try:
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test", "version": "0"},
+                },
+            }
+        )
+        init = reply(1)
+        assert init["result"]["serverInfo"]["name"] == "policyforge", init
+
+        send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        send({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        listed = [tool["name"] for tool in reply(2)["result"]["tools"]]
+        assert listed == [tool.name for tool in TOOLS]
+
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "topics", "arguments": {}},
+            }
+        )
+        result = reply(3)["result"]
+        assert not result.get("isError"), result
+        assert result["content"][0]["text"].strip()
+    finally:
+        proc.stdin.close()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        proc.stdout.close()
+        proc.stderr.close()

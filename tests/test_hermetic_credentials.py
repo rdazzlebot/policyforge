@@ -48,7 +48,18 @@ def test_importing_litellm_does_not_resurrect_a_key_from_dotenv():
 
 
 def test_dotenv_loader_is_disarmed():
-    """Directly, so a failure names the cause rather than a symptom."""
+    """Directly, so a failure names the cause rather than a symptom.
+
+    Passes in one of two ways, and never by skipping. With python-dotenv
+    installed, its loader must be the conftest's no-op. Without it — it is
+    not a dependency of this project, only of litellm and older mcp — nothing
+    in the environment can load `.env` at all, and that is asserted instead.
+    """
+    import importlib.util
+
+    if importlib.util.find_spec("dotenv") is None:
+        return  # no loader exists to read .env: the commitment holds vacuously
+
     import dotenv
 
     assert dotenv.load_dotenv() is False

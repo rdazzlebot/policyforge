@@ -46,6 +46,22 @@ def _default(value):
     return value
 
 
+def _flag_default(param):
+    """What the command receives when a boolean flag is left off.
+
+    Click 8.5 stopped storing `False` as an unset boolean flag's default and
+    stores `Sentinel.UNSET` instead; the command still receives `False`. The
+    snapshot records that received value, so it pins the interface rather
+    than which Click release is installed.
+    """
+    import enum
+
+    value = param.default
+    if getattr(param, "is_bool_flag", False) and isinstance(value, enum.Enum):
+        return False
+    return _default(value)
+
+
 def _type(param) -> dict:
     kind = param.type
     described: dict = {"name": getattr(kind, "name", type(kind).__name__)}
@@ -67,7 +83,7 @@ def _param(param) -> dict:
         "secondary_opts": list(param.secondary_opts),
         "type": _type(param),
         "required": param.required,
-        "default": _default(param.default),
+        "default": _flag_default(param),
         "multiple": param.multiple,
         "nargs": param.nargs,
     }

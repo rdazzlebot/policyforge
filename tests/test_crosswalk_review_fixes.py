@@ -573,3 +573,81 @@ def test_overlays_named_yml_are_read_too(tmp_path):
         "framework: HIPAA Security Rule\nrequirements: {}\n", "utf-8"
     )
     assert [o.framework for o in load_overlays(tmp_path)] == ["HIPAA Security Rule"]
+
+
+# ---- a cut-off proposal reply (1.2.1's truncation contract) ----------------
+
+
+def _truncation(subject="crosswalk/hipaa-security-rule"):
+    from policyforge.llm.base import TruncatedResponse
+
+    return TruncatedResponse(
+        subject=subject,
+        site="crosswalk-propose",
+        first_budget=6000,
+        budget=12000,
+        stop_reason="length",
+        model="fake",
+        text="{ partial",
+    )
+
+
+class CutOff(Mapper):
+    """Cut off on the malware specification, answers everything else."""
+
+    def __init__(self):
+        super().__init__()
+        self.cut_off = 0
+
+    def generate_json(self, *, prompt, **kwargs):
+        if "Protection from malicious software" in prompt:
+            self.calls += 1
+            self.cut_off += 1
+            raise _truncation()
+        return super().generate_json(prompt=prompt, **kwargs)
+
+
+def test_a_cut_off_proposal_reply_is_not_retried_and_leaves_the_requirement_alone(
+    tmp_path, monkeypatch
+):
+    provider = CutOff()
+    run, _ = _setup(tmp_path, monkeypatch, provider)
+    assert run("crosswalk", "seed").exit_code == 0
+    before = (tmp_path / OVERLAY).read_text(encoding="utf-8")
+
+    result = run("crosswalk", "propose")
+
+    assert result.exit_code == 1, result.output
+    assert RID in result.output
+    assert "cut off at the model's output budget" in result.output
+    # effort.call_json already retried at a larger budget; asked once here.
+    assert provider.cut_off == 1
+    assert (tmp_path / OVERLAY).read_text(encoding="utf-8") == before
+
+
+def test_a_cut_off_reply_is_recorded_as_truncated_not_as_an_unreadable_one():
+    from policyforge.crosswalk.candidates import WordIndex, catalog_entries
+    from policyforge.crosswalk.propose import propose_for, requirements_of
+
+    controls = _catalogs()
+    entries = catalog_entries(controls)
+    requirement = next(r for r in requirements_of(controls, HIPAA) if r.requirement_id == RID)
+    provider = CutOff()
+
+    proposal = propose_for(
+        requirement,
+        framework=HIPAA,
+        published=["AT-2"],
+        entries=entries,
+        index=WordIndex(entries),
+        provider=provider,
+    )
+
+    assert proposal.truncated and proposal.error
+    assert proposal.mappings == [] and proposal.refused == []
+    assert provider.cut_off == 1
+
+
+def test_a_run_with_no_failures_still_exits_zero(tmp_path, monkeypatch):
+    run, _ = _setup(tmp_path, monkeypatch, Mapper())
+    assert run("crosswalk", "propose").exit_code == 0

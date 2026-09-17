@@ -41,7 +41,7 @@ from policyforge.crosswalk.overlay import (
     printable,
     published_pairs,
 )
-from policyforge.llm.base import SchemaReplyError
+from policyforge.llm.base import SchemaReplyError, TruncatedResponse
 from policyforge.llm.prompts import REGISTRY, Prompt, register
 
 #: The relationships a model may assert. `unspecified` is for published pairs
@@ -127,6 +127,10 @@ class Proposal:
     #: not in the vocabulary, or a quote the text does not contain.
     refused: list[dict] = field(default_factory=list)
     error: str = ""
+    #: The model's reply was cut off at its budget twice, so this requirement
+    #: has no proposal rather than a partial one. Reported apart from other
+    #: failures: it is the one a larger budget would fix.
+    truncated: bool = False
 
 
 def requirements_of(controls, framework: str) -> list[Requirement]:
@@ -254,6 +258,14 @@ def propose_for(
                 max_tokens=6000,
             )
             rows = parse_reply(response.text)
+        except TruncatedResponse as exc:
+            # Never retried here. `effort.call_json` has already asked again
+            # at a larger budget, so a second attempt would buy a third
+            # billed call and the same cut-off reply. The requirement keeps
+            # whatever the overlay already says, and the run names it.
+            proposal.error = str(exc)[:300]
+            proposal.truncated = True
+            return proposal
         except SchemaReplyError as exc:
             try:
                 rows = parse_reply(exc.text)
@@ -320,6 +332,9 @@ class MergeReport:
     left_reviewed: int = 0
     #: Pairs a person rejected, which the model named again. Not re-proposed.
     rejected_again: int = 0
+    #: Requirements whose reply was cut off at its budget, listed apart from
+    #: other failures because a larger budget is the fix.
+    truncated: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
 
@@ -360,6 +375,8 @@ def merge(
         rid = proposal.requirement_id
         if proposal.error:
             report.errors.append(f"{rid}: {proposal.error}")
+            if proposal.truncated:
+                report.truncated.append(rid)
             continue
         rows = overlay.requirements.get(rid)
         if rows is None:

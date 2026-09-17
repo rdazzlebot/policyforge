@@ -300,6 +300,7 @@ def crosswalk_propose(framework: str, controls_paths, overlay: Path | None, only
             total.left_reviewed += step.left_reviewed
             total.rejected_again += step.rejected_again
             total.errors.extend(step.errors)
+            total.truncated.extend(step.truncated)
             if proposal.error:
                 outcome = f"error: {proposal.error}"
             else:
@@ -321,7 +322,18 @@ def crosswalk_propose(framework: str, controls_paths, overlay: Path | None, only
         click.echo(f"{len(total.errors)} requirement(s) failed and were left as they were:")
         for line in total.errors:
             click.echo(f"  {line}")
+    if total.truncated:
+        click.echo(
+            f"{len(total.truncated)} of those were cut off at the model's output budget: "
+            + ", ".join(total.truncated)
+            + "\n  Re-run those with `--only`, or raise the budget, before relying on the "
+            "overlay: they have no proposal at all, not a partial one."
+        )
     click.echo("Nothing reaches the pipeline until reviewed: policyforge crosswalk review")
+    if total.errors:
+        # Non-zero because a requirement nobody proposed for is a gap in the
+        # review queue, and a script that ran this must be able to see it.
+        raise SystemExit(1)
 
 
 def _reviewer() -> str:

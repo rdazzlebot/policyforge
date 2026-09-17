@@ -50,15 +50,26 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: false
 
+      # The project environment, then semgrep's lock, which is no longer part
+      # of it. --disable-pip audits the hashed pins as written instead of
+      # installing them a second time.
       - name: pip-audit (dependency CVEs)
-        run: pip-audit
+        run: |
+          pip-audit
+          pip-audit --disable-pip --require-hashes -r requirements/semgrep/semgrep.txt
 
       - name: bandit (static security analysis)
         run: bandit -c pyproject.toml -r src
 
+      # In its own environment, from its own hashed lock. semgrep pins its
+      # dependencies exactly; installed alongside the project those pins
+      # became the project's, and Dependabot proposed bumps that could never
+      # install.
       - name: semgrep (broader SAST)
         run: |
-          semgrep scan --config=p/python --config=p/security-audit \
+          python -m venv "$RUNNER_TEMP/semgrep"
+          "$RUNNER_TEMP/semgrep/bin/pip" install --require-hashes -r requirements/semgrep/semgrep.txt
+          "$RUNNER_TEMP/semgrep/bin/semgrep" scan --config=p/python --config=p/security-audit \
             --config=p/owasp-top-ten --error .
 
       - name: mdformat (markdown quality)

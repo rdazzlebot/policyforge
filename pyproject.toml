@@ -28,12 +28,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# No semgrep here. It pins its own dependencies exactly (click, jsonschema,
+# mcp, opentelemetry-*, pywin32 ...), and as a dev extra those pins became
+# this project's pins: every Dependabot bump of one of them could never
+# install. It runs from its own lock instead, requirements/semgrep/, in its
+# own environment — see CONTRIBUTING.md.
 dev = [
     "pytest>=8.0",
     "bandit[toml]>=1.8",
     "pip-audit>=2.7",
     "pre-commit>=4.0",
-    "semgrep>=1.70",
     "ruff>=0.9",
 ]
 bedrock = [
@@ -43,10 +47,10 @@ bedrock = [
 # rather than a base dependency: most people use the CLI, and this is only
 # needed to let another agent call the same functions.
 #
-# Declared explicitly even though `mcp` is already present in this project's
-# dev environment — it arrives there as a transitive dependency of semgrep,
-# which is a dev tool. Building against that would give a feature that works
-# for anyone who installed the dev extras and fails for everyone else.
+# Declared explicitly: it once reached the dev environment only as a
+# transitive dependency of semgrep, a dev tool, and building against that
+# would give a feature that works for anyone who installed the dev extras and
+# fails for everyone else. The CI lock includes this extra by name.
 mcp = [
     "mcp>=1.29",
 ]

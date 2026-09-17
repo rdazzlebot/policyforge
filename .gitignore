@@ -28,6 +28,8 @@ __pycache__/
 .eggs/
 .venv/
 venv/
+# semgrep's own environment (see CONTRIBUTING.md), kept apart from .venv
+.tools/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

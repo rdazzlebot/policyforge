@@ -44,11 +44,12 @@ from dataclasses import dataclass
 
 #: Ships as an optional extra: `pip install policyforge[mcp]`.
 #:
-#: Declared rather than assumed, because it is currently installed in this
-#: project's own venv only as a transitive dependency of semgrep — a dev
-#: tool. Building against that would give a feature that works for anyone
-#: who installed the dev extras and fails for everyone else, which is the
-#: same shape as the litellm/.env problem S-09 fixed.
+#: Declared rather than assumed. It used to reach this project's own venv
+#: only as a transitive dependency of semgrep — a dev tool. Building against
+#: that would give a feature that works for anyone who installed the dev
+#: extras and fails for everyone else, which is the same shape as the
+#: litellm/.env problem S-09 fixed. semgrep now has its own environment, and
+#: the CI lock installs this extra by name.
 _INSTALL_HINT = (
     "The MCP server needs the `mcp` package, which ships as an optional extra:\n"
     "    pip install 'policyforge[mcp]'\n"

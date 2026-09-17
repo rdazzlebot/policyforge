@@ -27,6 +27,16 @@ Usage:
 
 Requires: pip install -e ".[dev]"
 
+semgrep is not in the dev extra: it pins its own dependencies exactly, and
+installed beside the project those pins became the project's. It is found on
+PATH or in `.tools/semgrep`, built from its own hashed lock:
+
+    python -m venv .tools/semgrep
+    .tools/semgrep/Scripts/pip install --require-hashes -r requirements/semgrep/semgrep.txt
+
+(`bin/` rather than `Scripts/` outside Windows). Without it, that check is
+skipped with a note, as gitleaks is.
+
 Optional: install the gitleaks binary to get the secrets scan locally too
 (Windows: `winget install gitleaks.gitleaks`; otherwise download from
 https://github.com/gitleaks/gitleaks/releases). Without it, that one check
@@ -69,6 +79,47 @@ def check_gitleaks() -> bool | None:
     )
 
 
+def find_semgrep() -> str | None:
+    """semgrep on PATH, else the `.tools/semgrep` environment, else None."""
+    on_path = shutil.which("semgrep")
+    if on_path:
+        return on_path
+    for scripts in ("Scripts", "bin"):
+        found = shutil.which("semgrep", path=str(REPO_ROOT / ".tools" / "semgrep" / scripts))
+        if found:
+            return found
+    return None
+
+
+def check_semgrep() -> bool | None:
+    """True/False if it ran, None if skipped (semgrep not installed)."""
+    semgrep = find_semgrep()
+    if semgrep is None:
+        print(
+            f"\n{'=' * 60}\nsemgrep (broader SAST)\n{'=' * 60}\n"
+            "SKIPPED — semgrep not found on PATH or in .tools/semgrep.\n"
+            "It has its own lock, kept out of the dev extra. Install it once:\n"
+            "  python -m venv .tools/semgrep\n"
+            "  .tools/semgrep/Scripts/pip install --require-hashes "
+            "-r requirements/semgrep/semgrep.txt\n"
+            "(bin/ instead of Scripts/ outside Windows), then re-run this "
+            "script. CI runs this check regardless."
+        )
+        return None
+    return run(
+        "semgrep",
+        [
+            semgrep,
+            "scan",
+            "--config=p/python",
+            "--config=p/security-audit",
+            "--config=p/owasp-top-ten",
+            "--error",
+            ".",
+        ],
+    )
+
+
 def main() -> int:
     # Every markdown file the pre-commit mdformat hook would touch, so this
     # script and that hook can't disagree about what "formatted" means. Only
@@ -78,7 +129,7 @@ def main() -> int:
         str(p)
         for p in REPO_ROOT.rglob("*.md")
         if not any(
-            part in {".venv", "output", "local_content", ".git", ".pytest_cache"}
+            part in {".venv", ".tools", "output", "local_content", ".git", ".pytest_cache"}
             for part in p.relative_to(REPO_ROOT).parts
         )
     )
@@ -94,19 +145,18 @@ def main() -> int:
         "bandit (static security analysis)": run(
             "bandit", ["bandit", "-c", "pyproject.toml", "-r", "src"]
         ),
-        "semgrep (broader SAST)": run(
-            "semgrep",
+        "semgrep (broader SAST)": check_semgrep(),
+        "pip-audit (dependency CVEs)": run("pip-audit", ["pip-audit"]),
+        "pip-audit (semgrep's lock)": run(
+            "pip-audit -r requirements/semgrep/semgrep.txt",
             [
-                "semgrep",
-                "scan",
-                "--config=p/python",
-                "--config=p/security-audit",
-                "--config=p/owasp-top-ten",
-                "--error",
-                ".",
+                "pip-audit",
+                "--disable-pip",
+                "--require-hashes",
+                "-r",
+                "requirements/semgrep/semgrep.txt",
             ],
         ),
-        "pip-audit (dependency CVEs)": run("pip-audit", ["pip-audit"]),
         "mdformat (markdown quality)": run(
             "mdformat --check", ["mdformat", "--check", *md_targets]
         ),

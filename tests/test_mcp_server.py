@@ -286,7 +286,7 @@ def test_the_bundle_tool_reaches_the_registry(tmp_path):
 
 
 def test_the_missing_dependency_message_names_the_extra():
-    """`mcp` is in this venv only because semgrep depends on it.
+    """`mcp` is an optional extra, installed in CI by name.
 
     Anyone installing PolicyForge normally will not have it, and the error
     they get should name the extra rather than being an ImportError.

@@ -83,6 +83,19 @@ overclaimed:
 
 ### Repository hardening
 
+- **semgrep runs from its own lock, not the dev extra.** It pins its
+  dependencies exactly (`click~=8.4.2`, `mcp==1.29.0`, `pywin32==311`,
+  opentelemetry to `~=1.37.0`, and more), and as a dev extra those pins were
+  resolved into `requirements/ci.txt` as if they were this project's. Nearly
+  every Dependabot pull request bumped one of them and could never install —
+  and the two that passed, `pywin32`, passed only because CI runs Linux, and
+  would have broken a Windows install. semgrep now has
+  `requirements/semgrep/`, a hashed lock of its own, installed into a
+  separate environment in CI and found on `PATH` or in `.tools/semgrep` by
+  `scripts/check.py`. The project lock lost 26 packages and changed no
+  versions; `pip-audit` audits both locks; Dependabot proposes only semgrep
+  itself from the new one. The `mcp` extra is now in the CI lock explicitly,
+  where it used to arrive only through semgrep.
 - **OpenSSF Scorecard** (`.github/workflows/scorecard.yml`) publishes a
   third-party grade of the repository practices the commitments rest on,
   rather than asking a reader to accept a self-assessment.

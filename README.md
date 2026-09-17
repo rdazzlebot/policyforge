@@ -2085,7 +2085,8 @@ scripts/
    Python 3.12 rather than for whatever the machine running it has. Change a
    dependency in `pyproject.toml` and the lock needs regenerating with the
    `uv pip compile` command written in its header; Dependabot bumps it
-   otherwise.
+   otherwise. semgrep is not in the dev extra — it has its own lock and
+   environment (see CONTRIBUTING.md).
 1. `cp config/config.example.yaml config/config.yaml` and fill in your model choice
    and the *name* of the environment variable holding your API key (not the key itself).
 1. `export ANTHROPIC_API_KEY=sk-...` (or whatever env var name you configured)

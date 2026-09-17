@@ -9,13 +9,28 @@ python scripts/check.py
 ```
 
 It runs ruff (lint and format), pytest, bandit, semgrep, pip-audit and
-mdformat, plus gitleaks if the binary is on your PATH. It exits non-zero, so
+mdformat, plus gitleaks if the binary is on your PATH.
+
+semgrep is not in the `dev` extra. It pins its own dependencies exactly, and
+installed beside the project those pins became the project's, so it has its
+own hashed lock in `requirements/semgrep/` and its own environment:
+
+```bash
+python -m venv .tools/semgrep
+.tools/semgrep/Scripts/pip install --require-hashes -r requirements/semgrep/semgrep.txt
+```
+
+(`bin/` rather than `Scripts/` outside Windows.) The gate finds it there or on
+your PATH, and skips it with a note otherwise; CI always runs it. It exits non-zero, so
 it works as a pre-push hook. `pre-commit install` wires the fast subset to
 run on commit.
 
 Python 3.12 in a project `.venv`. Dependencies for CI come from a hashed
 lock (`requirements/ci.txt`); if you add a dependency, regenerate it with the
-command in that file's header rather than editing it by hand.
+command in that file's header rather than editing it by hand. To move semgrep,
+change the version in `requirements/semgrep/semgrep.in` and regenerate
+`semgrep.txt` the same way — and the `rev:` in `.pre-commit-config.yaml` with
+it.
 
 ## The one rule that is not about style
 

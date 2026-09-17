@@ -119,6 +119,13 @@ overclaimed:
 - **`SECURITY.md`** gains a coordinated-disclosure timeline, and states that
   a report which cannot be fixed is written into residual risk under its own
   heading rather than closed.
+- **Scorecard findings that a file change can close.** The workflows no
+  longer run an unpinned `pip install --upgrade pip setuptools` before the
+  hashed install (the lock pins pip, so that install is the upgrade),
+  `codeql.yml` declares read-only token permissions at the top level, and
+  `SECURITY.md` links the private reporting form. The rest — branch
+  protection, code review, fuzzing, the OpenSSF badge and the repository's
+  age — are settings or time, not files.
 
 ### GovRAMP controls matrix ingestion
 

@@ -33,6 +33,15 @@
   Procedures ran a p90 of about 8,000 against an 8192 budget with two of
   twenty cut off each, so both move to 16384. Policies stay at 4096: the
   largest was 1,104. Each figure sits beside the constant it justifies.
+- **An empty document reply is refused too.** Found by the live check of
+  the new budgets: glm-5.3-flash answered the Incident Response synthesis
+  with 4,869 output tokens, a normal stop and no content at all — the
+  tokens went into its reasoning channel — and the synthesis was written
+  as frontmatter with no body, exit 0, so the next `generate` failed on an
+  empty file. Synthesis, the three document tiers and the edit rewrite now
+  refuse an empty reply by name (`EmptyReply`), with the same clean exit
+  and nothing written. Routing and expansion calls are not held to this:
+  an empty reply there is a decision the caller reads.
 - **No silent fallback.** The four Zardoz routing calls that went to the
   provider directly now go through the helper, and their catch-all
   handlers re-raise a truncation instead of routing to the documents;

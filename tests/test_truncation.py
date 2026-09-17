@@ -397,3 +397,93 @@ def test_no_module_outside_llm_calls_a_provider_directly():
             ):
                 offenders.append(f"{path.relative_to(SRC).as_posix()}:{node.lineno}")
     assert offenders == [], f"direct provider calls, not held to the truncation rule: {offenders}"
+
+
+# ---- an empty reply that stopped normally ----------------------------------
+#
+# Found by the live acceptance run for the fix above: glm-5.3-flash answered
+# the Incident Response synthesis with 4,869 output tokens, stop_reason
+# "stop" and an empty content field (the tokens went into its reasoning
+# channel), and the synthesis was written with frontmatter and no body, exit
+# 0. The next command failed on the empty synthesis. Not a truncation, and
+# not applied to every call - a routing reply may be empty and mean it - but
+# a document never may.
+
+
+class EmptyProvider(CutProvider):
+    def generate(self, *, system, prompt, max_tokens=4096, temperature=0.2, **kwargs):
+        self.budgets.append(max_tokens)
+        return LLMResponse(text="  ", model="thinker", stop_reason="stop", output_tokens=4869)
+
+
+def test_an_empty_document_reply_is_refused_by_name():
+    from policyforge.llm import effort, ledger
+    from policyforge.llm.base import EmptyReply
+
+    response = LLMResponse(text="", model="thinker", stop_reason="stop", output_tokens=4869)
+    with (
+        ledger.about("synthesis/incident-response", site="synthesize"),
+        pytest.raises(EmptyReply) as caught,
+    ):
+        effort.document_text(response, what="synthesis")
+
+    message = str(caught.value)
+    assert message.startswith("synthesis/incident-response (synthesize)")
+    assert "no text for the synthesis" in message
+    assert "4869 output tokens" in message
+    assert "Nothing was written" in message
+    assert effort.document_text(LLMResponse(text=" body ", model="m"), what="x") == "body"
+
+
+def test_synthesize_refuses_an_empty_reply_and_writes_nothing(tmp_path, monkeypatch):
+    import policyforge.cli as cli_mod
+
+    controls, crosswalk = _controls(tmp_path)
+    out_dir = tmp_path / "synthesis"
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    monkeypatch.setattr(cli_mod, "get_provider", lambda config: EmptyProvider())
+
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        [
+            "synthesize",
+            "--topic",
+            "Incident Response",
+            "--nist-controls",
+            "AC-2",
+            "--controls",
+            str(controls),
+            "--crosswalk",
+            str(crosswalk),
+            "--out-dir",
+            str(out_dir),
+        ],
+    )
+
+    assert result.exit_code != 0, result.output
+    assert "no text for the synthesis" in result.output
+    assert not out_dir.exists() or list(out_dir.iterdir()) == []
+
+
+@pytest.mark.parametrize("tier", ["standard", "policy", "procedure"])
+def test_generate_refuses_an_empty_reply_at_every_tier(tmp_path, monkeypatch, tier):
+    import policyforge.cli as cli_mod
+
+    synthesis = tmp_path / "incident-response.md"
+    synthesis.write_text("- Incidents must be reported. [NIST IR-6]\n", encoding="utf-8")
+    standard = tmp_path / "published" / "incident-response-standard.md"
+    standard.parent.mkdir()
+    standard.write_text("# Incident Response Standard\n\nReport incidents. [NIST IR-6]\n", "utf-8")
+    out_path = tmp_path / "drafts" / f"{tier}s" / "incident-response.md"
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {"org": {"name": "Acme"}})
+    monkeypatch.setattr(cli_mod, "get_provider", lambda config: EmptyProvider())
+
+    args = ["generate", "--tier", tier, "--synthesis", str(synthesis), "--out", str(out_path)]
+    args += ["--history-dir", str(tmp_path / "history")]
+    if tier != "standard":
+        args += ["--standard", str(standard)]
+    result = CliRunner().invoke(cli_mod.cli, args)
+
+    assert result.exit_code != 0, result.output
+    assert "no text for the" in result.output
+    assert not out_path.exists()

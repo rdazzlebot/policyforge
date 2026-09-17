@@ -196,7 +196,7 @@ def synthesize_topic(topic: SynthesisTopic, provider: LLMProvider) -> str:
         temperature=0.1,
         max_tokens=SYNTHESIS_TOKENS,
     )
-    return response.text.strip()
+    return effort.document_text(response, what="synthesis")
 
 
 #: The output budget for one topic's merged requirement list.

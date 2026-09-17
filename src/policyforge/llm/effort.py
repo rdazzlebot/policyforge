@@ -113,6 +113,18 @@ def _complete(send, kwargs: dict):
     scope knows, rather than returning text that looks finished and is not.
     Both calls were billed and both are in the ledger, which is what the
     ledger is for.
+
+    A provider may retry on its own first: the Anthropic shim and the
+    LiteLLM provider each re-send an *empty* length-cut reply at eight
+    times the budget (`_inline_thinking.needs_more_room`), and hand back
+    whatever that second attempt produced. If that is a non-empty cut-off
+    reply, this retry follows at twice the *original* budget — smaller than
+    the provider's own retry, because the provider does not expose the
+    budget it last used. Up to four billed calls in the worst case, all in
+    the ledger. Accepted rather than plumbed through: the empty-then-cut
+    sequence needs a reasoning model to spend 8x its budget thinking and
+    then overrun on the answer, and the fix for that is a larger budget at
+    the site, which the refusal names.
     """
     from .base import TruncatedResponse
     from .ledger import current_scope
@@ -137,6 +149,29 @@ def _complete(send, kwargs: dict):
         stop_reason=getattr(response, "stop_reason", None),
         model=getattr(response, "model", None),
         text=getattr(response, "text", "") or "",
+    )
+
+
+def document_text(response, *, what: str) -> str:
+    """The reply's text, for a call whose reply is a document.
+
+    Refuses an empty one by name rather than returning "" for a caller to
+    write. Asked for explicitly by the document producers — synthesis,
+    drafting, editing — and not applied inside `_complete`, because a
+    routing or expansion call may answer nothing and mean it.
+    """
+    text = (getattr(response, "text", "") or "").strip()
+    if text:
+        return text
+    from .base import EmptyReply
+    from .ledger import current_scope
+
+    scope = current_scope()
+    raise EmptyReply(
+        what=what,
+        subject=scope.subject if scope else None,
+        site=scope.site if scope else None,
+        response=response,
     )
 
 

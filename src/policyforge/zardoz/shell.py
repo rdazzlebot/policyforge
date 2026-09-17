@@ -503,7 +503,24 @@ def _answer_turn(question: str, state: ShellState, scope) -> str:
     # answerable with nothing synced at all — it comes out of the registry
     # and the catalogs — and refusing it for want of a document corpus would
     # be answering a question nobody asked.
-    plan = route_plan(resolved, state.provider)
+    from policyforge.llm.base import TruncatedResponse
+
+    try:
+        plan = route_plan(resolved, state.provider)
+    except TruncatedResponse as exc:
+        # Said aloud, then the documents: in the shell a person is waiting,
+        # and a one-word routing reply that ran past its budget twice is a
+        # model problem worth naming, not a reason to answer nothing. The
+        # harness never takes this path — it calls route() directly and
+        # grades the truncation as the failure it is.
+        from .skills import Routed
+
+        preamble += [
+            f"(the model's routing reply was cut off at {exc.budget} tokens; "
+            "reading the documents instead)",
+            "",
+        ]
+        plan = [Routed(NO_SKILL)]
     if plan[0].skill != NO_SKILL:
         state.conversation.add(Turn(question=question, resolved=resolved, answer=""))
         blocks = []
@@ -574,7 +591,15 @@ def _answer_turn(question: str, state: ShellState, scope) -> str:
     if thin and state.provider is not None:
         from .paraphrase import expand_query
 
-        expansion = expand_query(resolved, state.provider)
+        try:
+            expansion = expand_query(resolved, state.provider)
+        except TruncatedResponse as exc:
+            expansion = ""
+            preamble += [
+                f"(the model's search-expansion reply was cut off at {exc.budget} tokens; "
+                "searched the question's own words only)",
+                "",
+            ]
         if expansion:
             widened = state.index.search(resolved, limit=_PASSAGE_LIMIT, expansion=expansion)
             if len(widened) > len(passages):
@@ -614,6 +639,19 @@ def _answer_turn(question: str, state: ShellState, scope) -> str:
 
     try:
         answer = answer_question(resolved, passages, state.provider)
+    except TruncatedResponse as exc:
+        # The model was reached and answered; its answer ran past the
+        # budget twice and is not shown, because half an answer with the
+        # citations at the end cut off reads as a whole one. The passages
+        # are the evidence and are shown as they would be with no model.
+        lines = [
+            f"The model's answer was cut off at {exc.budget} output tokens "
+            f"(stop_reason {exc.stop_reason!r}) and is not shown. Ask a narrower question, "
+            f"or raise the answering budget."
+        ]
+        if passages:
+            lines += ["", "The passages that bear on it:", "", _render_passages(passages)]
+        return "\n".join(lines)
     except Exception as exc:  # noqa: BLE001 - any provider/SDK failure, session survives
         lines = [f"The model could not be reached ({type(exc).__name__}: {exc})."]
         if passages:

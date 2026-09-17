@@ -314,7 +314,7 @@ def generate_standard(
         temperature=0.2,
         max_tokens=LONG_DOCUMENT_TOKENS,
     )
-    return response.text.strip()
+    return effort.document_text(response, what="Standard")
 
 
 #: A Standard or a Procedure. From the first 20-topic cost run
@@ -364,7 +364,7 @@ def generate_policy(
         temperature=0.2,
         max_tokens=POLICY_TOKENS,
     )
-    return response.text.strip()
+    return effort.document_text(response, what="Policy")
 
 
 def generate_procedure(
@@ -402,4 +402,4 @@ def generate_procedure(
         temperature=0.2,
         max_tokens=LONG_DOCUMENT_TOKENS,
     )
-    return response.text.strip()
+    return effort.document_text(response, what="Procedure")

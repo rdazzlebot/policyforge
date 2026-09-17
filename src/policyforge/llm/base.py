@@ -128,6 +128,37 @@ class TruncatedResponse(RuntimeError):
         )
 
 
+class EmptyReply(RuntimeError):
+    """A document call came back with no text at all, and stopped normally.
+
+    Different from a truncation, and found by the live acceptance run for
+    the truncation fix: glm-5.3-flash answered a synthesis request with
+    4,869 output tokens, stop_reason `stop`, and an empty content field — the
+    tokens went into its reasoning channel and never into an answer — and
+    the synthesis was written as a file with frontmatter and no body, exit 0.
+    The next command then failed on an empty synthesis. A routing call may
+    legitimately answer nothing; a document never may.
+    """
+
+    def __init__(self, *, what: str, subject: str | None, site: str | None, response):
+        self.what = what
+        self.subject = subject
+        self.site = site
+        self.stop_reason = getattr(response, "stop_reason", None)
+        self.model = getattr(response, "model", None)
+        self.output_tokens = getattr(response, "output_tokens", None)
+        where = f" ({site})" if site else ""
+        spent = (
+            f" after {self.output_tokens} output tokens" if self.output_tokens is not None else ""
+        )
+        super().__init__(
+            f"{subject or what}{where}: the model returned no text for the {what}"
+            f"{spent} (stop_reason {self.stop_reason!r}{', ' + self.model if self.model else ''}). "
+            f"Nothing was written. A reasoning model may have spent the whole reply "
+            f"thinking; try again, or choose a model that answers in its content."
+        )
+
+
 class LLMProvider(ABC):
     """Minimal surface every provider must implement."""
 

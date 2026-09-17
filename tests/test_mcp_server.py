@@ -426,3 +426,39 @@ def test_the_server_answers_a_client_over_stdio(tmp_path):
             proc.wait()
         proc.stdout.close()
         proc.stderr.close()
+
+
+def test_a_cut_off_answer_comes_back_as_text_without_the_partial_answer():
+    """The docstring promises errors as text. A reply the model cut off at
+    its budget twice is refused by the answering path; the tool must report
+    that in words, not raise, and not hand the agent the half-answer."""
+    from policyforge.llm.base import LLMResponse
+    from policyforge.zardoz.shell import ShellState
+    from tests.test_zardoz_answer import _corpus
+
+    class CutProvider:
+        def __init__(self):
+            self.calls = 0
+
+        def generate(self, *, system, prompt, max_tokens=4096, temperature=0.2, **kwargs):
+            self.calls += 1
+            return LLMResponse(
+                text="Recertified quarterly [1] and", model="m", stop_reason="length"
+            )
+
+        def check(self):
+            return True
+
+    provider = CutProvider()
+    state = ShellState(corpus=_corpus(), provider=provider)
+
+    result = call_tool(state, "ask_documents", {"question": "how often are accounts recertified?"})
+
+    assert isinstance(result, str)
+    assert "cut off at" in result
+    assert "not shown" in result
+    assert "Recertified quarterly [1] and" not in result
+    assert "4.1 Account Review" in result
+    # Routing asked twice (cut off, said aloud, sent to the documents), then
+    # answering asked twice (cut off, refused). Never more: no third try.
+    assert provider.calls == 4

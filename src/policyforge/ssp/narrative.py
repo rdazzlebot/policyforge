@@ -263,6 +263,23 @@ def _draft_as_batch(
         )
 
     answers = provider.generate_batch(requests)
+    # A batch cannot be retried one item at a time the way `effort.call`
+    # retries a single reply, so a narrative that stopped at its budget is
+    # refused here by name. The workbook is written after this returns, so
+    # nothing partial reaches it.
+    cut = sorted(cid for cid, answer in answers.items() if effort.truncated(answer))
+    if cut:
+        from policyforge.llm.base import TruncatedResponse
+
+        raise TruncatedResponse(
+            subject=f"ssp narratives for {', '.join(cut)}",
+            site="ssp",
+            first_budget=NARRATIVE_TOKENS,
+            budget=NARRATIVE_TOKENS,
+            stop_reason=getattr(answers[cut[0]], "stop_reason", None),
+            model=getattr(answers[cut[0]], "model", None),
+            text=getattr(answers[cut[0]], "text", "") or "",
+        )
     # Keyed by the id that went out, never by position: results come back in
     # any order, and matching them by index would give one control's
     # narrative to another with nothing in the workbook to show it.

@@ -974,3 +974,31 @@ def test_a_failed_schema_call_falls_through_rather_than_failing_the_route():
 
     assert route("anything", provider) == "documents"
     assert (provider.json_calls, provider.prose_calls) == (1, 1)
+
+
+def test_a_cut_off_answer_is_named_as_such_and_not_shown():
+    """Not "could not be reached": the model answered, and the answer ran past
+    its budget twice. Half an answer with the citations at the cut-off end
+    would read as a whole one, so it stays unshown and the passages stand."""
+    from policyforge.llm.base import LLMResponse
+    from policyforge.zardoz.shell import ShellState, dispatch
+
+    class CutProvider:
+        def generate(self, *, system, prompt, max_tokens=4096, temperature=0.2, **kwargs):
+            return LLMResponse(
+                text="Accounts are recertified [1] and also", model="m", stop_reason="length"
+            )
+
+        def check(self):
+            return True
+
+    state = ShellState(corpus=_corpus(), provider=CutProvider())
+
+    output = dispatch("how often are accounts recertified?", state)
+
+    assert "cut off at" in output
+    assert "not shown" in output
+    assert "could not be reached" not in output
+    assert "and also" not in output, "the partial answer must not appear"
+    assert "4.1 Account Review" in output, "the passages are still offered"
+    assert state.running

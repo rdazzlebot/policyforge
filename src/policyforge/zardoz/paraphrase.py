@@ -35,6 +35,7 @@ separable in the result.
 
 from __future__ import annotations
 
+from policyforge.llm.base import TruncatedResponse
 from policyforge.llm.prompts import Prompt, register
 
 from .budgets import EXPANSION_TOKENS
@@ -102,6 +103,11 @@ def expand_query(question: str, provider, *, max_terms: int = MAX_EXPANSION_TERM
             temperature=0.0,
             max_tokens=EXPANSION_TOKENS,
         )
+    except TruncatedResponse:
+        # Not "no expansion": a cut-off reply was retried once already, and
+        # reading it as silence would grade — and answer — a truncation as a
+        # decision, which is the failure `needs_more_room` exists to prevent.
+        raise
     except Exception:  # noqa: BLE001 - any provider failure just means no expansion
         return ""
 

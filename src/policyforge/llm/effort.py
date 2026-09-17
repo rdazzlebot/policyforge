@@ -81,6 +81,100 @@ def accepts_caching(provider) -> bool:
     return bool(ask and ask())
 
 
+#: What `generate` assumes when a call site names no budget. Kept equal to
+#: the providers' own default so the retry arithmetic below starts from the
+#: number the first request actually carried.
+DEFAULT_MAX_TOKENS = 4096
+#: A cut-off reply is retried once at this multiple of its budget ...
+RETRY_FACTOR = 2
+#: ... and never above this, whatever the site asked for. Twice the largest
+#: budget any site names (a synthesis at 16384), so the largest topic still
+#: gets its one retry; a reply that needs more than this is a document that
+#: should have been two documents.
+RETRY_CEILING = 32768
+
+
+def truncated(response) -> bool:
+    """Whether a reply stopped at its output budget, read leniently.
+
+    Through `getattr`, like every capability question here: a response from
+    a duck-typed fake without the property is a finished reply.
+    """
+    return bool(getattr(response, "truncated", False))
+
+
+def _complete(send, kwargs: dict):
+    """`send(**kwargs)`, retried once with a larger budget if it was cut off.
+
+    Every reply this module hands back has been checked here, so a call site
+    cannot forget to. A reply that stopped at its budget is retried once at
+    `RETRY_FACTOR` times that budget, capped at `RETRY_CEILING`; one that is
+    still cut off raises `TruncatedResponse`, naming the subject the ledger
+    scope knows, rather than returning text that looks finished and is not.
+    Both calls were billed and both are in the ledger, which is what the
+    ledger is for.
+
+    A provider may retry on its own first: the Anthropic shim and the
+    LiteLLM provider each re-send an *empty* length-cut reply at eight
+    times the budget (`_inline_thinking.needs_more_room`), and hand back
+    whatever that second attempt produced. If that is a non-empty cut-off
+    reply, this retry follows at twice the *original* budget — smaller than
+    the provider's own retry, because the provider does not expose the
+    budget it last used. Up to four billed calls in the worst case, all in
+    the ledger. Accepted rather than plumbed through: the empty-then-cut
+    sequence needs a reasoning model to spend 8x its budget thinking and
+    then overrun on the answer, and the fix for that is a larger budget at
+    the site, which the refusal names.
+    """
+    from .base import TruncatedResponse
+    from .ledger import current_scope
+
+    response = send(**kwargs)
+    if not truncated(response):
+        return response
+    first = int(kwargs.get("max_tokens") or DEFAULT_MAX_TOKENS)
+    larger = min(first * RETRY_FACTOR, RETRY_CEILING)
+    if larger > first:
+        response = send(**{**kwargs, "max_tokens": larger})
+        if not truncated(response):
+            return response
+    else:
+        larger = first
+    scope = current_scope()
+    raise TruncatedResponse(
+        subject=scope.subject if scope else None,
+        site=scope.site if scope else None,
+        first_budget=first,
+        budget=larger,
+        stop_reason=getattr(response, "stop_reason", None),
+        model=getattr(response, "model", None),
+        text=getattr(response, "text", "") or "",
+    )
+
+
+def document_text(response, *, what: str) -> str:
+    """The reply's text, for a call whose reply is a document.
+
+    Refuses an empty one by name rather than returning "" for a caller to
+    write. Asked for explicitly by the document producers — synthesis,
+    drafting, editing — and not applied inside `_complete`, because a
+    routing or expansion call may answer nothing and mean it.
+    """
+    text = (getattr(response, "text", "") or "").strip()
+    if text:
+        return text
+    from .base import EmptyReply
+    from .ledger import current_scope
+
+    scope = current_scope()
+    raise EmptyReply(
+        what=what,
+        subject=scope.subject if scope else None,
+        site=scope.site if scope else None,
+        response=response,
+    )
+
+
 def call(
     provider,
     *,
@@ -114,7 +208,7 @@ def call(
         # would silently drop the organization block it split off — which
         # is a different request, not a slower one.
         kwargs["prompt"] = cache_prefix + kwargs["prompt"]
-    return provider.generate(**extra, **kwargs)
+    return _complete(provider.generate, {**extra, **kwargs})
 
 
 def call_json(provider, *, effort: str | None = None, **kwargs):
@@ -127,8 +221,8 @@ def call_json(provider, *, effort: str | None = None, **kwargs):
     that was never guaranteed to be JSON is the failure it exists to remove.
     """
     if effort is not None and accepts_effort(provider):
-        return provider.generate_json(effort=effort, **kwargs)
-    return provider.generate_json(**kwargs)
+        return _complete(provider.generate_json, {"effort": effort, **kwargs})
+    return _complete(provider.generate_json, kwargs)
 
 
 def accepts_grounding(provider) -> bool:
@@ -140,8 +234,10 @@ def accepts_grounding(provider) -> bool:
 def call_grounded(provider, *, documents, effort: str | None = None, **kwargs):
     """`provider.generate_grounded(**kwargs)`, at `effort` where it lands."""
     if effort is not None and accepts_effort(provider):
-        return provider.generate_grounded(documents=documents, effort=effort, **kwargs)
-    return provider.generate_grounded(documents=documents, **kwargs)
+        return _complete(
+            provider.generate_grounded, {"documents": documents, "effort": effort, **kwargs}
+        )
+    return _complete(provider.generate_grounded, {"documents": documents, **kwargs})
 
 
 def accepts_schema(provider) -> bool:

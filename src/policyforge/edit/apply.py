@@ -247,7 +247,8 @@ def apply_edit_plan(
         temperature=0.0,
         max_tokens=8192,
     )
-    return _without_echoed_fence(response.text, fence).strip() + "\n"
+    revised = effort.document_text(response, what="revised document")
+    return _without_echoed_fence(revised, fence).strip() + "\n"
 
 
 class EchoedFenceError(ValueError):

@@ -66,6 +66,98 @@ class LLMResponse:
     #: it did and the model cited nothing.
     citations: list | None = None
 
+    @property
+    def truncated(self) -> bool:
+        """Whether the model stopped because it ran out of output budget.
+
+        Each vendor spells it differently — `length` (OpenAI and everything
+        LiteLLM maps to it), `max_tokens` (Anthropic, Vertex, Bedrock),
+        `MAX_TOKENS` (Gemini's enum) — and the difference between them is
+        nothing a caller should have to know. A reply that stopped this way
+        is not a document, however finished its last sentence looks: fifteen
+        of eighty calls in one 20-topic run ended here, and every one was
+        written to disk with exit 0.
+        """
+        return (self.stop_reason or "").strip().lower() in TRUNCATION_STOP_REASONS
+
+
+#: The stop reasons that mean "cut off", lower-cased. Kept as data so a new
+#: provider's spelling is one line here rather than a check somewhere else.
+TRUNCATION_STOP_REASONS = frozenset({"length", "max_tokens", "max_output_tokens"})
+
+
+class TruncatedResponse(RuntimeError):
+    """A reply was cut off at its output budget, twice.
+
+    Raised by `llm/effort.py` after one retry with a larger budget, so a
+    caller never sees text that the model did not finish. The partial text
+    travels on the exception for diagnosis and is never written anywhere:
+    a Standard missing its last four requirements reads as a Standard.
+    """
+
+    def __init__(
+        self,
+        *,
+        subject: str | None,
+        site: str | None,
+        first_budget: int,
+        budget: int,
+        stop_reason: str | None,
+        model: str | None,
+        text: str,
+    ):
+        self.subject = subject
+        self.site = site
+        self.first_budget = first_budget
+        self.budget = budget
+        self.stop_reason = stop_reason
+        self.model = model
+        self.text = text
+        what = subject or "the reply"
+        where = f" ({site})" if site else ""
+        retried = (
+            f" after a retry from {first_budget}"
+            if budget != first_budget
+            else " and could not be retried any larger"
+        )
+        super().__init__(
+            f"{what}{where}: the model's reply was cut off at {budget} output tokens "
+            f"(stop_reason {stop_reason!r}{', ' + model if model else ''}){retried}. "
+            f"Nothing was written. Give this call site a larger budget or split the "
+            f"work; the {len(text)} characters that came back are not kept."
+        )
+
+
+class EmptyReply(RuntimeError):
+    """A document call came back with no text at all, and stopped normally.
+
+    Different from a truncation, and found by the live acceptance run for
+    the truncation fix: glm-5.3-flash answered a synthesis request with
+    4,869 output tokens, stop_reason `stop`, and an empty content field — the
+    tokens went into its reasoning channel and never into an answer — and
+    the synthesis was written as a file with frontmatter and no body, exit 0.
+    The next command then failed on an empty synthesis. A routing call may
+    legitimately answer nothing; a document never may.
+    """
+
+    def __init__(self, *, what: str, subject: str | None, site: str | None, response):
+        self.what = what
+        self.subject = subject
+        self.site = site
+        self.stop_reason = getattr(response, "stop_reason", None)
+        self.model = getattr(response, "model", None)
+        self.output_tokens = getattr(response, "output_tokens", None)
+        where = f" ({site})" if site else ""
+        spent = (
+            f" after {self.output_tokens} output tokens" if self.output_tokens is not None else ""
+        )
+        super().__init__(
+            f"{subject or what}{where}: the model returned no text for the {what}"
+            f"{spent} (stop_reason {self.stop_reason!r}{', ' + self.model if self.model else ''}). "
+            f"Nothing was written. A reasoning model may have spent the whole reply "
+            f"thinking; try again, or choose a model that answers in its content."
+        )
+
 
 class LLMProvider(ABC):
     """Minimal surface every provider must implement."""

@@ -555,20 +555,23 @@ by people making claims to regulators and auditors.
    spans that failure mode is gone rather than caught. Where the provider
    does not support it, `citation_disagreements` has nothing to compare and
    `check_answer` carries the load alone, exactly as before.
-1. **Entailment checking exists but is not yet wired in.**
+1. **Entailment checking runs on the answering path when switched on.**
    [`entail/`](../src/policyforge/entail/) asks whether the passage actually
    supports the statement — the question a citation marker does not answer —
    with the verdict constrained to a three-label enum so the parsing failures
-   that make LLM-as-judge flaky cannot occur, and it is designed to be run
-   **on a different model than the one that wrote the answer**, since a model
-   checking its own work shares every blind spot it had while producing it.
-   It is implemented and tested, and **no runtime path calls it today.**
-   Counted here as available capability, not as an operating control. Note
-   also that it refuses rather than degrades: `entails()` raises if the
-   provider cannot be held to a schema ("an unconstrained verdict is not
-   worth having"), and construction raises unless a model is named
-   explicitly. So even once wired, it would be a control on schema-capable
-   providers running a second model — narrower than "entailment checking is
+   that make LLM-as-judge flaky cannot occur, and it is run **on a different
+   model than the one that wrote the answer**, since a model checking its own
+   work shares every blind spot it had while producing it. `entail.answering: true` turns it on for `zardoz` answers, and it is **off by default**: it
+   costs one extra model call per cited sentence. Count it as an option you
+   can enable on the answering path, not as a control operating on the
+   documents this tool generates — nothing checks those. **What it catches
+   has not been measured**, and until it is, this document reports no rate
+   for it. Note also that it refuses rather than degrades: `entails()` raises
+   if the provider cannot be held to a schema ("an unconstrained verdict is
+   not worth having"), construction raises unless a model is named
+   explicitly, and a judge that fails leaves the answer intact and says so in
+   a warning. So where it runs it is a control on schema-capable providers
+   running a second model — narrower than "entailment checking is
    available."
 1. **An explicit refusal path**, read by equality rather than by substring:
    the model has a supported way to say the passages do not answer the
@@ -634,10 +637,13 @@ Two narrower residuals worth naming:
   `frameworks/drift.py` cannot see 22 tags carrying 31 citations in this
   document set, so no check reads them at all — see
   [residual risk](security-architecture.md#residual-risk).
-- **Entailment checking is not wired into any runtime path.** Treat the
+- **Entailment checking is off by default and covers answering only.**
+  With `entail.answering: true` it reads `zardoz` answers and warns where a
+  claim outruns its citation; nothing checks generated documents. What it
+  catches, where it has been measured, is in `MEASUREMENTS.md`. So treat the
   claim "statements are checked for support, not just for citation" as
-  describing a capability this codebase has, not something that runs when
-  you generate a document.
+  describing something you can switch on for questions, never as something
+  that runs when you generate a document.
 
 ______________________________________________________________________
 

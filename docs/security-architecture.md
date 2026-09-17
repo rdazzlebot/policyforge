@@ -334,12 +334,15 @@ afterwards**, because asking and verifying are different things.
   refusal.
 - **Native citations are cross-checked** against the model's own markers
   where the grounded path is used.
-- **An entailment check exists but does not yet run.**
+- **An entailment check runs on the answering path, if you switch it on.**
   [`entail/`](../src/policyforge/entail/) tests whether a statement is
   actually supported by the passage it claims, on a deliberately different
-  model from the one that wrote it. It is implemented and tested; no runtime
-  path calls it today. Listed so the gap is visible, not as a control you
-  are getting.
+  model from the one that wrote it. `entail.answering: true` runs it over
+  `zardoz` answers and warns on a claim its own citation does not carry. It
+  is **off by default** — it costs one extra model call per cited sentence —
+  it covers answering only, not generated documents, and how much it catches
+  has not been measured. Listed as an option you can turn on, not as a
+  control you are getting by default.
 - **`policyforge check`**
   ([`content/check.py`](../src/policyforge/content/check.py)) is the gate a
   pull request passes before anything reaches the wiki, and it is entirely
@@ -731,10 +734,15 @@ comfortable.
    through one reviewed implementation rather than a regex repeated per call
    site.
 
-1. **Entailment checking is implemented but not wired into any runtime
-   path.** A statement can therefore carry a real citation to a real passage
-   that does not support it, and only a human reader will catch it. This is
-   the largest open gap in the accuracy argument.
+1. **Entailment checking is off by default and covers answering only.**
+   `entail.answering: true` turns it on for `zardoz` answers; nothing checks
+   generated documents. What it catches, where it has been measured, is
+   reported in `MEASUREMENTS.md` rather than here — a number quoted in two
+   places goes stale in one of them. So wherever it is off — which is
+   everywhere by default, and on the document path always — a statement can
+   carry a real citation to a real passage that does not support it, and
+   only a human reader will catch it. This is the largest open gap in the
+   accuracy argument.
 
 1. **The native-citation cross-check is provider-dependent and unmeasured.**
    It engages only on providers holding a real Anthropic client, and a live

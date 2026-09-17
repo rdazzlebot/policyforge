@@ -42,7 +42,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from evals.provider import EVAL_SITE, Metered, build_provider, eval_config
-from evals.runner import SUITES, format_report, load_cases, load_corpora, run_case
+from evals.runner import (
+    SUITES,
+    format_report,
+    load_cases,
+    load_corpora,
+    run_case,
+    set_entailer,
+)
 from policyforge.llm import ledger
 
 # The report quotes what the model said, and models return characters a
@@ -93,6 +100,16 @@ def main() -> int:
             'Needs the litellm extra: pip install "policyforge[litellm]"'
         ),
     )
+    parser.add_argument(
+        "--entail-model",
+        default=None,
+        help=(
+            "judge every cited sentence in the answering suites for entailment, using "
+            "this LiteLLM model string: config's entail.answering, but for one run. "
+            "One extra model call per cited sentence on top of the answer, priced "
+            "separately in the summary. Name a model other than the one being graded"
+        ),
+    )
     args = parser.parse_args()
 
     cases = load_cases(args.cases) if args.cases else load_cases()
@@ -141,7 +158,28 @@ def main() -> int:
         print(f"The API is not reachable, so nothing was run:\n  {exc}")
         return 2
 
-    print(f"Running {len(planned)} case(s) x {args.repeat} against {grading}...\n")
+    # Built after the reachability probe, so a dead API is reported once, by
+    # the probe, rather than as a judge that would not construct.
+    judge = None
+    if args.entail_model:
+        from policyforge.entail.llm_entailer import LLMEntailer, entailment_provider
+
+        # Built the way `get_entailer` builds it, through
+        # `entailment_provider`, so the judge's calls are classified and
+        # ledgered like every other — and metered in its own right, because
+        # the judge's calls are what the check costs, and folding them into
+        # the answering total would leave no way to say what entailment cost
+        # against what it caught. Its ledger settings come from `config`, so
+        # they land in evals.jsonl with the rest of the run.
+        entail_block = {"model": args.entail_model}
+        judge_meter = Metered(entailment_provider(entail_block, config))
+        judge = LLMEntailer(model=args.entail_model, provider=judge_meter)
+        set_entailer(judge)
+
+    print(f"Running {len(planned)} case(s) x {args.repeat} against {grading}...")
+    if judge is not None:
+        print(f"Entailment judged by {args.entail_model}, one call per cited sentence.")
+    print()
 
     results = []
     for suite, case in planned:
@@ -156,6 +194,8 @@ def main() -> int:
     print("\n")
     print(format_report(results, repeat=args.repeat))
     print(f"\n{provider.summary()}")
+    if judge is not None:
+        print(f"entailment: {judge_meter.summary()}")
 
     # Flaky is a failure. The whole reason this exists is that a case which
     # is right most of the time is indistinguishable, from one run, from a

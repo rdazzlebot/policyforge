@@ -623,6 +623,13 @@ def check_answer(
     return cited, warnings
 
 
+#: How an unsupported claim is reported, and how a judge that could not run
+#: is. Constants because `evals/runner.py` grades on them: a reworded warning
+#: would leave the harness quietly measuring nothing.
+UNSUPPORTED_PREFIX = "cited passage does not support this claim"
+ENTAILMENT_FAILED_PREFIX = "entailment check did not run"
+
+
 def _entailment_warnings(text: str, passages: list[Passage], entailer) -> list[str]:
     """Cited sentences their own passages do not carry, when one is configured.
 
@@ -651,8 +658,8 @@ def _entailment_warnings(text: str, passages: list[Passage], entailer) -> list[s
     try:
         findings = unsupported_claims(text, passages, entailer)
     except Exception as exc:  # noqa: BLE001 - a judge failing must not lose the answer
-        return [f"entailment check did not run ({type(exc).__name__}: {exc})"]
-    return [f"cited passage does not support this claim — {finding}" for finding in findings]
+        return [f"{ENTAILMENT_FAILED_PREFIX} ({type(exc).__name__}: {exc})"]
+    return [f"{UNSUPPORTED_PREFIX} — {finding}" for finding in findings]
 
 
 def answer_question(

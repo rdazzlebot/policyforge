@@ -113,19 +113,22 @@ the API from the document, so they are **verbatim by construction rather than
 by verification**. And weakened requirement language ("must" quietly becoming
 "should") is detected mechanically.
 
-What is *not* yet checked: whether the cited passage actually **supports** the
-sentence, as opposed to merely existing. An entailment checker for exactly
-that question is implemented and tested in
-[`entail/`](../src/policyforge/entail/) and is not wired into any runtime
-path. Until it is, a statement can carry a real citation to a real passage
-that does not bear it, and only a human reader will notice. That is the
-largest open gap in the accuracy argument, and it is named here rather than
-left for a reader to find.
+What is checked only if you ask for it: whether the cited passage actually
+**supports** the sentence, as opposed to merely existing. An entailment
+checker for exactly that question lives in
+[`entail/`](../src/policyforge/entail/), and setting `entail.answering: true`
+runs it over the answers `zardoz` gives, warning on a claim its own citation
+does not carry. It is **off by default**, it covers the answering path only —
+not generated documents — and its effectiveness has not yet been measured, so
+this document claims no rate for it. Everywhere it is off, a statement can
+carry a real citation to a real passage that does not bear it, and only a
+human reader will notice. That remains the largest open gap in the accuracy
+argument, and it is named here rather than left for a reader to find.
 
-When it is wired in, it will be narrower than it sounds: it refuses to run
-on a provider that cannot be held to a schema, and it requires you to name a
-**second** model, because a model checking its own work shares every blind
-spot it had while writing it.
+It is also narrower than it sounds where it does run: one extra model call
+per cited sentence, it refuses to run on a provider that cannot be held to a
+schema, and it requires you to name a **second** model, because a model
+checking its own work shares every blind spot it had while writing it.
 
 **4. The failure modes are measured, not assumed.** The prompts are graded
 against eval suites, and the numbers, including the regressions and the two

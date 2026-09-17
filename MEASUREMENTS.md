@@ -1200,6 +1200,91 @@ than written to `relationship` (R1).
   each recorded relationship as it was, flags every difference for review, and
   changes no report.
 
+### 21. What a policy set costs — 2026-09-17
+
+The number a buyer asks first, and the first measurement of the whole
+pipeline rather than one prompt. Not comparable with any suite row above: no
+eval graded these documents, and nothing here says whether they are good.
+
+*Provider path:* built from `config/config.yaml` through `get_provider`, the
+way a user runs it, on `07424f4` — 1.2.1's code, which the release commit
+changes only in version and CHANGELOG. `policyforge init` in an empty
+directory, then the bundled starter registry (`config/topics.example.yaml`,
+20 topics) and the four public catalogs (NIST 800-53, FedRAMP, ARC-AMPE,
+HIPAA). Per topic: `synthesize`, then `generate` at all three tiers. The
+ledger is the source (`policyforge model-log --by site`).
+
+| Model             | Topics | Calls | Input   | Output  | Cost    | Wall    |
+| ----------------- | ------ | ----- | ------- | ------- | ------- | ------- |
+| `glm-5.3-flash`   | 20     | 80    | 493,151 | 441,696 | $0.2798 | 103 min |
+| `claude-sonnet-5` | 5      | 25    | 270,695 | 254,612 | $3.0875 | 37 min  |
+
+**Per topic, four documents: $0.014 on glm, $0.62 on sonnet-5.** A full
+twenty-topic set on sonnet-5 extrapolates to about $12, from the five topics
+measured — the first five in the starter registry, not a random sample, so
+read it as an order of magnitude rather than a quote. The ratio between the
+two models is about 44x here, against about 19x on the answering suite in the
+nine-model comparison ($0.2345 against $0.0124): drafting is output-heavy, and
+output is where the price gap widens.
+
+By site, on the glm run: synthesize 20 calls, 195,308 in / 158,899 out;
+generate/standard 102,182 / 127,965; generate/procedure 103,200 / 140,051;
+generate/policy 92,461 / 14,781. A Policy is a twentieth of a Standard's
+output and reads the same input, which is what compressing a Standard into
+commitments looks like in tokens.
+
+Neither run recorded a cached input token through this path, so nothing here
+measures what caching would save.
+
+**What 1.2.1 did.** The same run on the code before it (`ca77bba`) cost
+$0.2141 and was 15/80 calls truncated: 11 of 20 syntheses cut at 4,096
+output tokens and 4 of 60 documents at 8,192, each written to disk mid
+sentence with exit 0. That $0.21 bought an incomplete set, and the defect was
+found by running this. On 1.2.1 there were no truncations at all: the largest
+outputs were 14,286 (synthesis), 11,548 (standard) and 10,879 (procedure),
+inside the 16,384 budgets sized from those rows. The extra 31% of cost is the
+text that was being lost.
+
+One step failed, and correctly: glm returned an empty Policy for Security
+Program Governance — 0 output tokens, `stop_reason` "stop" — and the command
+refused by name and wrote nothing, where before 1.2.1 it would have written a
+document with frontmatter and no body. 59 of 60 documents were produced.
+On sonnet-5, five calls were cut off at their budget and the retry completed
+every one: 25 calls for what would otherwise be 20.
+
+### Output headroom, before the 1.2.1 budgets
+
+Measured on `553d430`, the last commit before the fix, through
+`eval_zardoz.py --model` (so effort was sent): the generation and answering
+suites, `--repeat 3`, on `glm-5.3-flash` and `deepseek-v4-flash`. 200 calls,
+$0.0330, and **one length stop**: `deepseek-v4-flash` on
+`a-procedure-turns-requirements-into-steps-and-keeps-their-tags`, at exactly
+its 8,192 budget. That case was flaky 2/3 for flash in the same run, so one
+run failed and one truncated; the harness records no per-run stop reason, so
+the two cannot be tied together. Five further runs of that case on flash gave
+5,815–7,689 output tokens, all complete, all passing.
+
+| Suite, model                 | Max output | Budget | Cases at or near it            |
+| ---------------------------- | ---------- | ------ | ------------------------------ |
+| generation, glm              | 1,565      | 8,192  | none                           |
+| generation, flash: policy    | 2,627      | 4,096  | none                           |
+| generation, flash: standard  | 2,696      | 8,192  | none                           |
+| generation, flash: procedure | 8,192      | 8,192  | the procedure case, 1 run in 3 |
+| answering, glm               | 515        | 1,024  | none                           |
+| answering, flash             | 1,019      | 1,024  | two cases, 1,019 and 967       |
+
+The two flash answering cases are `a-contradiction-planted-by-a-rider-is-still-surfaced`
+and `an-injected-instruction-does-not-suppress-citations`. Neither stopped on
+length, and both sit within five tokens of the cap.
+
+**Whether any epoch above includes a truncated reply is unknowable from
+surviving data.** Runs before P1b (`33336ba`) wrote no per-call ledger, and
+the harness report does not print finish reasons. What this measurement
+shows is that these cases *can* truncate on flash. Nothing above is amended
+on that basis. 1.2.1 raised Standards and Procedures to 16,384 with a retry,
+so the procedure case has room; the answering site's 1,024 is unchanged and
+is queued for sizing.
+
 ______________________________________________________________________
 
 ## Two ways a run can lie, found the hard way

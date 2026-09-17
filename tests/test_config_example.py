@@ -9,8 +9,10 @@ so these tests read it.
 
 The active `llm:` block and every commented `# llm:` block under "Other
 providers" are parsed and built through `get_provider`, the path
-`policyforge` takes, with no network. A provider whose optional extra is not
-installed is skipped by name rather than silently passing. Two boundary claims
+`policyforge` takes, with no network. Bedrock and Vertex, whose optional
+extras CI does not install, are skipped by name rather than silently passing.
+LiteLLM is never skipped: it is built against a stub module where the extra
+is missing, because it is the path most readers copy. Two boundary claims
 the comments make are checked too, because a wrong classification in an
 example is how someone sends content somewhere they believed was local.
 """
@@ -26,11 +28,13 @@ import yaml
 EXAMPLE = Path(__file__).resolve().parent.parent / "config" / "config.example.yaml"
 
 #: The package each provider's constructor needs beyond the base install.
-#: Only these may skip; any other failure to build is a real one.
+#: Only these may skip; any other failure to build is a real one. litellm is
+#: deliberately absent: it is the OpenRouter path and the recommended
+#: default, so its example is built everywhere, against a stub where the
+#: extra is not installed (see `_litellm_or_stub`).
 EXTRA_MODULE = {
     "bedrock": "boto3",
     "vertex": "google.auth",
-    "litellm": "litellm",
 }
 
 
@@ -109,12 +113,47 @@ def test_the_example_covers_every_provider_the_factory_builds():
     assert covered == _supported_by_the_factory()
 
 
+def _uses_litellm(block: dict) -> bool:
+    if block.get("provider") == "litellm":
+        return True
+    return any(
+        isinstance(block.get(half), dict) and _uses_litellm(block[half])
+        for half in ("primary", "escalate_to")
+    )
+
+
+def _litellm_or_stub(monkeypatch) -> None:
+    """The real litellm where it is installed, a stub where it is not.
+
+    CI installs only the dev and mcp extras, so importorskip would skip the
+    one example most readers copy. `LiteLLMProvider` reads `completion`,
+    `BadRequestError` and `supports_response_schema` from the module and sets
+    `suppress_debug_info` on it, and nothing else, the same surface
+    tests/test_eval_provider_parity.py stubs. `monkeypatch.setitem` undoes it,
+    so a real litellm elsewhere in the run is untouched.
+    """
+    import importlib.util
+    import sys
+    import types
+
+    if importlib.util.find_spec("litellm") is not None:
+        return
+    stub = types.ModuleType("litellm")
+    stub.completion = lambda **kwargs: None
+    stub.BadRequestError = type("BadRequestError", (Exception,), {})
+    stub.supports_response_schema = lambda model: True
+    stub.suppress_debug_info = False
+    monkeypatch.setitem(sys.modules, "litellm", stub)
+
+
 @pytest.mark.parametrize("provider,config", _examples(), ids=[name for name, _ in _examples()])
 def test_every_example_block_builds_as_written(provider, config, monkeypatch):
     from policyforge.llm.base import get_provider
 
     for module in (EXTRA_MODULE[name] for name in _providers_needing_extras(config["llm"])):
         pytest.importorskip(module, reason=f"{provider} example needs the extra providing {module}")
+    if _uses_litellm(config["llm"]):
+        _litellm_or_stub(monkeypatch)
 
     for name in _key_envs(config["llm"]):
         monkeypatch.setenv(name, "test-key-not-real")

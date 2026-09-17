@@ -51,18 +51,19 @@ ______________________________________________________________________
 
 ### What each suite tests
 
-| Suite               | Asks                                                                                     |
-| ------------------- | ---------------------------------------------------------------------------------------- |
-| `routing`           | does a question reach the analysis that can answer it                                    |
-| `resolution`        | does a follow-up become the question it obviously means                                  |
-| `expansion`         | does query expansion name the document's vocabulary without inventing facts              |
-| `answering`         | grounded prose with citations, and refusal when the passages do not support one          |
-| `answer_paraphrase` | the answering cases in wordings their author did not choose                              |
-| `conversation`      | multi-turn, driven through the real shell                                                |
-| `paraphrase`        | 66 generated rewordings of the routing cases                                             |
-| `edit_plan`         | does the Confluence edit planner plan the operator's change and only that                |
-| `edit_apply`        | does the rewrite make exactly the planned change, graded by `check_edit`                 |
-| `generation`        | does a drafted Standard, Policy or Procedure keep what its synthesis said, and only that |
+| Suite               | Asks                                                                                                              |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `routing`           | does a question reach the analysis that can answer it                                                             |
+| `resolution`        | does a follow-up become the question it obviously means                                                           |
+| `expansion`         | does query expansion name the document's vocabulary without inventing facts                                       |
+| `answering`         | grounded prose with citations, and refusal when the passages do not support one                                   |
+| `answer_paraphrase` | the answering cases in wordings their author did not choose                                                       |
+| `conversation`      | multi-turn, driven through the real shell                                                                         |
+| `paraphrase`        | 66 generated rewordings of the routing cases                                                                      |
+| `edit_plan`         | does the Confluence edit planner plan the operator's change and only that                                         |
+| `edit_apply`        | does the rewrite make exactly the planned change, graded by `check_edit`                                          |
+| `generation`        | does a drafted Standard, Policy or Procedure keep what its synthesis said, and only that                          |
+| `crosswalk`         | does a mapping proposal map what carries a requirement's obligation, and not a control that only shares its words |
 
 ______________________________________________________________________
 

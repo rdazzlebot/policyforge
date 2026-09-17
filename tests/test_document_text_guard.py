@@ -114,7 +114,10 @@ def test_every_other_reader_of_a_reply_is_accounted_for():
     known = set(PRODUCERS) | set(NOT_PRODUCERS)
     unlisted = [r for r in readers if r not in known]
     assert unlisted == [], f"reads a model reply's text and is listed nowhere: {unlisted}"
-    stale = sorted(known - set(readers))
+    # Only the non-producers are held to still reading `response.text`: a
+    # producer, by the rule above, hands the response to `document_text`
+    # and never touches `.text` itself.
+    stale = sorted(set(NOT_PRODUCERS) - set(readers))
     assert stale == [], f"listed but no longer read response.text: {stale}"
 
 

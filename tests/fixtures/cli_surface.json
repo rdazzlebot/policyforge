@@ -3233,6 +3233,186 @@
         }
       ]
     },
+    "satisfies": {
+      "help": "What a published document can be shown against, and how strong the evidence is.\n\nThe assessor's direction of travel, from the page rather than the\nrequirement: name a document and this reports the requirements it cites,\nthe ones those citations reach through the crosswalk, and - separately -\nthe controls its topic claims that nothing in the topic actually says.\n\nThe citations in the text are the evidence. A topic anchor is an\nintention, so the two are never added together. Every crosswalked\nmapping says where it came from: the published crosswalk, an overlay row\nsomebody reviewed, or an overlay row nobody has. The last are shown and\nmarked rather than dropped. No model call and no network.",
+      "name": "satisfies",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "help": "A single markdown document, by path. Repeatable.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": true,
+          "name": "document_paths",
+          "nargs": 1,
+          "opts": [
+            "--document"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Every document of a topic. Repeatable.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": true,
+          "name": "topic_names",
+          "nargs": 1,
+          "opts": [
+            "--topic"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "help": "Every document in the content tree.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "every",
+          "nargs": 1,
+          "opts": [
+            "--all"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": null,
+          "help": "The markdown tree (default: config's zardoz.content_dir, else docs/).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "content_override",
+          "nargs": 1,
+          "opts": [
+            "--content-dir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": false,
+            "name": "directory"
+          }
+        },
+        {
+          "default": "config/topics.yaml",
+          "help": "Topic registry (default: config/topics.yaml). Read for a topic's anchors, so 'anchored but cited nowhere' can be reported; the rest works without it.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "topics_path",
+          "nargs": 1,
+          "opts": [
+            "--topics"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Path to a controls.json. Repeatable - pass the NIST catalog plus every framework you want the documents resolved against.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": true,
+          "name": "controls_paths",
+          "nargs": 1,
+          "opts": [
+            "--controls"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": true,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": false,
+          "help": "Exit non-zero if any document cites a requirement no loaded catalog has. A citation pointing nowhere is a defect in the document, so this is the CI gate.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "strict",
+          "nargs": 1,
+          "opts": [
+            "--strict"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Also exit non-zero if any mapping rests on an overlay entry nobody has reviewed. Separate from --strict: unreviewed is a state of the programme, not an error in the document.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "require_reviewed",
+          "nargs": 1,
+          "opts": [
+            "--require-reviewed"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Emit the evidence as JSON instead of a text report.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "as_json",
+          "nargs": 1,
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ]
+    },
     "ssp": {
       "help": "Build a NIST 800-53 System Security Plan as a spreadsheet workbook.\n\nWrites .xlsx - an open ISO standard that LibreOffice Calc opens and edits\nnatively, so no Excel licence is needed. Control text is copied verbatim\nfrom the catalog; only the implementation narratives are LLM-drafted, and\nthose are marked as drafts requiring review. See ssp/workbook.py.",
       "name": "ssp",

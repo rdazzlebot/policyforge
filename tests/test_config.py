@@ -109,3 +109,18 @@ def test_an_explicit_path_still_wins_over_the_env_var(monkeypatch, tmp_path):
     monkeypatch.setenv(CONFIG_PATH_ENV, str(ignored))
 
     assert load_config(explicit)["llm"]["model"] == "explicit"
+
+
+def test_names_outside_the_console_code_page_survive_loading(tmp_path):
+    """The config file is where an organization's own names live.
+
+    It was the one text read in the package that named no encoding, so on
+    Windows it used the console code page: a name outside it raised from
+    inside yaml, and one inside it but not ASCII could decode to something
+    else without a word. Two scripts, so the test fails either way.
+    """
+    path = _config(tmp_path, 'org:\n  name: "Sécurité Santé"\n  team: "医療情報部"\n')
+
+    loaded = load_config(path)
+
+    assert loaded["org"] == {"name": "Sécurité Santé", "team": "医療情報部"}

@@ -90,6 +90,7 @@ packages = [
     "policyforge._bundled.frameworks",
     "policyforge.cli",
     "policyforge.content",
+    "policyforge.crosswalk",
     "policyforge.edit",
     "policyforge.embed",
     "policyforge.entail",

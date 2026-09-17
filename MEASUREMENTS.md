@@ -46,7 +46,7 @@ ______________________________________________________________________
   wrapper, so an epoch measured that way sent effort. Such rows describe the
   request the code is meant to send — and, since `82d4b26`, the request a
   config-built run does send — but not what a config-built run sent inside
-  the window. Epochs 15–18 were measured with `--model` and each says so.
+  the window. Epochs 15–19 were measured with `--model` and each says so.
   Found by policyforge-80.
 
 ### What each suite tests

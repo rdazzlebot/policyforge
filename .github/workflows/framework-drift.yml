@@ -39,7 +39,6 @@ jobs:
 
       - name: Install project
         run: |
-          python -m pip install --upgrade pip setuptools
           # Hashed, as in ci.yml.
           pip install --require-hashes -r requirements/ci.txt
           pip install --no-deps -e .

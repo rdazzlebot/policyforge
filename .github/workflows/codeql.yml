@@ -11,6 +11,11 @@ on:
     # otherwise changed.
     - cron: "17 3 * * 1"
 
+# Read-only by default; the one job that uploads results asks for that
+# itself (Scorecard's Token-Permissions check).
+permissions:
+  contents: read
+
 jobs:
   analyze:
     runs-on: ubuntu-latest

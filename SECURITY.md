@@ -3,7 +3,9 @@
 ## Reporting a vulnerability
 
 Report suspected vulnerabilities through **GitHub's private vulnerability
-reporting** on this repository (Security → Report a vulnerability). That
+reporting** on this repository (Security → Report a vulnerability, or
+directly at
+<https://github.com/rdazzlebot/policyforge/security/advisories/new>). That
 keeps the report private until a fix exists.
 
 **Please do not open a public issue for a security problem**, and please do

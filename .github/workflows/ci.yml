@@ -32,9 +32,12 @@ jobs:
       # gives Dependabot's seven-day cooldown something to constrain. The
       # project goes on last with --no-deps: it is the checkout, not a
       # download. Regenerate the lock with the command in its header.
+      #
+      # No unpinned `pip install --upgrade pip` first: the lock pins pip
+      # itself by hash, so this install is the upgrade (Scorecard's
+      # Pinned-Dependencies check).
       - name: Install project
         run: |
-          python -m pip install --upgrade pip setuptools
           pip install --require-hashes -r requirements/ci.txt
           pip install --no-deps -e .
 

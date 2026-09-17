@@ -92,3 +92,29 @@ def test_a_short_fragment_may_not_miss_a_word():
 
 def test_two_inserted_words_in_a_short_quote_are_refused():
     assert not grounded("malicious foo code bar protection mechanisms at entry", SI_3)
+
+
+PS_4 = (
+    "Personnel Termination a. Disable system access within [Assignment: organization-defined "
+    "time period]; b. Terminate or revoke any authenticators and credentials associated with "
+    "the individual;"
+)
+
+
+def test_a_fragment_that_is_the_title_is_not_refused_as_too_short():
+    """The quote shape glm-5.3-flash returned for PS-4 on the termination case."""
+    quote = (
+        "Personnel Termination ... Disable system access within [Assignment: "
+        "organization-defined time period]; b. Terminate or revoke any authenticators"
+    )
+    assert not grounded(quote, PS_4)
+    assert grounded(quote, PS_4, heading="Personnel Termination")
+
+
+def test_a_title_alone_is_not_a_quote():
+    assert not grounded("Personnel Termination", PS_4, heading="Personnel Termination")
+
+
+def test_a_short_fragment_that_is_not_the_title_is_still_refused():
+    quote = "Personnel Access ... Disable system access within [Assignment: time period]"
+    assert not grounded(quote, PS_4, heading="Personnel Termination")

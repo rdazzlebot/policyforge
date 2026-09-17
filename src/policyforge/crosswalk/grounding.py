@@ -98,10 +98,20 @@ def _match_after(fragment: list[str], tokens: list[str], start_at: int) -> int:
     return -1
 
 
-def grounded(quote: str, text: str, *, min_words: int = MIN_QUOTE_WORDS) -> bool:
-    """Whether `quote` is words of `text`, in order."""
+def grounded(quote: str, text: str, *, min_words: int = MIN_QUOTE_WORDS, heading: str = "") -> bool:
+    """Whether `quote` is words of `text`, in order.
+
+    `heading` is the title the text sits under. A fragment that is exactly
+    that title — "Personnel Termination ... Disable system access within" —
+    is dropped before matching rather than refused as too short: it names the
+    control rather than cherry-picking words from it. Measured: glm-5.3-flash
+    left PS-4 unmapped on all three runs of the termination case, and on two
+    direct calls its PS-4 quote had this shape and was refused by the
+    three-word fragment minimum.
+    """
     fragments = [words(f, drop_parameters=True) for f in _ELLIPSIS.split(quote)]
-    fragments = [f for f in fragments if f]
+    title = words(heading, drop_parameters=True)
+    fragments = [f for f in fragments if f and not (title and f == title)]
     if not fragments or sum(len(f) for f in fragments) < min_words:
         return False
     if len(fragments) > 1 and any(len(f) < MIN_FRAGMENT_WORDS for f in fragments):

@@ -287,10 +287,14 @@ def propose_for(
             # its title or its parent; or, for a specification shorter than
             # that, the whole of the specification's own text and no less.
             and (
-                grounded(requirement_quote, requirement_words)
+                grounded(requirement_quote, requirement_words, heading=requirement.title)
                 or is_whole_text(requirement_quote, requirement.text)
             )
-            and grounded(control_quote, f"{entries[control].title} {entries[control].text}")
+            and grounded(
+                control_quote,
+                f"{entries[control].title} {entries[control].text}",
+                heading=entries[control].title.split(" | ")[-1],
+            )
         )
         if not valid:
             proposal.refused.append(row if isinstance(row, dict) else {"row": row})

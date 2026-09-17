@@ -16,16 +16,18 @@
   is on by default.
 - **What that meant in practice, from 7241d90 (2026-09-14) until this
   fix:** every provider built from config lost those four flags, because
-  every one of them comes back from `get_provider` wrapped. On Anthropic
-  and Vertex, native citations were never requested (the answering path
-  took the inline-passages route and its citation cross-check compared
-  against nothing), no call marked a cacheable prefix, and
-  `policyforge ssp --batch` refused with a message telling the user to
-  configure the provider they had configured. On LiteLLM — the recommended
-  default, and the OpenRouter path — no call sent an effort level, since
-  `LiteLLMProvider` advertises effort and the wrapper said it did not.
-  Bedrock and the OpenAI-compatible endpoint advertise none of the four, so
-  they lost nothing.
+  every one of them comes back from `get_provider` wrapped. Every provider
+  that advertises effort — Anthropic, Vertex and LiteLLM, the last being
+  the recommended default and the OpenRouter path — sent no effort level on
+  any call. Anthropic and Vertex, which advertise grounding and caching,
+  never requested native citations (the answering path took the
+  inline-passages route, the reply carried no citation spans, and the
+  citation cross-check received an empty list and could report nothing)
+  and never marked a cacheable prefix. Anthropic, the one provider that
+  advertises batching, had `policyforge ssp --batch` refused with a message
+  telling the user to configure the provider they had configured; Vertex
+  does not advertise it, so its refusal is by design. Bedrock and the
+  OpenAI-compatible endpoint advertise none of the four and lost nothing.
 - **The eval harness was not affected, which is the uncomfortable half.**
   `scripts/eval_zardoz.py --model` builds a `LiteLLMProvider` directly
   inside its own meter rather than through `get_provider`, so its flags

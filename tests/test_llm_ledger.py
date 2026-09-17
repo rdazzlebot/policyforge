@@ -646,3 +646,32 @@ def test_a_provider_built_from_config_keeps_every_flag_of_the_one_inside(
     assert isinstance(provider, RecordingProvider)
     for flag in CAPABILITY_FLAGS:
         assert getattr(provider, flag)() == getattr(provider.inner, flag)(), flag
+
+
+def test_the_litellm_provider_keeps_every_flag_through_the_wrapper_without_litellm(tmp_path):
+    """The default provider, held to the rule where CI can run it.
+
+    The `get_provider` case above skips when the `litellm` extra is absent,
+    and CI installs only `.[dev]` — so the provider this bug hit hardest
+    would be the one CI never checked. `LiteLLMProvider` takes an injected
+    `completion` callable precisely so its request handling runs without
+    the package, and the flags are read the same way. This never skips.
+    """
+    from policyforge.llm.base import capabilities
+    from policyforge.llm.litellm_provider import LiteLLMProvider
+
+    inner = LiteLLMProvider(
+        model="openrouter/deepseek/deepseek-v4-flash",
+        completion=lambda **kwargs: None,
+    )
+    wrapped = ledger.wrap(
+        inner,
+        {"llm": {"provider": "litellm", "ledger": {"path": str(tmp_path / "calls.jsonl")}}},
+    )
+
+    assert isinstance(wrapped, RecordingProvider)
+    for flag in CAPABILITY_FLAGS:
+        assert getattr(wrapped, flag)() == getattr(inner, flag)(), flag
+    assert inner.supports_effort() is True
+    assert wrapped.supports_effort() is True
+    assert capabilities(wrapped) == capabilities(inner)

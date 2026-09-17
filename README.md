@@ -18,6 +18,9 @@ themselves, some of which are freely redistributable and some of which are
 not). See [Licensing model](#licensing-model-per-framework) below before you
 add any framework content to this repo.
 
+To install it: `brew install rdazzlebot/tap/policyforge`, then
+`policyforge init` in a new directory — see [Setup](#setup).
+
 ## The problem this solves
 
 A healthcare organization rarely gets to pick one framework. It carries the
@@ -2075,6 +2078,35 @@ scripts/
 ```
 
 ## Setup
+
+### Installing the command (macOS and Linux)
+
+```bash
+brew install rdazzlebot/tap/policyforge
+```
+
+That installs the `policyforge` command from the
+[rdazzlebot/homebrew-tap](https://github.com/rdazzlebot/homebrew-tap) tap,
+with the core providers; the optional extras (`bedrock`, `vertex`, `litellm`,
+`mcp`) are not included. Without Homebrew, `pipx install git+https://github.com/rdazzlebot/policyforge@v1.1.0` does the same, and
+takes extras as `policyforge[mcp] @ git+…`.
+
+An installed command has no clone around it, and every command reads
+`config/` and `data/frameworks/` relative to where it runs. So start a
+project directory first:
+
+1. `policyforge init my-policies && cd my-policies` — writes the bundled,
+   public-domain catalogs (NIST 800-53, FedRAMP, ARC-AMPE, the HIPAA Security
+   Rule), the example configs, a README for each bring-your-own catalog, and a
+   `.gitignore` that keeps your config, topic registry, licensed exports and
+   drafts out of version control. It never overwrites a file that is already
+   there.
+1. `cp config/config.example.yaml config/config.yaml` and fill in your model choice
+   and the *name* of the environment variable holding your API key (not the key itself).
+1. `export ANTHROPIC_API_KEY=sk-...` (or whatever env var name you configured)
+1. `policyforge llm-check` — confirms your API key and model work.
+
+### From a clone, to work on PolicyForge itself
 
 1. `python -m venv .venv && source .venv/bin/activate`
 1. `pip install --upgrade pip setuptools` — a fresh venv's own pip/setuptools are

@@ -1,6 +1,33 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
+
+Installable without a clone. Until this release PolicyForge ran from a
+checkout of this repository and nowhere else: every command reads `config/`
+and `data/frameworks/` relative to where it runs, and an installed package
+had neither. It now installs with `brew install rdazzlebot/tap/policyforge`,
+and everything else below had accumulated on `main` since 1.0.0.
+
+### Installing without a clone
+
+- **`policyforge init [DIRECTORY]`** lays out a project: the four
+  public-domain catalogs (NIST 800-53, FedRAMP, ARC-AMPE, the HIPAA Security
+  Rule), both example configs, a README for each bring-your-own catalog, an
+  empty `local_content/`, and a `.gitignore` with the same entries this
+  repository ignores. It never overwrites, so it is safe to run twice or
+  inside a clone. Offline, and reads no environment variable.
+- **The catalogs ship in the package**, as `policyforge._bundled`, mapped
+  from `data/frameworks/` and `config/` in `pyproject.toml` so there is still
+  one copy. They are named one by one rather than globbed, because a glob
+  would package a licensed HITRUST export somebody had placed in their own
+  checkout. `tests/test_scaffold.py` holds the list to the catalogs whose
+  manifests say `public-domain`, and the hand-kept package list to every
+  package under `src/`.
+- **`license = "Apache-2.0"`** as an SPDX expression. The file pointer it
+  replaces named no licence, and neither GitHub nor Homebrew could read one.
+- **A Homebrew formula** in
+  [rdazzlebot/homebrew-tap](https://github.com/rdazzlebot/homebrew-tap).
+  `CONTRIBUTING.md` has the release steps that keep it current.
 
 ### Security documentation, and eight commitments with tests behind them
 

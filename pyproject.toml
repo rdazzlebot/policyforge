@@ -1,14 +1,15 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "policyforge"
-version = "1.0.0"
+version = "1.1.0"
 description = "Cross-mapped compliance policy/standard/procedure generation from NIST 800-53, FedRAMP, ARC-AMPE, the HIPAA Security Rule, and (BYOC) HITRUST/GovRAMP."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 dependencies = [
     "anthropic>=0.40",
     "click>=8.1",
@@ -78,8 +79,66 @@ litellm = [
 [project.scripts]
 policyforge = "policyforge.cli:cli"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+# Listed rather than discovered: `policyforge._bundled.frameworks` and
+# `.config` are mapped from outside src/ (below), and discovery only searches
+# src/. tests/test_scaffold.py fails if a package under src/ is missing here.
+[tool.setuptools]
+packages = [
+    "policyforge",
+    "policyforge._bundled",
+    "policyforge._bundled.config",
+    "policyforge._bundled.frameworks",
+    "policyforge.cli",
+    "policyforge.content",
+    "policyforge.edit",
+    "policyforge.embed",
+    "policyforge.entail",
+    "policyforge.export",
+    "policyforge.frameworks",
+    "policyforge.generate",
+    "policyforge.history",
+    "policyforge.ingest",
+    "policyforge.llm",
+    "policyforge.mapping",
+    "policyforge.mcp",
+    "policyforge.org",
+    "policyforge.parameters",
+    "policyforge.rerank",
+    "policyforge.ssp",
+    "policyforge.synthesis",
+    "policyforge.topics",
+    "policyforge.zardoz",
+]
+
+# The catalogs and example configs `policyforge init` lays out, mapped from
+# where they already live so there is one copy. See policyforge/scaffold.py.
+[tool.setuptools.package-dir]
+"" = "src"
+"policyforge._bundled.frameworks" = "data/frameworks"
+"policyforge._bundled.config" = "config"
+
+# Catalogs named one by one, never globbed: a glob would ship a licensed
+# export someone had put in their own checkout's data/frameworks/. Only the
+# README of a bring-your-own catalog ships. tests/test_scaffold.py checks
+# this list against each catalog's `licence:`.
+[tool.setuptools.package-data]
+"policyforge._bundled.frameworks" = [
+    "arc-ampe/README.md",
+    "arc-ampe/controls.json",
+    "arc-ampe/framework.yaml",
+    "fedramp/README.md",
+    "fedramp/controls.json",
+    "fedramp/framework.yaml",
+    "hipaa-security-rule/README.md",
+    "hipaa-security-rule/controls.json",
+    "hipaa-security-rule/framework.yaml",
+    "nist-800-53-r5/README.md",
+    "nist-800-53-r5/controls.json",
+    "nist-800-53-r5/framework.yaml",
+    "govramp/README.md",
+    "hitrust-csf/README.md",
+]
+"policyforge._bundled.config" = ["config.example.yaml", "topics.example.yaml"]
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv"]

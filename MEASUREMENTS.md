@@ -869,6 +869,63 @@ default: the edit path is a security property, and flash fails it. glm's
 generation result is the open quality problem this epoch adds, and it is
 not yet explained.
 
+### 18. Drafting prompts that may not invent a value or a hedge — 2026-09-16
+
+Epoch 17's open problem, explained and fixed by policyforge-ba. Prompts:
+`generate.standard` v3 (`e1b15e2b94b0`) and `generate.procedure` v2
+(`b1ff8fad8db1`); `generate.policy` unchanged. Identical at `8d2b472`,
+`f45b924` and `72d167b`, which differ only in the eval cases and grader.
+Every run was from a pinned worktree, and its output held no rate-limit or
+API errors.
+
+**The cause was the prompt, not the effort level.** Probed on the two
+failing cases with the production request: effort on, the Procedure failed
+0/3, inventing "5 business days", "10 business days" and "30 days" as step
+deadlines, and the Standard passed 1/3. Effort off halved the failures
+without removing them. The v1 prompts forbade inventing tools and
+requirements and never mentioned inventing a number, so v2/v3 forbid any
+frequency, deadline, duration or count the input does not give — a named
+placeholder instead — and a discretionary qualifier the input requirement
+does not contain.
+
+**The first wording of the qualifier rule was wrong.** v2 banned "as needed"
+and its kin outright. The bundled frameworks use them in requirement text —
+HIPAA 7 times ("establish (and implement as needed) procedures"), 800-53 11,
+ARC-AMPE 10, FedRAMP 3 — and a Standard obeying v2 would state an obligation
+stricter than the rule it cites. v3 keeps a qualifier the input has. Its runs
+were stopped before finishing, so no numbers exist for v2's Standard. A new
+case, `a-standard-keeps-a-qualifier-its-source-states`, checks each of two
+qualified HIPAA requirements separately; its grader moved from a phrase list
+to patterns after the list failed a faithful rewrite ("must implement these
+procedures as needed"), and patterns are strictly looser.
+
+Full suite at `8d2b472`, 7 cases:
+
+| Model               | repeat | cases always pass | runs  | cost                 |
+| ------------------- | ------ | ----------------- | ----- | -------------------- |
+| `glm-5.3-flash`     | 5      | 4/7               | 32/35 | $0.0105 for 36 calls |
+| `deepseek-v4-flash` | 3      | 6/7               | 19/21 | $0.0151 for 22 calls |
+| `claude-sonnet-5`   | 3      | 7/7               | 21/21 | $0.3199 for 22 calls |
+
+The qualifier case, superseding its `8d2b472` rows: glm 5/5 at `f45b924`
+(stands, the patterns being looser); sonnet 5/5 at `72d167b` ($0.0594);
+deepseek-v4-flash 4/5 at `72d167b` ($0.0024), its one failure dropped
+citations after opening with a "Document Control" table — not a dropped
+qualifier.
+
+**What moved.** glm's two cases that failed every run in epoch 17 passed
+every run: `a-standard-keeps-every-citation-and-every-shall` 5/5 (was 0/3,
+"as appropriate") and the procedure case 5/5 (was 0/3, invented intervals).
+Flash's procedure case went from 1/3 to 3/3.
+
+**What did not.** glm is flaky 4/5 on three cases: the vendor case (Okta
+omitted), the undecided-value case (it once settled a lockout count), and
+the policy case (six statements against a maximum of five — its prompt is
+unchanged, so read that one as noise). Flash is 1/3 on the vendor case, also
+omitting Okta. The vendor case is flaky on both flash models and is open.
+
+`evals/prompt-fingerprints.json` updated to these two prompts.
+
 ______________________________________________________________________
 
 ## Two ways a run can lie, found the hard way

@@ -504,7 +504,7 @@
           ]
         },
         "review": {
-          "help": "Decide, one at a time, each pair a model flagged or proposed.\n\nFlagged published pairs come first \u2014 the ones a model could not find a\nbasis for \u2014 then new proposals. Each decision is written as it is made,\nwith who made it and when. Accept keeps or adds the pair; reject removes\nit from everything built on this crosswalk.",
+          "help": "Decide, one at a time, each pair a model flagged or proposed.\n\nFlagged published pairs come first (the ones a model could not find a\nbasis for), then new proposals. Each decision is written as it is made,\nwith who made it and when. Accept keeps or adds the pair; reject removes\nit from everything built on this crosswalk.",
           "name": "review",
           "params": [
             {
@@ -591,7 +591,7 @@
           ]
         },
         "seed": {
-          "help": "Write an overlay holding the published mapping, every pair accepted.\n\nChanges nothing on its own \u2014 the pipeline reads the same pairs it did\nbefore. It is the file you then review: reject a pair by changing its\nstatus, add one with a new row, and record why.",
+          "help": "Write an overlay holding the published mapping, every pair accepted.\n\nChanges nothing on its own: the pipeline reads the same pairs it did\nbefore. It is the file you then review: reject a pair by changing its\nstatus, add one with a new row, and record why.",
           "name": "seed",
           "params": [
             {

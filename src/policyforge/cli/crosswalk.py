@@ -93,7 +93,7 @@ def crosswalk_group():
 def crosswalk_seed(framework: str, controls_paths, out: Path | None, force: bool):
     """Write an overlay holding the published mapping, every pair accepted.
 
-    Changes nothing on its own — the pipeline reads the same pairs it did
+    Changes nothing on its own: the pipeline reads the same pairs it did
     before. It is the file you then review: reject a pair by changing its
     status, add one with a new row, and record why.
     """
@@ -165,10 +165,10 @@ def crosswalk_check(controls_paths, overlay_dir: Path | None, strict: bool):
         )
         for rid in check.unknown_requirements:
             click.echo(
-                f"  unknown requirement: {rid} — not in the loaded {overlay.framework} catalog"
+                f"  unknown requirement: {rid} - not in the loaded {overlay.framework} catalog"
             )
         for rid, control in check.unknown_controls:
-            click.echo(f"  unknown control: {rid} -> {control} — not in the loaded catalogs")
+            click.echo(f"  unknown control: {rid} -> {control} - not in the loaded catalogs")
         for rid, control in check.unreviewed_published:
             click.echo(
                 f"  unreviewed: {rid} -> {control} is published but the overlay neither "
@@ -349,8 +349,8 @@ def _reviewer() -> str:
 def crosswalk_review(framework: str, controls_paths, overlay: Path | None, who: str | None):
     """Decide, one at a time, each pair a model flagged or proposed.
 
-    Flagged published pairs come first — the ones a model could not find a
-    basis for — then new proposals. Each decision is written as it is made,
+    Flagged published pairs come first (the ones a model could not find a
+    basis for), then new proposals. Each decision is written as it is made,
     with who made it and when. Accept keeps or adds the pair; reject removes
     it from everything built on this crosswalk.
     """
@@ -390,9 +390,9 @@ def crosswalk_review(framework: str, controls_paths, overlay: Path | None, who: 
         if requirement is not None:
             if requirement.parent:
                 say(f"  under: {requirement.parent[:160]}")
-            say(f"  requirement: {requirement.title} — {requirement.text[:300]}")
+            say(f"  requirement: {requirement.title} - {requirement.text[:300]}")
         if entry is not None:
-            say(f"  control: {entry.title} — {entry.text[:300]}")
+            say(f"  control: {entry.title} - {entry.text[:300]}")
         click.echo(f"  published: {'yes' if 'published' in row.sources else 'no'}")
         if row.flags:
             say(f"  flags: {', '.join(row.flags)}")

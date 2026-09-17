@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from policyforge.content.tree import TIER_DIRS, render_document
-from policyforge.textfile import write_text_lf
+from policyforge.textfile import normalise_newlines, write_text_lf
 
 WRITTEN = "written"
 UNCHANGED = "unchanged"
@@ -154,6 +154,11 @@ def pull_pages(
         )
         relative = destination.relative_to(root).as_posix()
 
+        # Compared as it will be written. `read_text` folds CRLF on the way
+        # in and `write_text_lf` folds it on the way out, so a page whose
+        # storage body carried one read as changed on every pull until the
+        # rendered side was folded too.
+        rendered = normalise_newlines(rendered)
         if destination.exists() and destination.read_text(encoding="utf-8") == rendered:
             report.results.append(PullResult(title=title, path=relative, action=UNCHANGED))
             continue

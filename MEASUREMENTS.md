@@ -46,7 +46,7 @@ ______________________________________________________________________
   wrapper, so an epoch measured that way sent effort. Such rows describe the
   request the code is meant to send — and, since `82d4b26`, the request a
   config-built run does send — but not what a config-built run sent inside
-  the window. Epochs 15–18 were measured with `--model` and each says so.
+  the window. Epochs 15–19 were measured with `--model` and each says so.
   Found by policyforge-80.
 
 ### What each suite tests
@@ -959,6 +959,63 @@ unchanged, so read that one as noise). Flash is 1/3 on the vendor case, also
 omitting Okta. The vendor case is flaky on both flash models and is open.
 
 `evals/prompt-fingerprints.json` updated to these two prompts.
+
+### 19. Generation graded the way the CLI generates — 2026-09-17
+
+policyforge-ba's fix for epoch 18's open vendor case, merged as `571a593`
+and measured at `c6373d7`, which differs from the merged code only by one
+reordered import in `evals/runner.py`. No prompt changed: `generate.standard`
+v3 and `generate.procedure` v2, as in epoch 18. Every report printed its
+`Code:` line, and no output held a rate-limit or API error.
+
+*Provider path:* `eval_zardoz.py --model`, LiteLLM built directly, before the
+harness built its provider through `get_provider` (P1b, `33336ba`); effort
+was sent.
+
+**The harness changed, so this is a new generation baseline, not a change
+from epoch 18.** Three things, all in how the suite builds its input:
+
+- `run_generation` now builds the organization through `load_org_profile`
+  and applies `apply_substitutions` before grading, as `policyforge generate`
+  does. Before, it used a profile-less context — a prompt branch the CLI
+  never sends — and skipped substitution.
+- Cases with no vendor lost the legacy line "Known vendors/tools: none
+  supplied — write the role in square brackets…".
+- The vendor case is keyed by role (`identity_provider: Okta`) and gained a
+  seventh requirement routing single sign-on through `[Identity Provider]`
+  `[NIST IA-2]`.
+
+**What the vendor case was.** A probe of three ways of giving glm the vendor —
+keyed by role, unkeyed, and the legacy line — passed 2/5, 4/5 and 4/5, and
+every failure had no reference to an identity system at all: no placeholder,
+no prose. The same pattern held on flash. The fix names the role the vendor
+fills and adds a requirement that has to name it.
+
+Generation suite, 7 cases, at `c6373d7`:
+
+| Model               | repeat | cases always pass | runs  | cost                 |
+| ------------------- | ------ | ----------------- | ----- | -------------------- |
+| `glm-5.3-flash`     | 5      | 5/7               | 32/35 | $0.0125 for 36 calls |
+| `deepseek-v4-flash` | 5      | 5/7               | 33/35 | $0.0194 for 36 calls |
+| `claude-sonnet-5`   | 3      | 7/7               | 21/21 | $0.3035 for 22 calls |
+
+- **The vendor case passed every run on glm (5/5) and never missed Okta on
+  flash.** Flash's one failure there, 4/5, dropped all nine citation tags.
+- **glm:** `a-standard-keeps-every-citation-and-every-shall` 4/5, citing
+  "HIPAA Security Rule" and "NIST SP 800-53", which the synthesis does not;
+  `a-standard-leaves-an-undecided-value-undecided` 3/5, settling the lockout
+  count the case forbids. Every other case 5/5.
+- **flash:** `a-standard-keeps-a-qualifier-its-source-states` 4/5, again
+  dropping all three citations. Every other case 5/5.
+
+glm's citation case passed 5/5 in epoch 18 and 4/5 here. A separate probe —
+not a harness run — graded it 6/6 through the runner before the change
+(`eec4086`) and 6/6 after (`c6373d7`) with identical prompts, so the one miss
+is read as noise, not an effect of the organization block.
+
+**Open.** deepseek-v4-flash occasionally drops every citation tag from a
+Standard; it did so in both of its failing runs here. glm still sometimes
+settles the undecided lockout count.
 
 ______________________________________________________________________
 

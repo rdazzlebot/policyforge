@@ -144,6 +144,13 @@ class OpenAICompatProvider(LLMProvider):
             model=data.get("model") or self.model,
             input_tokens=usage.get("prompt_tokens"),
             output_tokens=usage.get("completion_tokens"),
+            # `finish_reason` was read above only to retry an empty reply,
+            # then dropped — so a non-empty reply Ollama or vLLM cut off at
+            # `max_tokens` reached the caller with no stop reason, and
+            # `LLMResponse.truncated` was False on exactly the local setup
+            # the docs recommend for licensed content. It travels now, as it
+            # does from every other provider.
+            stop_reason=choice.get("finish_reason"),
         )
 
     def check(self) -> bool:

@@ -26,6 +26,14 @@
   command is covered, including ones written later. No writer writes
   before its model calls return, so nothing partial is left on disk; both
   billed calls are in the ledger.
+- **Detection covers the OpenAI-compatible provider as of this change.**
+  `provider: openai-compat` / `local` — Ollama, vLLM, LM Studio, the setup
+  recommended for licensed content — never carried `finish_reason` into
+  `stop_reason`, so the first version of this fix could not see a cut-off
+  reply there and still wrote it. It does now, and a contract test builds
+  every provider the factory knows with a fake at its SDK or transport
+  boundary returning that vendor's own cut-off shape, so a provider that
+  drops the field fails in CI rather than in a user's `output/`.
 - **Budgets sized from the run.** A synthesis that completed used up to
   13,569 output tokens on the recommended model (a reasoning model spends
   part of the budget thinking, and the ledger counts both), so synthesis

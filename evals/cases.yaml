@@ -1187,9 +1187,26 @@ generation:
     must_not_contain: [Okta, Azure AD, Entra, Duo, YubiKey, Ping Identity, OneLogin, CyberArk]
 
   - name: a-standard-uses-the-vendor-it-was-given
-    synthesis: *synthesis-access-control
+    # Role-keyed, as config.example.yaml writes it, and graded after the
+    # role substitution `policyforge generate` applies. The synthesis carries
+    # one requirement that names the identity provider. The shared
+    # access-control synthesis has none, so a Standard that restated its six
+    # requirements faithfully had no reason to name any system, and this
+    # case failed it for leaving Okta out. That was the case asking for
+    # elaboration, not the model forgetting a vendor. What fails now is a
+    # document that names the system some other way: another product, or
+    # "the identity provider" in prose, which no substitution can fill.
+    synthesis: |
+      - Account entitlements must be recertified quarterly by the system owner. [NIST AC-2 | HIPAA 164.308(a)(4)(ii)(C)]
+      - Accounts of terminated personnel must be disabled within 24 hours of separation. [NIST AC-2(3)]
+      - Privileged accounts must authenticate with hardware-backed multi-factor authentication. [NIST IA-2(1) | NIST AC-6(5)]
+      - Access must be granted on the principle of least privilege. [NIST AC-6]
+      - Shared or group accounts are prohibited except where approved in writing by the [Security Officer]. [NIST AC-2(9)]
+      - An account must be locked after [Assignment: organization-defined number] consecutive failed logon attempts. [NIST AC-7]
+      - Workforce users must authenticate to organization applications through the [Identity Provider] using single sign-on. [NIST IA-2]
     tier: standard
-    vendors: [Okta]
+    vendors:
+      identity_provider: Okta
     must_contain: [Okta]
     must_not_contain: [Azure AD, Entra, Ping Identity, OneLogin]
 

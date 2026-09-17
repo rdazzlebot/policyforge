@@ -113,6 +113,51 @@ def test_the_qualifier_case_passes_a_faithful_rewrite_and_fails_either_drop():
     assert not run_generation(case, Fixed(document(kept_restore, dropped_docs))).passed
 
 
+def test_the_vendor_case_is_graded_the_way_the_cli_generates():
+    """The runner builds the organization through `load_org_profile` and
+    applies the CLI's role substitution before grading. It used to send a
+    prompt branch the CLI never sends and skip the substitution, so a
+    bracketed role production would have filled read as a missing vendor."""
+    from evals.runner import load_cases, run_generation
+
+    case = next(
+        c
+        for c in load_cases()["generation"]
+        if c["name"] == "a-standard-uses-the-vendor-it-was-given"
+    )
+    tags = (
+        "[NIST AC-2 | HIPAA 164.308(a)(4)(ii)(C)] [NIST AC-2(3)] [NIST IA-2(1) | NIST AC-6(5)] "
+        "[NIST AC-6] [NIST AC-2(9)] [NIST AC-7] [NIST IA-2]"
+    )
+
+    class Recording:
+        def __init__(self, text):
+            self.text = text
+            self.prompts = []
+
+        def generate(self, **kwargs):
+            from policyforge.llm.base import LLMResponse
+
+            self.prompts.append(kwargs["prompt"])
+            return LLMResponse(text=self.text, model="fake")
+
+    def document(sso_sentence: str) -> str:
+        return (
+            "# Access Control Standard\n\n## Requirements\n\n"
+            "Accounts must be managed and privileged accounts must use hardware MFA.\n\n"
+            f"{sso_sentence} {tags}\n"
+        )
+
+    bracketed = Recording(document("Users must sign on through the [Identity Provider]."))
+    assert run_generation(case, bracketed).passed, "a bracketed role is filled, as the CLI fills it"
+    assert "Identity Provider: Okta" in bracketed.prompts[0], "the role-keyed prompt branch"
+
+    prose = Recording(document("Users must sign on through the identity provider."))
+    result = run_generation(case, prose)
+    assert not result.passed
+    assert "Okta" in result.detail
+
+
 # --------------------------------------------------------------------------
 # Counting runs
 # --------------------------------------------------------------------------

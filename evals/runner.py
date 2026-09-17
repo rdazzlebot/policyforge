@@ -670,13 +670,27 @@ def run_generation(case: dict, provider, corpora: dict | None = None) -> Outcome
         generate_procedure,
         generate_standard,
     )
+    from policyforge.org.context import apply_substitutions, load_org_profile
     from policyforge.zardoz.answer import ungrounded_values
 
     synthesis, tier = case["synthesis"], case["tier"]
+    # Built the way `policyforge generate` builds it, not by hand. This used
+    # to pass `OrgContext(vendors=[...])` with no profile, which reaches a
+    # prompt branch the CLI never sends — the CLI always attaches a profile,
+    # even for a legacy flat vendor list — and skipped the role substitution
+    # the CLI applies afterwards. A case could then fail for "missing Okta"
+    # on output production would have filled in, or pass on a prompt
+    # production never shows a model.
+    name = case.get("org", "Acme Health")
+    industry = case.get("industry", "Healthcare")
+    profile = load_org_profile(
+        {"org": {"name": name, "industry": industry, "vendors": case.get("vendors")}}
+    )
     org = OrgContext(
-        name=case.get("org", "Acme Health"),
-        industry=case.get("industry", "Healthcare"),
-        vendors=list(case.get("vendors") or []),
+        name=name,
+        industry=industry,
+        vendors=profile.unkeyed_vendors,
+        profile=profile,
     )
     standard_title = case.get("standard_title", "Access Control Standard")
     if tier == "standard":
@@ -687,6 +701,7 @@ def run_generation(case: dict, provider, corpora: dict | None = None) -> Outcome
         document = generate_procedure(synthesis, org, provider, standard_title=standard_title)
     else:
         raise ValueError(f"unknown tier {tier!r}")
+    document = apply_substitutions(document, profile).text
 
     expected = _tags(synthesis)
     present = _tags(document)

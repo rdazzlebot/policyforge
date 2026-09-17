@@ -181,8 +181,9 @@ Stage to a scratch path and diff before touching the committed file.
 
 ## Changes a Windows gate cannot check
 
-CI runs on Linux with Python 3.12, and `scripts/check.py` on a Windows
-machine passes some things that fail there. CI was red on this branch from
+CI runs every check on Linux with Python 3.12, and the test suite alone on
+Windows and macOS (3.12) as well. `scripts/check.py` on a Windows machine
+still passes some things that fail on Linux. CI was red on this branch from
 its first push for two such reasons: provenance stamps were hashed from
 catalogs with Windows line endings, and a help-text fixture relied on the
 docstring dedenting Python 3.13 does and 3.12 does not.

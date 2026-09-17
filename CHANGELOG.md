@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Repository hardening
+
+- **The test suite runs on Windows and macOS in CI**, as a
+  `pytest-platforms` job beside the Linux job, on Python 3.12 from the same
+  hashed lock. Two Windows-only defects had reached `main` with the Linux job
+  green. The scanners stay on Linux only.
+
 ## 1.2.0
 
 **Upgrading from 1.1.0 changes what your model is asked for, and can change

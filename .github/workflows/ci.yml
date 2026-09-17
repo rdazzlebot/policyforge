@@ -92,3 +92,46 @@ jobs:
 
       - name: pytest
         run: pytest -q
+
+  # The test suite on the other two platforms people run this on. Two
+  # Windows-only defects reached main with the Linux job green (CRLF in
+  # generated Markdown, a CRLF-hashed catalog), so the platforms are tested
+  # rather than assumed. Python 3.12 only, the version CI, the image and the
+  # Homebrew formula all use. Scanners stay on the Linux job: they read the
+  # same source on every platform.
+  #
+  # Same hashed lock as above: ci.txt is a uv --universal lock, so it
+  # resolves on all three (pywin32 carries a win32 marker). A leg that
+  # cannot install hashed is a lock bug to fix, not a reason to install
+  # unhashed. No fail-fast, so one platform's failure does not hide the
+  # other's, and no skips or continue-on-error: these failures are the point.
+  pytest-platforms:
+    name: pytest (${{ matrix.os }}, 3.12)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    # bash on every leg. On Windows `run:` defaults to pwsh, which does not stop
+    # on a failing native command mid-step and only checks the last one's exit
+    # code: a failed hashed install followed by a working `pip install -e .`
+    # would go green and hide exactly the lock failure this job is here for.
+    # Git Bash is on the Windows runners and runs with -e, as on Linux.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install project
+        run: |
+          pip install --require-hashes -r requirements/ci.txt
+          pip install --no-deps -e .
+
+      - name: pytest
+        run: pytest -q

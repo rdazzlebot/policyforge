@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 #: Keys this module owns. Anything else in the file belongs to whoever wrote
@@ -80,7 +80,10 @@ def record_source_provenance(
     data["source_ref"] = source_ref
     data["source_url"] = source_url
     data["content_sha256"] = digest
-    data["fetched_at"] = datetime.now(UTC).strftime("%Y-%m-%d")
+    # `timezone.utc`, not `datetime.UTC`: the alias arrived in Python 3.11
+    # and the floor is 3.10, where importing it made every etl-* command
+    # fail before it could fetch anything.
+    data["fetched_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     framework_yaml.write_text(
         yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=88),

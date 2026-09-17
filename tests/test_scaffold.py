@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 import yaml
 from click.testing import CliRunner
 
@@ -30,8 +29,12 @@ FRAMEWORKS = ROOT / "data" / "frameworks"
 
 
 def _pyproject() -> dict:
-    tomllib = pytest.importorskip("tomllib")
-    return tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    # Not `importorskip("tomllib")`: that skipped every packaging check on
+    # Python 3.10, the floor, which is where they are least likely to have
+    # been tried by hand. See tests/_pyproject.py.
+    from tests._pyproject import load_pyproject
+
+    return load_pyproject()
 
 
 # ---- what ships ---------------------------------------------------------

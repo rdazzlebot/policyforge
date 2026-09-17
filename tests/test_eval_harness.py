@@ -69,23 +69,48 @@ def test_any_of_needs_only_one():
     assert not grade_text("something else entirely", case).passed
 
 
-def test_each_group_must_be_satisfied_on_its_own():
-    """Two requirements that must each keep a phrase. One surviving is the
-    failure, not half a pass."""
-    case = {
-        "must_contain_each": [
-            ["implemented as needed", "implement as needed"],
-            ["updated as needed"],
-        ]
-    }
-
-    assert grade_text("implement as needed ... updated as needed", case).passed
-    assert not grade_text("shall be implemented ... updated as needed", case).passed
-    assert not grade_text("implemented as needed ... shall be updated", case).passed
-
-
 def test_checks_are_case_insensitive():
     assert grade_text("QUARTERLY", {"must_contain": ["quarterly"]}).passed
+
+
+def test_the_qualifier_case_passes_a_faithful_rewrite_and_fails_either_drop():
+    """Graded through the real case, so the patterns in cases.yaml are what is
+    tested. A live run failed `implement these procedures as needed` — the
+    qualifier kept, two words apart — under a phrase list; and one surviving
+    qualifier must not cover for the other being dropped."""
+    from evals.runner import load_cases, run_generation
+
+    case = next(
+        c
+        for c in load_cases()["generation"]
+        if c["name"] == "a-standard-keeps-a-qualifier-its-source-states"
+    )
+
+    class Fixed:
+        def __init__(self, text):
+            self.text = text
+
+        def generate(self, **kwargs):
+            from policyforge.llm.base import LLMResponse
+
+            return LLMResponse(text=self.text, model="fake")
+
+    def document(restore: str, documentation: str) -> str:
+        return (
+            "# Backup Standard\n\n## Requirements\n\n"
+            f"- {restore} [HIPAA 164.308(a)(7)(ii)(B)]\n"
+            f"- {documentation} [HIPAA 164.316(b)(2)(iii)]\n"
+            "- Backups of ePHI must be created and retained. [HIPAA 164.308(a)(7)(ii)(A)]\n"
+        )
+
+    kept_restore = "Staff must establish restore procedures and must implement them as needed."
+    dropped_restore = "Staff must establish and implement restore procedures."
+    kept_docs = "Documentation must be reviewed periodically and updated as needed."
+    dropped_docs = "Documentation must be reviewed periodically and updated."
+
+    assert run_generation(case, Fixed(document(kept_restore, kept_docs))).passed
+    assert not run_generation(case, Fixed(document(dropped_restore, kept_docs))).passed
+    assert not run_generation(case, Fixed(document(kept_restore, dropped_docs))).passed
 
 
 # --------------------------------------------------------------------------
@@ -680,11 +705,7 @@ def test_the_cases_that_never_reach_a_model_are_the_ones_we_know_about():
         for suite in ("expansion", "resolution")
         for case in cases[suite]
         if case.get("allow_empty")
-        and not (
-            case.get("must_contain")
-            or case.get("must_contain_any")
-            or case.get("must_contain_each")
-        )
+        and not (case.get("must_contain") or case.get("must_contain_any"))
     }
     assert vacuous == set()
 

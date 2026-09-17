@@ -144,15 +144,6 @@ def grade_text(text: str, case: dict) -> Outcome:
     if any_of and not any(term.lower() in text.lower() for term in any_of):
         return Outcome(False, f"none of {any_of} present", text)
 
-    # One group per thing that must survive, each satisfied by any of its
-    # wordings. `must_contain_any` is a single group, so two requirements
-    # that must *each* keep a phrase cannot be written with it: the case
-    # passes if either survives, which is the half-failure it exists to
-    # catch.
-    for group in case.get("must_contain_each") or []:
-        if not any(term.lower() in text.lower() for term in group):
-            return Outcome(False, f"none of {group} present", text)
-
     return Outcome(True, output=text)
 
 
@@ -755,6 +746,15 @@ def run_generation(case: dict, provider, corpora: dict | None = None) -> Outcome
     matched = [p for p in case.get("forbid_patterns") or [] if re.search(p, document, re.I)]
     if matched:
         return Outcome(False, f"matches forbidden pattern {matched[0]!r}", document)
+
+    # The positive twin, one pattern per thing that must each survive. A
+    # pattern rather than a phrase because a faithful rewrite moves words:
+    # "implement these procedures as needed" keeps the source's qualifier
+    # exactly as well as "implemented as needed" does, and a phrase list
+    # failed the first while passing a document that dropped it elsewhere.
+    unmet = [p for p in case.get("require_patterns") or [] if not re.search(p, document, re.I)]
+    if unmet:
+        return Outcome(False, f"does not match required pattern {unmet[0]!r}", document)
 
     headings = [_heading_name(line) for line in document.splitlines() if line.startswith("## ")]
     positions = []

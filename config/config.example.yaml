@@ -3,18 +3,17 @@
 # variable name instead, and set that variable in your shell / .env.
 
 llm:
-  provider: anthropic          # supported: anthropic, bedrock, vertex
-  model: claude-opus-4-6       # or claude-sonnet-4-6, etc. — check your provider's
-                                 # available models list; this is just an example
-  api_key_env: ANTHROPIC_API_KEY  # anthropic only — ignored by bedrock/vertex, which
-                                    # use their cloud's normal credential chain instead
-  # region: us-east-1          # bedrock only (default: us-east-1). Requires
-                                 # `pip install "policyforge[bedrock]"`.
-  # project_id: my-gcp-project  # vertex only, required. Your GCP project ID.
-  # region: us-central1         # vertex only (default: us-central1). Requires
-                                 # `pip install "policyforge[vertex]"` and Google Cloud
-                                 # Application Default Credentials
-                                 # (`gcloud auth application-default login`).
+  # Six providers: anthropic, bedrock, vertex, openai-compat (alias: local),
+  # litellm, cascade. This block uses anthropic; a working block for each of
+  # the others is at the end of this file.
+  provider: anthropic
+  model: claude-sonnet-5       # an example — check your provider's model list
+  # The NAME of the environment variable holding the key, never the key.
+  # Required by anthropic; optional for openai-compat and litellm (a local
+  # server usually needs none, and LiteLLM can find most vendors' keys under
+  # their own conventional names). bedrock and vertex ignore it and use their
+  # cloud's normal credential chain.
+  api_key_env: ANTHROPIC_API_KEY
 
   # Where this provider sends its bytes: local, self-hosted, or third-party.
   # Normally inferred — a hosted API is third-party, a loopback base_url is
@@ -133,3 +132,62 @@ zardoz:
   # Leave blank to sync only the pages your topic registry declares, which
   # are the ones that arrive knowing their topic, owner and tier.
   supporting_space: ""       # e.g. RUNBOOKS
+
+# ---------------------------------------------------------------------------
+# Other providers
+#
+# To use one, replace the `llm:` block at the top of this file with it,
+# uncommented. Keep the classification, boundary and ledger settings you
+# want. Each block below is built by tests/test_config_example.py exactly as
+# written, so a block that stops matching the code fails the test suite.
+# ---------------------------------------------------------------------------
+
+# Amazon Bedrock. Needs `pip install "policyforge[bedrock]"`; credentials come
+# from the normal AWS chain. Set `model` to a Bedrock model ID your account
+# has access to.
+# llm:
+#   provider: bedrock
+#   model: your-bedrock-model-id
+#   region: us-east-1
+
+# Google Cloud Vertex AI Model Garden. Needs `pip install "policyforge[vertex]"`
+# and Application Default Credentials (`gcloud auth application-default login`).
+# `project_id` is required.
+# llm:
+#   provider: vertex
+#   model: your-vertex-model-id
+#   project_id: my-gcp-project
+#   region: us-central1
+
+# Any OpenAI-compatible server. Pointed at a loopback address, as here, it is
+# classified `local`: nothing leaves the machine, which is the one setup
+# licensed catalog content may use by default. `local` is an alias. This
+# example is Ollama.
+# llm:
+#   provider: local
+#   model: qwen3:14b
+#   base_url: http://localhost:11434/v1
+
+# LiteLLM, one client for most hosted vendors, including OpenRouter. Needs
+# `pip install "policyforge[litellm]"`.
+# llm:
+#   provider: litellm
+#   model: openrouter/z-ai/glm-5.3-flash
+#   api_key_env: OPENROUTER_API_KEY
+
+# Cascade: ask `primary` first, and escalate to `escalate_to` only when the
+# primary exhausts its reasoning budget without starting an answer. A wrong
+# answer does not escalate; the provider layer cannot see what is wrong with
+# one. Each half is a provider block in the same shape as any of the above.
+# The cascade is classified by its more exposed half, so a local primary with
+# a hosted escalation counts as third-party.
+# llm:
+#   provider: cascade
+#   primary:
+#     provider: local
+#     model: qwen3:14b
+#     base_url: http://localhost:11434/v1
+#   escalate_to:
+#     provider: anthropic
+#     model: claude-sonnet-5
+#     api_key_env: ANTHROPIC_API_KEY

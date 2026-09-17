@@ -186,9 +186,9 @@ Optional, after generating:
   `(nothing matched those words; searched also for: ...)`, with guessed terms
   marked `(guessed)` in the match reasons. Treat a passage found only that way
   as weaker evidence and say which words were guessed.
-  Anything not starting with `/` is a question, and it returns
-  the matching passages with citations (retrieval has landed; grounded prose
-  answering has not). **"Nothing in the synced documents appears to bear on that"
+  Anything not starting with `/` is a question. With no LLM configured it
+  returns the matching passages with citations; with one, a grounded prose
+  answer built from them (below). **"Nothing in the synced documents appears to bear on that"
   is a real result, not a failure to work around** — it means the corpus does not
   cover the question, which for a control identifier is itself a coverage finding.
   Report it as an answer; do not rephrase the question repeatedly to force a hit.

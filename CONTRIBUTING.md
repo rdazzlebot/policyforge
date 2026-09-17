@@ -127,6 +127,30 @@ same file. Running the first alone returns a complete-looking catalog with
 its mappings emptied, and HIPAA-to-NIST mapping silently stops working.
 Stage to a scratch path and diff before touching the committed file.
 
+## Changes a Windows gate cannot check
+
+CI runs on Linux with Python 3.12, and `scripts/check.py` on a Windows
+machine passes some things that fail there. CI was red on this branch from
+its first push for two such reasons: provenance stamps were hashed from
+catalogs with Windows line endings, and a help-text fixture relied on the
+docstring dedenting Python 3.13 does and 3.12 does not.
+
+So if you **restamp a catalog or regenerate a fixture**, run the tests on
+Linux 3.12 before pushing. For example:
+
+```bash
+docker run --rm -v "$PWD":/src -w /src python:3.12-slim sh -c "\
+  apt-get update -qq >/dev/null && apt-get install -y -qq git >/dev/null && \
+  pip install -q --root-user-action=ignore --require-hashes -r requirements/ci.txt && \
+  pip install -q --root-user-action=ignore --no-deps -e . && \
+  pytest -q -p no:cacheprovider"
+```
+
+`git` is installed first because the slim image has none, and the content-tree
+edit tests shell out to it. Without it, eight tests fail for a reason CI's
+runner does not share. On Git Bash for Windows, prefix the command with
+`MSYS_NO_PATHCONV=1` so `/src` is not rewritten into a Windows path.
+
 ## Documentation
 
 Markdown is a real deliverable here, not a nicety. `mdformat` runs in CI over

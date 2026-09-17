@@ -11,6 +11,7 @@ from policyforge.cli._common import (
     get_provider,
     load_config,
 )
+from policyforge.textfile import write_text_lf
 
 
 @cli.command("etl-vault")
@@ -39,10 +40,7 @@ def etl_vault(controls_dir: Path, out: Path):
 
     controls = load_vault_controls(controls_dir)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        json.dumps([dataclasses.asdict(c) for c in controls], indent=2),
-        encoding="utf-8",
-    )
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
     click.echo(f"Parsed {len(controls)} controls -> {out}")
 
 
@@ -85,10 +83,7 @@ def etl_oscal(out: Path, no_baselines: bool):
     controls, withdrawn = parse_oscal_catalog(catalog, baselines)
 
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        json.dumps([dataclasses.asdict(c) for c in controls], indent=2),
-        encoding="utf-8",
-    )
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
     enhancements = sum(len(c.enhancements) for c in controls)
     click.echo(
         f"Parsed {len(controls)} controls and {enhancements} enhancements "
@@ -153,10 +148,7 @@ def etl_hipaa(date: str | None, out: Path):
     xml_text = fetch_ecfr_subpart_c_xml(date=date)
     controls = parse_hipaa_security_rule(xml_text)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        json.dumps([dataclasses.asdict(c) for c in controls], indent=2),
-        encoding="utf-8",
-    )
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
     stamp = record_source_provenance(
         out.parent / "framework.yaml",
         source_ref=date,
@@ -381,10 +373,7 @@ def etl_hitrust(export_path: Path, version: str, out: Path | None, force: bool):
     )
 
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        json.dumps([dataclasses.asdict(c) for c in controls], indent=2),
-        encoding="utf-8",
-    )
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
     click.echo(f"\nWrote {len(controls)} HITRUST control references -> {out}")
 
 
@@ -486,10 +475,7 @@ def etl_govramp(export_path: Path, impact_level: str | None, version: str, out: 
     )
 
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        json.dumps([dataclasses.asdict(c) for c in controls], indent=2),
-        encoding="utf-8",
-    )
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
     enhancements = sum(len(c.enhancements) for c in controls)
     click.echo(f"\nWrote {len(controls)} GovRAMP controls ({enhancements} enhancements) -> {out}")
 
@@ -551,10 +537,7 @@ def etl_hipaa_crosswalk(controls_path: Path, fixture_path: Path | None, out: Pat
 
     out_path = out or controls_path
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(
-        json.dumps([dataclasses.asdict(c) for c in controls], indent=2),
-        encoding="utf-8",
-    )
+    write_text_lf(out_path, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
 
     # This step rewrites the same controls.json `etl-hipaa` just stamped, so
     # the recorded hash has to follow it. Only the hash: source_ref and
@@ -646,10 +629,7 @@ def etl_fedramp(nist_path: Path, out: Path):
     controls, summary = parse_fedramp_rules(rules, nist_controls)
 
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        json.dumps([dataclasses.asdict(c) for c in controls], indent=2),
-        encoding="utf-8",
-    )
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
     enhancements = sum(len(c.enhancements) for c in controls)
     click.echo(
         f"Wrote {len(controls)} controls and {enhancements} enhancements "
@@ -756,10 +736,7 @@ def etl_arc_ampe(export_path: Path | None, version: str, nist_path: Path, out: P
     )
 
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        json.dumps([dataclasses.asdict(c) for c in controls], indent=2),
-        encoding="utf-8",
-    )
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
     click.echo(f"Wrote {len(controls)} controls -> {out}")
     for line in summary.format_report():
         click.echo(f"  {line}")
@@ -892,7 +869,7 @@ def generate_parser_cmd(
     violations = check_generated_parser(source, framework_slug=framework)
     if violations:
         rejected = out_path.with_name(f"{out_path.stem}.rejected.py")
-        rejected.write_text(source, encoding="utf-8")
+        write_text_lf(rejected, source)
         click.echo("Generated parser refused before running it:")
         for violation in violations:
             click.echo(f"  {violation}")
@@ -902,7 +879,7 @@ def generate_parser_cmd(
         )
         raise SystemExit(1)
 
-    out_path.write_text(source, encoding="utf-8")
+    write_text_lf(out_path, source)
     click.echo(f"Wrote candidate parser -> {out_path}")
 
     trial = trial_run(out_path, sample_path, framework_slug=framework)
@@ -928,7 +905,7 @@ def generate_parser_cmd(
     if target.exists() and not force:
         raise click.UsageError(f"{target} already exists. Pass --force to replace it.")
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(source, encoding="utf-8")
+    write_text_lf(target, source)
     click.echo(
         f"Promoted -> {target}. Add it to your test suite and commit it like any other source file."
     )

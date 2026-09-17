@@ -14,6 +14,7 @@ from policyforge.cli._common import (
     load_config,
 )
 from policyforge.org.context import load_org_profile
+from policyforge.textfile import write_text_lf
 
 
 def _enforce_catalogs(paths, config, *, hint: str = ""):
@@ -212,7 +213,8 @@ def synthesize_cmd(
 
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{slug}.md"
-    out_path.write_text(
+    write_text_lf(
+        out_path,
         write_synthesis(
             result,
             topic=topic,
@@ -225,7 +227,6 @@ def synthesize_cmd(
             content_class=content_class,
             derived_from=derived_from,
         ),
-        encoding="utf-8",
     )
     click.echo(f"Synthesized {len(synthesis_topic.controls)} controls for {topic!r} -> {out_path}")
     if owner:

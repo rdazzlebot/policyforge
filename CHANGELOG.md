@@ -20,6 +20,39 @@
   digest, keeps the allowlist closed, and keeps the runtime lock matched to
   CI's. Dependabot tracks the base image digest.
 
+### Markdown is written with LF on every platform
+
+- **Every markdown and diff writer goes through one function,
+  `policyforge/textfile.py`'s `write_text_lf`.** `Path.write_text` opens in
+  text mode with universal newlines, and on Windows that turns every `\n`
+  into `\r\n` on the way out. Each writer passed `encoding="utf-8"` and none
+  passed `newline`, so a Standard drafted on Windows, a page `pull` brought
+  down, a revision `edit-topic --apply` wrote into `docs/`, and every copy
+  in `output/.history/` arrived with CRLF. `mdformat` rejects a CR, and the
+  repository gate runs it over every markdown file: the tool wrote files its
+  own check then failed on, on the one platform CI does not run. A CRLF copy
+  in the version history also diffed on every line against the LF document
+  it was a copy of, and `publish` could compare an unchanged page as changed.
+- **`.gitattributes` was not the fix.** `*.md text eol=lf` governs what git
+  checks out; it says nothing about what a program writes, and `output/` is
+  not tracked. Writers: `export/markdown_exporter.py`, `export/pull.py`,
+  `edit/tree.py`, `history/version_store.py`, the `synthesize`,
+  `edit-confluence`, `edit-topic` and `import-confluence` commands, and the
+  corpus snapshot `zardoz sync` writes — that last one found by the new
+  test's sweep over `src/` rather than by the report that prompted it. The
+  function also folds CRLF it is handed, since a model reply or a wiki page
+  can carry one already; the guarantee is that the file has no CR, not that
+  none was added. The plan files written beside a revision go the same way.
+- **`tests/test_lf_output.py`** writes through the real writers and reads
+  the bytes back — on Windows those tests fail without the fix — and walks
+  the writers' source to refuse a direct `write_text` call, with a sweep
+  over `src/` for any other `.md` or `.diff` write not on the list.
+- **`ingest/provenance.py` keeps normalising line endings before hashing.**
+  It answers a different case: a catalog already checked out with CRLF by
+  `core.autocrlf=true` on Windows, which no writer here touched. The
+  `etl-*` commands still write catalog JSON with `write_text`; that is the
+  provenance hash's reason to exist and is not changed here.
+
 ## 1.1.0
 
 Installable without a clone. Until this release PolicyForge ran from a

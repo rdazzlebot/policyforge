@@ -16,6 +16,7 @@ from policyforge.cli._common import (
     load_config,
     load_config_or_empty,
 )
+from policyforge.textfile import write_text_lf
 
 
 @cli.command("export-confluence")
@@ -172,7 +173,7 @@ def _review_edits(targets, instruction, provider, *, out_dir: Path, slugs: dict,
         # The terminal shows a readable amount; the file holds all of it.
         # Truncating was the only copy of the diff a reviewer got, which put
         # a long insertion past the cut and out of sight.
-        (out_dir / f"{slug}.diff").write_text("\n".join(diff) + "\n", encoding="utf-8")
+        write_text_lf(out_dir / f"{slug}.diff", "\n".join(diff) + "\n")
         for line in diff[:_DIFF_LINES]:
             click.echo("  " + line)
         if len(diff) > _DIFF_LINES:
@@ -219,12 +220,10 @@ def _review_edits(targets, instruction, provider, *, out_dir: Path, slugs: dict,
                     "in the page would look like."
                 )
 
-        (out_dir / f"{slug}.md").write_text(outcome.revised, encoding="utf-8")
+        write_text_lf(out_dir / f"{slug}.md", outcome.revised)
         # The plan is written next to the revision, so a dry run leaves a
         # reviewable artifact rather than only terminal output that scrolls away.
-        (out_dir / f"{slug}.plan.json").write_text(
-            json.dumps(outcome.plan.as_record(), indent=2), encoding="utf-8"
-        )
+        write_text_lf(out_dir / f"{slug}.plan.json", json.dumps(outcome.plan.as_record(), indent=2))
         click.echo(f"  -> {out_dir / f'{slug}.md'} (plan: {slug}.plan.json)")
         publishable.append(outcome)
 
@@ -758,9 +757,7 @@ def _edit_tree_run(
         # The plan goes beside the document and into the pull request with
         # it: what was asked, what the model intended, and what it declined.
         plan_path = tree_file.path.with_suffix(".plan.json")
-        plan_path.write_text(
-            json.dumps(outcome.plan.as_record(), indent=2) + "\n", encoding="utf-8"
-        )
+        write_text_lf(plan_path, json.dumps(outcome.plan.as_record(), indent=2) + "\n")
         written.append((tree_file, plan_path))
         click.echo(f"Wrote {tree_file.relative} (plan: {plan_path.name})")
 
@@ -837,7 +834,7 @@ def import_confluence_cmd(
 
     out_path = out or Path(f"output/{tier}s") / f"{name}.imported.md"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(markdown_text, encoding="utf-8")
+    write_text_lf(out_path, markdown_text)
     click.echo(f"Imported {title!r} from Confluence -> {out_path}")
 
     slug = f"{tier}/{name}"

@@ -166,10 +166,14 @@ def build_crosswalk(controls: list[Control]) -> dict[str, dict[str, list[str]]]:
             continue
         framework = normalize_framework(control.framework)
         for requirement_id, source_crosswalk in _crosswalk_sources(control):
-            nist_ids: set[str] = set()
+            # De-duplicated in the order the mapping names them, not in a set.
+            # A set iterates in hash order, and string hashing is randomised
+            # per process, so `map` wrote crosswalk.json with its keys in a
+            # different order on every run — the same crosswalk, a new diff.
+            nist_ids: dict[str, None] = {}
             for key, raw in source_crosswalk.items():
                 if _is_nist(key):
-                    nist_ids.update(_extract_ids(raw))
+                    nist_ids.update(dict.fromkeys(_extract_ids(raw)))
             for nist_id in nist_ids:
                 ids = crosswalk.setdefault(nist_id, {}).setdefault(framework, [])
                 if requirement_id not in ids:

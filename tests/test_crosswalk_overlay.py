@@ -319,3 +319,39 @@ def test_zardoz_sees_the_same_overlay(tmp_path, monkeypatch):
     crosswalk = build_crosswalk(_controls(state))
 
     assert crosswalk["RA-3"] == {"hipaa": ["164.308(a)(1)(i)"]}
+
+
+def test_the_built_crosswalk_is_byte_identical_across_processes(tmp_path):
+    """String hashing is randomised per process; the output must not depend on it.
+
+    `build_crosswalk` iterated a set of NIST ids, so `map` wrote the same
+    crosswalk with its keys in a different order on every run. Found while
+    checking that a seeded overlay changes nothing: the two files differed,
+    and so did two runs with no overlay at all.
+    """
+    import json
+    import os
+    import subprocess
+    import sys
+
+    nist_path, hipaa_path = _write_catalogs(tmp_path)
+    script = (
+        "import json, sys\n"
+        "from policyforge.ingest.schema import load_controls\n"
+        "from policyforge.mapping.crosswalk import build_crosswalk\n"
+        "controls = load_controls(sys.argv[1]) + load_controls(sys.argv[2])\n"
+        "print(json.dumps(build_crosswalk(controls)))\n"
+    )
+    outputs = set()
+    for seed in ("1", "2", "3", "4"):
+        env = {**os.environ, "PYTHONHASHSEED": seed}
+        result = subprocess.run(
+            [sys.executable, "-c", script, str(nist_path), str(hipaa_path)],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=True,
+        )
+        outputs.add(result.stdout)
+    assert len(outputs) == 1, outputs
+    assert json.loads(outputs.pop())

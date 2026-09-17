@@ -345,6 +345,170 @@
         }
       ]
     },
+    "crosswalk": {
+      "commands": {
+        "check": {
+          "help": "Report what in each overlay no longer matches the catalogs.",
+          "name": "check",
+          "params": [
+            {
+              "default": [
+                "data/frameworks/nist-800-53-r5/controls.json",
+                "data/frameworks/hipaa-security-rule/controls.json"
+              ],
+              "help": "A controls.json. Repeatable; pass the 800-53 catalog and the mapped framework's.",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": true,
+              "name": "controls_paths",
+              "nargs": 1,
+              "opts": [
+                "--controls"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "dir_okay": true,
+                "exists": true,
+                "file_okay": true,
+                "name": "path"
+              }
+            },
+            {
+              "default": null,
+              "help": "Directory of overlays (default: config/crosswalks).",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": false,
+              "name": "overlay_dir",
+              "nargs": 1,
+              "opts": [
+                "--overlays"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "dir_okay": true,
+                "exists": false,
+                "file_okay": true,
+                "name": "path"
+              }
+            },
+            {
+              "default": false,
+              "help": "Exit non-zero when anything needs attention.",
+              "hidden": false,
+              "is_flag": true,
+              "kind": "Option",
+              "multiple": false,
+              "name": "strict",
+              "nargs": 1,
+              "opts": [
+                "--strict"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "name": "boolean"
+              }
+            }
+          ]
+        },
+        "seed": {
+          "help": "Write an overlay holding the published mapping, every pair accepted.\n\nChanges nothing on its own \u2014 the pipeline reads the same pairs it did\nbefore. It is the file you then review: reject a pair by changing its\nstatus, add one with a new row, and record why.\n",
+          "name": "seed",
+          "params": [
+            {
+              "default": "HIPAA Security Rule",
+              "help": "The framework to map, as its catalog names it.",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": false,
+              "name": "framework",
+              "nargs": 1,
+              "opts": [
+                "--framework"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "name": "text"
+              }
+            },
+            {
+              "default": [
+                "data/frameworks/nist-800-53-r5/controls.json",
+                "data/frameworks/hipaa-security-rule/controls.json"
+              ],
+              "help": "A controls.json. Repeatable; pass the 800-53 catalog and the mapped framework's.",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": true,
+              "name": "controls_paths",
+              "nargs": 1,
+              "opts": [
+                "--controls"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "dir_okay": true,
+                "exists": true,
+                "file_okay": true,
+                "name": "path"
+              }
+            },
+            {
+              "default": null,
+              "help": "Where to write the overlay (default: config/crosswalks/<framework>.yaml).",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": false,
+              "name": "out",
+              "nargs": 1,
+              "opts": [
+                "--out"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "dir_okay": true,
+                "exists": false,
+                "file_okay": true,
+                "name": "path"
+              }
+            },
+            {
+              "default": false,
+              "help": "Overwrite an existing overlay.",
+              "hidden": false,
+              "is_flag": true,
+              "kind": "Option",
+              "multiple": false,
+              "name": "force",
+              "nargs": 1,
+              "opts": [
+                "--force"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "name": "boolean"
+              }
+            }
+          ]
+        }
+      },
+      "help": "Your organization's reviewed mapping of a framework onto 800-53.\n\nPublished crosswalks are pairs with no stated relationship or reasoning.\nAn overlay in config/crosswalks/ records which pairs your organization\naccepts, rejects or has added, and only accepted pairs reach `map`,\n`synthesize`, `coverage`, `bundle` and Zardoz.\n",
+      "invoke_without_command": false,
+      "name": "crosswalk",
+      "params": []
+    },
     "drift": {
       "help": "Report what a framework update changed, and what it reaches.\n\nA catalog bump touches a few dozen controls out of a thousand, and behind\nthose sit a handful of your topics and a smaller handful of your\ndocuments. Everything else is unaffected and should stay unread.\n\nRun the ETL, then run this - the ETL overwrites the catalog in place and\ngit is still holding the version you had, so no snapshot is needed:\n\n    policyforge etl-oscal\n    policyforge drift --controls data/frameworks/nist-800-53-r5/controls.json",
       "name": "drift",

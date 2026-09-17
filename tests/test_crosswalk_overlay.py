@@ -355,3 +355,87 @@ def test_the_built_crosswalk_is_byte_identical_across_processes(tmp_path):
         outputs.add(result.stdout)
     assert len(outputs) == 1, outputs
     assert json.loads(outputs.pop())
+
+
+# ---- `policyforge crosswalk seed` and `check` ----------------------------
+
+
+def _cli(tmp_path, monkeypatch, *args):
+    from click.testing import CliRunner
+
+    from policyforge.cli import cli
+
+    nist_path, hipaa_path = _write_catalogs(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    controls = ["--controls", str(nist_path), "--controls", str(hipaa_path)]
+    return CliRunner().invoke(cli, ["crosswalk", *args, *controls])
+
+
+def test_seed_writes_the_published_mapping_and_check_finds_it_clean(tmp_path, monkeypatch):
+    seeded = _cli(tmp_path, monkeypatch, "seed")
+    assert seeded.exit_code == 0, seeded.output
+    path = tmp_path / "config" / "crosswalks" / "hipaa-security-rule.yaml"
+    overlay = load_overlay(path)
+    assert [r.control for r in overlay.requirements["164.308(a)(5)(ii)(B)"]] == ["SI-3", "RA-3"]
+    assert "4 published pairs" in seeded.output
+
+    checked = _cli(tmp_path, monkeypatch, "check", "--strict")
+    assert checked.exit_code == 0, checked.output
+    assert "matches the catalogs" in checked.output
+
+
+def test_seed_refuses_to_overwrite_decisions(tmp_path, monkeypatch):
+    assert _cli(tmp_path, monkeypatch, "seed").exit_code == 0
+    path = tmp_path / "config" / "crosswalks" / "hipaa-security-rule.yaml"
+    path.write_text(path.read_text(encoding="utf-8").replace("accepted", "rejected", 1), "utf-8")
+
+    again = _cli(tmp_path, monkeypatch, "seed")
+
+    assert again.exit_code != 0
+    assert "--force" in again.output
+    assert "rejected" in path.read_text(encoding="utf-8")
+
+
+def test_seed_reads_the_published_mapping_not_an_existing_overlay(tmp_path, monkeypatch):
+    """Seeding through the overlay would copy its rejections in as the published state."""
+    assert _cli(tmp_path, monkeypatch, "seed").exit_code == 0
+    path = tmp_path / "config" / "crosswalks" / "hipaa-security-rule.yaml"
+    other = tmp_path / "config" / "crosswalks" / "zz-edited.yaml"
+    other.write_text(
+        "framework: HIPAA Security Rule\n"
+        "requirements:\n"
+        "  164.308(a)(5)(ii)(B):\n"
+        "    - {control: RA-3, status: rejected}\n",
+        encoding="utf-8",
+    )
+
+    result = _cli(tmp_path, monkeypatch, "seed", "--force")
+
+    assert result.exit_code == 0, result.output
+    rows = load_overlay(path).requirements["164.308(a)(5)(ii)(B)"]
+    assert [r.control for r in rows] == ["SI-3", "RA-3"]
+
+
+def test_check_strict_fails_on_stale_entries(tmp_path, monkeypatch):
+    (tmp_path / "config" / "crosswalks").mkdir(parents=True)
+    (tmp_path / "config" / "crosswalks" / "hipaa.yaml").write_text(
+        "framework: HIPAA Security Rule\n"
+        "requirements:\n"
+        "  164.308(a)(5)(ii)(B):\n"
+        "    - {control: SI-3, status: accepted}\n"
+        "    - {control: ZZ-9, status: proposed}\n",
+        encoding="utf-8",
+    )
+
+    result = _cli(tmp_path, monkeypatch, "check", "--strict")
+
+    assert result.exit_code == 1
+    assert "unknown control: 164.308(a)(5)(ii)(B) -> ZZ-9" in result.output
+    assert "unreviewed: 164.308(a)(5)(ii)(B) -> RA-3" in result.output
+    assert "1 pair(s) awaiting review" in result.output
+
+
+def test_check_with_no_overlays_says_how_to_start(tmp_path, monkeypatch):
+    result = _cli(tmp_path, monkeypatch, "check")
+    assert result.exit_code == 0
+    assert "crosswalk seed" in result.output

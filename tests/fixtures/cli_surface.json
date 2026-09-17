@@ -416,6 +416,180 @@
             }
           ]
         },
+        "propose": {
+          "help": "Ask the configured model to read each requirement against 800-53.\n\nOne call per requirement. Nothing it says is a decision: a published\npair it confirms gains the quotes that justify it, one it could not\njustify is flagged but stays accepted, and a pair it adds is proposed.\nRun `policyforge crosswalk review` to decide them.\n",
+          "name": "propose",
+          "params": [
+            {
+              "default": "HIPAA Security Rule",
+              "help": "",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": false,
+              "name": "framework",
+              "nargs": 1,
+              "opts": [
+                "--framework"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "name": "text"
+              }
+            },
+            {
+              "default": [
+                "data/frameworks/nist-800-53-r5/controls.json",
+                "data/frameworks/hipaa-security-rule/controls.json"
+              ],
+              "help": "A controls.json. Repeatable; pass the 800-53 catalog and the mapped framework's.",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": true,
+              "name": "controls_paths",
+              "nargs": 1,
+              "opts": [
+                "--controls"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "dir_okay": true,
+                "exists": true,
+                "file_okay": true,
+                "name": "path"
+              }
+            },
+            {
+              "default": null,
+              "help": "The overlay to record proposals in (default: config/crosswalks/<framework>.yaml; seeded from the published mapping when it does not exist).",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": false,
+              "name": "overlay",
+              "nargs": 1,
+              "opts": [
+                "--overlay"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "dir_okay": true,
+                "exists": false,
+                "file_okay": true,
+                "name": "path"
+              }
+            },
+            {
+              "default": "<UNSET>",
+              "help": "Propose for this requirement id only. Repeatable.",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": true,
+              "name": "only",
+              "nargs": 1,
+              "opts": [
+                "--only"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "name": "text"
+              }
+            }
+          ]
+        },
+        "review": {
+          "help": "Decide, one at a time, each pair a model flagged or proposed.\n\nFlagged published pairs come first \u2014 the ones a model could not find a\nbasis for \u2014 then new proposals. Each decision is written as it is made,\nwith who made it and when. Accept keeps or adds the pair; reject removes\nit from everything built on this crosswalk.\n",
+          "name": "review",
+          "params": [
+            {
+              "default": "HIPAA Security Rule",
+              "help": "",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": false,
+              "name": "framework",
+              "nargs": 1,
+              "opts": [
+                "--framework"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "name": "text"
+              }
+            },
+            {
+              "default": [
+                "data/frameworks/nist-800-53-r5/controls.json",
+                "data/frameworks/hipaa-security-rule/controls.json"
+              ],
+              "help": "A controls.json. Repeatable; pass the 800-53 catalog and the mapped framework's.",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": true,
+              "name": "controls_paths",
+              "nargs": 1,
+              "opts": [
+                "--controls"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "dir_okay": true,
+                "exists": true,
+                "file_okay": true,
+                "name": "path"
+              }
+            },
+            {
+              "default": null,
+              "help": "",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": false,
+              "name": "overlay",
+              "nargs": 1,
+              "opts": [
+                "--overlay"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "dir_okay": true,
+                "exists": false,
+                "file_okay": true,
+                "name": "path"
+              }
+            },
+            {
+              "default": null,
+              "help": "Recorded as the reviewer (default: git user.name).",
+              "hidden": false,
+              "is_flag": false,
+              "kind": "Option",
+              "multiple": false,
+              "name": "who",
+              "nargs": 1,
+              "opts": [
+                "--who"
+              ],
+              "required": false,
+              "secondary_opts": [],
+              "type": {
+                "name": "text"
+              }
+            }
+          ]
+        },
         "seed": {
           "help": "Write an overlay holding the published mapping, every pair accepted.\n\nChanges nothing on its own \u2014 the pipeline reads the same pairs it did\nbefore. It is the file you then review: reject a pair by changing its\nstatus, add one with a new row, and record why.\n",
           "name": "seed",

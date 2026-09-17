@@ -182,7 +182,7 @@ def parse_overlay(data, *, path: Path | None = None) -> Overlay:
             if control in seen:
                 raise OverlayError(
                     f"{where}: {control} is already row {seen[control]} for {rid}. One "
-                    "requirement names a control once — two rows could accept and reject "
+                    "requirement names a control once; two rows could accept and reject "
                     "the same pair."
                 )
             seen[control] = index

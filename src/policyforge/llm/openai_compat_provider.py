@@ -27,7 +27,7 @@ from __future__ import annotations
 import os
 
 from ._inline_thinking import answer_of, exhausted, needs_more_room, retry_budget
-from .base import LLMProvider, LLMResponse
+from .base import LLMProvider, LLMResponse, ProviderRejected
 
 
 class OpenAICompatProvider(LLMProvider):
@@ -96,6 +96,16 @@ class OpenAICompatProvider(LLMProvider):
                 f"For Ollama, `ollama serve`; check with `ollama ps`."
             ) from exc
 
+        if 400 <= response.status_code < 500:
+            # The server understood the request and refused it — a budget
+            # above the model's cap, an unknown model. That is a rejection
+            # the user has to act on, and `llm/effort.py` names the call
+            # and the budget on it. A 5xx below is the server failing.
+            raise ProviderRejected(
+                response.text[:400] or f"{url} returned HTTP {response.status_code}",
+                status=response.status_code,
+                model=self.model,
+            )
         if response.status_code != 200:
             raise RuntimeError(f"{url} returned HTTP {response.status_code}: {response.text[:400]}")
         return response.json()

@@ -28,7 +28,7 @@ from __future__ import annotations
 import click
 
 from policyforge.config import load_config
-from policyforge.llm.base import EmptyReply, TruncatedResponse, get_provider
+from policyforge.llm.base import EmptyReply, ProviderRejected, TruncatedResponse, get_provider
 
 
 class _Group(click.Group):
@@ -46,7 +46,7 @@ class _Group(click.Group):
     def invoke(self, ctx):
         try:
             return super().invoke(ctx)
-        except (TruncatedResponse, EmptyReply) as exc:
+        except (TruncatedResponse, EmptyReply, ProviderRejected) as exc:
             raise click.ClickException(str(exc)) from exc
 
 

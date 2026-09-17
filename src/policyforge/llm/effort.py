@@ -130,16 +130,36 @@ def _complete(send, kwargs: dict):
     then overrun on the answer, and the fix for that is a larger budget at
     the site, which the refusal names.
     """
-    from .base import TruncatedResponse
+    from .base import ProviderRejected, TruncatedResponse
     from .ledger import current_scope
 
-    response = send(**kwargs)
+    first = int(kwargs.get("max_tokens") or DEFAULT_MAX_TOKENS)
+
+    def _send(request: dict, budget: int):
+        # A rejection carries the vendor's words; what it cannot know is
+        # which call this was and how much it asked for. Added here, the one
+        # place both are in hand, so the message that reaches the user
+        # names the document, the command and the number.
+        try:
+            return send(**request)
+        except ProviderRejected as exc:
+            scope = current_scope()
+            exc.annotate(
+                subject=scope.subject if scope else None,
+                site=scope.site if scope else None,
+                budget=budget,
+            )
+            raise
+
+    # The first request goes out exactly as the site wrote it — a site that
+    # names no budget keeps sending none — so the request shape is unchanged
+    # by this function; only the retry sets a budget of its own.
+    response = _send(kwargs, first)
     if not truncated(response):
         return response
-    first = int(kwargs.get("max_tokens") or DEFAULT_MAX_TOKENS)
     larger = min(first * RETRY_FACTOR, RETRY_CEILING)
     if larger > first:
-        response = send(**{**kwargs, "max_tokens": larger})
+        response = _send({**kwargs, "max_tokens": larger}, larger)
         if not truncated(response):
             return response
     else:

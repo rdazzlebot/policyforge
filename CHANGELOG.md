@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### A provider's rejection reaches you as a sentence, not a traceback
+
+- **A 4xx from the model's API now says which call, which budget and
+  what the vendor said.** With document budgets at 16384 since 1.2.1, a
+  model whose output cap is lower rejects every draft, and until now that
+  arrived as an SDK traceback ending in "HTTP 400". Each provider raises
+  `ProviderRejected` with the vendor's own message — Anthropic's and
+  Vertex's `BadRequestError`, LiteLLM's, a 4xx from an OpenAI-compatible
+  server, a Bedrock `ValidationException` — `llm/effort.py` adds the
+  ledger subject, the site and the budget the request carried, and the
+  CLI prints that and exits non-zero with nothing written, the way it does
+  for a truncated or empty reply. The budget is never clamped silently:
+  the message tells you to lower it for that call site or choose a model
+  that accepts it. A 5xx, a throttle or a credentials failure is not a
+  rejection and is raised as before.
+
 ### A cascade advertises what both of its halves can do
 
 - **`provider: cascade` forwards every capability flag, by one stated

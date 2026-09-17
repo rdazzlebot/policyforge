@@ -1167,8 +1167,14 @@ than written to `relationship` (R1).
   equal to the item's own title before matching, and the suite there is 9/9
   (27/27 runs, $0.0242 for 28 calls). The replay above gives the same counts
   at `a332ba9` as at `1683d65`.
+- A second review found that `a332ba9` had stopped counting the title's words
+  toward the four-word minimum, so "Policy and Procedures ... access control
+  policy" — the shape rule 5 invites for a `-1` control — was refused. At
+  `35800da` a leading title followed by other fragments counts its words and
+  is set aside; nothing else is. The replay gives the same counts there as at
+  `1683d65`, and the glm suite is 9/9 (27/27 runs, $0.0438 for 28 calls).
 - The rows above at `1149e42` and `e1ec80c`, and the live run, describe the
-  code before review; `a332ba9` is the code submitted after it. Before review,
+  code before review; `35800da` is the code submitted after the second review. Before review,
   the live run's 84 confirmations also wrote their relationships straight into
   `relationship`, where coverage reads them. From `1683d65` the same run leaves
   each recorded relationship as it was, flags every difference for review, and

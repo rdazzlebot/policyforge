@@ -50,6 +50,31 @@
   included. A downgrade that used to be invisible is now the fourth line of
   the one command everyone runs first.
 
+### The eval harness builds its provider the way production does
+
+- **One construction path.** `scripts/eval_zardoz.py --model` used to
+  construct a `LiteLLMProvider` by name and meter it, while every command
+  built its provider through `get_provider` and the ledger wrapper. That is
+  how the entry above went unmeasured: the harness read its flags from the
+  real provider and kept sending effort, and the CLI, through the wrapper,
+  did not. Epochs 15 through 19 in `MEASUREMENTS.md` describe a request
+  production never made. Now `evals/provider.py` turns `--model` and
+  `--min-interval` into overrides on the same config dict production reads
+  and hands it to `get_provider`; the meter wraps the result. The mutation
+  sweep in `scripts/mutate_zardoz.py` builds its provider the same way.
+- **Eval calls have their own ledger, and a label.** They are recorded in
+  `evals.jsonl` beside the production ledger — wherever config put it — and
+  each call carries `<suite>/<case>` as its subject and `eval` as its site,
+  rather than landing in `calls.jsonl` as `(unattributed)`. A ledger the
+  config turned off stays off under the harness, since that was a decision.
+- **`tests/test_eval_provider_parity.py`** builds every provider the
+  factory can construct offline both ways and requires the same provider
+  class under the wrappers, the same answer to every discovered
+  `supports_*` flag, and the same effort, caching, grounding and schema
+  decisions in `llm/effort.py`. A recorded run of the routing suite with
+  `litellm.completion` replaced by a recorder sent byte-identical request
+  parameters before and after this change, on top of the ledger fix above.
+
 ### Repository hardening
 
 - **Containers: a runtime image, a dev container, and CI's checks in

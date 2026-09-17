@@ -917,6 +917,8 @@ def load_corpora(path: Path = DEFAULT_CASES) -> dict[str, list[dict]]:
 def run_case(
     suite: str, case: dict, provider, *, repeat: int = 1, corpora: dict | None = None
 ) -> CaseResult:
+    from policyforge.llm import ledger
+
     result = CaseResult(suite=suite, name=case.get("name") or case.get("question", "?"))
     for _ in range(repeat):
         try:
@@ -926,7 +928,13 @@ def run_case(
             # answering paraphrases were added and every one of them failed
             # with a KeyError for a corpus that was loaded and sitting right
             # there.
-            result.outcomes.append(SUITES[suite](case, provider, corpora))
+            #
+            # Named for the ledger: the provider is production's, wrapper
+            # included, and a call that reached a vendor with the eval
+            # corpora in it is recorded like any other — under the case it
+            # graded rather than as `(unattributed)`.
+            with ledger.about(f"{suite}/{result.name}", site="eval"):
+                result.outcomes.append(SUITES[suite](case, provider, corpora))
         except Exception as exc:  # noqa: BLE001 - one bad case must not end the run
             detail = f"{type(exc).__name__}: {exc}"
             infrastructure = any(hint in detail.lower() for hint in _INFRASTRUCTURE)

@@ -199,12 +199,15 @@ def main() -> int:
         print(f"\n{total} calls including baselines")
         return 0
 
-    from policyforge.config import load_config
-    from policyforge.llm.base import get_provider
+    from evals.provider import EVAL_SITE, build_provider, eval_config
+    from policyforge.llm import ledger
 
-    provider = get_provider(load_config())
+    # The same construction path as the eval harness and production: the
+    # configured provider, through get_provider, into the evals ledger.
+    provider = build_provider(eval_config())
     try:
-        provider.generate(system="Reply with one word.", prompt="ok?", max_tokens=64)
+        with ledger.about("probe", site=EVAL_SITE):
+            provider.generate(system="Reply with one word.", prompt="ok?", max_tokens=64)
     except Exception as exc:  # noqa: BLE001 - any failure means do not proceed
         print(f"The API is not reachable, so nothing was run:\n  {exc}")
         return 2

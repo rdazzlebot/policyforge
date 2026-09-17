@@ -6,8 +6,11 @@
     python scripts/eval_zardoz.py --dry-run
 
 Comparing models is the other reason to run this. `--model` takes a LiteLLM
-model string and ignores config.yaml, so a sweep is a shell loop rather than
-a config file per candidate:
+model string and overrides config.yaml's `llm` block with it, so a sweep is a
+shell loop rather than a config file per candidate. It is an override, not a
+second constructor: the provider is built the way every command builds one,
+through `get_provider`, ledger wrapper and all — see `evals/provider.py` for
+why that has to be true of a harness whose numbers describe production:
 
     for m in anthropic/claude-sonnet-5 ollama_chat/qwen3:14b; do
         python scripts/eval_zardoz.py --model "$m" --suite routing --repeat 3
@@ -38,7 +41,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from evals.provider import EVAL_SITE, Metered, build_provider, eval_config
 from evals.runner import SUITES, format_report, load_cases, load_corpora, run_case
+from policyforge.llm import ledger
 
 # The report quotes what the model said, and models return characters a
 # Windows console cannot encode — a non-breaking hyphen is enough. Printing
@@ -54,95 +59,10 @@ for _stream in (sys.stdout, sys.stderr):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 
 
-class _Metered:
-    """Wraps a provider and counts what the run spent.
-
-    A pass rate on its own does not decide between two models — the whole
-    question is what each one costs to be that good. Kept here rather than
-    in the provider layer because it is a property of a *run*, and only the
-    thing driving the run can see the whole of one.
-    """
-
-    def __init__(self, inner):
-        self._inner = inner
-        self.calls = 0
-        self.cost = 0.0
-        #: True once any call priced itself. Distinguishes "this run was
-        #: free" from "nobody reported a price", which a bare 0.0 cannot.
-        self.priced = False
-        #: Calls that raised. They reached the vendor and were billed, but
-        #: no response came back to read a price off.
-        self.unpriced = 0
-
-    def _metered(self, call, **kwargs):
-        # Counted in a finally, because a call that raises was still sent and
-        # still billed. Incrementing after the call instead let a model that
-        # trips ReasoningBudgetExhausted report *fewer* calls and a *lower*
-        # cost than one that answers cleanly — inverting the comparison the
-        # meter exists to make, the same way `0.0 or None` did.
-        try:
-            response = call(**kwargs)
-        except Exception:
-            self.unpriced += 1
-            raise
-        finally:
-            self.calls += 1
-        if response.cost_usd is not None:
-            self.cost += response.cost_usd
-            self.priced = True
-        return response
-
-    def generate(self, **kwargs):
-        return self._metered(self._inner.generate, **kwargs)
-
-    # Every call that can cost money is metered, not only `generate`. This
-    # wrapper used to expose `generate` and `check` and nothing else, so under
-    # the harness `supports_schema`, `generate_json` and `supports_effort` were
-    # all missing and every caller took its fallback: routing ran its prose
-    # path, argument filling and chaining were skipped, and no effort level
-    # was sent. Eval runs measured the fallbacks rather than what a user of a
-    # schema-capable model gets, from before schema routing existed until a
-    # chaining eval scored 0/6 on questions a direct probe got 12/12.
-
-    def generate_json(self, **kwargs):
-        return self._metered(self._inner.generate_json, **kwargs)
-
-    def generate_grounded(self, **kwargs):
-        return self._metered(self._inner.generate_grounded, **kwargs)
-
-    def __getattr__(self, name):
-        """Everything else is the inner provider's: capabilities, model, counters.
-
-        Only reached for attributes this class does not define, so the metered
-        calls above always take precedence. A capability the inner provider
-        lacks stays absent here too — the meter must not invent one.
-        """
-        if name.startswith("_"):
-            raise AttributeError(name)
-        return getattr(self._inner, name)
-
-    def check(self) -> bool:
-        return self._inner.check()
-
-    def summary(self) -> str:
-        if not self.priced:
-            return f"{self.calls} model call(s); this provider does not report cost"
-        each = self.cost / self.calls if self.calls else 0.0
-        line = f"{self.calls} model call(s), ${self.cost:.4f} total, ${each:.5f} each"
-        # A cascade's whole economic case is how rarely the cheap model
-        # needed help. The counter existed and nothing printed it, which
-        # made a working cascade indistinguishable from a dead one.
-        escalations = getattr(self._inner, "escalations", None)
-        if escalations is not None:
-            primary = getattr(self._inner, "primary_calls", 0)
-            share = f"{escalations / primary:.0%}" if primary else "n/a"
-            line += f"; {escalations}/{primary} escalated to the stronger model ({share})"
-        if self.unpriced:
-            # Said out loud rather than folded in: the total is a floor, and
-            # a reader comparing two models needs to know which way it is
-            # wrong.
-            line += f" (+{self.unpriced} call(s) that raised, billed but unpriced)"
-        return line
+# The meter lives beside the construction path, in evals/provider.py, so the
+# harness and the mutation sweep build and count providers the same way. Kept
+# importable here under its old name for the tests that reach for it.
+_Metered = Metered
 
 
 def main() -> int:
@@ -194,20 +114,15 @@ def main() -> int:
             print(f"  {suite:11} {case.get('name') or case.get('question')}")
         return 0
 
+    # One construction path, whether or not --model was given: the options
+    # become overrides on production's config, and get_provider builds from
+    # that. Nothing here constructs a provider class by name.
+    config = eval_config(model=args.model, min_interval=args.min_interval)
+    provider = build_provider(config)
     if args.model:
-        from policyforge.llm.litellm_provider import LiteLLMProvider
-
-        provider = _Metered(
-            LiteLLMProvider(model=args.model, min_interval_seconds=args.min_interval)
-        )
         grading = args.model
     else:
-        from policyforge.config import load_config
-        from policyforge.llm.base import get_provider
-
-        config = load_config()
-        provider = _Metered(get_provider(config))
-        model = getattr(provider._inner, "model", config["llm"].get("model", "?"))
+        model = getattr(provider, "model", config["llm"].get("model", "?"))
         grading = f"{config['llm']['provider']} / {model}"
 
     # One cheap call before spending a whole run. Several of the paths under
@@ -217,7 +132,11 @@ def main() -> int:
     # which is worse than an error because it looks like evidence. Measured:
     # with an exhausted balance the routing suite reported 11 of 11.
     try:
-        provider.generate(system="Reply with one word.", prompt="ok?", max_tokens=64)
+        # Labelled like every other eval call: the ledger should say this
+        # was the reachability probe, not leave one unattributed line at the
+        # top of every run.
+        with ledger.about("probe", site=EVAL_SITE):
+            provider.generate(system="Reply with one word.", prompt="ok?", max_tokens=64)
     except Exception as exc:  # noqa: BLE001 - any failure means do not proceed
         print(f"The API is not reachable, so nothing was run:\n  {exc}")
         return 2

@@ -145,6 +145,27 @@ Record the runs that got worse. Several entries in MEASUREMENTS.md are
 changes that were measured, found harmful, and reverted — that is the file
 working, not a blemish on it.
 
+**A change to what the harness sends is checked with a capture, not a
+run.** Two runs at the same score can differ in what they asked for — the
+harness once sent an effort level production did not, for five epochs, and
+no pass rate could show it. `scripts/capture_eval_requests.py` replaces
+`litellm.completion` with a recorder and runs the harness for real, so it
+costs nothing and reaches no vendor; the recorded keyword arguments are the
+request. Capture on `main`, capture on the branch, compare:
+
+```bash
+python scripts/capture_eval_requests.py before.json --model openrouter/deepseek/deepseek-v4-flash --suite routing --limit 2 --repeat 1
+# switch to the branch
+python scripts/capture_eval_requests.py after.json --model openrouter/deepseek/deepseek-v4-flash --suite routing --limit 2 --repeat 1
+python scripts/capture_eval_requests.py --compare before.json after.json
+```
+
+Identical means the numbers in MEASUREMENTS.md stay comparable. A
+difference is either the point of the change, in which case the pull
+request says so and a new epoch follows, or a finding. Do this for any
+change under `evals/`, `scripts/eval_zardoz.py`, `llm/`, or a prompt's
+call site.
+
 ## Regenerating a catalog
 
 Know the build steps before re-running an `etl-*` command. **The HIPAA

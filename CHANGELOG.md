@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Request captures for the eval harness
+
+- **`scripts/capture_eval_requests.py`** records every request the eval
+  harness would send, with `litellm.completion` replaced by a recorder, and
+  `--compare` diffs two captures. It is how the ledger fix below was shown
+  to leave the harness's requests byte-identical, and CONTRIBUTING now asks
+  for a capture before and after any change to what the harness sends —
+  a pass rate cannot show that two runs asked for different things.
+
 ### The call ledger hid four provider capabilities
 
 - **`RecordingProvider` now forwards every `supports_*` flag to the provider

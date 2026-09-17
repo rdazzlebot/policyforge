@@ -97,12 +97,18 @@ overclaimed:
   itself from the new one. The `mcp` extra is now in the CI lock explicitly,
   where it used to arrive only through semgrep.
 - **The dependency bumps that lock unblocked.** `requirements/ci.txt` moves
-  to click 8.5.0, jsonschema 4.26.0, mcp 2.2.0 and pywin32 312 (Windows
-  only), regenerated from its header command rather than merged from
-  Dependabot's paired pull requests, which each edited the same lock. mcp 2
-  splits out `mcp-types` and no longer pulls in `python-dotenv`, which the
-  test suite had been importing without declaring: `tests/conftest.py` now
-  disarms dotenv's loader only when something has installed it. Click 8.5
+  to click 8.5.0, jsonschema 4.26.0 and pywin32 312 (Windows only),
+  regenerated from its header command rather than merged from Dependabot's
+  paired pull requests, which each edited the same lock. **mcp is held below
+  2**, in the extra and in Dependabot's ignores: mcp 2.0 removed the
+  `Server.list_tools` decorator `serve()` is built on, so `policyforge mcp`
+  died on startup — with CI green, because no test ever started the server.
+  `test_the_server_answers_a_client_over_stdio` now spawns it and speaks
+  JSON-RPC to it, and fails on mcp 2 in three seconds; the port is its own
+  change. Trying mcp 2 also showed the suite importing `python-dotenv`
+  without declaring it, so `tests/conftest.py` disarms dotenv's loader only
+  when something has installed it, and the test proving that runs either
+  way rather than skipping. Click 8.5
   stores an unset boolean flag's default as a sentinel rather than `False`,
   so `tests/test_cli_surface.py` records what the command receives, and the
   snapshot pins the interface rather than the installed Click. semgrep moves

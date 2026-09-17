@@ -12,6 +12,10 @@ updates:
     ignore:
       - dependency-name: "pydantic-core"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # mcp 2 removed the server decorators serve() uses; held below 2 in
+      # pyproject until the port lands. Remove with that pin.
+      - dependency-name: "mcp"
+        update-types: ["version-update:semver-major"]
     schedule:
       interval: "weekly"
     # Wait before proposing an update to a newly published version — gives
@@ -30,6 +34,8 @@ updates:
     ignore:
       - dependency-name: "pydantic-core"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "mcp"
+        update-types: ["version-update:semver-major"]
     schedule:
       interval: "weekly"
     cooldown:

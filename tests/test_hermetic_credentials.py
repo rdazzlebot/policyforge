@@ -49,7 +49,7 @@ def test_importing_litellm_does_not_resurrect_a_key_from_dotenv():
 
 def test_dotenv_loader_is_disarmed():
     """Directly, so a failure names the cause rather than a symptom."""
-    import dotenv
+    dotenv = pytest.importorskip("dotenv")
 
     assert dotenv.load_dotenv() is False
     assert dotenv.load_dotenv("some/other/.env") is False

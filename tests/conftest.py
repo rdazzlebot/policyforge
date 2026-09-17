@@ -32,8 +32,12 @@ one covers a key in the developer's shell, the other covers a key on disk.
 
 from __future__ import annotations
 
-import dotenv
 import pytest
+
+try:
+    import dotenv
+except ImportError:  # nothing installed can load .env, so nothing to disarm
+    dotenv = None
 
 #: Disarm dotenv before any test, fixture or module import can pull a
 #: credential off disk.
@@ -47,9 +51,13 @@ import pytest
 #:
 #: Scoped to the test session by being in conftest. Nothing in `src/` is
 #: affected, and a real run loads `.env` exactly as before.
-dotenv.load_dotenv = lambda *args, **kwargs: False
-if hasattr(dotenv, "main"):
-    dotenv.main.load_dotenv = lambda *args, **kwargs: False
+#:
+#: dotenv is not a dependency of this project. It arrives with litellm (and,
+#: before mcp 2.0, with mcp), so without it there is no loader to disarm.
+if dotenv is not None:
+    dotenv.load_dotenv = lambda *args, **kwargs: False
+    if hasattr(dotenv, "main"):
+        dotenv.main.load_dotenv = lambda *args, **kwargs: False
 
 #: Every environment variable that could let a provider reach the network.
 #:

@@ -38,7 +38,7 @@ repos:
   # Broader SAST — catches patterns bandit's Python-specific ruleset
   # doesn't, e.g. GitHub Actions supply-chain hygiene (mutable action tags).
   - repo: https://github.com/semgrep/semgrep
-    rev: v1.174.0
+    rev: v1.176.1
     hooks:
       - id: semgrep
         args:

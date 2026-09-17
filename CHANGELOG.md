@@ -96,6 +96,19 @@ overclaimed:
   versions; `pip-audit` audits both locks; Dependabot proposes only semgrep
   itself from the new one. The `mcp` extra is now in the CI lock explicitly,
   where it used to arrive only through semgrep.
+- **The dependency bumps that lock unblocked.** `requirements/ci.txt` moves
+  to click 8.5.0, jsonschema 4.26.0, mcp 2.2.0 and pywin32 312 (Windows
+  only), regenerated from its header command rather than merged from
+  Dependabot's paired pull requests, which each edited the same lock. mcp 2
+  splits out `mcp-types` and no longer pulls in `python-dotenv`, which the
+  test suite had been importing without declaring: `tests/conftest.py` now
+  disarms dotenv's loader only when something has installed it. Click 8.5
+  stores an unset boolean flag's default as a sentinel rather than `False`,
+  so `tests/test_cli_surface.py` records what the command receives, and the
+  snapshot pins the interface rather than the installed Click. semgrep moves
+  to 1.176.1, in its lock and in `.pre-commit-config.yaml` together, and the
+  Scorecard workflow's `actions/upload-artifact` to v7.0.1, off the
+  deprecated Node 20 runtime.
 - **OpenSSF Scorecard** (`.github/workflows/scorecard.yml`) publishes a
   third-party grade of the repository practices the commitments rest on,
   rather than asking a reader to accept a self-assessment.

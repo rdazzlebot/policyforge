@@ -51,6 +51,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from policyforge.textfile import write_text_lf
+
 #: A frontmatter block at the very start of a file. Captured raw, with its
 #: delimiters and the blank lines after it, so it can be written back exactly.
 _FRONTMATTER_RE = re.compile(r"\A---\r?\n.*?\r?\n---\r?\n(?:\r?\n)*", re.DOTALL)
@@ -235,9 +237,10 @@ def write_revision(tree_file: TreeFile, revised_body: str) -> None:
             f"{tree_file.relative} changed on disk while the edit was being prepared. "
             f"Nothing was written to it. Re-run the command against the current file."
         )
-    tree_file.path.write_text(
-        join_frontmatter(tree_file.frontmatter, revised_body), encoding="utf-8"
-    )
+    # Into a tracked tree, so LF: `*.md text eol=lf` governs the checkout,
+    # and this write has to match it or the next `git status` shows a
+    # whole-file change and the gate's mdformat step fails on a CR.
+    write_text_lf(tree_file.path, join_frontmatter(tree_file.frontmatter, revised_body))
 
 
 #: Long enough to say what the branch is for, short enough to type.

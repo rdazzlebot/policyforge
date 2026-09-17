@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from policyforge.textfile import write_text_lf
+
 
 @dataclass
 class VersionRecord:
@@ -143,8 +145,10 @@ def record_version(
 
     slug_dir = _slug_dir(history_dir, slug)
     slug_dir.mkdir(parents=True, exist_ok=True)
-    (slug_dir / f"v{version_number}.md").write_text(content, encoding="utf-8")
-    (slug_dir / f"v{version_number}.diff").write_text("".join(diff_lines), encoding="utf-8")
+    # The stored copy is what `history --diff` compares against later, and
+    # a CRLF copy of an LF document diffs on every line.
+    write_text_lf(slug_dir / f"v{version_number}.md", content)
+    write_text_lf(slug_dir / f"v{version_number}.diff", "".join(diff_lines))
     with _index_path(history_dir, slug).open("a", encoding="utf-8") as f:
         f.write(json.dumps(dataclasses.asdict(record)) + "\n")
 

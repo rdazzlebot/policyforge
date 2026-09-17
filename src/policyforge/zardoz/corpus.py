@@ -47,6 +47,7 @@ from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
 from pathlib import Path
 
+from policyforge.textfile import write_text_lf
 from policyforge.topics.registry import Topic
 
 DEFAULT_CORPUS_DIR = Path("output/.zardoz")
@@ -658,7 +659,9 @@ def write_corpus(
 
     records = []
     for doc in documents:
-        (docs_dir / f"{doc.doc_id}.md").write_text(doc.body, encoding="utf-8")
+        # LF like every other markdown this tool writes; a snapshot that
+        # differs from its source by line endings alone is a false change.
+        write_text_lf(docs_dir / f"{doc.doc_id}.md", doc.body)
         record = asdict(doc)
         record.pop("body")
         records.append(record)
@@ -669,7 +672,7 @@ def write_corpus(
         "host": host,
         "documents": records,
     }
-    (corpus_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    write_text_lf(corpus_dir / "manifest.json", json.dumps(manifest, indent=2))
 
 
 def load_corpus(corpus_dir: Path = DEFAULT_CORPUS_DIR) -> Corpus:

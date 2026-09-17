@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from policyforge.content.tree import TIER_DIRS, render_document
+from policyforge.textfile import write_text_lf
 
 WRITTEN = "written"
 UNCHANGED = "unchanged"
@@ -159,7 +160,9 @@ def pull_pages(
 
         if not dry_run:
             destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(rendered, encoding="utf-8")
+            # A pulled page lands in a tracked tree, where the gate runs
+            # mdformat over it: LF, whatever platform pulled it.
+            write_text_lf(destination, rendered)
         report.results.append(PullResult(title=title, path=relative, action=WRITTEN))
 
     return report

@@ -15,6 +15,8 @@ from pathlib import Path
 
 import mdformat
 
+from policyforge.textfile import write_text_lf
+
 #: The same extension set `.pre-commit-config.yaml` gives the mdformat hook,
 #: which is the whole point of this function — it exists so a generated file
 #: is judged by the rule the repository enforces, and a narrower set here
@@ -32,8 +34,11 @@ _EXTENSIONS = frozenset({"gfm", "frontmatter"})
 def write_markdown(content: str, *, output_dir: Path, filename: str) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / filename
-    path.write_text(content, encoding="utf-8")
-    return path
+    # LF on every platform. The gate's `mdformat --check` reads bytes and
+    # rejects a CR; `check_markdown_quality` below reads through universal
+    # newlines and cannot see one, so it passed the very files the gate
+    # then failed. See `policyforge/textfile.py`.
+    return write_text_lf(path, content)
 
 
 def check_markdown_quality(path: Path) -> bool:

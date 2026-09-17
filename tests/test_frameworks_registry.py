@@ -286,3 +286,39 @@ def test_the_check_command_fails_on_a_licence_breach(tmp_path, tracked, monkeypa
 
     assert result.exit_code == 1
     assert "Framework licences:" in result.output
+
+
+def test_the_frameworks_command_outside_a_project_names_init_and_fails(tmp_path, monkeypatch):
+    """What someone who installed the package sees before running `init`.
+
+    It used to print "No frameworks found" and exit 0, so the first command a
+    new user ran gave no route forward, and a script checking catalogs passed.
+    """
+    from click.testing import CliRunner
+
+    import policyforge.cli as cli_mod
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+
+    result = CliRunner().invoke(cli_mod.cli, ["frameworks"])
+
+    assert result.exit_code == 1
+    assert "policyforge init" in result.output
+
+
+def test_the_frameworks_command_succeeds_in_an_initialised_project(tmp_path, monkeypatch):
+    """The Homebrew formula's test runs exactly this: init, then frameworks."""
+    from click.testing import CliRunner
+
+    import policyforge.cli as cli_mod
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    runner = CliRunner()
+    assert runner.invoke(cli_mod.cli, ["init"]).exit_code == 0
+
+    result = runner.invoke(cli_mod.cli, ["frameworks"])
+
+    assert result.exit_code == 0, result.output
+    assert "nist-800-53-r5" in result.output

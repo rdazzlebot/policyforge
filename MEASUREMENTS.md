@@ -1173,8 +1173,15 @@ than written to `relationship` (R1).
   `35800da` a leading title followed by other fragments counts its words and
   is set aside; nothing else is. The replay gives the same counts there as at
   `1683d65`, and the glm suite is 9/9 (27/27 runs, $0.0438 for 28 calls).
+- A third review found that change let a title ground a quote by itself:
+  "Policy and Procedures ... policy", or the title repeated, verified a
+  mapping to any `-1` control. At `0e1570b` the rest of a quote after a
+  leading title must carry three words of its own, be found in the text after
+  the title, and not repeat it. The replay gives the same counts there, and the
+  glm suite is 9/9 (27/27 runs, $0.0452 for 28 calls; every call's
+  `stop_reason` in the eval ledger is `stop`).
 - The rows above at `1149e42` and `e1ec80c`, and the live run, describe the
-  code before review; `35800da` is the code submitted after the second review. Before review,
+  code before review; `0e1570b` is the code submitted after the third review. Before review,
   the live run's 84 confirmations also wrote their relationships straight into
   `relationship`, where coverage reads them. From `1683d65` the same run leaves
   each recorded relationship as it was, flags every difference for review, and

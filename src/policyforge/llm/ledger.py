@@ -303,6 +303,17 @@ class RecordingProvider(LLMProvider):
         cascade needed its stronger half, and an opaque wrapper would have
         made a working cascade indistinguishable from a dead one again —
         the exact regression that counter was added to fix.
+
+        **It does not reach anything `LLMProvider` already defines.** Python
+        consults `__getattr__` only after normal lookup fails, and every
+        `supports_*` flag exists on the base class as `return False`. So a
+        flag this class does not override answers False for every provider,
+        whatever the one inside would say — which is how native citations,
+        effort, prompt caching and batching all went dark on Anthropic and
+        Vertex for two days while every test passed. Each flag is therefore
+        delegated explicitly below, and `tests/test_llm_ledger.py` discovers
+        the flags from the base class rather than from a list here, so a new
+        one cannot be added without the wrapper learning to forward it.
         """
         # Only reached for attributes this class does not define, so the
         # recursion guard is on the one attribute that could be missing
@@ -352,10 +363,19 @@ class RecordingProvider(LLMProvider):
         prompt: str,
         max_tokens: int = 4096,
         temperature: float = 0.2,
+        **kwargs,
     ) -> LLMResponse:
+        # `**kwargs` carries `effort`, `cache` and `cache_prefix`, which
+        # `llm/effort.py` passes only after asking the flags above. With the
+        # flags forwarded, a fixed signature here would turn every such call
+        # into a TypeError — the flags and the arguments travel together.
         try:
             response = self._inner.generate(
-                system=system, prompt=prompt, max_tokens=max_tokens, temperature=temperature
+                system=system,
+                prompt=prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                **kwargs,
             )
         except Exception as exc:
             # Recorded before re-raising. The request reached the vendor and
@@ -404,13 +424,58 @@ class RecordingProvider(LLMProvider):
                 )
         return answers
 
+    # ---- capability flags, each delegated by hand -----------------------
+    #
+    # See `__getattr__`: a flag left out here is answered by the base class,
+    # not by the provider inside, and the answer is always False. Asked
+    # through `getattr`, as `llm/effort.py` asks, because providers are
+    # duck-typed: the fakes in the test suite implement `generate` and
+    # little else, and one that never heard of a flag does not support it.
+
+    def _inner_supports(self, flag: str) -> bool:
+        ask = getattr(self._inner, flag, None)
+        return bool(ask and ask())
+
     def supports_schema(self) -> bool:
-        return self._inner.supports_schema()
+        return self._inner_supports("supports_schema")
+
+    def supports_effort(self) -> bool:
+        return self._inner_supports("supports_effort")
+
+    def supports_caching(self) -> bool:
+        return self._inner_supports("supports_caching")
+
+    def supports_batch(self) -> bool:
+        return self._inner_supports("supports_batch")
+
+    def supports_grounding(self) -> bool:
+        return self._inner_supports("supports_grounding")
 
     def generate_json(self, *, system: str, prompt: str, schema: dict, **kwargs) -> LLMResponse:
         try:
             response = self._inner.generate_json(
                 system=system, prompt=prompt, schema=schema, **kwargs
+            )
+        except Exception as exc:
+            self._record(system=system, prompt=prompt, response=None, error=type(exc).__name__)
+            raise
+        self._record(system=system, prompt=prompt, response=response)
+        return response
+
+    def generate_grounded(
+        self, *, system: str, prompt: str, documents: list, **kwargs
+    ) -> LLMResponse:
+        """Recorded like `generate_json`.
+
+        The passages go to the vendor as document blocks rather than inside
+        the prompt, so they are exposed exactly as a prompt would be — and
+        the digest covers only `system` and `prompt`, because hashing the
+        documents would make the record depend on the retrieved text
+        without saying anything more about which call this was.
+        """
+        try:
+            response = self._inner.generate_grounded(
+                system=system, prompt=prompt, documents=documents, **kwargs
             )
         except Exception as exc:
             self._record(system=system, prompt=prompt, response=None, error=type(exc).__name__)

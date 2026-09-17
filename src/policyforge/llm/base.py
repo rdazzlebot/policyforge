@@ -201,6 +201,38 @@ class LLMProvider(ABC):
         )
 
 
+def capability_flags() -> list[str]:
+    """Every `supports_*` question a caller can ask a provider, by name.
+
+    Discovered from the class rather than listed, so that adding a flag
+    above is enough for `llm-check` to report it and for the ledger tests
+    to require the wrapper to forward it.
+    """
+    return sorted(
+        name
+        for name in dir(LLMProvider)
+        if name.startswith("supports_") and callable(getattr(LLMProvider, name))
+    )
+
+
+def capabilities(provider) -> dict[str, bool]:
+    """What this provider says it will honour, flag by flag.
+
+    Read through `getattr`, as `llm/effort.py` does, because providers are
+    duck-typed: one that never heard of a flag does not support it.
+    """
+    report = {}
+    for name in capability_flags():
+        ask = getattr(provider, name, None)
+        try:
+            report[name.removeprefix("supports_")] = bool(ask and ask())
+        except AttributeError:
+            # A cascade answers by asking its halves, and a half that never
+            # heard of the flag is a half that cannot honour it.
+            report[name.removeprefix("supports_")] = False
+    return report
+
+
 def get_provider(config: dict) -> LLMProvider:
     """The configured provider, recording every call it makes.
 

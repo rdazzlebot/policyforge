@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+### The call ledger hid four provider capabilities
+
+- **`RecordingProvider` now forwards every `supports_*` flag to the provider
+  inside it**, and `generate_grounded` passes through and is recorded the
+  way `generate_json` already was. The wrapper relied on `__getattr__` to
+  reach anything it did not define, and `__getattr__` is consulted only
+  when normal lookup fails — but every `supports_*` flag exists on
+  `LLMProvider` as `return False`, so the four the wrapper did not override
+  (`supports_effort`, `supports_caching`, `supports_batch`,
+  `supports_grounding`) answered False for every provider, whatever the one
+  inside would have said. `get_provider` wraps every provider and the ledger
+  is on by default.
+- **What that meant in practice, from 7241d90 (2026-09-14) until this
+  fix:** every provider built from config lost those four flags, because
+  every one of them comes back from `get_provider` wrapped. On Anthropic
+  and Vertex, native citations were never requested (the answering path
+  took the inline-passages route and its citation cross-check compared
+  against nothing), no call marked a cacheable prefix, and
+  `policyforge ssp --batch` refused with a message telling the user to
+  configure the provider they had configured. On LiteLLM — the recommended
+  default, and the OpenRouter path — no call sent an effort level, since
+  `LiteLLMProvider` advertises effort and the wrapper said it did not.
+  Bedrock and the OpenAI-compatible endpoint advertise none of the four, so
+  they lost nothing.
+- **The eval harness was not affected, which is the uncomfortable half.**
+  `scripts/eval_zardoz.py --model` builds a `LiteLLMProvider` directly
+  inside its own meter rather than through `get_provider`, so its flags
+  were read from the real provider and every recorded epoch sent effort.
+  The CLI, running the same prompts through the wrapper, did not. The
+  measurements in that window describe a request production never made;
+  `MEASUREMENTS.md` says which epochs that reaches.
+- **Why the tests passed:** the effort and native-citation tests exercised
+  fake providers unwrapped, and no ledger test asked a wrapped provider
+  about any flag but `supports_schema`. `tests/test_llm_ledger.py` now
+  discovers every `supports_*` on `LLMProvider` and requires the wrapper to
+  return the inner provider's answer for each, so a flag added later cannot
+  be forgotten — and asks the same of the real composition, building each
+  provider the factory can construct offline through `get_provider` and
+  comparing every flag against the provider inside. `generate` accepts the
+  `effort` and `cache` arguments the flags unlock, which a fixed signature
+  would have refused.
+- **`policyforge llm-check` prints the capability table** — schema, effort,
+  caching, batch, grounding — asked of the provider as configured, wrapper
+  included. A downgrade that used to be invisible is now the fourth line of
+  the one command everyone runs first.
+
 ### Repository hardening
 
 - **Containers: a runtime image, a dev container, and CI's checks in

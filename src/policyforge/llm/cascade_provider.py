@@ -75,12 +75,26 @@ class CascadeProvider(LLMProvider):
         prompt: str,
         max_tokens: int = 4096,
         temperature: float = 0.2,
+        **kwargs,
     ) -> LLMResponse:
+        # `**kwargs` carries `effort`, `cache` and `cache_prefix`, which a
+        # caller passes only after asking the flags below — and the flags say
+        # yes only when both halves take them, so both halves can be handed
+        # the request unchanged.
+        request = {
+            "system": system,
+            "prompt": prompt,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            **kwargs,
+        }
+        return self._run(lambda half: half.generate(**request))
+
+    def _run(self, call):
+        """`call(primary)`, then `call(escalate_to)` on a recoverable failure."""
         self.primary_calls += 1
         try:
-            return self._primary.generate(
-                system=system, prompt=prompt, max_tokens=max_tokens, temperature=temperature
-            )
+            return call(self._primary)
         except self._escalate_on:
             self.escalations += 1
 
@@ -88,27 +102,75 @@ class CascadeProvider(LLMProvider):
         # reported on its own terms rather than chained to the first one.
         # "Pro also ran out of room" is the useful message; "Pro failed
         # while handling Flash failing" buries it.
-        return self._escalate_to.generate(
-            system=system, prompt=prompt, max_tokens=max_tokens, temperature=temperature
-        )
+        return call(self._escalate_to)
+
+    # ---- capabilities: a flag is true only when both halves honour it ----
+    #
+    # The rule, stated once because "the cascade supports X" is ambiguous
+    # when the halves differ: **the cascade advertises a capability only
+    # when both halves do.** Which half answers a given request is decided
+    # by a runtime failure, after the request was built, so a caller that
+    # was promised a capability has to get it from whichever half answers.
+    # For a shape-changing capability (schema, grounding) the alternative is
+    # a JSON reply most of the time and prose the rest, or verified citation
+    # spans until the day an escalation returns bare markers. For a request
+    # hint (effort, caching) the alternative is a `TypeError` from a half
+    # whose `generate` does not take the argument, or a hint silently dropped
+    # on escalation. Both are the kind of difference nobody notices until it
+    # matters, which is what the flags exist to prevent.
+    #
+    # The cost of the rule is that a local + hosted cascade advertises the
+    # local half's capabilities, and a user who wants effort or citations on
+    # the hosted half configures it directly. `policyforge llm-check` prints
+    # the table for the cascade as configured, so that trade is visible.
+    #
+    # Until this was written, only `supports_schema` was forwarded and the
+    # other four fell to the base class's False — so a flash -> pro cascade
+    # of two capable models sent no effort, marked no cache prefix and asked
+    # for no citations, the same class of silent loss as the ledger wrapper
+    # bug that cost a release. `tests/test_cascade_provider.py` now discovers
+    # every flag on `LLMProvider` and holds the cascade to this rule.
+
+    def _both(self, flag: str) -> bool:
+        """Read through `getattr` as `llm/effort.py` reads them: a half that
+        never heard of a flag does not support it."""
+
+        def ask(half) -> bool:
+            method = getattr(half, flag, None)
+            return bool(method and method())
+
+        return ask(self._primary) and ask(self._escalate_to)
 
     def supports_schema(self) -> bool:
-        """Only when *both* halves can honour one.
+        return self._both("supports_schema")
 
-        An escalation has to be able to answer the same question in the
-        same shape. A cascade that constrained the cheap model and then
-        fell back to unconstrained prose would hand the caller JSON most of
-        the time, which is worse than never promising it.
+    def supports_effort(self) -> bool:
+        return self._both("supports_effort")
+
+    def supports_caching(self) -> bool:
+        return self._both("supports_caching")
+
+    def supports_grounding(self) -> bool:
+        return self._both("supports_grounding")
+
+    def supports_batch(self) -> bool:
+        """Never, whatever the halves say.
+
+        A batch is one submission answered hours later; there is no per-item
+        failure to escalate on and no second submission that would be
+        cheaper than the first. A cascade asked for a batch would either
+        submit everything to the primary and hand back whatever it returned,
+        or submit everything twice. Neither is what a cascade is for, so the
+        flag is False and `ssp --batch` says to configure the batching
+        provider directly.
         """
-        return self._primary.supports_schema() and self._escalate_to.supports_schema()
+        return False
 
     def generate_json(self, **kwargs) -> LLMResponse:
-        self.primary_calls += 1
-        try:
-            return self._primary.generate_json(**kwargs)
-        except self._escalate_on:
-            self.escalations += 1
-        return self._escalate_to.generate_json(**kwargs)
+        return self._run(lambda half: half.generate_json(**kwargs))
+
+    def generate_grounded(self, **kwargs) -> LLMResponse:
+        return self._run(lambda half: half.generate_grounded(**kwargs))
 
     def check(self) -> bool:
         """Both halves must work.

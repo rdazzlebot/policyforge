@@ -14,6 +14,7 @@ import pytest
 
 from policyforge.llm._inline_thinking import ReasoningBudgetExhausted
 from policyforge.llm.base import LLMResponse
+from policyforge.llm.cascade_provider import CascadeProvider
 
 
 class FakeProvider:
@@ -285,3 +286,190 @@ def test_a_structured_call_escalates_the_same_way_a_plain_one_does():
 
     assert result.model == "pro"
     assert (cascade.primary_calls, cascade.escalations) == (1, 1)
+
+
+# ---- every capability flag, by the stated rule ------------------------------
+#
+# Until this was written the cascade forwarded `supports_schema` and let the
+# other four fall to the base class's False, so a flash -> pro cascade of two
+# capable models sent no effort, marked no cache prefix and asked for no
+# citations. The rule is in the cascade's own comment: a flag is True only
+# when both halves honour it, except batch, which is never. The flags are
+# discovered from LLMProvider so a new one is held to the rule unasked.
+
+
+def _cascade_flags():
+    from policyforge.llm.base import LLMProvider
+
+    return sorted(
+        name
+        for name in dir(LLMProvider)
+        if name.startswith("supports_") and callable(getattr(LLMProvider, name))
+    )
+
+
+class _Half:
+    """A provider that says yes to exactly the flags it is given."""
+
+    def __init__(self, name, *flags):
+        self.model = name
+        self.seen = []
+        for flag in flags:
+            setattr(self, flag, lambda: True)
+
+    def generate(self, **kwargs):
+        self.seen.append(kwargs)
+        return LLMResponse(text="ok", model=self.model)
+
+    generate_json = generate
+    generate_grounded = generate
+
+    def check(self):
+        return True
+
+
+@pytest.mark.parametrize("flag", _cascade_flags())
+def test_a_flag_is_true_only_when_both_halves_honour_it(flag):
+    both = CascadeProvider(primary=_Half("a", flag), escalate_to=_Half("b", flag))
+    only_primary = CascadeProvider(primary=_Half("a", flag), escalate_to=_Half("b"))
+    only_escalation = CascadeProvider(primary=_Half("a"), escalate_to=_Half("b", flag))
+    neither = CascadeProvider(primary=_Half("a"), escalate_to=_Half("b"))
+
+    expected_when_both = flag != "supports_batch"
+    assert getattr(both, flag)() is expected_when_both, flag
+    assert getattr(only_primary, flag)() is False, flag
+    assert getattr(only_escalation, flag)() is False, flag
+    assert getattr(neither, flag)() is False, flag
+
+
+def test_request_hints_reach_whichever_half_answers():
+    """Effort and the cache prefix travel to the primary, and to the
+    escalation when the primary could not answer."""
+    from policyforge.llm import effort
+    from policyforge.llm._inline_thinking import ReasoningBudgetExhausted
+
+    class Exhausted(_Half):
+        def generate(self, **kwargs):
+            self.seen.append(kwargs)
+            raise ReasoningBudgetExhausted("spent it all")
+
+    flags = ("supports_effort", "supports_caching")
+    primary = Exhausted("flash", *flags)
+    strong = _Half("pro", *flags)
+    cascade = CascadeProvider(primary=primary, escalate_to=strong)
+
+    response = effort.call(
+        cascade, effort="high", cache=True, cache_prefix="ORG ", system="S", prompt="P"
+    )
+
+    assert response.model == "pro"
+    for half in (primary, strong):
+        (request,) = half.seen
+        assert request["effort"] == "high"
+        assert request["cache"] is True
+        assert request["cache_prefix"] == "ORG "
+        assert request["prompt"] == "P"
+
+
+def test_a_grounded_call_escalates_the_same_way_a_plain_one_does():
+    from policyforge.llm._inline_thinking import ReasoningBudgetExhausted
+
+    class Exhausted(_Half):
+        def generate_grounded(self, **kwargs):
+            self.seen.append(kwargs)
+            raise ReasoningBudgetExhausted("spent it all")
+
+    primary = Exhausted("flash", "supports_grounding")
+    strong = _Half("pro", "supports_grounding")
+    cascade = CascadeProvider(primary=primary, escalate_to=strong)
+
+    response = cascade.generate_grounded(system="S", prompt="P", documents=["d"])
+
+    assert response.model == "pro"
+    assert cascade.escalations == 1
+    assert strong.seen[0]["documents"] == ["d"]
+
+
+def test_get_provider_builds_a_cascade_whose_flags_follow_the_rule(monkeypatch, tmp_path):
+    """Through the factory and the ledger wrapper, with real halves behind
+    injected fakes: a local primary that advertises nothing beyond generate,
+    and an Anthropic escalation that advertises everything. Every flag on
+    the built cascade must be the conjunction, and batch False."""
+    import sys
+    import types
+
+    from policyforge.llm.base import capabilities, get_provider
+    from policyforge.llm.ledger import RecordingProvider
+
+    class _Messages:
+        def create(self, **kwargs):
+            class Block:
+                type = "text"
+                text = "ok"
+
+            class Usage:
+                input_tokens = 1
+                output_tokens = 1
+
+            class Message:
+                content = [Block()]
+                usage = Usage()
+                stop_reason = "end_turn"
+
+            return Message()
+
+    anthropic = types.ModuleType("anthropic")
+    anthropic.Anthropic = lambda *, api_key: types.SimpleNamespace(messages=_Messages())
+    monkeypatch.setitem(sys.modules, "anthropic", anthropic)
+
+    class _Session:
+        def post(self, url, *, json, headers, timeout):
+            class Response:
+                status_code = 200
+                text = ""
+
+                @staticmethod
+                def json():
+                    return {
+                        "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+                        "usage": {},
+                    }
+
+            return Response()
+
+    import requests
+
+    monkeypatch.setattr(requests, "Session", _Session)
+    monkeypatch.setenv("POLICYFORGE_CASCADE_KEY", "not-a-real-key")
+
+    config = {
+        "llm": {
+            "provider": "cascade",
+            "primary": {
+                "provider": "local",
+                "model": "qwen3:14b",
+                "base_url": "http://localhost:11434/v1",
+            },
+            "escalate_to": {
+                "provider": "anthropic",
+                "model": "claude-sonnet-5",
+                "api_key_env": "POLICYFORGE_CASCADE_KEY",
+            },
+            "ledger": {"path": str(tmp_path / "calls.jsonl")},
+        }
+    }
+    built = get_provider(config)
+    assert isinstance(built, RecordingProvider)
+    cascade = built.inner
+    assert isinstance(cascade, CascadeProvider)
+
+    primary, strong = cascade._primary, cascade._escalate_to
+    for flag in _cascade_flags():
+        p = getattr(primary, flag, None)
+        e = getattr(strong, flag, None)
+        expected = bool(p and p()) and bool(e and e()) and flag != "supports_batch"
+        assert getattr(built, flag)() is expected, flag
+    # The escalation advertises everything; the local half advertises
+    # nothing; so the cascade advertises nothing — and says so.
+    assert all(v is False for v in capabilities(built).values())
+    assert all(capabilities(strong).values())

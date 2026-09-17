@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### A cascade advertises what both of its halves can do
+
+- **`provider: cascade` forwards every capability flag, by one stated
+  rule: a flag is true only when both halves honour it.** Which half
+  answers is decided by a runtime failure after the request is built, so a
+  caller promised a capability has to get it from whichever half answers.
+  Until now the cascade forwarded `supports_schema` and let effort,
+  caching, grounding and batch fall to False, so a flash-to-pro cascade of
+  two capable models sent no effort level, marked no cache prefix and
+  asked for no citations — the same silent loss the ledger wrapper had in
+  1.2.0, one layer up. Effort and cache hints now reach whichever half
+  answers, and a grounded call escalates the way a plain one does.
+  `supports_batch` stays False on a cascade by design: a batch is one
+  submission with nothing to escalate on, and `ssp --batch` says to
+  configure the batching provider directly. A local-plus-hosted cascade
+  therefore advertises the local half's capabilities, and `llm-check`
+  prints that table so the trade is visible; a test builds such a cascade
+  through `get_provider` and holds every discovered flag to the rule.
+
 ### Repository hardening
 
 - **The Confluence publish job skips unless a wiki is configured.** This

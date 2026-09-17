@@ -2468,22 +2468,22 @@ answer.
   recently and not what wrote the file. Those differ whenever a cascade
   escalated. Still open: nothing stamps documents that arrive by
   `import-confluence`, and nothing reads the stamp back out — `policyforge history` shows it only as metadata
-- [ ] **Cost levers on the SSP path** — `ssp` makes one model call per in-scope
-  control, several hundred for a moderate baseline. That makes it the largest
-  volume path in the project and the one nobody waits on, which is exactly the
-  Batch API's shape: a flat 50% reduction for latency that is not needed.
-  `--no-narratives` is already the zero-call option, so this is the middle
-  ground. Separately, every narrative call sends the same system prompt and the
-  same organization context with only the control changing, which is the textbook
-  prompt-caching shape. Measure rather than assume — a short system prompt can
-  fall under the minimum cacheable prefix and silently fail to cache, so confirm
-  `usage.cache_read_input_tokens` is non-zero across repeated calls
-- [ ] **Set effort per call site** — no call in the project passes
-  `output_config.effort`, so every request runs at the provider default,
-  including a routing call that wants a single word. The call sites are already
-  tiered by budget after `zardoz/budgets.py`: routing, expansion and resolution
-  are short and decisive, while `synthesize` and `generate` are long-form
-  judgement. Effort should follow that split
+- [x] **Cost levers on the SSP path** — done. `ssp --batch` submits the
+  several-hundred narrative requests through the Batch API in `llm/batch.py`
+  for half the price, matched back to controls by ID rather than position, and
+  Anthropic-only: any other provider is told so rather than quietly billed
+  twice. `--no-narratives` remains the zero-call option. The organization
+  block in front of every control is marked as a cacheable prefix on both
+  paths (`ssp/narrative.py`). **The caching half is unmeasured**: it only
+  reaches a provider implementing `supports_caching` (Anthropic and Vertex,
+  not LiteLLM), and epoch 21 recorded zero cached input tokens because both
+  runs went through LiteLLM. Confirming `cached_input_tokens` is non-zero on
+  the Anthropic path is still the check nobody has run
+- [x] **Set effort per call site** — done, in `llm/effort.py`, which names a
+  level per kind of work and passes it only where the provider honours one.
+  Every model call site in the project goes through it: routing, expansion and
+  resolution short and decisive, `synthesize`, `generate`, the edit path and
+  the SSP narratives long-form. Measured in MEASUREMENTS.md epochs 16-18
 - [ ] **Refuse a run that would cost more than a ceiling** — `ssp` prompts before
   spending because it calls once per control. Nothing else estimates cost, and
   `eval_zardoz.py` can issue several hundred calls from one command. Now that

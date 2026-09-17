@@ -66,6 +66,7 @@ output/
 
 # Rebuilt from the controls.json files by `policyforge map`
 data/frameworks/crosswalk.json
+data/frameworks/crosswalk.overlays.json
 """
 
 

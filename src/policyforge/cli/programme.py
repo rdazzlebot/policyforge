@@ -48,6 +48,13 @@ def map_cmd(controls_paths, out: Path):
     # LF on every platform, so a rebuilt crosswalk.json diffs only where the
     # crosswalk changed.
     write_text_lf(out, json.dumps(crosswalk, indent=2))
+    # Which overlays this crosswalk reflects, by content, so `synthesize` can
+    # tell a crosswalk built before an overlay changed from a current one.
+    from policyforge.crosswalk.overlay import overlay_digests, provenance_path
+
+    write_text_lf(
+        provenance_path(out), json.dumps({"overlays": overlay_digests()}, indent=2, sort_keys=True)
+    )
 
     frameworks = sorted({f for entry in crosswalk.values() for f in entry})
     click.echo(f"Built crosswalk for {len(crosswalk)} NIST controls -> {out}")

@@ -394,3 +394,182 @@ def test_an_escape_sequence_in_a_quote_never_reaches_review(tmp_path, monkeypatc
 
     assert "-> SI-3" in result.output
     assert "\x1b" not in result.output and "\x07" not in result.output
+
+
+# ---- second review: the typo check, crosswalk provenance, ids in review ----
+
+
+def _bundled(*names):
+    controls = []
+    for name in names:
+        controls += load_controls(ROOT / "data" / "frameworks" / name / "controls.json")
+    return controls
+
+
+@pytest.mark.parametrize(
+    "loaded",
+    [
+        ("nist-800-53-r5",),
+        ("nist-800-53-r5", "hipaa-security-rule"),
+        ("nist-800-53-r5", "arc-ampe"),
+        ("nist-800-53-r5", "fedramp"),
+    ],
+)
+def test_fedramp_and_arc_ampe_overlays_do_not_break_commands_that_do_not_load_them(loaded):
+    """Reproduced in review: both catalogs number requirements with 800-53 ids, and
+    the typo check read a FedRAMP overlay as a misspelled 800-53 one."""
+    fedramp = seed_overlay(_bundled("fedramp"), "FedRAMP")
+    arc = seed_overlay(_bundled("arc-ampe"), "ARC-AMPE")
+    controls = _bundled(*loaded)
+    apply_overlays(controls, [fedramp, arc])
+
+
+@pytest.mark.parametrize("name", ["HIPPA Security Rule", "HIPAA", "hipaa  security rule"])
+def test_a_misspelled_or_shortened_loaded_framework_is_still_refused(name):
+    controls = _bundled("nist-800-53-r5", "hipaa-security-rule")
+    overlay = seed_overlay(controls, "HIPAA Security Rule")
+    overlay.framework = name
+    if " ".join(name.split()).casefold() == "hipaa security rule":
+        assert apply_overlays(controls, [overlay]) > 0
+        return
+    with pytest.raises(OverlayError, match="HIPAA Security Rule"):
+        apply_overlays(controls, [overlay])
+
+
+def test_the_map_command_runs_with_a_fedramp_overlay_and_nist_alone(tmp_path, monkeypatch):
+    import policyforge.cli as cli_mod
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    runner = CliRunner()
+    fedramp = str(ROOT / "data" / "frameworks" / "fedramp" / "controls.json")
+    nist = str(ROOT / "data" / "frameworks" / "nist-800-53-r5" / "controls.json")
+    seeded = runner.invoke(
+        cli_mod.cli,
+        ["crosswalk", "seed", "--framework", "FedRAMP", "--controls", nist, "--controls", fedramp],
+    )
+    assert seeded.exit_code == 0, seeded.output
+
+    result = runner.invoke(cli_mod.cli, ["map", "--controls", nist, "--out", "cw.json"])
+
+    assert result.exit_code == 0, result.output
+
+
+def _synthesize(tmp_path, crosswalk):
+    import policyforge.cli as cli_mod
+
+    return CliRunner().invoke(
+        cli_mod.cli,
+        [
+            "synthesize",
+            "--topic",
+            "Endpoint",
+            "--nist-controls",
+            "SI-3",
+            "--controls",
+            str(tmp_path / "nist.json"),
+            "--controls",
+            str(tmp_path / "hipaa.json"),
+            "--crosswalk",
+            str(crosswalk),
+            "--out-dir",
+            str(tmp_path / "synthesis"),
+        ],
+    )
+
+
+def test_synthesize_refuses_a_crosswalk_whose_overlay_was_since_deleted(tmp_path, monkeypatch):
+    run, _ = _setup(tmp_path, monkeypatch, Mapper())
+    crosswalk = tmp_path / "crosswalk.json"
+    assert run("crosswalk", "seed").exit_code == 0
+    assert run("map", "--out", str(crosswalk)).exit_code == 0
+    (tmp_path / OVERLAY).unlink()
+
+    result = _synthesize(tmp_path, crosswalk)
+
+    assert result.exit_code != 0
+    assert "policyforge map" in result.output
+
+
+def test_synthesize_refuses_a_crosswalk_whose_overlay_changed_within_the_same_second(
+    tmp_path, monkeypatch
+):
+    import os
+
+    run, _ = _setup(tmp_path, monkeypatch, Mapper())
+    crosswalk = tmp_path / "crosswalk.json"
+    assert run("crosswalk", "seed").exit_code == 0
+    assert run("map", "--out", str(crosswalk)).exit_code == 0
+    stamp = crosswalk.stat().st_mtime
+    overlay = tmp_path / OVERLAY
+    overlay.write_text(
+        overlay.read_text(encoding="utf-8").replace("accepted", "rejected", 1), "utf-8"
+    )
+    os.utime(overlay, (stamp, stamp))
+
+    result = _synthesize(tmp_path, crosswalk)
+
+    assert result.exit_code != 0
+    assert "policyforge map" in result.output
+
+
+def test_synthesize_accepts_a_crosswalk_built_from_the_overlays_on_disk(tmp_path, monkeypatch):
+    run, _ = _setup(tmp_path, monkeypatch, Mapper())
+    crosswalk = tmp_path / "crosswalk.json"
+    assert run("crosswalk", "seed").exit_code == 0
+    assert run("map", "--out", str(crosswalk)).exit_code == 0
+
+    result = _synthesize(tmp_path, crosswalk)
+
+    assert "policyforge map" not in result.output
+
+
+def test_a_crosswalk_with_no_record_is_refused_once_overlays_exist(tmp_path, monkeypatch):
+    run, _ = _setup(tmp_path, monkeypatch, Mapper())
+    crosswalk = tmp_path / "crosswalk.json"
+    crosswalk.write_text("{}", encoding="utf-8")
+    assert run("crosswalk", "seed").exit_code == 0
+
+    result = _synthesize(tmp_path, crosswalk)
+
+    assert result.exit_code != 0
+    assert "policyforge map" in result.output
+
+
+#: The control characters the escapes below decode to. Printable text such as
+#: "[2J" may remain once they are removed.
+HOSTILE = "\x1b\x07\u202e"
+
+
+def test_requirement_ids_and_framework_names_are_cleaned_before_review(tmp_path, monkeypatch):
+    run, _ = _setup(tmp_path, monkeypatch, Mapper())
+    (tmp_path / "config" / "crosswalks").mkdir(parents=True)
+    # YAML's own escapes, which is how a control character gets into the file.
+    escapes = "\\e[2J\\a\\u202E"
+    (tmp_path / OVERLAY).write_text(
+        f'framework: "HIPAA Security Rule{escapes}"\n'
+        "requirements:\n"
+        f'  "{RID}{escapes}":\n'
+        "    - {control: SI-3, status: proposed}\n",
+        encoding="utf-8",
+    )
+    import yaml
+
+    raw = yaml.safe_load((tmp_path / OVERLAY).read_text(encoding="utf-8"))
+    assert any(ch in raw["framework"] for ch in HOSTILE), "the file does carry them"
+
+    overlay = load_overlay(tmp_path / OVERLAY)
+    (rid,) = overlay.requirements
+    for text in (rid, overlay.framework):
+        assert not any(ch in text for ch in HOSTILE)
+
+    result = run("crosswalk", "review", "--overlay", str(tmp_path / OVERLAY), input="q\n")
+
+    assert not any(ch in result.output for ch in HOSTILE)
+
+
+def test_overlays_named_yml_are_read_too(tmp_path):
+    (tmp_path / "hipaa.yml").write_text(
+        "framework: HIPAA Security Rule\nrequirements: {}\n", "utf-8"
+    )
+    assert [o.framework for o in load_overlays(tmp_path)] == ["HIPAA Security Rule"]

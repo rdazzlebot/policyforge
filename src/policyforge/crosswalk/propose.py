@@ -407,6 +407,12 @@ def merge(
 
 
 def _digest(text: str) -> str:
+    """A short, unsalted SHA-256 of `text`: enough to tell whether a quote
+    changed between runs, not a secret. A specification of three or four
+    words, quoted whole, could be recovered by hashing guesses, which is
+    acceptable because the digest's job is keeping licensed prose out of a
+    tracked file, not hiding which requirement a row is about — its id is in
+    the file beside it."""
     import hashlib
 
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]

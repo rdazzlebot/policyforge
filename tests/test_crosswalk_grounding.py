@@ -118,3 +118,26 @@ def test_a_title_alone_is_not_a_quote():
 def test_a_short_fragment_that_is_not_the_title_is_still_refused():
     quote = "Personnel Access ... Disable system access within [Assignment: time period]"
     assert not grounded(quote, PS_4, heading="Personnel Termination")
+
+
+POLICY_1 = (
+    "Policy and Procedures a. Develop, document, and disseminate to personnel: 1. access "
+    "control policy that addresses purpose and scope"
+)
+
+
+def test_a_leading_title_counts_toward_the_minimum():
+    """A -1 control's title is "Policy and Procedures"; rule 5 sends models there."""
+    quote = "Policy and Procedures ... access control policy"
+    assert grounded(quote, POLICY_1, heading="Policy and Procedures")
+
+
+def test_a_whole_four_word_title_is_matched_like_any_quote():
+    title = "Physical and Environmental Protection"
+    text = f"{title} Develop, document, and disseminate a physical protection policy"
+    assert grounded(title, text, heading=title)
+
+
+def test_a_title_fragment_after_the_first_is_held_to_the_minimum():
+    quote = "Disable system access within ... Personnel Termination"
+    assert not grounded(quote, PS_4, heading="Personnel Termination")

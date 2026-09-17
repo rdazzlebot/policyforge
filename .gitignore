@@ -23,6 +23,7 @@ output/
 # Build artifact: derived entirely from the committed controls.json files by
 # `policyforge map`, so committing it would only invite drift against them.
 data/frameworks/crosswalk.json
+data/frameworks/crosswalk.overlays.json
 
 # Python
 __pycache__/

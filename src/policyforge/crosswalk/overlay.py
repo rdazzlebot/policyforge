@@ -160,12 +160,12 @@ def parse_overlay(data, *, path: Path | None = None) -> Overlay:
         raise OverlayError(f"{label}: `requirements:` must map requirement ids to lists of rows.")
 
     overlay = Overlay(
-        framework=str(data["framework"]),
-        anchor=str(data.get("anchor") or "nist"),
+        framework=printable(data["framework"]),
+        anchor=printable(data.get("anchor") or "nist"),
         path=path,
     )
     for requirement_id, rows in raw.items():
-        rid = str(requirement_id)
+        rid = printable(requirement_id)
         if rows is None:
             overlay.requirements[rid] = []
             continue
@@ -234,6 +234,37 @@ def load_overlay(path: Path) -> Overlay:
     return parse_overlay(data, path=Path(path))
 
 
+def overlay_files(directory: Path = DEFAULT_OVERLAY_DIR) -> list[Path]:
+    """The overlay files in `directory`, `.yaml` and `.yml` alike, in name order."""
+    directory = Path(directory)
+    if not directory.is_dir():
+        return []
+    return sorted(p for p in directory.iterdir() if p.suffix in (".yaml", ".yml") and p.is_file())
+
+
+def overlay_digests(directory: Path = DEFAULT_OVERLAY_DIR) -> dict[str, str]:
+    """{file name: sha256 of its bytes} for every overlay in `directory`.
+
+    What `map` records beside the crosswalk it builds, and what `synthesize`
+    compares against, so a crosswalk built before an overlay was added,
+    edited or deleted is recognised as stale. Content, not modification time:
+    a timestamp can tie, and a deleted file has none.
+    """
+    import hashlib
+
+    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in overlay_files(directory)}
+
+
+def provenance_path(crosswalk_path: Path) -> Path:
+    """Where `map` records which overlays a crosswalk was built from.
+
+    Beside the crosswalk rather than inside it: every reader of crosswalk.json
+    takes its top-level keys to be 800-53 control ids.
+    """
+    crosswalk_path = Path(crosswalk_path)
+    return crosswalk_path.with_name(f"{crosswalk_path.stem}.overlays.json")
+
+
 def load_overlays(directory: Path = DEFAULT_OVERLAY_DIR) -> list[Overlay]:
     """Every overlay in `directory`. A missing directory is no overlays.
 
@@ -244,10 +275,10 @@ def load_overlays(directory: Path = DEFAULT_OVERLAY_DIR) -> list[Overlay]:
     directory = Path(directory)
     if not directory.is_dir():
         return []
-    overlays = [load_overlay(p) for p in sorted(directory.glob("*.yaml"))]
+    overlays = [load_overlay(p) for p in overlay_files(directory)]
     first: dict[str, Overlay] = {}
     for overlay in overlays:
-        key = overlay.framework.casefold()
+        key = _framework_key(overlay.framework)
         if key in first:
             raise OverlayError(
                 f"{first[key].path} and {overlay.path} both map {overlay.framework!r}. "
@@ -264,10 +295,10 @@ def dump_overlay(overlay: Overlay) -> str:
 
 
 def _requirement_targets(controls, framework: str) -> dict:
-    wanted = framework.casefold()
+    wanted = _framework_key(framework)
     targets = {}
     for control in controls:
-        if control.framework.casefold() != wanted:
+        if _framework_key(control.framework) != wanted:
             continue
         targets[control.control_id] = control
         for enhancement in control.enhancements:
@@ -288,31 +319,60 @@ def _anchor_keys(crosswalk: dict, anchor: str) -> list[str]:
     return [key for key in crosswalk if normalize_framework(key) == anchor]
 
 
+def _framework_key(name: str) -> str:
+    """A framework name compared the way a person reads it: case and spacing aside."""
+    return " ".join(str(name).split()).casefold()
+
+
+#: How close an overlay's framework name must be to a loaded catalog's name to
+#: be read as a misspelling of it. "HIPPA Security Rule" against "HIPAA Security
+#: Rule" is 0.95; "FedRAMP" against "ARC-AMPE" is 0.53, and against "GovRAMP"
+#: 0.57. A shortened name — "HIPAA" for "HIPAA Security Rule", 0.42 — is caught
+#: separately, by its words all appearing in the catalog's name.
+TYPO_SIMILARITY = 0.8
+
+
 def _check_framework_is_loaded(controls, overlay: Overlay) -> None:
-    """Refuse an overlay whose framework name matches no catalog but whose ids do.
+    """Refuse an overlay whose framework name looks like a misspelled loaded catalog.
 
     A framework the loaded catalogs do not include is normal — most commands
-    load 800-53 alone — so that on its own is not an error. A name that
-    matches nothing while its requirement ids belong to a catalog that *is*
-    loaded is a typo, and applying nothing would silently ignore every
-    reviewed decision in the file.
+    load 800-53 alone — so that on its own is not an error. Two signals
+    together make a typo: the name is close to a loaded catalog's name, and
+    the requirement ids it lists belong to that catalog. Either alone is not
+    enough. FedRAMP, GovRAMP and ARC-AMPE all number their requirements with
+    800-53 ids, so ids alone would read a FedRAMP overlay as a misspelled
+    800-53 or ARC-AMPE one whenever FedRAMP is not loaded — the review
+    reproduced exactly that — and the anchor catalog is never a candidate.
     """
+    from difflib import SequenceMatcher
+
+    from policyforge.mapping.crosswalk import normalize_framework
+
     if _requirement_targets(controls, overlay.framework):
         return
+    wanted = _framework_key(overlay.framework)
     listed = set(overlay.requirements)
-    names = sorted(
-        {
-            control.framework
-            for control in controls
-            if control.control_id in listed
-            or any(e.enhancement_id in listed for e in control.enhancements)
-        }
-    )
+    owners: set[str] = set()
+    for control in controls:
+        if normalize_framework(control.framework) == overlay.anchor:
+            continue
+        if control.control_id in listed or any(
+            e.enhancement_id in listed for e in control.enhancements
+        ):
+            owners.add(control.framework)
+
+    def resembles(name: str) -> bool:
+        key = _framework_key(name)
+        return SequenceMatcher(None, wanted, key).ratio() >= TYPO_SIMILARITY or set(
+            wanted.split()
+        ) <= set(key.split())
+
+    names = sorted(name for name in owners if resembles(name))
     if names:
         raise OverlayError(
             f"{overlay.path or 'overlay'}: framework {overlay.framework!r} matches no loaded "
-            f"catalog, but its requirement ids belong to {', '.join(repr(n) for n in names)}. "
-            "Correct the `framework:` line; until then none of its decisions apply."
+            f"catalog, but reads like {', '.join(repr(n) for n in names)}, whose requirement "
+            "ids it lists. Correct the `framework:` line; until then none of its decisions apply."
         )
 
 

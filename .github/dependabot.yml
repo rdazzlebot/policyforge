@@ -6,10 +6,11 @@ updates:
   - package-ecosystem: "pip"
     directory: "/"
     # Pinned by what depends on them, not by this project: semgrep holds
-    # boltons, exceptiongroup, opentelemetry-* and wcmatch to ~= ranges, and
-    # pydantic pins pydantic-core exactly. Minor and major bumps of these can
-    # never install, so every such pull request failed CI. They move when
-    # semgrep or pydantic does. Patch bumps still come, so a fix inside the
+    # boltons, exceptiongroup, opentelemetry-*, peewee and wcmatch to ~=
+    # ranges, pydantic pins pydantic-core exactly, and opentelemetry-proto
+    # caps protobuf below 7. Minor and major bumps of these can never
+    # install, so every such pull request failed CI. They move when semgrep,
+    # pydantic or opentelemetry does. Patch bumps still come, so a fix inside the
     # allowed range still arrives.
     ignore:
       - dependency-name: "boltons"
@@ -24,6 +25,10 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "pydantic-core"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "peewee"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "protobuf"
+        update-types: ["version-update:semver-major"]
     schedule:
       interval: "weekly"
     # Wait before proposing an update to a newly published version — gives
@@ -53,6 +58,10 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "pydantic-core"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "peewee"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "protobuf"
+        update-types: ["version-update:semver-major"]
     schedule:
       interval: "weekly"
     cooldown:

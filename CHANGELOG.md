@@ -1,6 +1,40 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
+
+**Upgrading from 1.1.0 changes what your model is asked for, and can change
+what it costs.** 1.1.0 shipped with a bug in the call ledger that silently
+switched off provider capabilities for every provider built from config: no
+effort level on Anthropic, Vertex or LiteLLM (including OpenRouter), no
+native citations and no prompt caching on Anthropic and Vertex, and
+`ssp --batch` refused on Anthropic. This release sends them. On the same
+config, drafts, answers and per-call cost can differ from 1.1.0. Run
+`policyforge llm-check` to see the capability line for the provider you have
+configured. Bedrock and OpenAI-compatible endpoints advertise none of these
+and are unaffected. The first entry below has the per-provider detail.
+
+**Eval measurements from that window don't describe production.** The eval
+harness built its provider around the wrapper, so MEASUREMENTS epochs 15
+through 19 sent effort while the CLI did not. The harness now builds its
+provider through the same path as every command, with a test holding the two
+to parity.
+
+Also in this release:
+
+- **A container image, a dev container and CI's checks in Docker.**
+  `docker build -t policyforge:local .` gives the CLI and the MCP server,
+  from a hashed runtime lock, as a non-root user. See "Running in a
+  container" in the README.
+- **`policyforge frameworks` exits 1 when it finds no catalog**, and tells
+  you to run `policyforge init`. Inside a project nothing changes.
+- **Generated Markdown is written with LF line endings on Windows**, so
+  files `generate`, `pull` and `edit-topic` write pass the repository's own
+  Markdown check.
+- **The eval generation cases are graded the way the CLI generates**, with
+  role substitution applied.
+- **`scripts/capture_eval_requests.py`** records every request an eval run
+  sends and compares two captures, so a change to the harness or `llm/` can
+  be shown not to change what a model is asked.
 
 ### Request captures for the eval harness
 

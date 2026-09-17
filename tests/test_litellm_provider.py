@@ -202,8 +202,15 @@ def test_an_unrelated_bad_request_is_not_swallowed():
         )
     )
 
-    with pytest.raises(litellm.BadRequestError):
+    # Not swallowed, and not raw either: it surfaces as the project's own
+    # rejection type, carrying the vendor's words and chained from the SDK
+    # error, so the CLI can print a sentence instead of a traceback.
+    from policyforge.llm.base import ProviderRejected
+
+    with pytest.raises(ProviderRejected) as caught:
         _provider(completion).generate(system="s", prompt="p")
+    assert "context length exceeded" in caught.value.vendor_message
+    assert isinstance(caught.value.__cause__, litellm.BadRequestError)
 
 
 def test_a_budget_spent_entirely_on_reasoning_is_retried_with_room_to_speak():

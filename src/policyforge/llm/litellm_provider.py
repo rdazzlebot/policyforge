@@ -27,7 +27,7 @@ import os
 import time
 
 from ._inline_thinking import answer_of, exhausted, needs_more_room, retry_budget
-from .base import LLMProvider, LLMResponse, SchemaReplyError
+from .base import LLMProvider, LLMResponse, ProviderRejected, SchemaReplyError
 
 
 class _NeverRaised(Exception):
@@ -168,28 +168,37 @@ class LiteLLMProvider(LLMProvider):
         # capped endpoint.
         self._wait_turn()
 
-        if not self._send_temperature:
-            return self._completion(**payload)
         try:
-            return self._completion(temperature=temperature, **payload)
-        except self._bad_request as exc:
-            # Belt to `drop_params`' braces. LiteLLM refuses a parameter it
-            # knows the model rejects before sending anything, and
-            # `drop_params` in the payload handles that case. This catches
-            # the other one: a model whose restriction LiteLLM does not know
-            # about yet, where the rejection comes back from the API. New
-            # models ship faster than metadata about them.
-            #
-            # Both spellings are matched because the two paths word it
-            # differently — "is deprecated" from Anthropic's API,
-            # "does not support temperature=0.2" from LiteLLM itself.
-            message = str(exc)
-            if "temperature" in message and (
-                "deprecated" in message or "does not support" in message
-            ):
-                self._send_temperature = False
+            if not self._send_temperature:
                 return self._completion(**payload)
-            raise
+            try:
+                return self._completion(temperature=temperature, **payload)
+            except self._bad_request as exc:
+                # Belt to `drop_params`' braces. LiteLLM refuses a parameter it
+                # knows the model rejects before sending anything, and
+                # `drop_params` in the payload handles that case. This catches
+                # the other one: a model whose restriction LiteLLM does not know
+                # about yet, where the rejection comes back from the API. New
+                # models ship faster than metadata about them.
+                #
+                # Both spellings are matched because the two paths word it
+                # differently — "is deprecated" from Anthropic's API,
+                # "does not support temperature=0.2" from LiteLLM itself.
+                message = str(exc)
+                if "temperature" in message and (
+                    "deprecated" in message or "does not support" in message
+                ):
+                    self._send_temperature = False
+                    return self._completion(**payload)
+                raise
+        except self._bad_request as exc:
+            # Every other 400 — a max_tokens above the model's cap being the
+            # usual one — becomes the project's own rejection type, so the
+            # caller can say which call and which budget and the CLI can
+            # print that rather than a traceback.
+            raise ProviderRejected(
+                str(exc), status=getattr(exc, "status_code", None), model=self.model
+            ) from exc
 
     @staticmethod
     def _read(response) -> tuple[str, str | None, float | None]:

@@ -159,6 +159,51 @@ class EmptyReply(RuntimeError):
         )
 
 
+class ProviderRejected(RuntimeError):
+    """The provider refused the request before answering it.
+
+    A 4xx from the vendor — a `max_tokens` above the model's cap, an
+    unknown model, a parameter the model does not take. Raised by the
+    provider with the vendor's own message, then annotated by
+    `llm/effort.py` with the ledger subject, the site and the budget the
+    request carried, so what reaches the user says which document, which
+    command and which number, rather than a traceback ending in the SDK.
+    The budgets sized in #74 made this the likeliest 4xx: a model whose
+    output cap is below 16384 rejects every draft, and "HTTP 400" tells
+    nobody why.
+    """
+
+    def __init__(self, vendor_message: str, *, status: int | None = None, model: str | None = None):
+        self.vendor_message = vendor_message.strip()
+        self.status = status
+        self.model = model
+        self.subject: str | None = None
+        self.site: str | None = None
+        self.budget: int | None = None
+        super().__init__(self._render())
+
+    def annotate(self, *, subject: str | None, site: str | None, budget: int | None) -> None:
+        """Add what the provider could not know: which call, on whose behalf."""
+        self.subject = subject
+        self.site = site
+        self.budget = budget
+        self.args = (self._render(),)
+
+    def _render(self) -> str:
+        where = f"{self.subject}" if self.subject else "the request"
+        if self.site:
+            where += f" ({self.site})"
+        status = f" (HTTP {self.status})" if self.status else ""
+        model = f" by {self.model}" if self.model else ""
+        budget = f" at {self.budget} output tokens" if self.budget else ""
+        return (
+            f"{where}: the request{budget} was rejected{model}{status}: {self.vendor_message}. "
+            f"Nothing was written. If the message names max_tokens, this model's output cap "
+            f"is below the budget for this call site; lower the budget or choose a model "
+            f"that accepts it."
+        )
+
+
 class LLMProvider(ABC):
     """Minimal surface every provider must implement."""
 

@@ -27,7 +27,12 @@ from __future__ import annotations
 import os
 
 from ._inline_thinking import answer_of, exhausted, needs_more_room, retry_budget
-from .base import LLMProvider, LLMResponse
+from .base import LLMProvider, LLMResponse, ProviderRejected
+
+#: The statuses that mean "the request, as written, was refused": bad
+#: request, unknown model or route, payload too large, unprocessable.
+#: Deliberately not every 4xx — see `_post`.
+REJECTED_AS_WRITTEN = frozenset({400, 404, 413, 422})
 
 
 class OpenAICompatProvider(LLMProvider):
@@ -96,7 +101,21 @@ class OpenAICompatProvider(LLMProvider):
                 f"For Ollama, `ollama serve`; check with `ollama ps`."
             ) from exc
 
+        if response.status_code in REJECTED_AS_WRITTEN:
+            # The server understood the request and refused it as written — a
+            # budget above the model's cap, an unknown model, an oversized
+            # body. That is a rejection the user has to act on, and
+            # `llm/effort.py` names the call and the budget on it.
+            raise ProviderRejected(
+                response.text[:400] or f"{url} returned HTTP {response.status_code}",
+                status=response.status_code,
+                model=self.model,
+            )
         if response.status_code != 200:
+            # Everything else is not about the request as written: a 429 or
+            # 408 clears by waiting, a 401 or 403 is the key, a 5xx is the
+            # server. Budget advice on any of those would send the user to
+            # change the wrong thing, so they stay the plain error they were.
             raise RuntimeError(f"{url} returned HTTP {response.status_code}: {response.text[:400]}")
         return response.json()
 

@@ -15,6 +15,21 @@ from __future__ import annotations
 from .base import LLMProvider, LLMResponse
 
 
+def _is_rejection(exc: BaseException) -> bool:
+    """A botocore ClientError carrying a ValidationException, by name.
+
+    `exc.response["Error"]["Code"]` is how botocore says which error it was;
+    the class name check covers a ValidationException raised directly by a
+    fake or a newer SDK.
+    """
+    if type(exc).__name__ == "ValidationException":
+        return True
+    if type(exc).__name__ != "ClientError":
+        return False
+    error = (getattr(exc, "response", None) or {}).get("Error") or {}
+    return error.get("Code") == "ValidationException"
+
+
 class BedrockProvider(LLMProvider):
     """Calls a model on Amazon Bedrock via the Converse API.
 
@@ -50,12 +65,25 @@ class BedrockProvider(LLMProvider):
         max_tokens: int = 4096,
         temperature: float = 0.2,
     ) -> LLMResponse:
-        response = self._client.converse(
-            modelId=self.model,
-            system=[{"text": system}],
-            messages=[{"role": "user", "content": [{"text": prompt}]}],
-            inferenceConfig={"maxTokens": max_tokens, "temperature": temperature},
-        )
+        try:
+            response = self._client.converse(
+                modelId=self.model,
+                system=[{"text": system}],
+                messages=[{"role": "user", "content": [{"text": prompt}]}],
+                inferenceConfig={"maxTokens": max_tokens, "temperature": temperature},
+            )
+        except Exception as exc:
+            # botocore raises `ClientError` for a validation failure — a
+            # maxTokens above the model's cap arrives as code
+            # ValidationException — and boto3 is an extra, so the class is
+            # matched by name rather than imported. Anything else is re-raised
+            # untouched: a throttle or a credentials failure is not a
+            # rejection of the request as written.
+            if not _is_rejection(exc):
+                raise
+            from .base import ProviderRejected
+
+            raise ProviderRejected(str(exc), model=self.model) from exc
         text = "".join(
             block["text"] for block in response["output"]["message"]["content"] if "text" in block
         )

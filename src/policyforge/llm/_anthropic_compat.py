@@ -246,18 +246,30 @@ def call_messages_api(
         """One request, remembering whether this model tolerates temperature."""
         nonlocal send_temperature
         payload = {**kwargs, **overrides}
-        if not send_temperature:
-            return client.messages.create(**payload)
         try:
-            return client.messages.create(temperature=temperature, **payload)
-        except anthropic.BadRequestError as exc:
-            # Some newer models (e.g. claude-sonnet-5) reject `temperature`
-            # outright rather than just ignoring it, so retry without it
-            # instead of hard-failing every call on those models.
-            if "temperature" in str(exc) and "deprecated" in str(exc):
-                send_temperature = False
+            if not send_temperature:
                 return client.messages.create(**payload)
-            raise
+            try:
+                return client.messages.create(temperature=temperature, **payload)
+            except anthropic.BadRequestError as exc:
+                # Some newer models (e.g. claude-sonnet-5) reject `temperature`
+                # outright rather than just ignoring it, so retry without it
+                # instead of hard-failing every call on those models.
+                if "temperature" in str(exc) and "deprecated" in str(exc):
+                    send_temperature = False
+                    return client.messages.create(**payload)
+                raise
+        except anthropic.BadRequestError as exc:
+            # Any other 400 is the API refusing the request as sent — a
+            # max_tokens above the model's cap is the usual one now that
+            # document budgets are 16384. Raised as the project's own type so
+            # `llm/effort.py` can say which call and which budget, and the
+            # CLI can print that instead of a traceback ending in the SDK.
+            from .base import ProviderRejected
+
+            raise ProviderRejected(
+                str(exc), status=getattr(exc, "status_code", None), model=model
+            ) from exc
 
     response = _create()
     text = _text_of(response)

@@ -607,6 +607,67 @@ where GovRAMP has already decided a value, the model is given it rather than
 left to fill in `[Assignment: ...]` by guessing, and the added requirements
 are handed over as normative text rather than dropped.
 
+## Your organization's crosswalk
+
+Everything that crosses frameworks — `map`, `synthesize`, `coverage`,
+`bundle`, Zardoz — reads the published crosswalk by default, and the
+published crosswalk is the weakest input in the project: pairs with no stated
+relationship and no reasoning (see [The problem this solves](#the-problem-this-solves)).
+A crosswalk overlay is where an organization records what it has decided
+about those pairs instead, and it lives in the organization's repository next
+to its topics and parameters:
+
+```bash
+policyforge crosswalk seed       # config/crosswalks/hipaa-security-rule.yaml
+policyforge crosswalk propose    # a model reads each requirement; nothing is decided
+policyforge crosswalk review     # a person accepts or rejects, one pair at a time
+policyforge crosswalk check      # what no longer matches the catalogs
+```
+
+**`seed`** writes the published mapping with every pair accepted. Nothing
+changes — `map` produces byte-identical output with and without it — but the
+file is now yours to edit. **Only accepted pairs reach the pipeline.** A
+requirement the overlay lists has its mapping replaced by its accepted rows;
+one it does not list keeps the published mapping, so reviewing ten
+requirements never unmaps the other sixty-five.
+
+**`propose`** asks the configured model to read each requirement against a
+short list of 800-53 candidates — word matches, the family's policy control,
+and the published pairs, mixed in without being labelled as published. For
+each control it says addresses the requirement, it must quote the words of
+both texts that justify it, and a quote the text does not contain discards
+the mapping before anyone sees it. What it finds is written as notes, never as
+decisions:
+
+| The model…                                   | The overlay row                                          |
+| -------------------------------------------- | -------------------------------------------------------- |
+| quotes a basis for a published pair          | stays accepted, gains the quotes and a relationship      |
+| was shown a published pair and gave no basis | stays accepted, flagged `not-confirmed-by-model`         |
+| maps a control nobody published              | added as `proposed` — not in the pipeline until reviewed |
+
+**Why a model does not decide.** Measured on the 75 HIPAA requirements
+before this was built, two models confirmed 31% and 41% of NIST's published
+pairs while being shown every one, and agreed with each other on 58% of what
+they asserted. In the disagreements read by hand, most were not an error on
+either side: NIST's pairs often link a requirement to controls that *support*
+it — incident reporting for reviewing system activity — where the models mapped
+the controls that *carry the obligation*. Which of those an organization means by "mapped"
+is its own decision, and the value of `propose` is putting the difference, with
+the words behind each side, in front of the person making it. See
+MEASUREMENTS.md for the probe and the eval suite graded on the cases nobody
+would dispute.
+
+**`review`** shows the flagged published pairs first, then new proposals:
+the requirement with the standard it sits under, the control, and the quotes.
+Each accept or reject is written as it is made, with who and when and an
+optional reason, and a later `propose` never touches a reviewed row or
+re-proposes a rejected one. The file is YAML, so a pull request is a review
+path too.
+
+**Relationships reach `coverage`.** Where the overlay records that every owned
+control covers only part of a requirement (`superset` or `intersects`), the
+report lists it as reached only in part rather than counting it as reached.
+
 ## Input adapters
 
 Ingestion is pluggable: every loader in `ingest/` parses one source format

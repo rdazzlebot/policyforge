@@ -23,6 +23,34 @@ on:
       - "docs/**"
       - "config/topics.yaml"
       - ".github/workflows/content.yml"
+  # This workflow file is in the `pull_request` paths above and deliberately
+  # NOT in the `push` paths below. The asymmetry is a decision, not an
+  # oversight, so it is written down here rather than rediscovered:
+  #
+  # A push event evaluates the workflow as it exists in the pushed commit. If
+  # an edit to this file could trigger a push run, one commit could both
+  # weaken a fence and act under that fence in the same run. Today it cannot:
+  # a commit that changes the guard reaches main inert, and the guarded action
+  # only happens when content changes afterwards — a second change with its
+  # own review. That is the same escalation shape the publish job's comment
+  # already refuses for pull requests from forks.
+  #
+  # The trigger also follows the content rather than the machinery. A publish
+  # fired by a workflow edit would write pages nobody touched, and a wiki that
+  # churns for reasons nobody can name is a drift report people stop reading.
+  #
+  # What it costs, stated plainly: a merged change to this file is exercised
+  # on pull requests and then sits unexercised on the push path until the next
+  # commit touching docs/ or config/topics.yaml. There is no way to exercise
+  # the publish path on demand without weakening the fence — `workflow_dispatch`
+  # would not do it, since both publish jobs test `event_name == 'push'` and
+  # would skip; reaching them would mean widening that condition, which is a
+  # manually triggerable write path holding live credentials. We are choosing
+  # the fence and accepting the gap.
+  #
+  # Reopen this before the first real publish, not after: the day
+  # `CONFLUENCE_HOST` or `WIKI_REPOSITORY` is set, a broken workflow edit stops
+  # being inert and starts failing while holding credentials.
   push:
     branches: [main]
     paths:

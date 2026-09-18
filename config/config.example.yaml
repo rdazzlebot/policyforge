@@ -1,6 +1,12 @@
 # Copy this to config.yaml (already gitignored) and fill in your own values.
 # Never put an actual API key in this file — reference an environment
-# variable name instead, and set that variable in your shell / .env.
+# variable name instead, and export that variable in your shell.
+#
+# A `.env` file is not enough on its own: nothing in this project loads
+# one. LiteLLM happens to read `.env` when it is imported, so keys appear
+# to work through `provider: litellm` and through nothing else, which is a
+# difference no user could infer. Export the variable, or source the file
+# yourself, and the same instruction holds for every provider.
 
 llm:
   # Seven providers: anthropic, bedrock, vertex, gemini, openai-compat

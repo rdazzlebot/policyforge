@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Keys come from the environment, and the example no longer implies otherwise
+
+- **`config/config.example.yaml` told you to set the variable "in your
+  shell / .env".** Nothing in `src/policyforge/` loads a `.env` file:
+  LiteLLM reads one when it is imported, so a key placed there appears to
+  work through `provider: litellm` and through no other provider, which is
+  a difference no reader could infer and which presents as "your key is
+  not set" on the first call. The example now says to export the variable
+  and explains why the file alone is not enough. Whether the CLI should
+  load `.env` itself is a product question, deliberately left open rather
+  than answered here.
+
 ### The ledger can see what was removed from a reply, not only what was billed
 
 - **`stripped_reasoning_chars` records how much inline reasoning was cut

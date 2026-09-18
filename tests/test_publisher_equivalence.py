@@ -14,13 +14,14 @@ surprised. `_old_publish_tree`, `_old_wiki_drift`, `_old_pull_pages`,
 `_old_moved_since_last_publish`, `_old_unchanged_on_the_wiki`,
 `_old_storage_key` and `_old_target_path` are the 6dce141 bodies with only
 their imports flattened and their helper calls renamed to the `_old_`
-copies. `_OldDriftResult`, `_OldDriftReport`, `_OldPullResult` and
-`_OldPullReport` are the 6dce141 dataclasses, copied whole, because the
-originals were replaced by their `publisher.py` successors and a frozen
-loop must build the frozen shape. `_old_publish_tree` alone builds the
-live `PublishReport`/`PublishResult`, which did not change in the
-refactor (same fields, same `format_report`), so the two reports compare
-directly. Nothing else is simplified.
+copies. `_OldPublishResult`, `_OldPublishReport`, `_OldDriftResult`,
+`_OldDriftReport`, `_OldPullResult` and `_OldPullReport` are the 6dce141
+dataclasses, copied whole, because a frozen loop must build the frozen
+shape: the live `PublishReport` gained an `undeclared_note` field and a
+branch in `format_report` in the refactor, and a first cut of this file
+had the frozen loop build the live class, which meant a change to
+`format_report` moved both sides together and could never fail the test.
+Nothing is simplified.
 
 The frozen copies are the point of the file and must not be "tidied" into
 calls to the new code: the moment they delegate, the test proves nothing.
@@ -43,16 +44,7 @@ from policyforge.content.check import check_tree
 from policyforge.content.tree import TIER_DIRS, load_content_tree, render_document
 from policyforge.export.confluence_exporter import PUBLISH_MARKER
 from policyforge.export.drift import wiki_drift
-from policyforge.export.publish import (
-    ADOPTED,
-    CREATED,
-    MOVED,
-    SKIPPED,
-    UPDATED,
-    PublishReport,
-    PublishResult,
-    publish_tree,
-)
+from policyforge.export.publish import ADOPTED, CREATED, MOVED, SKIPPED, UPDATED, publish_tree
 from policyforge.export.publisher import ConfluencePublisher, LivePage
 from policyforge.export.pull import REFUSED, UNCHANGED, WRITTEN, pull_pages
 from policyforge.textfile import normalise_newlines, write_text_lf
@@ -112,6 +104,74 @@ def _old_unchanged_on_the_wiki(doc, live) -> bool:
     )
 
 
+@dataclass
+class _OldPublishResult:
+    path: str
+    space: str
+    title: str
+    action: str
+    reason: str = ""
+    url: str = ""
+
+
+@dataclass
+class _OldPublishReport:
+    results: list[_OldPublishResult] = field(default_factory=list)
+    dry_run: bool = True
+    undeclared: int = 0
+
+    def _of(self, action: str) -> list[_OldPublishResult]:
+        return [r for r in self.results if r.action == action]
+
+    @property
+    def skipped(self) -> list[_OldPublishResult]:
+        return self._of(SKIPPED)
+
+    @property
+    def moved(self) -> list[_OldPublishResult]:
+        return self._of(MOVED)
+
+    @property
+    def published(self) -> list[_OldPublishResult]:
+        return self._of(CREATED) + self._of(UPDATED)
+
+    def format_report(self) -> str:
+        verb = "Would publish" if self.dry_run else "Published"
+        lines = [
+            f"{verb} {len(self.published)} page(s): "
+            f"{len(self._of(CREATED))} new, {len(self._of(UPDATED))} updated"
+        ]
+        for result in self.published:
+            mark = "+" if result.action == CREATED else "~"
+            note = f" ({result.reason})" if result.reason else ""
+            lines.append(f"  {mark} {result.path} -> {result.space}/{result.title}{note}")
+            if result.url:
+                lines.append(f"      {result.url}")
+
+        if self.moved:
+            lines += [
+                "",
+                f"Changed on the wiki since this tool last published them ({len(self.moved)}) "
+                "— not overwritten. Pull them, review the change, then publish:",
+            ]
+            lines += [f"  {r.path}: {r.reason}" for r in self.moved]
+
+        if self.skipped:
+            lines += ["", f"Skipped {len(self.skipped)}:"]
+            lines += [f"  {r.path}: {r.reason}" for r in self.skipped]
+
+        if self.undeclared:
+            lines += [
+                "",
+                f"{self.undeclared} document(s) declare no `confluence:` block and were "
+                "left alone.",
+            ]
+
+        if self.dry_run and self.published:
+            lines += ["", "Nothing was written. Pass --apply to publish."]
+        return "\n".join(lines)
+
+
 def _old_publish_tree(
     root: Path,
     *,
@@ -120,16 +180,16 @@ def _old_publish_tree(
     allow_macros: bool = False,
     only: str = "",
     force: bool = False,
-) -> PublishReport:
+) -> _OldPublishReport:
     from policyforge.content.tree import load_content_tree
     from policyforge.edit.apply import detect_unsupported_macros
     from policyforge.export.confluence_exporter import export_to_confluence
     from policyforge.export.confluence_importer import fetch_confluence_page
 
     documents, problems = load_content_tree(root)
-    report = PublishReport(dry_run=dry_run)
+    report = _OldPublishReport(dry_run=dry_run)
     report.results.extend(
-        PublishResult(path=path, space="", title="", action=SKIPPED, reason=reason)
+        _OldPublishResult(path=path, space="", title="", action=SKIPPED, reason=reason)
         for path, reason in problems
     )
 
@@ -149,7 +209,7 @@ def _old_publish_tree(
             macros = detect_unsupported_macros(live.storage_body)
             if macros:
                 report.results.append(
-                    PublishResult(
+                    _OldPublishResult(
                         path=doc.relative_path,
                         space=doc.space,
                         title=doc.page_title,
@@ -169,7 +229,7 @@ def _old_publish_tree(
                 moved, reason = "", ADOPTED
             if moved:
                 report.results.append(
-                    PublishResult(
+                    _OldPublishResult(
                         path=doc.relative_path,
                         space=doc.space,
                         title=doc.page_title,
@@ -186,7 +246,7 @@ def _old_publish_tree(
             url = export_to_confluence(doc.body, space=doc.space, title=doc.page_title, host=host)
 
         report.results.append(
-            PublishResult(
+            _OldPublishResult(
                 path=doc.relative_path,
                 space=doc.space,
                 title=doc.page_title,
@@ -557,9 +617,14 @@ def test_publish_produces_the_same_report_and_the_same_exporter_calls(name, tmp_
         _old_publish_tree, publish_tree, build, pages, kwargs, tmp_path, monkeypatch
     )
 
+    def rows(report):
+        return [(r.path, r.space, r.title, r.action, r.reason, r.url) for r in report.results]
+
     # The paths are relative to each root, so the two reports compare
-    # directly: every result, the dry-run flag, the undeclared count.
-    assert after.results == before.results
+    # field by field: every result, the dry-run flag, the undeclared count,
+    # and the formatted report — the only assertion over what a user reads,
+    # and the one that must come from a genuinely old formatter.
+    assert rows(after) == rows(before)
     assert after.dry_run == before.dry_run
     assert after.undeclared == before.undeclared
     assert exported_after == exported_before, "the exporter must see identical calls"

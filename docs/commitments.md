@@ -184,8 +184,16 @@ and [`tests/test_cli.py`](../tests/test_cli.py).
 ### C-08 — Traceability cannot be dropped silently
 
 A generated statement carries its control attribution. A rewrite that drops
-the tag, or weakens a requirement's modal verb, fails the local offline
-`policyforge check` rather than reaching review as an invisible prose diff.
+the tag, or weakens a requirement's modal verb, is reported by the local
+offline `policyforge check` rather than reaching review as an invisible prose
+diff. Both are warnings, so the command exits non-zero on them only under
+`--strict`; a repository that wants this as a gate runs it that way.
+
+**Not covered: whether a tag is correct.** The check compares a document's
+tags against the synthesis it was written from, which catches a tag that was
+dropped between the two and cannot catch one that was wrong in both. Nothing
+in the pipeline resolves a tag against the loaded catalogs, so a citation
+naming a requirement that does not exist is not detected today.
 
 **Enforced by** [`tests/test_content_tree.py`](../tests/test_content_tree.py)
 and [`tests/test_deontic.py`](../tests/test_deontic.py).

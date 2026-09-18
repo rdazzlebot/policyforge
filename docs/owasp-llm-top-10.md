@@ -573,11 +573,17 @@ by people making claims to regulators and auditors.
 1. **An explicit refusal path**, read by equality rather than by substring:
    the model has a supported way to say the passages do not answer the
    question, instead of being cornered into inventing one.
-1. **Traceability tags are enforced.** Every statement carries
-   `[NIST AC-2 | HIPAA 164.308(a)(3)(i)]`-style attribution back to the
-   controls it came from, and `policyforge check` **blocks a rewrite that
-   dropped the tag that was the document's only traceability** — a change no
-   reviewer reading a prose diff would catch.
+1. **Traceability tags are carried, and checked for presence.** Every
+   statement carries `[NIST AC-2 | HIPAA 164.308(a)(3)(i)]`-style attribution
+   back to the controls it came from, and `policyforge check` reports a
+   rewrite that dropped the tag that was the document's only traceability — a
+   change no reviewer reading a prose diff would catch. Two limits, because
+   this is weaker than "enforced" sounds: a dropped tag is a **warning**, so
+   the command exits non-zero only under `--strict`; and the check compares
+   the document against the synthesis it was written from, so it establishes
+   that a tag survived, never that it is correct. **Nothing resolves a tag
+   against the loaded catalogs**, so a tag naming a requirement that does not
+   exist matches itself and ships. See the residual below.
 1. **Deontic weakening is detected**
    ([`deontic.py`](../src/policyforge/content/deontic.py)): a requirement
    silently softened from "must" to "should" is reported.
@@ -615,6 +621,19 @@ Two narrower residuals worth naming:
   warning readers learn to ignore. Until then, the fenced prose path plus
   `check_answer` is the control, and it is the one every published
   measurement covers.
+- **A citation is never resolved, only carried.** Measured over the 59
+  documents of epoch 21's `glm-5.3-flash` run, against the tag population
+  `main` matches at `6dce141`: **33 of 4,090 citation occurrences name
+  nothing in the loaded catalogs**, a count three independently written
+  implementations reached. Twenty-two name a range or list where one
+  identifier belongs and five an id no catalog carries; the remaining six
+  name `FedRAMP CA-7` enhancements the bundled 42-control subset does not
+  carry, so nothing here can disprove them. A prompt rule requiring one identifier per citation and a check that
+  rejects a span would each close the majority shape; neither exists today.
+  Separately, the tag allowlist shared by `policyforge check` and
+  `frameworks/drift.py` cannot see 22 tags carrying 31 citations in this
+  document set, so no check reads them at all — see
+  [residual risk](security-architecture.md#residual-risk).
 - **Entailment checking is not wired into any runtime path.** Treat the
   claim "statements are checked for support, not just for citation" as
   describing a capability this codebase has, not something that runs when

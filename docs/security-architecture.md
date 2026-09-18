@@ -556,6 +556,7 @@ comfortable.
 
 1. **The injection scanner is a word list, and a patient author writes around
    one.** It is a report on the corpus, not a guarantee about it.
+
 1. **The planner gap is open.** On the edit path, an executor that obeys an
    injected instruction lands in a section the plan never named, and
    `check_edit` detects it and forces a person to review it. A *planner* that
@@ -574,37 +575,159 @@ comfortable.
    running the edit path on `deepseek-v4-flash` to save a fraction of a cent
    is the one configuration here that should not be used. Rewording the
    contract did not move it.
+
 1. **`parser_gate` is not a sandbox.** See above. It changes the default, not
    the ceiling.
+
 1. **Provider classification is inferred from a URL** unless declared. The
    inference fails closed, so an unrecognized endpoint is treated as
    third-party — but a third-party model wrongly *declared* as self-hosted is
    a claim the tool cannot check.
+
 1. **The ledger is a local append-only file.** It is not tamper-evident
    against someone with write access to the machine.
+
 1. **Content classification cannot see inside a paragraph.**
    `organization-internal` is a statement about where a file came from, not
    about what is in it. If PHI, credentials or customer data are pasted into
    company context or a topic registry, the tool will faithfully send them
    wherever that class's ceiling permits.
+
 1. **Third-party model providers are processors in your compliance program.**
    Whether their terms permit your content, whether a BAA exists, whether
    inputs are retained or used for training, and for how long, are questions
    about *your* contract with *them*. This tool cannot answer them and does
    not try.
+
 1. **No supply-chain control covers the model itself.** You are trusting a
    remote model's weights and behaviour, which can change under you without
    notice. The eval suites exist partly so that such a change shows up as a
    number.
+
+1. **A citation tag is checked for presence, never resolved.** Nothing in
+   the pipeline asks whether a tag names a requirement that exists.
+   `policyforge check` compares a document's tags against the synthesis it
+   was written from, so it catches one dropped between the two and cannot
+   catch one that was wrong in both — and it reports that as a warning,
+   failing only under `--strict`. Measured over the 59 documents from epoch
+   21's `glm-5.3-flash` run, against the four bundled catalogs (NIST 800-53,
+   HIPAA Security Rule, FedRAMP, ARC-AMPE) and no overlay: **33 of 4,090
+   citation occurrences resolve to nothing.** No HITRUST or GovRAMP citation
+   appears in the set, so neither framework contributes to that count. The
+   population is what `edit/apply._SOURCE_TAG_RE` matches on `main` at
+   `6dce141`; a rule change that widens or narrows what counts as a tag
+   moves both numbers, which is why the code state is named.
+
+   The count was produced three times, by three separately written
+   implementations with different population rules, and agreed every time.
+   It also does not turn on the one population question those rules disagree
+   about: the 22 tags the allowlist cannot see, described below, all resolve,
+   so a scan that reads them and a scan that misses them arrive at the same
+   number of unresolvable citations by different routes. A finding that
+   survives a disagreement about its own denominator is worth more than one
+   that needed the denominator settled first.
+   **No distinct-citation figure is published here**: the same three
+   implementations returned 2,774, 2,776 and 2,777 for it, and a number that
+   cannot be reproduced across implementations has no place in a document
+   about citations being followable.
+
+   **The 33, by shape.** Twenty-two name a range or a list where one
+   identifier belongs — `NIST CP-4(1)–(5)`, `NIST 800-53 SA-17(2), SA-17(3), SA-17(4)`, `HIPAA 164.310(a)(2)(i)–(iv) Addressable`. Five name an id no
+   catalog carries, such as `HIPAA 164.308(a)(7)(ii)`, constructed by
+   truncating specification ids rather than copied from anything in the
+   prompt — `(ii)(A)` through `(ii)(E)` all exist and the bare `(ii)` does
+   not. Those twenty-seven are the documents' own failure. The remaining six
+   are `FedRAMP CA-7(3)`, `(5)` and `(6)`, in the risk-assessment standard
+   and its procedure: the bundled FedRAMP catalog is 42 controls carrying
+   `CA-7` with no enhancements, being the set where FedRAMP tailors 800-53
+   rather than a full selection, so it cannot disprove them. The honest
+   statement is that this repository has no catalog to check those six
+   against, not that the model invented them.
+
+   **A thirty-fourth was counted and should not have been.** Every
+   implementation that measured this corpus counted
+   `[HIPAA Documentation Review Frequency]` in
+   `procedures/business-associate-vendor-risk.md` as a citation naming no
+   identifier. It is a parameter placeholder: it sits mid-sentence where a
+   value belongs, the step it appears in is already cited by its own
+   heading, and the same file carries a dozen more of that shape
+   (`[Contract Repository]`, `[Agreement Approver]`). It is matched only
+   because its label happens to begin with a framework name the allowlist
+   carries. So the allowlist is wrong in both directions: it misses tags
+   that are tags, and it matches text that is not one.
+
+   **Two fixes would close the majority shape, and neither is claimed here.**
+   A prompt rule requiring one identifier per citation: the synthesis prompt
+   asks for a tag "listing every framework/control it was drawn from" and
+   never says one identifier each, so a span is a defensible reading of the
+   instruction given. And a deterministic check that rejects a span or a
+   list. The first is `generate/` work that changes model output and costs a
+   measured epoch; the second is not written. Neither is ranked above the
+   other, and an assessor following any of the 34 finds nothing until one of
+   them lands.
+
+1. **A tag whose first citation leads with an unlisted framework name is
+   invisible to every check that reads tags.** The allowlist is
+   `edit/apply._SOURCE_TAG_RE`, and `content/check.py` and
+   `frameworks/drift.py` both read tags through it. It lists `ARC-AMPE`; it
+   does not list the abbreviation `ARC`. Run against these 59 documents, the
+   allowlist exactly as `main` ships it cannot see **22 tags carrying 31
+   citations** — 21 tags in `standards/physical-environmental-security.md`
+   and 1 in its procedure. So `check` cannot report those tags present,
+   dropped or wrong, and `drift` cannot use them to decide which documents a
+   catalog revision touches. All 31 resolve, so the count of 34 above is
+   unaffected; what is affected is every claim this tool makes about
+   traceability for those pages.
+
+   This is a measurement blind spot rather than a resolution failure. No
+   amount of resolver work would surface it, because those tags were never
+   candidates — which is also why it was found by comparing two independent
+   scans and not by either one alone.
+
+   **The same defect happened four times in one evening**, in four
+   separately written implementations of a citation-population rule, while
+   three people were specifically checking citation counts. One skipped
+   markdown headings, so every tag a procedure carries on a step heading was
+   invisible. One is the allowlist above. One required an identifier before
+   counting a bracketed span, so the placeholder vanished rather than being
+   classified — in a scanner written for the express purpose of catching
+   that class of defect, by the person who had already diagnosed the
+   pattern. One filed that same placeholder as a malformed identifier
+   rather than reading the sentence it sat in. Each was silent by
+   construction: each returned a number rather than an error, and the ones
+   that erred returned a *smaller* number, which is the direction nobody
+   notices.
+
+   A fifth was proposed and rejected during review, and it differs from the
+   others in a way worth keeping. Three standards in this corpus write their
+   citations inside backticks as house style, so a rule keyed on that
+   typography — which looked, from one file, like a reliable way to tell a
+   placeholder from a citation — would have discarded roughly 4% of the
+   corpus's citations. Measuring it produced three different counts of how
+   many, 175, 178 and 179, which is itself the finding: a rule tracking an
+   accident of one file rather than a property of the generator does not
+   even measure consistently. The first four were found after they were
+   built, by measurement; the fifth was found before, by the same means.
+   Nobody caught any of the five by being careful.
+
+   That the one span which is not a citation is also the span every
+   implementation got wrong is not a coincidence: it is what a population
+   rule expressed as a list of names rather than a shape does at its edges.
+   That pattern, not any single count, is the argument for reading tags
+   through one reviewed implementation rather than a regex repeated per call
+   site.
+
 1. **Entailment checking is implemented but not wired into any runtime
    path.** A statement can therefore carry a real citation to a real passage
    that does not support it, and only a human reader will catch it. This is
    the largest open gap in the accuracy argument.
+
 1. **The native-citation cross-check is provider-dependent and unmeasured.**
    It engages only on providers holding a real Anthropic client, and a live
    probe through an Anthropic-compatible proxy returned an accepted request,
    a correct answer, and zero citations — indistinguishable from a model that
    quoted nothing. Do not count it as a control you are receiving.
+
 1. **A multi-command catalog build can destroy enrichment silently.**
    Running `etl-hipaa` without following it with `etl-hipaa-crosswalk`
    returns a complete-looking catalog with its NIST mappings emptied, and
@@ -612,11 +735,13 @@ comfortable.
    enforced by the commands. Making `etl-hipaa` refuse to clobber an
    enriched catalog would be the fix; it is a behaviour change and has not
    been made.
+
 1. **Catalog provenance is populated for most bundled catalogs, not all.**
    `nist-800-53-r5`, `arc-ampe` and `fedramp` verify; `hipaa-security-rule`
    is unstamped and reports as unverifiable rather than as passing. An
    unstamped catalog is still usable, so its integrity rests on git history
    and review until it is re-fetched.
+
 1. **FedRAMP no longer publishes a machine-readable baseline.**
    `GSA/fedramp-automation` is gone — the repository and its API both 404,
    not archived or moved — so the bundled `fedramp` catalog carries control

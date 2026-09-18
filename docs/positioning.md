@@ -65,16 +65,18 @@ another tool. It is a template pack, a consultancy engagement, or nothing.
 
 ## Against a compliance automation platform
 
-Vanta, Drata, Secureframe, Hyperproof and Optro (formerly AuditBoard) are
-compliance and GRC platforms. In their own words, read 2026-09-17:
+A category of compliance and GRC platforms sits next to this one. As their
+own marketing described them in September 2026, they offer compliance and
+risk management that is automated and continuously monitored, evidence
+collected automatically across dozens of frameworks, controls monitored
+continuously, control mapping automated, and real-time risk data turned
+into insight. Several had by then begun advertising an agent that drafts
+policies and completes questionnaires.
 
-| Product                                 | How it describes itself                                                                                                                                                                                                                        |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Vanta](https://www.vanta.com/)         | "compliance and risk management, automated and continuously monitored", collecting evidence and monitoring controls across 35+ frameworks. Its agent also assists with "drafting policies, completing your questionnaires, calling out issues" |
-| [Drata](https://drata.com/)             | "automate compliance, manage internal and third-party risk, and continuously prove your security posture"; "collect evidence automatically, monitor controls continuously"                                                                     |
-| [Secureframe](https://secureframe.com/) | "automates and streamlines the end-to-end compliance process" through "automated evidence collection, continuous monitoring, and risk management"                                                                                              |
-| [Hyperproof](https://hyperproof.io/)    | an AI-powered GRC platform to "automate control mapping, eliminate duplicative work, and turn real-time risk data into actionable insights"                                                                                                    |
-| [Optro](https://optro.ai/)              | "GRC system of action delivers the real-time insights, autonomous testing, and connected view enterprises need"; formerly AuditBoard                                                                                                           |
+Named comparisons are deliberately absent. The distinction below is about
+what a category of tool is for, and it does not get sharper by naming
+vendors; it only invites their attention and dates the moment one of them
+changes their page.
 
 **These platforms answer "is this control working, and where is the
 evidence?" PolicyForge answers "what does this control require of us, who
@@ -83,9 +85,9 @@ an artifact with a review date and an owner. Something still has to write
 the artifact, and for most of these buyers that something is a template pack.
 PolicyForge is upstream of that: it is where the document comes from.
 
-The overlap is real and worth stating plainly: **Vanta's own page says its
-agent drafts policies.** Several of these vendors ship policy templates or
-generators. What this project offers against that is not "we also draft" but
+The overlap is real and worth stating plainly: **some of these platforms
+now advertise agents that draft policies**, and several ship policy
+templates or generators. What this project offers against that is not "we also draft" but
 how the drafting is constrained:
 
 - **Grounded in the catalog text you supply**, never the model's

@@ -4,7 +4,7 @@ from Confluence) for a given document over time.
 
 This is NOT a replacement for your org's actual system of record —
 Confluence's own page version history, git history if you commit output/
-somewhere private, a GRC platform like Drata. Treat it as a local,
+somewhere private, or a GRC platform. Treat it as a local,
 tool-side audit trail: "what did this Standard actually say two synthesis
 runs ago, and what changed." It exists because those other systems only
 see what got *published*; this also captures drafts you regenerated but

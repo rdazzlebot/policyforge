@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Positioning names a category, not companies
+
+- **The competitive comparison no longer names vendors.** `positioning.md`
+  described five named platforms with links and quoted marketing copy;
+  it now describes the category in the terms those products use about
+  themselves, and says plainly why the names are absent — the distinction
+  is about what a kind of tool is for, it does not get sharper by naming
+  anyone, and a named comparison dates the moment one of them rewrites a
+  page. The three passing mentions elsewhere, in the README, the skill
+  file and a `history/version_store.py` docstring, now say "a GRC
+  platform". Note that git history is unchanged: the names remain in
+  earlier commits, and rewriting published history is not something this
+  project does.
+
 ### A claim is judged whole, or the judge is answering about debris
 
 - **The entailment check split claims on every full stop, including the

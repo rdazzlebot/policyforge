@@ -1252,6 +1252,74 @@ document with frontmatter and no body. 59 of 60 documents were produced.
 On sonnet-5, five calls were cut off at their budget and the retry completed
 every one: 25 calls for what would otherwise be 20.
 
+#### Amendment, 2026-09-17: "no truncations at all" was too narrow
+
+The sentence above stands as written, because it is what was measured and
+the measurement was correct. It was also the wrong sentence to write, and a
+reader would take from it that the run produced a complete set. It did not.
+
+Found while counting citation tags per document for an unrelated review:
+one Standard in that run had no source tags at all, and the reason was that
+it had barely been written.
+
+**`standards/network-boundary-protection.md` is 1,066 bytes and stops mid
+sentence** — "…including information transmitted across external and" — with
+2 headings against 28 for the next-smallest Standard. Not a short document,
+a severed one. **`procedures/remote-third-party-access.md` is worse to
+find**: 21,336 bytes, 36 headings, ending on a complete sentence, and zero
+citation tags anywhere in it. A full-length, well-formed, finished-looking
+procedure with no traceability at all. Its closing line promises "requirement
+text, control rationale, and applicability determinations behind each step
+above", and there are none.
+
+So the run produced **57 complete documents, 1 stub and 1 untraceable**, not
+59 sound ones.
+
+**The guards did what they claim; the claim was too narrow.** The ledger was
+checked before this was written, and it is clean: 80 calls, `stop_reason`
+`"stop"` on all 80, not one length stop. 1.2.1 catches a reply cut off at its
+budget (retry at a larger one) and an empty reply (refuse by name, write
+nothing). The severed Standard is neither. Its call returned **1,358 output
+tokens with `stop_reason` `"stop"`** — the model emitted a normal stop token
+in the middle of a sentence — so nothing in the pipeline had a signal to act
+on, and `cost_run.json` records that step as `ok: true` in 22.2 seconds, the
+fastest Standard in the run by a wide margin. Exit 0, written to disk.
+
+"No truncations" should therefore be read as **no budget truncations**, which
+is the failure 1.2.1 was built to fix and did fix. A model that stops early
+of its own accord is a different failure, it was present in this run, and
+nothing detects it today.
+
+**Nothing in the pipeline detected either one at the time of this run.** Three
+signals were available for the stub — an order-of-magnitude length anomaly
+against its siblings, a body ending on a dangling conjunction, and no source
+tags in a tier whose purpose is to carry them — and the untraceable procedure
+trips only the third. That third is the cheapest and the most principled: a
+Standard or Procedure with no citation tags is not a short document, it is a
+failed one, and saying so needs no model call. It has to be scoped by tier —
+**0 of the 19 Policies in this run name a framework at all**, by design — and
+it has to run on a corrected tag population rather than the shipped one, or a
+document whose tags all led with an unlisted framework name would read as
+zero-tag and be failed for having perfect traceability.
+
+**A check of that shape has since shipped** — `_check_uncited` in
+`content/check.py`, merged as #93 — and it is scoped by tier and reads the
+corrected population. Run against these same 59 documents it checks all 59,
+flags exactly these two, and flags none of the nineteen Policies. So this
+paragraph records something closed rather than something wanted.
+
+**The signal that was there, pointing the wrong way.** The run exited 0 and
+`cost_run.json` recorded that step as `ok: true` in 22.2 seconds — **the
+fastest Standard in the run by a wide margin**. The timing data did carry the
+anomaly, and it carried it in the direction nobody reads as a fault: fast
+looked like efficient.
+
+**One anomaly left unexplained rather than theorised about.** That Standard's
+call records `cost_usd: 0.0` against 1,358 output tokens, and the document's
+frontmatter carries the same zero. Other calls in the run priced normally. It
+does not move the run total materially and it has not been investigated; it
+is recorded here so that nobody quotes a per-document cost from that file.
+
 ### Output headroom, before the 1.2.1 budgets
 
 Measured on `553d430`, the last commit before the fix, through

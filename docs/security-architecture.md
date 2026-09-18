@@ -750,6 +750,30 @@ comfortable.
    program needs FedRAMP baselines, that selection has to come from
    somewhere you trust, and this tool will not invent it.
 
+1. **The wiki publish job's fence had never been evaluated at runtime, as of
+   2026-09-18.** The `publish-wiki` job in `.github/workflows/content.yml` is
+   fenced to a push to this repository with `vars.WIKI_REPOSITORY` set. As
+   this paragraph was written, GitHub had never evaluated any of that: the
+   job is fenced to `push`, so no pull request had run it, and the workflow's
+   push paths cover `docs/**` and `config/topics.yaml`, so the commits that
+   added and changed the job had not run it either. Everything known about
+   the fence was known by reading the file. The Confluence job's
+   `vars.CONFLUENCE_HOST` clause is the contrast: it has run and skipped, so
+   it has runtime evidence where this one has none.
+
+   **Merging this paragraph is expected to produce the first evaluation**,
+   since this file is under `docs/**` and the commit therefore triggers the
+   workflow it describes. The result belongs here once observed; until it is
+   written down, treat the fence as read-but-unexercised rather than as
+   confirmed by that run.
+
+   Neither job can publish anything while no destination is configured, so
+   what is marked unverified here is the fence, not the outcome. Exercising
+   the publish path on demand would mean widening `event_name == 'push'`,
+   which is a manually triggerable write path holding live credentials — a
+   worse trade than the gap, so the gap stands. Reopen this the day a
+   destination is configured, before the first publish rather than after it.
+
 ## Adoption checklist
 
 Before running PolicyForge against real compliance work:

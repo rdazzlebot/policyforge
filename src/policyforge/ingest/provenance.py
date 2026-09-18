@@ -36,6 +36,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from policyforge.textfile import write_text_lf
+
 #: Keys this module owns. Anything else in the file belongs to whoever wrote
 #: it and is preserved untouched.
 PROVENANCE_KEYS = ("source_ref", "source_url", "content_sha256", "fetched_at")
@@ -44,11 +46,13 @@ PROVENANCE_KEYS = ("source_ref", "source_url", "content_sha256", "fetched_at")
 def content_digest(content: bytes) -> str:
     """The hash of a catalog with its line endings normalised to LF.
 
-    The etl-* commands write with `write_text`, which on Windows emits CRLF,
-    and git checks the same file out as LF on Linux. Hashing raw bytes made
-    every stamp recorded on Windows a MISMATCH in CI — the same catalog, byte
-    for byte apart from line endings. JSON cannot carry a raw CR inside a
-    string, so normalising touches only whitespace between tokens.
+    The etl-* commands used to write with `write_text`, which on Windows
+    emits CRLF, and git checks the same file out as LF on Linux. Hashing raw
+    bytes made every stamp recorded on Windows a MISMATCH in CI — the same
+    catalog, byte for byte apart from line endings. The writers now emit LF
+    everywhere, but a checkout with `core.autocrlf=true` still hands this
+    function CRLF bytes, so the normalisation stays. JSON cannot carry a raw
+    CR inside a string, so it touches only whitespace between tokens.
     """
     return hashlib.sha256(content.replace(b"\r\n", b"\n")).hexdigest()
 
@@ -85,9 +89,8 @@ def record_source_provenance(
     # fail before it could fetch anything.
     data["fetched_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    framework_yaml.write_text(
-        yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=88),
-        encoding="utf-8",
+    write_text_lf(
+        framework_yaml, yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=88)
     )
     return digest
 
@@ -123,9 +126,8 @@ def restamp_content(framework_yaml: Path, *, content: bytes) -> str | None:
 
     digest = content_digest(content)
     data["content_sha256"] = digest
-    framework_yaml.write_text(
-        yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=88),
-        encoding="utf-8",
+    write_text_lf(
+        framework_yaml, yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=88)
     )
     return digest
 

@@ -41,6 +41,10 @@ LF_WRITERS = [
     # The synced corpus snapshot. Found by the sweep below, not by the
     # report that prompted this file — which is what the sweep is for.
     "zardoz/corpus.py",
+    # Catalog JSON and framework.yaml: committed under data/frameworks, where
+    # a CRLF write shows as a whole-file diff and moves the provenance hash.
+    "cli/etl.py",
+    "ingest/provenance.py",
 ]
 
 

@@ -750,6 +750,30 @@ comfortable.
    program needs FedRAMP baselines, that selection has to come from
    somewhere you trust, and this tool will not invent it.
 
+1. **Every NIST-family catalog is filed under one key, and a citation across
+   them resolves clean.** `mapping/crosswalk.normalize_framework` takes the
+   first word of a framework's declared name, so `NIST 800-53`,
+   `NIST 800-171`, `NIST 800-172`, `NIST 800-137` and
+   `NIST Cybersecurity Framework` all key as `nist` and their requirement
+   identifiers merge into one set. An identifier from one cited as another is
+   found in that bucket and **counted as evidence rather than reported as
+   unknown** — the failure is silent, and it reaches `satisfies`, `coverage`,
+   `bundles`, the overlay and the crosswalk traversal alike, since all of them
+   read that key. Verified on 2026-09-18 against this tree.
+   **Latent for what this project bundles** — the four bundled catalogs
+   collide on nothing — and **live for the documented bring-your-own path**,
+   which needs no release to reach: a user who brings 800-171 or CSF
+   alongside the bundled 800-53 is in it immediately. There is no workaround:
+   writing the framework's full name does not help, because the key is the
+   first word either way. The advice, until it is fixed, is not to load two
+   NIST-family catalogs into one tree. Non-NIST BYOC catalogs are unaffected.
+   The remedy is not novel and does not need designing:
+   `mapping/crosswalk.HITRUST_SOURCE_ALIASES` already distinguishes these
+   families for the HITRUST path — its own comment says folding them together
+   "would file CSF outcome ids as 800-53 controls" — and the catalog path
+   never received it. Scheduled into the framework expansion work rather than
+   a patch release, on the user's decision, with the merged severity known.
+
 1. **The wiki publish job's fence had never been evaluated at runtime, as of
    2026-09-18.** The `publish-wiki` job in `.github/workflows/content.yml` is
    fenced to a push to this repository with `vars.WIKI_REPOSITORY` set. As

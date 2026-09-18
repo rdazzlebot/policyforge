@@ -107,6 +107,11 @@ class Metered:
         #: Calls that raised. They reached the vendor and were billed, but
         #: no response came back to read a price off.
         self.unpriced = 0
+        #: Every reply, in order: (stop_reason, output_tokens, model). The
+        #: runner slices this per run so a report can say whether a failed
+        #: run's reply was cut off — b5's re-measure had one `length` stop
+        #: in 200 calls and no way to tell which run it belonged to.
+        self.replies: list[tuple[str | None, int | None, str | None]] = []
 
     @property
     def provider(self):
@@ -129,6 +134,13 @@ class Metered:
         if response.cost_usd is not None:
             self.cost += response.cost_usd
             self.priced = True
+        self.replies.append(
+            (
+                getattr(response, "stop_reason", None),
+                getattr(response, "output_tokens", None),
+                getattr(response, "model", None),
+            )
+        )
         return response
 
     def generate(self, **kwargs):

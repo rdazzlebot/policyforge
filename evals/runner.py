@@ -66,6 +66,27 @@ class Outcome:
     #: prompt, and folding it in turns an expired card into what looks like
     #: a regression.
     errored: bool = False
+    #: Every model reply this run got, as (stop_reason, output_tokens,
+    #: model), from the meter. Attached by `run_case` so the report can say
+    #: whether a failure came from a reply cut off at its budget, and how
+    #: close a passing reply came to it.
+    replies: list = field(default_factory=list)
+
+    @property
+    def cut_off(self) -> bool:
+        """Whether any reply in this run stopped at its budget."""
+        from policyforge.llm.base import TRUNCATION_STOP_REASONS
+
+        return any(
+            (stop or "").strip().lower() in TRUNCATION_STOP_REASONS for stop, _, _ in self.replies
+        )
+
+    def describe_replies(self) -> str:
+        """`stop=length out=1019, stop=stop out=44` — one entry per call."""
+        return ", ".join(
+            f"stop={stop or '?'} out={tokens if tokens is not None else '?'}"
+            for stop, tokens, _ in self.replies
+        )
 
 
 @dataclass
@@ -1004,6 +1025,10 @@ def run_case(
 
     result = CaseResult(suite=suite, name=case.get("name") or case.get("question", "?"))
     for _ in range(repeat):
+        # The meter keeps every reply; this run's are the ones appended
+        # from here. Read through getattr: a provider without a meter has
+        # no replies to attach, and the run is graded the same.
+        seen_before = len(getattr(provider, "replies", ()))
         try:
             # Every runner takes the same three arguments, whether or not it
             # uses the corpora. Dispatching on a list of suite names instead
@@ -1030,6 +1055,7 @@ def run_case(
             detail = f"{type(exc).__name__}: {exc}"
             infrastructure = any(hint in detail.lower() for hint in _INFRASTRUCTURE)
             result.outcomes.append(Outcome(False, detail, errored=infrastructure))
+        result.outcomes[-1].replies = list(getattr(provider, "replies", ())[seen_before:])
     return result
 
 
@@ -1186,7 +1212,13 @@ def format_report(results: list[CaseResult], *, repeat: int) -> str:
                 lines.append(f"        {outcome.detail}")
                 if outcome.output:
                     lines.append(f"        got: {' '.join(outcome.output.split())[:150]}")
+                if outcome.replies:
+                    # Per call, so "did that failure come from a cut-off
+                    # reply" is answerable from the report rather than from
+                    # the ledger the next morning.
+                    lines.append(f"        replies: {outcome.describe_replies()}")
 
+    cut_off_runs = sum(1 for r in results for o in r.outcomes if o.cut_off)
     errored = [r for r in results if r.errors]
     flaky = [r for r in results if r.flaky and not r.errors]
     failed = [r for r in results if r.passes == 0 and not r.errors]
@@ -1206,6 +1238,14 @@ def format_report(results: list[CaseResult], *, repeat: int) -> str:
         )
     if not failed and not flaky:
         lines.append("  every case passed every run")
+    if cut_off_runs:
+        # Said even when every case passed: a reply that stopped at its
+        # budget and was retried into a pass is a budget one paraphrase
+        # away from a failure, and the number that says so is this one.
+        lines.append(
+            f"  {cut_off_runs} run(s) had a reply cut off at its budget "
+            "(see `replies:` on any failure, or the ledger's stop_reason)"
+        )
     lines += code_provenance()
     lines += prompt_epoch_report()
     return "\n".join(lines)

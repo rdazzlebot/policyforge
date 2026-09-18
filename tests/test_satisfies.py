@@ -26,7 +26,7 @@ from policyforge.crosswalk.overlay import (
     apply_overlays,
 )
 from policyforge.ingest.schema import Control, ControlEnhancement
-from policyforge.mapping.crosswalk import build_crosswalk
+from policyforge.mapping.crosswalk import NIST_ANCHOR, build_crosswalk
 from policyforge.topics.registry import Topic
 from policyforge.topics.satisfies import (
     PUBLISHED,
@@ -98,7 +98,7 @@ def _catalogs():
             framework=HIPAA,
             framework_version="45 CFR 164",
             control_statement="Authorize access.",
-            source_crosswalk={"nist": "AC-2"},
+            source_crosswalk={NIST_ANCHOR: "AC-2"},
         ),
         Control(
             control_id="164.308(a)(4)(i)",
@@ -106,7 +106,7 @@ def _catalogs():
             framework=HIPAA,
             framework_version="45 CFR 164",
             control_statement="Authorize access to ePHI.",
-            source_crosswalk={"nist": "AC-2"},
+            source_crosswalk={NIST_ANCHOR: "AC-2"},
         ),
         Control(
             control_id="164.308(a)(6)(ii)",
@@ -114,7 +114,7 @@ def _catalogs():
             framework=HIPAA,
             framework_version="45 CFR 164",
             control_statement="Respond to incidents.",
-            source_crosswalk={"nist": "IR-3"},
+            source_crosswalk={NIST_ANCHOR: "IR-3"},
         ),
     ]
     return nist + hipaa
@@ -144,7 +144,7 @@ def test_framework_name_is_taken_from_the_catalog_not_the_first_word():
     the document perfectly well-formed.
     """
     names = [NIST, HIPAA]
-    ids = {"nist": {"AC-2"}, "hipaa": {"164.308(a)(3)(i)"}}
+    ids = {NIST_ANCHOR: {"AC-2"}, "hipaa": {"164.308(a)(3)(i)"}}
     assert split_citation("NIST 800-53 AC-2", names, ids) == (NIST, "AC-2", "")
     assert split_citation(f"{HIPAA} 164.308(a)(3)(i)", names, ids) == (
         HIPAA,
@@ -162,7 +162,7 @@ def test_qualifier_is_split_off_by_asking_the_catalog():
     words the catalog actually has.
     """
     names = [NIST, HIPAA]
-    ids = {"nist": {"AC-2(3)"}, "hipaa": {"164.310(a)(2)(i)"}}
+    ids = {NIST_ANCHOR: {"AC-2(3)"}, "hipaa": {"164.310(a)(2)(i)"}}
     assert split_citation("NIST 800-53 AC-2(3) Moderate, High", names, ids) == (
         NIST,
         "AC-2(3)",
@@ -205,7 +205,7 @@ def test_an_unresolvable_citation_is_returned_as_written():
 
 def test_the_nearest_heading_above_a_citation_is_recorded():
     body = "# Access\n\n## Provisioning\n\nRequests are approved. [NIST 800-53 AC-2]\n"
-    found = parse_citations(body, [NIST], {"nist": {"AC-2"}})
+    found = parse_citations(body, [NIST], {NIST_ANCHOR: {"AC-2"}})
     assert found == [(NIST, "AC-2", "", "Provisioning")]
 
 
@@ -301,7 +301,7 @@ def test_a_topics_documents_answer_for_its_anchors_together():
 
 
 def _overlay(rows):
-    return Overlay(framework=HIPAA, anchor="nist", requirements=rows)
+    return Overlay(framework=HIPAA, anchor=NIST_ANCHOR, requirements=rows)
 
 
 def test_a_reviewed_partial_mapping_is_reported_in_part_never_as_satisfied():
@@ -589,11 +589,11 @@ def test_an_abbreviation_resolves_when_it_names_exactly_one_loaded_catalog():
     rejecting `ARC` was an accident of first-word normalization, not a
     rule, and it reported well-formed citations as defects.
     """
-    ids = {"nist": {"PE-1"}, "arc-ampe": {"PE-1"}, "hipaa": {"164.308(a)(3)(i)"}}
+    ids = {NIST_ANCHOR: {"PE-1"}, "arc-ampe": {"PE-1"}, "hipaa": {"164.308(a)(3)(i)"}}
     assert resolve_framework("ARC", ids) == "arc-ampe"
     assert resolve_framework("ARC-AMPE", ids) == "arc-ampe"
-    assert resolve_framework("NIST", ids) == "nist"
-    assert resolve_framework("NIST 800-53", ids) == "nist"
+    assert resolve_framework("NIST", ids) == NIST_ANCHOR
+    assert resolve_framework("NIST 800-53", ids) == NIST_ANCHOR
     assert resolve_framework("HIPAA Security Rule", ids) == "hipaa"
 
 
@@ -609,7 +609,7 @@ def test_an_abbreviation_naming_two_catalogs_resolves_to_neither():
 
 
 def test_a_partial_token_is_not_an_abbreviation():
-    assert resolve_framework("NIS", {"nist": {"AC-2"}}) == ""
+    assert resolve_framework("NIS", {NIST_ANCHOR: {"AC-2"}}) == ""
 
 
 def test_an_abbreviated_framework_is_followed_through_to_the_crosswalk():
@@ -625,7 +625,7 @@ def test_an_abbreviated_framework_is_followed_through_to_the_crosswalk():
             framework="ARC-AMPE",
             framework_version="1.0",
             control_statement="Protect the facility.",
-            source_crosswalk={"nist": "AC-2"},
+            source_crosswalk={NIST_ANCHOR: "AC-2"},
         )
     ]
     # The tag as the generator actually wrote it. `edit/apply._SOURCE_TAG_RE`
@@ -637,7 +637,7 @@ def test_an_abbreviated_framework_is_followed_through_to_the_crosswalk():
     assert evidence.unknown == []
     assert [(c.framework, c.requirement_id, c.qualifier) for c in evidence.cited] == [
         ("arc-ampe", "PE-1", "AE Mandatory"),
-        ("nist", "AC-2", ""),
+        (NIST_ANCHOR, "AC-2", ""),
     ]
 
 
@@ -659,7 +659,7 @@ def test_a_citation_on_a_heading_line_is_not_lost():
         "1. Run it. [NIST 800-53 IR-3(1) High]\n"
     )
     names = [NIST, HIPAA]
-    ids = {"nist": {"IR-3", "IR-3(1)"}, "hipaa": {"164.308(a)(6)(ii)"}}
+    ids = {NIST_ANCHOR: {"IR-3", "IR-3(1)"}, "hipaa": {"164.308(a)(6)(ii)"}}
     found = parse_citations(body, names, ids)
     assert found == [
         (NIST, "IR-3", "", "Test the plan"),

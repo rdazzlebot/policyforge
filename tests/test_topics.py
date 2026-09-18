@@ -14,6 +14,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from policyforge.mapping.crosswalk import NIST_ANCHOR
+
 EXAMPLE_REGISTRY = Path(__file__).parent.parent / "config" / "topics.example.yaml"
 NIST_DATA = (
     Path(__file__).parent.parent / "data" / "frameworks" / "nist-800-53-r5" / "controls.json"
@@ -239,7 +241,7 @@ def test_owned_nist_controls_pull_other_frameworks_in_via_the_crosswalk():
 
     nist = [_control("AC-2"), _control("AU-6")]
     hipaa = _control("164.308(a)(3)(i)", framework="HIPAA Security Rule", baseline="")
-    hipaa.source_crosswalk = {"nist": "AC-2"}
+    hipaa.source_crosswalk = {NIST_ANCHOR: "AC-2"}
     unmapped = _control("164.318(a)", framework="HIPAA Security Rule", baseline="")
 
     report = analyze_coverage(
@@ -261,7 +263,7 @@ def _reach(relationships, owned=("AC-2", "AU-6")):
 
     nist = [_control("AC-2"), _control("AU-6")]
     hipaa = _control("164.308(a)(3)(i)", framework="HIPAA Security Rule", baseline="")
-    hipaa.source_crosswalk = {"nist": "AC-2, AU-6"}
+    hipaa.source_crosswalk = {NIST_ANCHOR: "AC-2, AU-6"}
     report = analyze_coverage(
         [_topic("Access", "IAM", list(owned))],
         nist,

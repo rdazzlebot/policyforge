@@ -48,6 +48,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from policyforge.mapping.crosswalk import NIST_ANCHOR
+
 from .schema import Control
 
 # The CPRT catalog this crosswalk comes from. Pinned by identifier so a
@@ -229,7 +231,7 @@ def fetch_cprt_crosswalk(*, version: str = CPRT_FRAMEWORK_VERSION) -> dict:
 
 
 def apply_crosswalk(controls: list[Control], mapping: dict[str, list[str]]) -> CrosswalkReport:
-    """Attach `mapping` to `controls` in place as `source_crosswalk["nist"]`.
+    """Attach `mapping` to `controls` in place as `source_crosswalk[NIST_ANCHOR]`.
 
     Values follow the free-text convention the rest of the pipeline reads
     (see mapping/crosswalk.py): comma-separated SP 800-53 IDs, e.g.
@@ -260,7 +262,7 @@ def apply_crosswalk(controls: list[Control], mapping: dict[str, list[str]]) -> C
 
     for target_id, nist_ids in resolved.items():
         target = targets[target_id]
-        target.source_crosswalk["nist"] = ", ".join(sorted(nist_ids, key=_sort_key))
+        target.source_crosswalk[NIST_ANCHOR] = ", ".join(sorted(nist_ids, key=_sort_key))
         if isinstance(target, Control):
             report.mapped_controls += 1
         else:

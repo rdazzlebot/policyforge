@@ -21,6 +21,7 @@ import pytest
 from policyforge.ingest import hitrust
 from policyforge.ingest import hitrust_export as export
 from policyforge.ingest.schema import MATURITY, OVERLAY
+from policyforge.mapping.crosswalk import NIST_ANCHOR
 
 # --------------------------------------------------------------------------
 # Tier identifiers
@@ -528,8 +529,8 @@ def test_an_mhtml_envelope_is_decoded(tmp_path):
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
-        ("NIST SP 800-53 r5", "nist"),
-        ("NIST SP 800-53 r4", "nist"),
+        ("NIST SP 800-53 r5", NIST_ANCHOR),
+        ("NIST SP 800-53 r4", NIST_ANCHOR),
         ("NIST SP 800-171 r2", "nist-800-171"),
         ("NIST Cybersecurity Framework 2.0", "nist-csf"),
         ("HIPAA Security Rule", "hipaa"),
@@ -561,8 +562,8 @@ def test_a_requirement_keeps_its_own_mappings():
     )
     table = requirement_crosswalk(controls)
 
-    assert table["01.a Level 1"]["nist"] == ["AC-1", "AC-2"]
-    assert table["01.a Level 2"]["nist"] == ["AC-3"]
+    assert table["01.a Level 1"][NIST_ANCHOR] == ["AC-1", "AC-2"]
+    assert table["01.a Level 2"][NIST_ANCHOR] == ["AC-3"]
 
 
 def test_the_nist_anchored_table_records_the_level_that_earned_the_mapping():

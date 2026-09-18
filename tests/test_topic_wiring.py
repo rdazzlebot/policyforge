@@ -20,6 +20,8 @@ import json
 
 from click.testing import CliRunner
 
+from policyforge.mapping.crosswalk import NIST_ANCHOR
+
 
 class FakeProvider:
     def __init__(self, text="- merged requirement [NIST IA-5]"):
@@ -382,7 +384,7 @@ def test_map_accepts_multiple_controls_files(tmp_path):
                 _control(
                     control_id="164.312(a)(1)",
                     framework="HIPAA Security Rule",
-                    source_crosswalk={"nist": "IA-5"},
+                    source_crosswalk={NIST_ANCHOR: "IA-5"},
                 )
             ]
         ),

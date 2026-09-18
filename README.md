@@ -1705,29 +1705,33 @@ in an open repo. Treat them differently:
 | **GovRAMP**              | GovRAMP's Terms & Conditions claim ownership of "documents, downloadable files" on their site, with no redistribution grant found | **Not bundled.** Treated as bring-your-own-content (BYOC) via `local_content/` until GovRAMP grants explicit permission (worth emailing info@govramp.org — ask before assuming).                                                                                                                                                                                                     |
 | **HITRUST CSF**          | Contractually licensed content                                                                                                    | **Never bundled.** BYOC only — you supply your own MyCSF/CSF export under your own license, and it's parsed locally. It is never committed, never uploaded anywhere by this tool, and stays out of git via `.gitignore`.                                                                                                                                                             |
 
-### Before you bring a second NIST-family catalog: a known defect
+### Bringing a second NIST-family catalog: write the catalog's full name
 
-**Every NIST-family catalog is currently filed under one key, `nist`.** The
-catalog index and the crosswalk both derive that key by taking the first word
-of the framework's declared name, so `NIST 800-53`, `NIST 800-171` and
-`NIST Cybersecurity Framework` all land in the same bucket, and their
-requirement identifiers merge into one set.
+Each NIST-family catalog has its own key — `nist-800-53`, `nist-800-171`,
+`nist-800-172`, `nist-800-137`, `nist-csf` — so you can load more than one
+and a citation naming one of them cannot resolve against another.
 
-The consequence is silent rather than loud. An 800-171 identifier cited as
-`[NIST 800-53 …]` is *found* in that shared bucket and reported as a resolved
-citation — counted as evidence rather than flagged as unknown — and
-`satisfies`, `coverage` and the crosswalk traversal all read the same key, so
-none of them can tell which catalog an anchor came from either.
+**Cite them by their full names.** `[NIST 800-171 03.01.01]` resolves;
+`[NIST AC-2]` does not, once a second NIST-family catalog is loaded, because
+`NIST` no longer says which one you mean. An ambiguous citation is reported
+as unresolved rather than being attached to whichever catalog happens to be
+first — a citation an assessor cannot follow is not evidence, and it is
+better to be told than to have it counted.
 
-**There is no workaround today.** Spelling the name out in full does not help:
-the key is the first word either way. Until this is fixed, do not load two
-NIST-family catalogs into one tree — a bundled 800-53 plus a brought
-800-171, 800-172, 800-137 or CSF — because citations across them cannot be
-told apart. A single NIST-family catalog, bundled or brought, is unaffected,
-and so is any non-NIST BYOC catalog: HITRUST and GovRAMP key cleanly.
+Nothing changes while you load a single NIST-family catalog, which is what
+the bundled set is: `NIST` names exactly one thing and the short form keeps
+working.
 
-The fix is scheduled into the framework expansion work rather than a patch
-release, and is tracked under "Residual risk" in
+**If you are upgrading with documents already written**, they carry
+`[NIST AC-2]` short-form citations. Those keep resolving as they always have
+until you add a second NIST-family catalog; at that point regenerate, and
+`satisfies --strict` will fail until you do. That red is the point — it is
+the tool declining to guess which catalog you meant.
+
+Earlier releases filed every NIST-family catalog under one key, `nist`, and
+merged their requirement identifiers into one set, so an 800-171 identifier
+cited as 800-53 was found there and counted as evidence rather than reported.
+That is fixed; the history is under "Residual risk" in
 [docs/security-architecture.md](docs/security-architecture.md).
 
 ### Two repositories, two sets of rights

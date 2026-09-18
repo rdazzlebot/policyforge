@@ -10,6 +10,7 @@ requirement nobody has read.
 from __future__ import annotations
 
 from policyforge.ingest.schema import Control, ControlEnhancement
+from policyforge.mapping.crosswalk import NIST_ANCHOR
 from policyforge.topics.bundles import (
     CROSSWALKED,
     DIRECT,
@@ -267,7 +268,7 @@ def write_fixtures(tmp_path):
                 framework="HIPAA Security Rule",
                 framework_version="2013",
                 control_statement="Implement policies.",
-                source_crosswalk={"nist": "RA-1"},
+                source_crosswalk={NIST_ANCHOR: "RA-1"},
             )
         )
     ]

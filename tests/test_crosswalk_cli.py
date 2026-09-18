@@ -16,6 +16,7 @@ from policyforge.crosswalk.overlay import ACCEPTED, PROPOSED, REJECTED, load_ove
 from policyforge.crosswalk.propose import NOT_CONFIRMED
 from policyforge.ingest.schema import Control, ControlEnhancement
 from policyforge.llm.base import LLMResponse
+from policyforge.mapping.crosswalk import NIST_ANCHOR
 
 HIPAA = "HIPAA Security Rule"
 RID = "164.308(a)(5)(ii)(B)"
@@ -51,7 +52,7 @@ def _catalogs():
                     baseline="Addressable",
                     description="Procedures for guarding against, detecting, and reporting "
                     "malicious software.",
-                    source_crosswalk={"nist": "AT-2"},
+                    source_crosswalk={NIST_ANCHOR: "AT-2"},
                 )
             ],
         ),

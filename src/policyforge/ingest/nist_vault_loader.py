@@ -93,8 +93,14 @@ def _parse_crosswalk(text: str, keep_columns: set[str]) -> dict[str, str]:
         key = framework.lower()
         if key in ("framework", "---", "") or set(framework) <= {"-"}:
             continue
-        # normalize keys like "HITRUST CSF" -> "hitrust", "FedRAMP" -> "fedramp"
-        norm = key.split()[0]
+        # normalize keys like "HITRUST CSF" -> "hitrust", "FedRAMP" -> "fedramp".
+        # Through the shared rule rather than by first word here: this was a
+        # private copy, and a private copy of a naming rule is how the NIST
+        # family came to share one key. `fedramp` — the only column kept by
+        # default — normalizes identically either way, so nothing moves today.
+        from policyforge.mapping.crosswalk import normalize_framework
+
+        norm = normalize_framework(key)
         if norm in keep_columns and equiv:
             out[norm] = equiv
     return out

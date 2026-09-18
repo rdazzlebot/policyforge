@@ -1,6 +1,8 @@
 """Smoke test so CI has something to run. Replace/expand as real modules
 land (mapping, synthesis, generate)."""
 
+from policyforge.mapping.crosswalk import NIST_ANCHOR
+
 
 def test_package_imports():
     import policyforge  # noqa: F401
@@ -133,7 +135,7 @@ def test_build_crosswalk_folds_in_non_nist_controls_pointing_back():
             title="Account Management",
             framework="ARC-AMPE",
             framework_version="v1",
-            source_crosswalk={"nist": "AC-2 (same ID)"},
+            source_crosswalk={NIST_ANCHOR: "AC-2 (same ID)"},
         ),
     ]
 
@@ -156,14 +158,14 @@ def test_build_crosswalk_reads_enhancement_level_source_crosswalk():
             title="A standard",
             framework="ExampleFramework",
             framework_version="v1",
-            source_crosswalk={"nist": "AC-1"},
+            source_crosswalk={NIST_ANCHOR: "AC-1"},
             enhancements=[
                 ControlEnhancement(
                     enhancement_id="STD-1(a)",
                     title="A specification",
                     baseline="Required",
                     description="",
-                    source_crosswalk={"nist": "AC-2, AC-3"},
+                    source_crosswalk={NIST_ANCHOR: "AC-2, AC-3"},
                 ),
                 ControlEnhancement(
                     enhancement_id="STD-1(b)",

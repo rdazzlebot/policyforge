@@ -25,7 +25,7 @@ from policyforge.crosswalk.overlay import (
     seed_overlay,
 )
 from policyforge.ingest.schema import Control, ControlEnhancement
-from policyforge.mapping.crosswalk import build_crosswalk
+from policyforge.mapping.crosswalk import NIST_ANCHOR, build_crosswalk
 
 HIPAA = "HIPAA Security Rule"
 
@@ -48,14 +48,14 @@ def _catalogs():
             framework=HIPAA,
             framework_version="45 CFR 164",
             control_statement="Implement a security awareness and training program.",
-            source_crosswalk={"nist": "AT-2"},
+            source_crosswalk={NIST_ANCHOR: "AT-2"},
             enhancements=[
                 ControlEnhancement(
                     enhancement_id="164.308(a)(5)(ii)(B)",
                     title="Protection from malicious software",
                     baseline="Required",
                     description="Procedures for guarding against and reporting malicious software.",
-                    source_crosswalk={"nist": "SI-3, RA-3"},
+                    source_crosswalk={NIST_ANCHOR: "SI-3, RA-3"},
                 )
             ],
         ),
@@ -65,7 +65,7 @@ def _catalogs():
             framework=HIPAA,
             framework_version="45 CFR 164",
             control_statement="Implement policies and procedures to prevent security violations.",
-            source_crosswalk={"nist": "RA-3"},
+            source_crosswalk={NIST_ANCHOR: "RA-3"},
         ),
     ]
     return nist + hipaa

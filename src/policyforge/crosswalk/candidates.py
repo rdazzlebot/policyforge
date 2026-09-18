@@ -27,6 +27,8 @@ import math
 from collections import Counter
 from dataclasses import dataclass
 
+from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
+
 
 @dataclass(frozen=True)
 class CatalogEntry:
@@ -35,11 +37,19 @@ class CatalogEntry:
     text: str
 
 
-def catalog_entries(controls, anchor: str = "nist") -> dict[str, CatalogEntry]:
-    """Every control and enhancement of the anchor framework, by id."""
+def catalog_entries(controls, anchor: str = NIST_ANCHOR) -> dict[str, CatalogEntry]:
+    """Every control and enhancement of the anchor framework, by id.
+
+    The framework is matched through `normalize_framework` rather than by
+    taking its first word here. This function used to do the latter inline,
+    which was a private copy of a rule defined elsewhere — and when the NIST
+    family stopped sharing one key, the copy went on answering `nist` while
+    the anchor had become `nist-800-53`, so the candidate list came back
+    empty and every crosswalk proposal had nothing to choose from.
+    """
     entries = {}
     for control in controls:
-        if control.framework.casefold().split()[0] != anchor:
+        if normalize_framework(control.framework) != anchor:
             continue
         entries[control.control_id] = CatalogEntry(
             control.control_id, control.title, control.control_statement or ""

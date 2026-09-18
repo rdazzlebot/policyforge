@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+### `satisfies`: what a document can be shown against
+
+- **`policyforge satisfies` answers the question an assessor opens with.**
+  `addresses` answers "who answers for AC-2" and `coverage` answers it in
+  aggregate; neither answers *this document, what does it satisfy?* — which
+  until now meant reading every citation in the text and following each one
+  through the crosswalk by hand. Takes `--document`, `--topic` or `--all`,
+  with `--json` for a machine. No model call and no network: it is set
+  arithmetic over the citations already in the text.
+- **The evidence is the citations in the published text, not the topic's
+  anchors.** An anchor is an intention — somebody wrote down that this team
+  owns AC-2 — and a citation is the thing an assessor can be shown, so the
+  two are never added together. A control a topic claims that none of its
+  documents mentions is reported apart, under its own heading, because that
+  gap is the difference between what a programme claims and what it has
+  written down. Judged across a topic's documents together rather than per
+  file, since a Policy, Standard and Procedure share a topic's anchors
+  between them, and the report says how much it searched.
+- **Every crosswalked mapping says how strong it is.** A pair from the
+  catalog's published crosswalk, one an organization reviewed and accepted,
+  and one sitting in an overlay nobody has looked at are three different
+  strengths of evidence, and they stay distinguishable: `published crosswalk`, `overlay, reviewed`, `overlay, NOT REVIEWED`. Where a reviewed
+  pair records `superset` or `intersects` — the control covers part of the
+  requirement — it reads *in part*, never *satisfied*. Unreviewed mappings
+  are shown and marked rather than dropped, because a report that quietly
+  omitted them would look stronger than the evidence behind it. `--strict`
+  fails on citations that resolve to nothing; `--require-reviewed` is a
+  separate gate, because an unreviewed mapping is a state of the programme
+  rather than a defect in the document.
+- **An empty crosswalk section says why it is empty.** The crosswalk is
+  anchored on NIST 800-53 and walked from the NIST requirements a document
+  cites, so a document citing none reaches nothing through it however well
+  cited it is. On this command an empty section would read as *nothing
+  satisfies this*, so the report states the cause and that it is a property
+  of the crosswalk rather than a finding about the document.
+- **Both denominators, named.** Citation occurrences and distinct
+  requirements are different questions — how many citations a document makes
+  against how many requirements it names — and a fraction whose denominator
+  is unnamed cannot be checked by its reader. Both appear on the face of the
+  report and in the JSON, which is a contract once anything scripts it.
+- **Requirement identifiers are printed; requirement text and titles are
+  not.** The same line `coverage` and `addresses` hold, and it keeps a
+  licensed catalog's prose out of a report that gets pasted around.
+
 ### Keys come from the environment, and the example no longer implies otherwise
 
 - **`config/config.example.yaml` told you to set the variable "in your
@@ -362,9 +406,8 @@
   control) each carried a hand-written list of framework names, and the
   bundled starter set writes `[ARC PE-1 ...]` where the lists said
   `ARC-AMPE`: twenty-two tags, thirty-one citations, invisible to all four
-  at once and counted by `satisfies` only as a stated floor. A tag is now a
-  capitalised framework name followed by a requirement identifier carrying
-  a digit, never a link. Measured over every document and catalog in the
+  at once. A tag is now a capitalised framework name followed by a
+  requirement identifier carrying a digit, never a link. Measured over every document and catalog in the
   repository: the shape matches every tag the lists matched, adds none, and
   stops treating six prose brackets such as `[NIST AI RMF alignment]` as
   citations, which they never were. A test holds the four readers to the

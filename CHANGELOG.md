@@ -39,6 +39,18 @@
 
 ### Repository hardening
 
+- **The gate refuses to run against a `policyforge` that is not the tree
+  it was started from.** The editable install writes the absolute path of
+  the checkout it was made in, so `scripts/check.py` or a bare `pytest` run
+  inside a git worktree imported the main checkout's source and reported
+  all-pass on a branch whose code was never loaded. Four review sessions
+  accepted such a pass on the same day. `scripts/tree_guard.py` resolves
+  the package before anything runs and, when it lies outside the invoking
+  tree's `src/`, stops with exit 2 naming both paths and the
+  `PYTHONPATH=<tree>/src` invocation that fixes it; `tests/conftest.py`
+  does the same for pytest before collection. A main-checkout run, CI and
+  the Docker gate are unaffected: each installs the package from the tree
+  it tests.
 - **The Confluence publish job skips unless a wiki is configured.** This
   repository has no `CONFLUENCE_HOST` and no credentials, so every push
   touching `docs/` failed at the Plan step and left a red workflow on `main`

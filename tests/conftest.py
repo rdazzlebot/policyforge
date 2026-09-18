@@ -32,6 +32,9 @@ one covers a key in the developer's shell, the other covers a key on disk.
 
 from __future__ import annotations
 
+import importlib.util
+from pathlib import Path
+
 import pytest
 
 try:
@@ -88,6 +91,24 @@ _CREDENTIALS = (
     "HUGGINGFACE_API_KEY",
     "XAI_API_KEY",
 )
+
+
+def pytest_configure(config):
+    """Stop before collection when `policyforge` is not this tree's.
+
+    The editable install pins the checkout it was made from, so a bare
+    `pytest` in a git worktree imports the main checkout's source and
+    reports all-pass on a branch it never loaded. `scripts/check.py` refuses
+    the same way; pytest gets its own hook because it is what people run
+    between full gates. Same code, one place: scripts/tree_guard.py.
+    """
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location("tree_guard", root / "scripts" / "tree_guard.py")
+    guard = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(guard)
+    refusal = guard.foreign_source(guard.resolved_origin(), root, invocation="pytest")
+    if refusal:
+        pytest.exit(refusal, returncode=2)
 
 
 @pytest.fixture(autouse=True)

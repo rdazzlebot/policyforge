@@ -50,6 +50,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import tree_guard
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -121,6 +123,18 @@ def check_semgrep() -> bool | None:
 
 
 def main() -> int:
+    # Before anything runs: the `policyforge` every check below would import
+    # has to be this tree's. In a git worktree it is not — the editable
+    # install pins the checkout it was made from — and the whole gate would
+    # report on code it never loaded. Refused, with the fix, rather than
+    # passed quietly (see scripts/tree_guard.py).
+    refusal = tree_guard.foreign_source(
+        tree_guard.resolved_origin(), REPO_ROOT, invocation="python scripts/check.py"
+    )
+    if refusal:
+        print(refusal, file=sys.stderr)
+        return 2
+
     # Every markdown file the pre-commit mdformat hook would touch, so this
     # script and that hook can't disagree about what "formatted" means. Only
     # output/ is excluded — it holds generated drafts, which are checked by

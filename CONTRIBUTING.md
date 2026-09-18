@@ -136,6 +136,13 @@ Evals call a real model and cost real money, so they are not part of
   that no longer exists, and nothing in the result would say so. The eval
   report prints the commit it ran from and whether the tree was dirty —
   a dirty tree means the number is not attributable to anything.
+- **In a worktree, put its `src/` first on the path.** The editable install
+  pins the checkout it was made from, so any interpreter from the
+  virtualenv imports *that* checkout's `policyforge` — a gate or a bare
+  `pytest` run in a worktree would report on code it never loaded.
+  `scripts/check.py` and `pytest` both refuse to start when the package
+  they resolve is not under the tree they were run from, and print the
+  `PYTHONPATH=<tree>/src` invocation that fixes it (`scripts/tree_guard.py`).
 - **A number without an epoch is not comparable and is worse than no
   number.** If you changed a prompt, open a new epoch in
   [MEASUREMENTS.md](MEASUREMENTS.md) rather than filing results under the

@@ -137,6 +137,18 @@ class DocumentEvidence:
         return [r for r in self.reached if r.provenance == UNREVIEWED]
 
     @property
+    def nist_anchors(self) -> list[str]:
+        """The cited NIST ids the crosswalk traversal starts from.
+
+        The crosswalk is NIST-anchored, so a document citing no NIST
+        requirement reaches nothing through it however well cited it is.
+        Named here because the report has to be able to say that, rather
+        than print an empty section a reader will take for an absence of
+        coverage.
+        """
+        return [c.requirement_id for c in self.cited if c.framework == "nist"]
+
+    @property
     def occurrences(self) -> int:
         """Every citation instance in this document, resolved or not.
 
@@ -333,7 +345,7 @@ def document_evidence(
             citation.sections.append(section)
     evidence.cited = sorted(cited.values(), key=lambda c: (c.framework, c.requirement_id))
 
-    anchor_ids = {c.requirement_id for c in evidence.cited if c.framework == "nist"}
+    anchor_ids = set(evidence.nist_anchors)
     reached: dict[tuple[str, str], Reached] = {}
     for anchor in sorted(anchor_ids):
         sections = next(
@@ -494,6 +506,7 @@ def as_records(evidences: list[DocumentEvidence]) -> list[dict]:
                 }
                 for r in e.reached
             ],
+            "nist_anchors": e.nist_anchors,
             "anchored_not_cited": e.anchored_not_cited,
             "anchored_scope": e.anchored_scope,
             "unknown_citations": e.unknown,
@@ -556,6 +569,16 @@ def format_report(evidences: list[DocumentEvidence]) -> str:
                 if item.flags:
                     note += f", {', '.join(item.flags)}"
                 lines.append(f"  {item.requirement_id:<24} {extent:<10} via {item.via}  [{note}]")
+        if evidence.cited and not evidence.reached and not evidence.nist_anchors:
+            lines.append("")
+            lines.append("Reached through the crosswalk — none, and not for want of coverage")
+            lines.append("-" * 60)
+            lines.append(
+                "  The crosswalk is anchored on NIST 800-53, so it is walked from the "
+                "NIST requirements a document cites. This one cites none, so there is "
+                "nothing to walk from. That is a property of the crosswalk, not a "
+                "finding about the document."
+            )
         unreviewed = [r for r in evidence.reached if r.provenance == UNREVIEWED]
         if unreviewed:
             lines.append("")

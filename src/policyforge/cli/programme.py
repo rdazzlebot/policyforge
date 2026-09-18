@@ -755,6 +755,11 @@ def satisfies_cmd(
     somebody reviewed, or an overlay row nobody has. The last are shown and
     marked rather than dropped. No model call and no network.
 
+    The crosswalk is anchored on NIST 800-53 and is walked from the NIST
+    requirements a document cites, so a document citing none reaches nothing
+    through it - and the report says so rather than printing an empty
+    section, which on this command would read as an absence of coverage.
+
     Two resolution rules worth knowing, because the counts look wrong
     without them. Citing an enhancement counts as citing its control, so a
     topic that cites AC-2(3) is not reported as never mentioning AC-2 - the

@@ -701,3 +701,34 @@ def test_both_denominators_are_reported_and_named():
     assert "4 citation(s), 2 distinct requirement(s); 1 resolving to nothing" in format_report(
         [evidence]
     )
+
+
+def test_a_document_citing_no_nist_requirement_says_why_it_reaches_nothing():
+    """An empty crosswalk section on this command reads as "nothing covers this".
+
+    The crosswalk is anchored on NIST 800-53 and walked from the NIST
+    requirements a document cites, so a HIPAA-only document reaches nothing
+    through it however well cited it is. Printing an empty section and
+    leaving the reader to work that out is the silent-absence failure this
+    command exists to surface, so the report states the reason.
+    """
+    evidence = _evidence(
+        "## Workforce\n\nAccess is authorised. [HIPAA Security Rule 164.308(a)(3)(i)]\n"
+    )
+    assert [c.requirement_id for c in evidence.cited] == ["164.308(a)(3)(i)"]
+    assert evidence.nist_anchors == []
+    assert evidence.reached == []
+
+    report = format_report([evidence])
+    assert "none, and not for want of coverage" in report
+    assert "anchored on NIST 800-53" in report
+    # and a script sees the same distinction
+    (record,) = as_records([evidence])
+    assert record["nist_anchors"] == []
+    assert record["reached"] == []
+
+
+def test_a_document_that_does_cite_nist_gets_no_such_notice():
+    """The notice is for an empty section with no anchors, not for every run."""
+    report = format_report([_evidence("[NIST 800-53 AC-2]")])
+    assert "not for want of coverage" not in report

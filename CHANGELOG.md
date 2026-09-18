@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### The subprocessors page no longer characterises a third party
+
+- **`docs/subprocessors.md` said content routed through LiteLLM goes to
+  "commonly OpenRouter".** Two paragraphs above, the same page states that
+  it cannot attest to any third party's terms and that the "you must
+  confirm" column is its actual deliverable — so the row broke the page's
+  own rule by describing how another company commonly routes. That is
+  worse than an undated claim: this page's whole value is that a careful
+  reader can trust it, and a reader who spots the contradiction has been
+  handed a reason to doubt the rest. The row now reads "Whatever LiteLLM
+  routes to, which may itself route to further providers", which loses
+  nothing it needed to say.
+
 ### Positioning names a category, not companies
 
 - **The competitive comparison no longer names vendors.** `positioning.md`

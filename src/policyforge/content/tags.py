@@ -37,6 +37,21 @@ matched, adds none, and drops exactly those six phrases.
 Which catalog a name points at is a separate question, answered by
 `topics/satisfies.resolve_framework` against the catalogs actually loaded;
 this module only says what is a tag.
+
+One trap, named because it cost two reviewers an hour each. A placeholder
+whose label opens with a framework name — `[HIPAA Documentation Review
+Frequency]`, sitting mid-sentence beside `[Ticketing System]` and
+`[Contract Repository]`, standing in for a value nobody has decided — looks
+like a citation to anyone reasoning about its form, and the old list
+counted it as one because `HIPAA` was on the list. It is not a citation:
+the step it sits in is cited by its own heading, `[HIPAA 164.316(b)(1) |
+...]`, and the three scans that published it as the corpus's least
+followable citation were counting a placeholder. The identifier rule is
+what tells the two apart, and it is the only thing that does — backticks
+do not, since a few real tags in generated documents are backticked too.
+So the rule is: a name with nothing number-shaped after it is a phrase in
+brackets, in generated content as much as in prose, and a reader who wants
+it reported as something else should first go and read it in its document.
 """
 
 from __future__ import annotations
@@ -55,14 +70,14 @@ _NAME = rf"{_NAME_WORD}(?: {_NAME_WORD})*"
 #: reader calls `findall` and expects the tag as written, and a group would
 #: quietly turn that into the framework name alone.
 SOURCE_TAG_RE = re.compile(
-    r"\[(?!\[)"  # an opening bracket, but not a `[[wikilink]]`
+    r"(?<!\[)\[(?!\[)"  # an opening bracket, not part of a `[[wikilink]]`
     rf"(?:{_NAME})"  # capitalised name tokens
     r"\s+(?=[^\]\s]*\d)"  # then a token carrying a digit: the requirement id
     r"[^\]]*\]"  # the rest of the tag
     r"(?!\()"  # and not `[text](url)`
 )
 
-_LEADING_NAME_RE = re.compile(rf"\[({_NAME})\s")
+_LEADING_NAME_RE = re.compile(rf"\[({_NAME})(?:\s|\])")
 
 
 def source_tags(text: str) -> list[str]:

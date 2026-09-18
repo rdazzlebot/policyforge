@@ -104,7 +104,13 @@
   repository: the shape matches every tag the lists matched, adds none, and
   stops treating six prose brackets such as `[NIST AI RMF alignment]` as
   citations, which they never were. A test holds the four readers to the
-  one object so a private copy cannot grow back.
+  one object so a private copy cannot grow back. The same rule corrects a
+  false positive nobody had noticed: a placeholder that opens with a
+  framework name, `[HIPAA Documentation Review Frequency]`, sitting
+  mid-sentence beside `[Ticketing System]`, matched the old list because
+  `HIPAA` was on it and was published as the starter set's least followable
+  citation; with the identifier rule it is the placeholder it always was,
+  and the residual count is 33 of 4,090.
 
 ### Repository hardening
 

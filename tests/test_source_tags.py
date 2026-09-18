@@ -17,7 +17,11 @@ from pathlib import Path
 
 import pytest
 
-from policyforge.content.tags import SOURCE_TAG_RE, framework_name, source_tags
+from policyforge.content.tags import (
+    SOURCE_TAG_RE,
+    framework_name,
+    source_tags,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -108,6 +112,31 @@ def test_the_shape_matches_nothing_new_in_the_repository_and_drops_only_prose():
     assert all(not any(ch.isdigit() for ch in tag.split()[1:2][0]) for tag in dropped), (
         f"dropped a bracket whose second token carries a digit: {dropped}"
     )
+
+
+def test_a_placeholder_that_opens_with_a_framework_name_is_not_a_tag():
+    """`[HIPAA Documentation Review Frequency]` sits mid-sentence beside
+    `[Ticketing System]` and stands in for a value nobody has decided; the
+    step it sits in is cited by its heading. Two reviewers read it as the
+    corpus's least followable citation, and the old list counted it as one.
+    The identifier rule is what tells a placeholder from a citation, and
+    backticks are not: some real tags in generated documents carry them."""
+    step = (
+        "### Maintain HIPAA documentation in written form [HIPAA 164.316(b)(1) | "
+        "HIPAA 164.316(b)(2)(ii) Required]\n\n"
+        "1. Review the documentation periodically `[HIPAA Documentation Review "
+        "Frequency]` and file it in the `[Contract Repository]`.\n"
+        "1. Scan endpoints. `[NIST SI-3 Low | NIST SI-3 High]`\n"
+    )
+
+    assert source_tags(step) == [
+        "[HIPAA 164.316(b)(1) | HIPAA 164.316(b)(2)(ii) Required]",
+        "[NIST SI-3 Low | NIST SI-3 High]",
+    ]
+
+
+def test_a_tag_inside_a_wikilink_is_not_a_tag():
+    assert source_tags("[[NIST AC-2]] but [NIST AC-2] is") == ["[NIST AC-2]"]
 
 
 # ---- one shape, every reader ----------------------------------------------

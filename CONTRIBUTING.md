@@ -257,13 +257,37 @@ their fixtures. Run the suite from a clone. Don't add `tests/` back to it.
    [rdazzlebot/homebrew-tap](https://github.com/rdazzlebot/homebrew-tap):
    point `url` at
    `https://github.com/rdazzlebot/policyforge/archive/refs/tags/vX.Y.Z.tar.gz`
-   and set `sha256` to that tarball's hash (`curl -sL <url> | shasum -a 256`).
-   If a runtime dependency changed, regenerate the `resource` blocks with
-   `brew update-python-resources policyforge`, not by hand.
+   and set `sha256` to that tarball's hash. Compute it from the URL **the
+   formula names**, not from a tarball you already have: a hash that matches
+   the wrong archive fails nothing and is wrong in the direction nobody sees.
+1. Regenerate the `resource` blocks with `brew update-python-resources policyforge`, not by hand — every release, not only when a dependency
+   changed, since the command resolves what PyPI serves today.
+1. **Reconcile every resource that differs back to `requirements/ci.txt`.**
+   `update-python-resources` proposes; the lock decides. It resolves PyPI's
+   current latest, so it will offer versions that are in no lock, in no CI
+   run, absent from the container image and never seen by this project's
+   `pip-audit` — and the divergence would be invisible, since it reaches
+   Homebrew users alone while the PyPI install and the image stay on the
+   locked version. A tool whose claim is that its assertions are checkable
+   cannot ship dependencies it did not audit. Dependabot moves the lock, and
+   the formula follows at the next release, so all three move together.
+   1.3.0 met this with `idna` 3.19 against a proposed 3.20.
 1. Before pushing the formula, run `brew install --build-from-source`,
    `brew test policyforge` and `brew audit --strict policyforge` on macOS or
    Linux. None of these run on Windows; the `homebrew/brew` Docker image has
    Linux Homebrew.
+1. Check the built install two ways and report them apart, because they are
+   different claims and only the second is what a user experiences:
+   - **what the archive holds** — `policyforge/crosswalk/`,
+     `_bundled/frameworks/*/controls.json`, `_bundled/config/`. The two
+     `_bundled` packages are mapped from outside `src/`, so
+     `tests/test_scaffold.py` cannot tell whether they shipped.
+   - **what the installed tool does** — `policyforge init`, then
+     `frameworks` naming the public catalogs, and `--help` on any new
+     command. A package can be present and still fail to import; only
+     running it sees that. Read an installed dependency's version with
+     `importlib.metadata.version` rather than from the resource block: one
+     says what pip was told to fetch, the other what a user runs.
 
 ## Licensed content
 

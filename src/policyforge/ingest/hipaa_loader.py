@@ -41,6 +41,8 @@ from __future__ import annotations
 
 import re
 
+from policyforge.ingest import ecfr
+
 from .schema import Control, ControlEnhancement
 
 _SECTION_RE = re.compile(
@@ -188,50 +190,33 @@ def _parse_section(section_id: str, head: str, body: str) -> list[Control]:
     return controls
 
 
+#: The Security Rule's own coordinates. Named here rather than passed by
+#: every caller, because "which title and part is HIPAA" is a property of
+#: this regulation and not a choice an ETL command should make.
+TITLE = 45
+PART = "164"
+
+
 def current_ecfr_date() -> str:
-    """The effective date eCFR currently publishes Title 45 as up to date to.
-
-    Separate from the fetch so a caller can *name* the revision it is about
-    to pull. eCFR is a live source with no tags: the effective date is the
-    only thing that identifies a revision, which makes it the equivalent of
-    the OSCAL release tag and the right value to record as `source_ref`.
-
-    Resolving it in the caller rather than inside the fetch means the date
-    that gets stamped is provably the date that was fetched, not a second
-    lookup that could land on the other side of an eCFR publication.
-    """
-    import requests
-
-    response = requests.get("https://www.ecfr.gov/api/versioner/v1/titles.json", timeout=30)
-    response.raise_for_status()
-    title_45 = next(t for t in response.json()["titles"] if t["number"] == 45)
-    return title_45["up_to_date_as_of"]
+    """The effective date eCFR publishes Title 45 as up to date to."""
+    return ecfr.current_date(TITLE)
 
 
 def ecfr_source_url(date: str) -> str:
     """The exact URL a given effective date is read from."""
-    return f"https://www.ecfr.gov/api/versioner/v1/full/{date}/title-45.xml?part=164"
+    return ecfr.source_url(date, title=TITLE, part=PART)
 
 
 def fetch_ecfr_subpart_c_xml(*, date: str | None = None) -> str:
     """Fetch the current (or a specific effective date's) full XML text of
-    45 CFR Part 164 from eCFR's public versioner API. Kept separate from
-    `parse_hipaa_security_rule` — the only network-touching function in
-    this module — so the parser itself stays pure and testable offline
-    against a fixed fixture (see tests/test_hipaa_loader.py).
+    45 CFR Part 164 from eCFR's public versioner API.
+
+    These three are thin wrappers over `ingest/ecfr.py`, which serves every
+    regulation this project reads. They keep their names and signatures
+    because the CLI and the tests use them, and because "the HIPAA loader
+    fetches HIPAA" is the right thing for a reader of this module to see.
     """
-    import requests
-
-    if date is None:
-        date = current_ecfr_date()
-
-    response = requests.get(
-        f"https://www.ecfr.gov/api/versioner/v1/full/{date}/title-45.xml",
-        params={"part": "164"},
-        timeout=30,
-    )
-    response.raise_for_status()
-    return response.text
+    return ecfr.fetch_part_xml(title=TITLE, part=PART, date=date)
 
 
 def parse_hipaa_security_rule(xml_text: str) -> list[Control]:

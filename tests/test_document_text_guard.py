@@ -49,7 +49,9 @@ NOT_PRODUCERS = {
     "zardoz/paraphrase.py": "an expansion; an empty reply means no expansion",
     "zardoz/discover.py": "clusters are parsed; an empty reply proposes nothing",
     "zardoz/skills.py": "a routing word; an empty reply is read as 'not an analysis'",
-    "ingest/hipaa_loader.py": "`response.text` here is an HTTP body from eCFR, not a model",
+    "ingest/ecfr.py": "`response.text` here is an HTTP body from eCFR, not a model. "
+    "The HIPAA loader used to be listed here; the fetch moved into this shared "
+    "module when the second regulation arrived, and this guard caught the stale entry.",
     "embed/ollama_provider.py": "HTTP error text, not a model reply",
     "rerank/llamacpp_provider.py": "HTTP error text, not a model reply",
 }

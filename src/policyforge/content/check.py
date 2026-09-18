@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .deontic import NONE, weakened_citations
+from .tags import source_tags
 from .tree import ContentDocument, load_content_tree
 
 ERROR = "error"
@@ -246,6 +247,48 @@ def _check_citations(documents: list[ContentDocument], synthesis_dir: Path) -> l
 _BINDING_TIERS = frozenset({"standard", "procedure"})
 
 
+def _check_uncited(documents: list[ContentDocument]) -> list[Finding]:
+    """A Standard or Procedure that cites no framework requirement at all.
+
+    The tag is the whole traceability story: it is how a document says
+    which control it answers for, and how `satisfies`, `drift` and the
+    edit path find it. A Standard with no tag anywhere is not a document
+    with weak traceability, it is a document with none — and the two ways
+    that happens are both worth seeing. Either the generation was cut off
+    part-way, or the citations were written and then lost in an edit.
+
+    **Tier-scoped, and the scoping is the whole check.** A Policy states
+    what the organization intends and cites nothing by design: in the
+    bundled 20-topic starter set all nineteen Policies carry no tag, so an
+    unscoped version of this rule would report nineteen documents that are
+    exactly as they should be, and a check that is wrong nineteen times out
+    of twenty-one gets switched off in a week. Scoped to Standards and
+    Procedures it reports two documents in that same set, and both are real:
+    one Standard truncated mid-sentence at 1,066 bytes, and one full-length
+    Procedure whose tags are simply absent. Found by policyforge-b5 while
+    reconciling the citation measurement.
+
+    A warning rather than an error, for the reason the tier and owner rules
+    are warnings: a hand-written Standard that has not been mapped to a
+    framework yet is a normal thing to have in a tree mid-migration, and a
+    gate that cannot be satisfied gets turned off rather than fixed.
+    """
+    findings: list[Finding] = []
+    for doc in documents:
+        if doc.tier not in _BINDING_TIERS or source_tags(doc.body):
+            continue
+        findings.append(
+            Finding(
+                doc.relative_path,
+                f"is a {doc.tier} that cites no framework requirement, so nothing "
+                "traces it back to a control — check whether it was cut short or "
+                "whether its citations were dropped",
+                WARNING,
+            )
+        )
+    return findings
+
+
 def _check_requirement_strength(documents: list[ContentDocument]) -> list[Finding]:
     """A cited requirement that does not bind.
 
@@ -288,6 +331,7 @@ def check_tree(root: Path, *, synthesis_dir: Path | None = None) -> CheckReport:
     report.findings.extend(_check_page_claims(documents))
     report.findings.extend(_check_references(documents, root))
     report.findings.extend(_check_publishable(documents))
+    report.findings.extend(_check_uncited(documents))
     report.findings.extend(_check_requirement_strength(documents))
     if synthesis_dir is not None:
         report.findings.extend(_check_citations(documents, synthesis_dir))

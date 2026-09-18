@@ -1,6 +1,83 @@
 # Changelog
 
-## Unreleased
+## 1.3.0
+
+Three things this release lets you do that 1.2.1 could not: map your own
+framework onto the bundled ones, publish to a GitHub wiki instead of
+Confluence, and call Google's models with an AI Studio key. Nothing was
+removed — the command surface went from 163 items to 188, and none of the
+163 disappeared.
+
+**Your organization's crosswalk.** `policyforge crosswalk seed / check / propose / review` builds the mapping between a framework you hold under
+licence and the bundled catalogs, as an overlay the tool never publishes.
+A quote from a licensed requirement is stored as a digest and a withheld
+marker rather than as text, `config/crosswalks/` is gitignored by `init`,
+and a hosted model is refused licensed content outright. A proposal the
+model cuts off, or one that comes back without the control it claims to be
+about, leaves that requirement untouched, names it, and exits non-zero —
+rather than silently proposing less than it was asked for.
+
+**`satisfies`: what a document can be shown against.** The question an
+assessor opens with is *this document, what does it satisfy?*, and until now
+answering it meant reading every citation by hand and following each through
+the crosswalk. The evidence is the citations in the published text rather
+than a topic's anchors — an anchor is an intention, a citation is what an
+assessor can be shown — and a requirement a topic claims while its documents
+never mention it is reported apart, under its own heading. Where the mapping
+came from is never flattened: the catalog's own crosswalk, a pair your
+organization reviewed, and a pair sitting unreviewed in an overlay are three
+different strengths of evidence and stay visibly different. Identifiers are
+printed; requirement text is not.
+
+**Publish to a GitHub wiki.** `policyforge publish --target github-wiki`
+writes the content tree to a wiki, through the same guards Confluence has:
+a page is overwritten only when this tool wrote its last version, a public
+wiki needs `--allow-public`, and a document marked `content_class: licensed` is never published to a public wiki whatever flags are passed.
+`wiki-drift` and `pull` take `--target` too, so the reconcile loop closes
+the same way. There is a CI job for it, fenced to its own environment and
+secret.
+
+**Gemini, with a key from AI Studio.** `provider: gemini` calls Google's
+models directly. Two things about it are worth more than the feature:
+
+- **It was exercised against the real endpoint, not only described.** A
+  single live call found three defects that four tests, two gates, Docker
+  and a full review had all passed — including that the model name in this
+  project's own `config.example.yaml` was refused by the API *by name*. The
+  fakes and the provider had been written from the same documentation, so
+  they agreed with each other perfectly and both disagreed with the world.
+- **It exposed a ledger undercount that was never a Gemini problem, and
+  that nobody was looking for.**
+  Reasoning models bill for output tokens they never return. That live call
+  is where the gap surfaced, so the ledger learned to record them
+  (`hidden_output_tokens`) *before* this provider shipped — otherwise every
+  Gemini cost in your ledger would have read about half of what you paid.
+  Inline reasoning that is stripped from a reply is now counted too
+  (`stripped_reasoning_chars`), so an empty answer records why it was empty.
+  In both, unknown and zero stay different answers: a ledger entry says
+  *cannot tell* rather than claiming nothing was hidden.
+
+Two of those three came from instruments pointed somewhere else: the dead
+model name and the undercount were stumbled into while checking that a new
+provider worked at all. Only the truncation contract, which shipped in
+1.2.1, was something this project went looking for — and it is unrelated to
+the other two rather than the start of a chain.
+
+**Upgrade note: check where your API key lives.** `config.example.yaml`
+told you to set the variable "in your shell or a `.env` file". Nothing in
+this project loads a `.env`, and the test suite disarms the one loader that
+would. If you followed that example and your key works, it is because
+something else in your environment exports it; if a provider fails to
+authenticate for no visible reason, that sentence is why. Export the
+variable, or set it in the environment your shell starts from.
+
+Also in this release: a `check` that reports a Standard or Procedure citing
+no framework requirement at all; a provider's 4xx reaching you as a sentence
+naming the call and the budget rather than a traceback; `cascade` forwarding
+every capability flag by one stated rule; entailment judging a claim whole
+rather than splitting it at an initial; `etl-*` writing catalogs with LF on
+every platform; and the test suite running on Windows and macOS in CI, not
+only Linux.
 
 ### `satisfies`: what a document can be shown against
 

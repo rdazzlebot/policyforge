@@ -191,3 +191,30 @@ zardoz:
 #     provider: anthropic
 #     model: claude-sonnet-5
 #     api_key_env: ANTHROPIC_API_KEY
+
+# ---------------------------------------------------------------------------
+# Where `publish`, `wiki-drift` and `pull` send documents
+# ---------------------------------------------------------------------------
+# Confluence is the default and needs `zardoz.host`; nothing below is
+# required for it. `--target` overrides `target` for one run.
+#
+# A GitHub wiki is a git repository of markdown pages. Each document still
+# declares its own destination in frontmatter — a `targets.github_wiki` block,
+# which may be empty to mean "this wiki, under this document's title" — so the
+# file-to-page mapping stays in the repository under review. A file with no
+# such block is not published, which is how a draft stays a draft.
+#
+# `token_env` is optional: without it, git uses your credential helper, which
+# is how a developer machine already authenticates. With it, the token is
+# passed to git through the environment and never reaches a command line or
+# the clone's .git/config.
+#
+# Publishing to a *public* wiki needs `--allow-public`, and a wiki whose
+# visibility cannot be determined counts as public. Documents carrying
+# licensed catalog content are never published to a public wiki, with or
+# without that flag.
+# publish:
+#   target: github-wiki
+#   github_wiki:
+#     repository: acme/security-policies
+#     token_env: GITHUB_TOKEN

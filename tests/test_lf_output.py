@@ -33,6 +33,9 @@ LF_WRITERS = [
     "export/markdown_exporter.py",
     # The pull loop, shared by every kind of live page store.
     "export/publisher.py",
+    # Wiki pages are files in a git repository, and a CRLF written from
+    # Windows would be a diff against every page the wiki already holds.
+    "export/github_wiki.py",
     "edit/tree.py",
     "history/version_store.py",
     "cli/documents.py",

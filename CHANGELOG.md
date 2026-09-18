@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+### Publish to a GitHub wiki, through the same guards as Confluence
+
+- **`policyforge publish --target github-wiki` writes your content tree to a
+  GitHub wiki**, which is a git repository of markdown pages. The three
+  guards are the ones Confluence already has, answered from git: a page is
+  overwritten only when this tool wrote its last commit, or when `pull`
+  recorded that sha in the document, or when the file already says what the
+  repository says. Anything else is reported as moved, with the author and
+  date from `git log`, and fails the run. `wiki-drift` and `pull` take
+  `--target` too, so the reconcile loop closes the same way.
+- **Two rules stand between a wiki and your documents.** The plan's first
+  line says whether the wiki is public, every run; publishing to a public
+  wiki — or to one whose visibility could not be determined, which counts as
+  public — needs `--allow-public`. And a document carrying
+  `content_class: licensed`, in its frontmatter or in the provenance stamp
+  `generate` writes, is never published to a public wiki whether or not that
+  flag is passed. An unrecognised class is treated as not licensed, which is
+  deliberate and documented in `export/github_wiki.py`: the ceiling holds
+  where the class is said, and the visibility rule stands between an
+  unstamped document and the world.
+- **A byte difference on the wiki is a change**, unlike Confluence, which
+  reflows storage format when it saves. Trailing newlines are the one
+  exception, because every GitHub editor adds one.
+- **Cross-references are rewritten both ways**, tree paths to
+  `[[Page Title]]` on publish and back on pull. A link to a document with no
+  wiki page is left as written and reported once.
+- **A page in a format this tool cannot round-trip is refused by name** —
+  AsciiDoc, RST and the six others GitHub wikis accept — the way Confluence
+  macros are.
+- Configure it with `publish.target` and `publish.github_wiki.repository`;
+  each document then declares `targets.github_wiki`, which may be empty to
+  mean "this wiki, under this document's title". A file with no such block
+  is not published.
+- The token reaches `git` through `GIT_CONFIG_*` environment variables, so
+  it never appears on a command line, in the clone's `.git/config`, or in an
+  error quoting the remote. Without `token_env`, git uses your credential
+  helper. The working clone lives in `output/.wiki/`, gitignored.
+
 ### Checks
 
 - **`check` reports a Standard or Procedure that cites no framework

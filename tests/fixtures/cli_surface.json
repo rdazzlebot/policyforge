@@ -2832,6 +2832,65 @@
           }
         },
         {
+          "default": null,
+          "help": "Which store to publish to. Defaults to `publish.target`, else confluence.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "target",
+          "nargs": 1,
+          "opts": [
+            "--target"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": true,
+            "choices": [
+              "confluence",
+              "github-wiki"
+            ],
+            "name": "choice"
+          }
+        },
+        {
+          "default": "",
+          "help": "GitHub wiki repository as owner/name. Defaults to `publish.github_wiki.repository`.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "repository",
+          "nargs": 1,
+          "opts": [
+            "--repository"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "help": "Publish to a wiki that is public, or whose visibility could not be determined. Licensed catalog content is never published to a public wiki whether or not this is passed.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "allow_public",
+          "nargs": 1,
+          "opts": [
+            "--allow-public"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
           "default": "",
           "help": "Only publish documents whose path contains this substring, so a CI job can republish just what a merge touched.",
           "hidden": false,
@@ -2970,8 +3029,49 @@
           }
         },
         {
+          "default": null,
+          "help": "Which store to pull from. Defaults to `publish.target`, else confluence.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "target",
+          "nargs": 1,
+          "opts": [
+            "--target"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": true,
+            "choices": [
+              "confluence",
+              "github-wiki"
+            ],
+            "name": "choice"
+          }
+        },
+        {
           "default": "",
-          "help": "Pull one page: its space key.",
+          "help": "GitHub wiki repository as owner/name. Defaults to `publish.github_wiki.repository`.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "repository",
+          "nargs": 1,
+          "opts": [
+            "--repository"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "",
+          "help": "Pull one page: its space key (Confluence only).",
           "hidden": false,
           "is_flag": false,
           "kind": "Option",
@@ -3444,6 +3544,47 @@
           "nargs": 1,
           "opts": [
             "--host"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "help": "Which store to compare against. Defaults to `publish.target`, else confluence.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "target",
+          "nargs": 1,
+          "opts": [
+            "--target"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": true,
+            "choices": [
+              "confluence",
+              "github-wiki"
+            ],
+            "name": "choice"
+          }
+        },
+        {
+          "default": "",
+          "help": "GitHub wiki repository as owner/name. Defaults to `publish.github_wiki.repository`.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "repository",
+          "nargs": 1,
+          "opts": [
+            "--repository"
           ],
           "required": false,
           "secondary_opts": [],

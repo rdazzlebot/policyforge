@@ -96,23 +96,39 @@ def _check_page_claims(documents: list[ContentDocument]) -> list[Finding]:
     look like the source of truth for that page. Whichever one happened to
     run second wins, which is not a rule anybody chose.
     """
-    claims: dict[tuple[str, str], str] = {}
+    claims: dict[tuple[str, str, str], str] = {}
     findings: list[Finding] = []
     for doc in documents:
-        if not doc.space:
-            continue
-        key = (doc.space.lower(), doc.page_title.lower())
-        first = claims.get(key)
-        if first is not None:
-            findings.append(
-                Finding(
-                    doc.relative_path,
-                    f"publishes to {doc.space}/{doc.page_title!r}, which {first} already "
-                    "claims — one of them would silently overwrite the other",
+        # Keyed by kind as well as by place and title, because a page is only
+        # the same page within one store: `SEC/Access Review` in Confluence
+        # and `Access Review` on a wiki are two destinations, and a tree
+        # publishing to both would otherwise report a collision that is not
+        # one. Within a kind the rule is unchanged.
+        for kind, target in (doc.targets or {}).items():
+            if not isinstance(target, dict):
+                continue
+            where = str(target.get("space") or target.get("repository") or "")
+            title = str(target.get("title") or doc.title or "")
+            if not title:
+                continue
+            # A wiki block may name no repository, taking it from config; two
+            # such files still collide with each other, so they key on the
+            # empty location together rather than being skipped.
+            if kind == "confluence" and not where:
+                continue
+            key = (kind, where.lower(), title.lower())
+            first = claims.get(key)
+            if first is not None:
+                place = f"{where}/{title!r}" if where else f"{title!r}"
+                findings.append(
+                    Finding(
+                        doc.relative_path,
+                        f"publishes to {place}, which {first} already claims — one of "
+                        "them would silently overwrite the other",
+                    )
                 )
-            )
-            continue
-        claims[key] = doc.relative_path
+                continue
+            claims[key] = doc.relative_path
     return findings
 
 

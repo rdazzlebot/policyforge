@@ -4,10 +4,23 @@
 interface so a second kind of store can share their guards. The claim that
 this changed nothing for the store they were written against is held here
 directly: the loops as they stood before the refactor are reproduced below
-verbatim (from `publish.py`, `drift.py` and `pull.py` at 6dce141, imports
-aside), and every scenario the content/git tests exercise is run through
-both, asserting the same report and the same exporter calls, argument for
-argument.
+from `publish.py`, `drift.py` and `pull.py` at 6dce141, and every scenario
+the content/git tests exercise is run through both, asserting the same
+report, the same formatted output and the same exporter calls, argument
+for argument.
+
+What is frozen, and how faithfully, so a reader who checks is not
+surprised. `_old_publish_tree`, `_old_wiki_drift`, `_old_pull_pages`,
+`_old_moved_since_last_publish`, `_old_unchanged_on_the_wiki`,
+`_old_storage_key` and `_old_target_path` are the 6dce141 bodies with only
+their imports flattened and their helper calls renamed to the `_old_`
+copies. `_OldDriftResult`, `_OldDriftReport`, `_OldPullResult` and
+`_OldPullReport` are the 6dce141 dataclasses, copied whole, because the
+originals were replaced by their `publisher.py` successors and a frozen
+loop must build the frozen shape. `_old_publish_tree` alone builds the
+live `PublishReport`/`PublishResult`, which did not change in the
+refactor (same fields, same `format_report`), so the two reports compare
+directly. Nothing else is simplified.
 
 The frozen copies are the point of the file and must not be "tidied" into
 calls to the new code: the moment they delegate, the test proves nothing.
@@ -56,8 +69,9 @@ from tests.test_content_git import (
 )
 
 # ==========================================================================
-# Verbatim from export/publish.py, export/drift.py and export/pull.py at
-# 6dce141. Only the imports were flattened; the bodies are untouched.
+# From export/publish.py, export/drift.py and export/pull.py at 6dce141.
+# Bodies untouched apart from flattened imports and `_old_` helper names;
+# the dataclasses the loops build are copied whole, see the docstring.
 # ==========================================================================
 
 IN_SYNC = "in-sync"
@@ -205,8 +219,54 @@ class _OldDriftResult:
 
 @dataclass
 class _OldDriftReport:
-    results: list = field(default_factory=list)
+    results: list[_OldDriftResult] = field(default_factory=list)
     undeclared: int = 0
+
+    def _of(self, state: str) -> list[_OldDriftResult]:
+        return [r for r in self.results if r.state == state]
+
+    @property
+    def moved(self) -> list[_OldDriftResult]:
+        return self._of(MOVED)
+
+    @property
+    def in_sync(self) -> list[_OldDriftResult]:
+        return self._of(IN_SYNC)
+
+    @property
+    def absent(self) -> list[_OldDriftResult]:
+        return self._of(ABSENT)
+
+    def format_report(self) -> str:
+        lines = [
+            f"{len(self.moved)} page(s) changed on the wiki since this tool last "
+            f"published them; {len(self.in_sync)} in sync."
+        ]
+        for result in self.moved:
+            lines += [
+                "",
+                f"  ~ {result.space}/{result.title}",
+                f"      {result.reason}",
+                f"      repo: {result.path}",
+                f"      reconcile: {result.reconcile}",
+            ]
+            if result.url:
+                lines.append(f"      {result.url}")
+
+        if self.absent:
+            lines += ["", f"Declared but not published yet ({len(self.absent)}):"]
+            lines += [f"  {r.path} -> {r.space}/{r.title}" for r in self.absent]
+
+        if self.undeclared:
+            lines += [
+                "",
+                f"{self.undeclared} document(s) declare no `confluence:` block and were "
+                "not looked up.",
+            ]
+
+        if not self.moved:
+            lines += ["", "Nothing to reconcile."]
+        return "\n".join(lines)
 
 
 def _old_wiki_drift(root: Path, *, host: str, only: str = "") -> _OldDriftReport:
@@ -263,6 +323,40 @@ class _OldPullResult:
     reason: str = ""
 
 
+@dataclass
+class _OldPullReport:
+    results: list[_OldPullResult] = field(default_factory=list)
+    dry_run: bool = True
+
+    def _of(self, action: str) -> list[_OldPullResult]:
+        return [r for r in self.results if r.action == action]
+
+    @property
+    def refused(self) -> list[_OldPullResult]:
+        return self._of(REFUSED)
+
+    def format_report(self) -> str:
+        written = self._of(WRITTEN)
+        unchanged = self._of(UNCHANGED)
+        verb = "Would write" if self.dry_run else "Wrote"
+        lines = [f"{verb} {len(written)} file(s); {len(unchanged)} already matched the tree."]
+        lines += [f"  {r.title} -> {r.path}" for r in written]
+
+        if self.refused:
+            lines += ["", f"Refused {len(self.refused)}:"]
+            lines += [f"  {r.title}: {r.reason}" for r in self.refused]
+            lines += [
+                "",
+                "These pages read fine but would be damaged by a publish, so they are "
+                "not brought into the tree. Rewrite them in Confluence without those "
+                "macros, or keep them wiki-only.",
+            ]
+
+        if self.dry_run and written:
+            lines += ["", "Nothing was written. Pass --apply to write these files."]
+        return "\n".join(lines)
+
+
 _OLD_TIER_DIR = {tier: directory for directory, tier in TIER_DIRS.items()}
 
 
@@ -278,7 +372,7 @@ def _old_pull_pages(
     host: str,
     dry_run: bool = True,
     allow_macros: bool = False,
-) -> list[_OldPullResult]:
+) -> _OldPullReport:
     from policyforge.edit.apply import detect_unsupported_macros
     from policyforge.export.confluence_importer import (
         confluence_to_markdown,
@@ -288,18 +382,20 @@ def _old_pull_pages(
     from policyforge.export.confluence_search import fetch_user_names
     from policyforge.zardoz.corpus import slugify
 
-    results: list[_OldPullResult] = []
+    report = _OldPullReport(dry_run=dry_run)
 
     for space, title, tier in pages:
         try:
             page = fetch_confluence_page(space=space, title=title, host=host)
         except LookupError as exc:
-            results.append(_OldPullResult(title=title, path="", action=REFUSED, reason=str(exc)))
+            report.results.append(
+                _OldPullResult(title=title, path="", action=REFUSED, reason=str(exc))
+            )
             continue
 
         macros = detect_unsupported_macros(page.storage_body)
         if macros and not allow_macros:
-            results.append(
+            report.results.append(
                 _OldPullResult(
                     title=title,
                     path="",
@@ -331,15 +427,15 @@ def _old_pull_pages(
 
         rendered = normalise_newlines(rendered)
         if destination.exists() and destination.read_text(encoding="utf-8") == rendered:
-            results.append(_OldPullResult(title=title, path=relative, action=UNCHANGED))
+            report.results.append(_OldPullResult(title=title, path=relative, action=UNCHANGED))
             continue
 
         if not dry_run:
             destination.parent.mkdir(parents=True, exist_ok=True)
             write_text_lf(destination, rendered)
-        results.append(_OldPullResult(title=title, path=relative, action=WRITTEN))
+        report.results.append(_OldPullResult(title=title, path=relative, action=WRITTEN))
 
-    return results
+    return report
 
 
 # ==========================================================================
@@ -487,6 +583,7 @@ def test_drift_produces_the_same_report(name, tmp_path, monkeypatch):
 
     assert rows(after) == rows(before)
     assert after.undeclared == before.undeclared
+    assert after.format_report() == before.format_report()
 
 
 PULL_SCENARIOS = {
@@ -523,11 +620,15 @@ def test_pull_writes_the_same_files_and_reports_the_same_results(name, tmp_path,
 
     (old_first, old_second, old_files), (new_first, new_second, new_files) = outcomes
 
-    def rows(results):
-        return [(r.title, r.path, r.action, r.reason) for r in results]
+    def rows(report):
+        return [(r.title, r.path, r.action, r.reason) for r in report.results]
 
-    assert rows(new_first.results) == rows(old_first)
-    assert rows(new_second.results) == rows(old_second), "the second pull must read unchanged"
+    # Compared the way publish is compared: every result, the dry-run flag
+    # that decides what the user is told, and the formatted report itself.
+    for new_report, old_report in ((new_first, old_first), (new_second, old_second)):
+        assert rows(new_report) == rows(old_report)
+        assert new_report.dry_run == old_report.dry_run
+        assert new_report.format_report() == old_report.format_report()
     assert new_files == old_files, "byte-identical files, binding and all"
 
 

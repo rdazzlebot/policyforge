@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Tests
+
+- **A new document producer cannot write an empty body unnoticed.**
+  `tests/test_document_text_guard.py` walks the modules that write model
+  replies as documents — synthesis, the three document tiers, the edit
+  rewrite — and requires every function that makes a model call to pass
+  the reply through `effort.document_text`, the check that refuses an
+  empty reply (1.2.1). Every other module under `src/` that reads a
+  reply's text must be listed with the reason its empty reply is handled
+  another way, so a module that starts writing a document is caught the
+  day it is written; the sweep found one reader the first list missed.
+
 ### A provider's rejection reaches you as a sentence, not a traceback
 
 - **A 4xx from the model's API now says which call, which budget and

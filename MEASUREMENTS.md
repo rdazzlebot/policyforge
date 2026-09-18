@@ -1320,6 +1320,73 @@ frontmatter carries the same zero. Other calls in the run priced normally. It
 does not move the run total materially and it has not been investigated; it
 is recorded here so that nobody quotes a per-document cost from that file.
 
+#### Addendum, 2026-09-18: the token count contradicts the account above
+
+The same call billed **1,358 output tokens against 863 characters of
+document**. Measured across all 59 calls in this run, matched to the
+documents they wrote, the median is **3.93 characters per output token** —
+so 1,358 tokens is about 5,400 characters, and roughly 4,500 of them are not
+on the page. Every other call in the run sits between 2.74 and 5.78; this
+one sits at 0.64.
+
+**That is in tension with the explanation given above.** "The model emitted a
+normal stop token in the middle of a sentence" accounts for a document that
+ends mid-sentence. It does not account for 1,358 output tokens, because a
+model that stopped after 863 characters would have billed roughly 216. The
+account is incomplete rather than wrong, and a reader should meet that as an
+open question rather than as a second curiosity beside the zero cost.
+
+**This splits the anomaly into two questions rather than resolving one.**
+
+**The token gap has an explanation.**
+`llm/_inline_thinking.answer_of` removes a `<think>` block before the text
+reaches the pipeline — by design, on every provider reply. Reasoning tokens
+are inside `completion_tokens`, which is what LiteLLM prices from, so on this
+reading the cost is a **total rather than a floor**, and the rest of epoch 21
+is untouched: this is the only call whose ratio departs from the median.
+
+It has to be a *closed* block. Measured against the shipped function:
+
+| reply                         | in  | out | result          |
+| ----------------------------- | --- | --- | --------------- |
+| `<think>…</think>The answer.` | 40  | 11  | `'The answer.'` |
+| `<think>` never closed        | 41  | 0   | `''`            |
+| `<think>` then partial answer | 32  | 0   | `''`            |
+| no block                      | 15  | 15  | unchanged       |
+
+An unclosed block discards everything, and this document has 863 characters.
+So the model reasoned for roughly 4,500 characters, closed the block, wrote
+863 characters of Standard — and stopped mid sentence anyway.
+
+**The mid-sentence ending still has none.** It is the same puzzle it was
+before: a normal stop token after 863 characters, in the middle of a clause.
+The think block accounts for the tokens and touches nothing about the ending,
+and this is the half that damaged the document. Anyone reading the paragraph
+above should not carry away that the whole thing is understood.
+
+**One reassurance, since it is the first worry the mechanism invites.** An
+unclosed `<think>` does not produce a silently empty document. `answer_of`
+runs inside the provider, so the empty string reaches `effort.py`'s guard,
+which raises `EmptyReply` and writes nothing — the same refusal that caught
+the empty Policy in this run. That path is protected.
+
+**The other candidate, narrowed and still open.** The pipeline may have
+received more than it wrote. The `.history` copy is 795 bytes, so nothing was
+lost between receipt and the first stored version — which rules out loss
+after that write and leaves loss before it open. And something else again,
+named so the list is not read as exhaustive.
+
+**Why the ending cannot be settled from what survives.** The raw reply is
+recorded nowhere — not in the ledger, which carries token counts and cost but
+no content, and not in the history, which carries what was written after
+stripping. So whether a `<think>` block was removed, and how large it was, is
+unknowable for this call and for every call before it.
+
+The recording gap is the actionable part. A count of characters removed by
+`answer_of`, carried on the response and written to the ledger, would cost
+nothing per call and would make this class of question answerable rather
+than archaeological.
+
 ### Output headroom, before the 1.2.1 budgets
 
 Measured on `553d430`, the last commit before the fix, through

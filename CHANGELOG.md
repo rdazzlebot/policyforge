@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+**A fifth bundled catalog: information blocking (45 CFR Part 171).**
+`policyforge etl-info-blocking` fetches it from eCFR's public API and
+writes `data/frameworks/cfr-171-information-blocking/` — 21 sections
+carrying 55 conditions, 39 of them under the names the regulation itself
+gives them ("Reasonable belief", "Practice breadth"). Public domain, so it
+ships in the box like NIST 800-53 and the HIPAA Security Rule, and the
+monthly `framework-drift` job now watches it for changes too.
+
+**Read what it is before you cite it.** Every other bundled catalog says
+what to implement. Part 171 does not: it defines information blocking and
+then sets out the *exceptions*, so an entry here is a condition under which
+a practice does **not** count as blocking. Citing `171.203(a)` says a
+practice qualifies for the security exception — it is not evidence that a
+safeguard exists, and the two readings point opposite ways in a report. A
+high count of satisfied conditions means restrictions were well justified,
+not that controls work. The catalog ships with no crosswalk for the same
+reason: no authority publishes a Part 171-to-800-53 mapping, and one
+invented here would be this project's opinion wearing the regulation's
+authority. Its README says all of this first, before the contents.
+
+Reserved and definitions sections are excluded rather than carried as empty
+entries — `171.402`, `171.102` and `171.401` have a number, a title and no
+obligations, and an empty entry is the kind that counts, renders and
+crosswalks while meaning nothing.
+
 ## 1.3.0
 
 Three things this release lets you do that 1.2.1 could not: map your own

@@ -45,7 +45,10 @@ ALLOWED_HOSTS: dict[str, str] = {
     # `etl-*` command the operator runs, and every one serves government
     # works — the content this project is allowed to redistribute.
     "csrc.nist.gov": "NIST CPRT: the HIPAA-to-800-53 crosswalk (etl-hipaa-crosswalk)",
-    "www.ecfr.gov": "eCFR: the HIPAA Security Rule, 45 CFR 164 Subpart C (etl-hipaa)",
+    "www.ecfr.gov": (
+        "eCFR: the HIPAA Security Rule, 45 CFR 164 Subpart C (etl-hipaa), and "
+        "information blocking, 45 CFR 171 (etl-info-blocking)"
+    ),
     "www.cms.gov": "CMS: the ARC-AMPE Volume II control baseline (etl-arc-ampe)",
     "raw.githubusercontent.com": (
         "NIST's OSCAL edition of SP 800-53 (etl-oscal) and FedRAMP's consolidated "

@@ -732,3 +732,115 @@ def test_a_document_that_does_cite_nist_gets_no_such_notice():
     """The notice is for an empty section with no anchors, not for every run."""
     report = format_report([_evidence("[NIST 800-53 AC-2]")])
     assert "not for want of coverage" not in report
+
+
+def _nist_800_171():
+    """A second NIST-family catalog, with identifiers shaped unlike 800-53's."""
+    return [
+        Control(
+            control_id="03.01.01",
+            title="Account Management",
+            framework="NIST 800-171",
+            framework_version="r3",
+            control_statement="Manage system accounts.",
+        )
+    ]
+
+
+def test_a_short_form_nist_citation_stops_resolving_when_a_second_nist_catalog_loads():
+    """`[NIST AC-2]` names one catalog until there are two, then it names neither.
+
+    This is the property the whole family-key change exists to protect, and
+    it is the one a reader is most likely to mistake for a regression. With
+    800-53 alone, `NIST` is an unambiguous abbreviation and resolves. Add
+    800-171 and it is ambiguous, so it resolves to nothing and the citation
+    is reported unknown — which is correct, because an assessor handed
+    `NIST AC-2` with two NIST catalogs in scope genuinely cannot tell which
+    one is meant.
+    """
+    one = _catalogs()
+    two = _catalogs() + _nist_800_171()
+    body = "## Accounts\n\n[NIST AC-2]\n"
+
+    alone = _evidence(body, controls=one)
+    assert [c.requirement_id for c in alone.cited] == ["AC-2"]
+    assert alone.unknown == []
+
+    both = _evidence(body, controls=two)
+    assert both.cited == []
+    assert both.unknown == ["NIST AC-2"]
+
+
+def test_adding_a_catalog_makes_unknown_counts_rise_not_fall():
+    """The direction is the point, and it is the opposite of the old defect.
+
+    Before the family-key change, every NIST-family catalog filed under one
+    key: loading 800-171 beside 800-53 merged their identifiers, so an
+    800-171 id cited as 800-53 resolved clean and counted as evidence, and
+    honest unknowns turned into silent false hits. Unknown counts *fell* as
+    correctness degraded.
+
+    `satisfies --strict` gates on exactly that count, so the documented CI
+    gate went from failing to passing at the moment citations started
+    resolving into the wrong catalog — a gate that inverts is worse than no
+    gate, because it is trusted.
+
+    Now the direction reverses: adding a catalog can only make an ambiguous
+    citation unresolvable, so unknowns rise and `--strict` starts failing.
+    Anyone upgrading sees red, and the red is the point.
+    """
+    body = "## Accounts\n\n[NIST AC-2]\n[NIST 800-53 AC-2]\n"
+    alone = _evidence(body, controls=_catalogs())
+    both = _evidence(body, controls=_catalogs() + _nist_800_171())
+
+    assert len(both.unknown) > len(alone.unknown), (
+        "adding a NIST-family catalog must not reduce the unknown count; "
+        "a fall is the merged-key defect returning"
+    )
+    # the fully-qualified citation is unaffected by the second catalog
+    assert ("nist-800-53", "AC-2") in {c.key for c in both.cited}
+
+
+def test_an_identifier_from_one_nist_catalog_cited_as_the_other_is_refused():
+    """`[NIST 800-53 03.01.01]` names a real requirement under the wrong catalog.
+
+    The failure direction that matters: a wrong catalog name now produces a
+    visible refusal rather than a silent hit, so the residual risk after
+    this change is under-citation, not mis-citation.
+    """
+    evidence = _evidence("## X\n\n[NIST 800-53 03.01.01]\n", controls=_catalogs() + _nist_800_171())
+    assert evidence.cited == []
+    assert evidence.unknown == ["NIST 800-53 03.01.01"]
+
+
+def test_a_bare_nist_citation_cannot_become_resolvable_by_adding_a_catalog():
+    """The dangerous direction: a gate that goes green as the thing it guards breaks.
+
+    `[NIST 03.01.01]` names an 800-171 identifier under a bare family name.
+    It should never resolve — `NIST` does not say which catalog, and an
+    assessor handed it cannot tell either.
+
+    Before the family-key change it resolved as soon as 800-171 was loaded
+    beside 800-53, because both filed under one key and the identifier
+    simply joined the bucket. So declaring a second catalog moved this
+    citation from *unknown* to *cited evidence*, the unknown count fell from
+    one to zero, and `satisfies --strict` flipped from failing to passing at
+    the moment attribution silently merged.
+
+    That is worse than the reverse error. A gate that fails when it should
+    pass gets investigated; a gate that passes when it should fail gets
+    trusted. Pinned as "must not resolve" rather than as a count, because
+    the defect is the transition and not the total.
+    """
+    body = "## X\n\n[NIST 03.01.01]\n"
+    one = _evidence(body, controls=_catalogs())
+    two = _evidence(body, controls=_catalogs() + _nist_800_171())
+
+    assert one.cited == [], "a bare family name should never resolve an identifier"
+    assert one.unknown == ["NIST 03.01.01"]
+
+    assert two.cited == [], (
+        "adding a second NIST-family catalog made a bare-name citation resolve; "
+        "that is the merged-key defect, and --strict would go green as it happened"
+    )
+    assert two.unknown == ["NIST 03.01.01"]

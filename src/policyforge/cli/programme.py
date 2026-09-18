@@ -669,3 +669,182 @@ def roles_cmd(kind: str):
     click.echo("        ticketing: Jira")
     click.echo("      teams:")
     click.echo("        identity_access: IAM Engineering")
+
+
+@cli.command("satisfies")
+@click.option(
+    "--document",
+    "document_paths",
+    multiple=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="A single markdown document, by path. Repeatable.",
+)
+@click.option(
+    "--topic",
+    "topic_names",
+    multiple=True,
+    help="Every document of a topic. Repeatable. Matched on a document's frontmatter "
+    "topic or its filename slug, since `generate` names the file for the slug but "
+    "writes no topic - which is the state a freshly generated tree is in.",
+)
+@click.option("--all", "every", is_flag=True, help="Every document in the content tree.")
+@click.option(
+    "--content-dir",
+    "content_override",
+    default=None,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="The markdown tree (default: config's zardoz.content_dir, else docs/).",
+)
+@click.option(
+    "--topics",
+    "topics_path",
+    default=Path("config/topics.yaml"),
+    type=click.Path(path_type=Path),
+    help="Topic registry (default: config/topics.yaml). Read for a topic's anchors, so "
+    "'anchored but cited nowhere' can be reported; the rest works without it.",
+)
+@click.option(
+    "--controls",
+    "controls_paths",
+    required=True,
+    multiple=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to a controls.json. Repeatable - pass the NIST catalog plus every "
+    "framework you want the documents resolved against.",
+)
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Exit non-zero if any document cites a requirement no loaded catalog has. "
+    "A citation pointing nowhere is a defect in the document, so this is the CI gate.",
+)
+@click.option(
+    "--require-reviewed",
+    is_flag=True,
+    help="Also exit non-zero if any mapping rests on an overlay entry nobody has "
+    "reviewed. Separate from --strict: unreviewed is a state of the programme, not "
+    "an error in the document.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Emit the evidence as JSON instead of a text report.",
+)
+def satisfies_cmd(
+    document_paths,
+    topic_names,
+    every: bool,
+    content_override: Path | None,
+    topics_path: Path,
+    controls_paths,
+    strict: bool,
+    require_reviewed: bool,
+    as_json: bool,
+):
+    """What a published document can be shown against, and how strong the evidence is.
+
+    The assessor's direction of travel, from the page rather than the
+    requirement: name a document and this reports the requirements it cites,
+    the ones those citations reach through the crosswalk, and - separately -
+    the controls its topic claims that nothing in the topic actually says.
+
+    The citations in the text are the evidence. A topic anchor is an
+    intention, so the two are never added together. Every crosswalked
+    mapping says where it came from: the published crosswalk, an overlay row
+    somebody reviewed, or an overlay row nobody has. The last are shown and
+    marked rather than dropped. No model call and no network.
+
+    The crosswalk is anchored on NIST 800-53 and is walked from the NIST
+    requirements a document cites, so a document citing none reaches nothing
+    through it - and the report says so rather than printing an empty
+    section, which on this command would read as an absence of coverage.
+
+    Two resolution rules worth knowing, because the counts look wrong
+    without them. Citing an enhancement counts as citing its control, so a
+    topic that cites AC-2(3) is not reported as never mentioning AC-2 - the
+    same reading `coverage` and `drift` use. And a topic's anchors are
+    answered by its documents together rather than one file at a time, so a
+    Policy is not reported as missing anchors its own Procedure cites; the
+    report names how much it searched. Under --document, one file is all
+    there is to search, and it says so.
+    """
+    import json as json_mod
+
+    from policyforge.content.tree import load_content_tree
+    from policyforge.crosswalk.overlay import accepted_rows, load_overlays
+    from policyforge.mapping.crosswalk import build_crosswalk
+    from policyforge.topics.registry import load_topics
+    from policyforge.topics.satisfies import as_records, build_report, format_report
+
+    if sum(bool(x) for x in (document_paths, topic_names, every)) != 1:
+        raise click.UsageError(
+            "Choose exactly one of --document, --topic or --all. They are different "
+            "questions: one page, one topic's pages, or the whole tree."
+        )
+
+    root = _content_dir(content_override)
+    if not root.exists():
+        raise click.UsageError(
+            f"No content tree at {root}. Generate documents first, or pass --content-dir."
+        )
+    documents, problems = load_content_tree(root)
+    for problem in problems:
+        click.echo(f"  ! {problem}", err=True)
+
+    if document_paths:
+        wanted = {p.resolve() for p in document_paths}
+        selected = [d for d in documents if d.path.resolve() in wanted]
+        missing = wanted - {d.path.resolve() for d in selected}
+        if missing:
+            raise click.UsageError(
+                "These are not in the content tree at "
+                f"{root}: {', '.join(sorted(str(m) for m in missing))}"
+            )
+    elif topic_names:
+        from policyforge.zardoz.corpus import slugify
+
+        # By frontmatter topic *or* by slug. `generate` writes a file named
+        # for the topic's slug but puts no `topic:` in the frontmatter —
+        # that is added later, when a document is published — so matching
+        # the frontmatter alone would find nothing in a freshly generated
+        # tree, which is exactly when this report is most worth running.
+        wanted = {slugify(name) for name in topic_names}
+        selected = [d for d in documents if slugify(d.topic) in wanted or slugify(d.slug) in wanted]
+        if not selected:
+            raise click.UsageError(
+                f"No document in {root} belongs to {', '.join(topic_names)}. "
+                "Documents are matched on their frontmatter topic or their filename slug."
+            )
+    else:
+        selected = list(documents)
+        if not selected:
+            raise click.UsageError(f"No documents found in {root}.")
+
+    topics = load_topics(topics_path) if topics_path.exists() else []
+    controls = load_catalogs(controls_paths)
+
+    evidences = build_report(
+        selected,
+        controls=controls,
+        crosswalk=build_crosswalk(controls),
+        # Read again rather than reused from load_catalogs, which applies them
+        # and keeps no handle. Cheap, and the alternative is a second return
+        # value on a function six commands call.
+        provenance=accepted_rows(load_overlays()),
+        topics=topics,
+    )
+
+    if as_json:
+        click.echo(json_mod.dumps(as_records(evidences), indent=2))
+    else:
+        click.echo(format_report(evidences))
+
+    unknown = sum(len(e.unknown) for e in evidences)
+    unreviewed = sum(len(e.unreviewed) for e in evidences)
+    if strict and unknown:
+        click.echo(f"{unknown} citation(s) resolve to nothing in the loaded catalogs.", err=True)
+        raise SystemExit(1)
+    if require_reviewed and unreviewed:
+        click.echo(f"{unreviewed} mapping(s) rest on an unreviewed overlay entry.", err=True)
+        raise SystemExit(1)

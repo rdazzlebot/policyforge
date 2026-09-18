@@ -474,20 +474,34 @@ def check_overlay(overlay: Overlay, controls) -> OverlayCheck:
     return check
 
 
-def accepted_relationships(overlays: list[Overlay]) -> dict[tuple[str, str, str], str]:
-    """(framework, requirement id, anchor id) -> relationship, for accepted rows.
+def accepted_rows(overlays: list[Overlay]) -> dict[tuple[str, str, str], MappingRow]:
+    """(framework, requirement id, anchor id) -> the row that accepted the pair.
 
     Keyed by the normalized framework name `mapping/crosswalk.py` files a
-    requirement under, so a coverage report can look a pair up by the same
-    key it reached the requirement with.
+    requirement under, so a report can look a pair up by the same key it
+    reached the requirement with.
+
+    Only accepted rows, because only those are what `apply_overlays` writes
+    into the crosswalk: a rejected pair is not reachable downstream and must
+    not be discoverable through this either.
     """
     from policyforge.mapping.crosswalk import normalize_framework
 
-    found = {}
+    found: dict[tuple[str, str, str], MappingRow] = {}
     for overlay in overlays:
         framework = normalize_framework(overlay.framework)
         for requirement_id, rows in overlay.requirements.items():
             for row in rows:
                 if row.status == ACCEPTED:
-                    found[(framework, requirement_id, row.control)] = row.relationship
+                    found[(framework, requirement_id, row.control)] = row
     return found
+
+
+def accepted_relationships(overlays: list[Overlay]) -> dict[tuple[str, str, str], str]:
+    """(framework, requirement id, anchor id) -> relationship, for accepted rows.
+
+    The relationship half of `accepted_rows`, which is all `coverage` needs.
+    Both are keyed the same way, deliberately: two reports disagreeing about
+    which pair a key names would be a hard bug to see.
+    """
+    return {key: row.relationship for key, row in accepted_rows(overlays).items()}

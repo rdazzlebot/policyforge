@@ -666,23 +666,32 @@ comfortable.
    other, and an assessor following any of the 34 finds nothing until one of
    them lands.
 
-1. **A tag whose first citation leads with an unlisted framework name is
-   invisible to every check that reads tags.** The allowlist is
-   `edit/apply._SOURCE_TAG_RE`, and `content/check.py` and
-   `frameworks/drift.py` both read tags through it. It lists `ARC-AMPE`; it
-   does not list the abbreviation `ARC`. Run against these 59 documents, the
-   allowlist exactly as `main` ships it cannot see **22 tags carrying 31
-   citations** — 21 tags in `standards/physical-environmental-security.md`
-   and 1 in its procedure. So `check` cannot report those tags present,
-   dropped or wrong, and `drift` cannot use them to decide which documents a
-   catalog revision touches. All 31 resolve, so the count of 34 above is
-   unaffected; what is affected is every claim this tool makes about
-   traceability for those pages.
+1. **Tags are now read by shape, so an abbreviated framework name is no
+   longer invisible.** This entry used to say that a tag whose first
+   citation leads with an unlisted framework name could not be seen by any
+   check that reads tags: the allowlist was `edit/apply._SOURCE_TAG_RE`,
+   it listed `ARC-AMPE` but not the abbreviation `ARC`, and measured against
+   a 59-document tree it could not see **22 tags carrying 31 citations** —
+   21 in `standards/physical-environmental-security.md` and 1 in its
+   procedure.
 
-   This is a measurement blind spot rather than a resolution failure. No
-   amount of resolver work would surface it, because those tags were never
-   candidates — which is also why it was found by comparing two independent
-   scans and not by either one alone.
+   The tag-shape refactor removed the allowlist. `content/tags.py` now
+   recognises a tag by its shape — capitalised name tokens followed by a
+   token carrying a digit — and `edit/apply._SOURCE_TAG_RE` is an alias to
+   that one rule, so `check` and `drift` read tags the same way `apply`
+   does. `[ARC PE-8 AE Mandatory | NIST PE-8]` matches and reports its
+   framework as `ARC`, verified against this tree on 2026-09-18.
+
+   Kept rather than deleted, because a reader who acted on the old sentence
+   may have discounted what `check` and `drift` reported for those pages,
+   and should learn that they are covered now.
+
+   **The general shape survives, and it is the part worth keeping.** This
+   was a measurement blind spot rather than a resolution failure: no amount
+   of resolver work would have surfaced it, because those tags were never
+   candidates, which is why it was found by comparing two independent scans
+   and not by either one alone. A check that cannot see something reports
+   success, and an allowlist is a list of what you already thought of.
 
    **The same defect happened four times in one evening**, in four
    separately written implementations of a citation-population rule, while

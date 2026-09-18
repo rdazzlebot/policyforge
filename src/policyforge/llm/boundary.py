@@ -236,7 +236,13 @@ def classify_provider(llm_config: dict) -> ProviderClassification:
             f"a cascade is as exposed as its most exposed half ({both})",
         )
 
-    if name in ("anthropic", "bedrock", "vertex"):
+    if name in ("anthropic", "bedrock", "vertex", "gemini"):
+        # Named rather than left to the unrecognised-provider fallback
+        # below. That fallback is also third-party, so the outcome would be
+        # the same today — but a provider whose classification depends on
+        # falling off the end of this function is one rename away from
+        # being classified by accident, and this table is what the licensed
+        # ceiling is enforced from.
         return ProviderClassification(THIRD_PARTY, f"{name} is a hosted API")
 
     if name in ("openai-compat", "local"):

@@ -51,6 +51,10 @@ ALLOWED_HOSTS: dict[str, str] = {
         "NIST's OSCAL edition of SP 800-53 (etl-oscal) and FedRAMP's consolidated "
         "rules dataset (etl-fedramp)"
     ),
+    "generativelanguage.googleapis.com": (
+        "Google AI Studio's Gemini API, when `provider: gemini` is configured; "
+        "receives the prompts that provider sends"
+    ),
     "github.com": (
         "the GitHub wiki remote (export/github_wiki.py), cloned and pushed to only when a "
         "`github_wiki` target is configured — it RECEIVES the organization's documents, so "

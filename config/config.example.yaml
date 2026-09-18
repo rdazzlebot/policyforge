@@ -3,9 +3,9 @@
 # variable name instead, and set that variable in your shell / .env.
 
 llm:
-  # Six providers: anthropic, bedrock, vertex, openai-compat (alias: local),
-  # litellm, cascade. This block uses anthropic; a working block for each of
-  # the others is at the end of this file.
+  # Seven providers: anthropic, bedrock, vertex, gemini, openai-compat
+  # (alias: local), litellm, cascade. This block uses anthropic; a working
+  # block for each of the others is at the end of this file.
   provider: anthropic
   model: claude-sonnet-5       # an example — check your provider's model list
   # The NAME of the environment variable holding the key, never the key.
@@ -158,6 +158,25 @@ zardoz:
 #   model: your-vertex-model-id
 #   project_id: my-gcp-project
 #   region: us-central1
+
+# Google's own Gemini models, with an API key from AI Studio. This is NOT
+# the `vertex` block above: that one serves Claude models in Google Cloud
+# through Anthropic's client and needs a GCP project. This one needs only a
+# key, from https://aistudio.google.com, in the variable named here.
+#
+# The model name below was current in September 2026 and will not stay that
+# way: Google retires names, and a retired one answers with HTTP 404 naming
+# its replacement. This provider surfaces that message verbatim, so the
+# error tells you what to put here.
+#
+# Google's terms have historically differed between the free and paid tiers
+# on whether prompts may be used to improve their products. That is between
+# you and Google and it changes — confirm which tier your key is on before
+# sending anything you would not want used that way. See docs/subprocessors.md.
+# llm:
+#   provider: gemini
+#   model: gemini-3.6-flash
+#   api_key_env: GEMINI_API_KEY
 
 # Any OpenAI-compatible server. Pointed at a loopback address, as here, it is
 # classified `local`: nothing leaves the machine, which is the one setup

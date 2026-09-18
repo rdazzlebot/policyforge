@@ -468,6 +468,15 @@ def _build_provider(config: dict) -> LLMProvider:
             timeout=config["llm"].get("timeout", 600),
         )
 
+    if provider_name == "gemini":
+        from .gemini_provider import GeminiProvider
+
+        return GeminiProvider(
+            model=config["llm"]["model"],
+            api_key_env=config["llm"].get("api_key_env", "GEMINI_API_KEY"),
+            timeout=config["llm"].get("timeout", 600),
+        )
+
     if provider_name == "litellm":
         from .litellm_provider import LiteLLMProvider
 
@@ -507,5 +516,5 @@ def _build_provider(config: dict) -> LLMProvider:
 
     raise ValueError(
         f"Unknown llm.provider '{provider_name}'. Supported: anthropic, bedrock, "
-        "vertex, openai-compat (alias: local), litellm, cascade."
+        "vertex, gemini, openai-compat (alias: local), litellm, cascade."
     )

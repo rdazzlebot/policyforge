@@ -2,6 +2,57 @@
 
 ## Unreleased
 
+### Gemini, with a key from AI Studio
+
+- **`provider: gemini` calls Google's own models with an API key**, at
+  `generativelanguage.googleapis.com`, with no cloud project and nothing
+  to install. It is deliberately not the `vertex` provider with a
+  different endpoint: that one serves *Claude* models in Google Cloud
+  through Anthropic's client and has nothing to do with Gemini, which is a
+  confusion the docs now name explicitly in both places.
+- **Capability flags describe what this provider sends, not what Google
+  offers.** Structured output is implemented and the request carries the
+  schema, so `supports_schema` is true; effort, caching, grounding and
+  batch are not implemented and say so in the code with the reason, each
+  one a deliberate false rather than an inherited one.
+- **`max_tokens` means tokens of answer, which took a live call to get
+  right.** Gemini counts a model's own thinking against `maxOutputTokens`
+  and returns none of it, so a 64-token budget spent 60 on reasoning and
+  came back with no content at all — the truncation guard firing correctly
+  on a call that could never have produced anything, which reads as a
+  guard defect and would be "fixed" by removing the guard. The provider
+  now sends a zero thinking budget on every call, so the caller's number
+  means what the caller meant. Translating a vendor quirk into the
+  interface's contract is the adapter's job: the alternative is every
+  caller and every budget learning that one vendor thinks.
+- **Thinking tokens reach the ledger**, through the
+  `hidden_output_tokens` field, so a call that bills for reasoning is not
+  recorded at a fraction of its cost. Where the count is absent — which is
+  what the API returns once thinking is off — it stays unknown rather than
+  becoming zero, and the same holds for `candidatesTokenCount`, which is
+  absent rather than zero on a reply cut off before its first content
+  token. That distinction is
+  the lesson from `bedrock`, which declares nothing at all and therefore
+  silently dropped every hint a capable model could have used.
+- **Held to the same boundary as every other hosted provider.** `gemini`
+  is named in the content-class ceiling rather than left to the
+  fail-closed default, so licensed content cannot reach it; the endpoint
+  is in the declared allowlist with its reason; the key is read only
+  through the declared credential reader; and the transport contract test
+  drives Gemini's own wire shape — `finishReason: "MAX_TOKENS"` inside the
+  first candidate — through the real parsing path, because a fake that
+  sets the field proves nothing.
+- **A blocked reply is an empty reply, not a crash.** Gemini answers a
+  safety block with HTTP 200 and no candidates at all, a shape no other
+  provider here produces, so it is read as empty text and refused by the
+  usual empty-reply guard.
+- **The free tier is named as a question, not answered.**
+  `docs/subprocessors.md` gains a row whose confirm column says which tier
+  a key is on matters, because Google's terms have historically treated
+  free and paid keys differently on whether prompts may improve their
+  products, and those terms are theirs to change. The page does not
+  characterise what Google does, which is its standing rule.
+
 ### The ledger can see output tokens you paid for and cannot read
 
 - **`LLMResponse.hidden_output_tokens` and a matching ledger column record

@@ -50,6 +50,7 @@ DECLARED_ENV_READERS: dict[str, str] = {
     "llm/anthropic_provider.py": "the Anthropic API key, by the variable name config gives",
     "llm/litellm_provider.py": "same, for OpenRouter and other LiteLLM-routed providers",
     "llm/openai_compat_provider.py": "same, for an OpenAI-compatible endpoint",
+    "llm/gemini_provider.py": "the Google AI Studio key, by the variable name config gives",
     "export/_confluence_auth.py": "CONFLUENCE_API_TOKEN and CONFLUENCE_USERNAME",
     "export/_wiki_auth.py": (
         "the GitHub token, by the variable name config gives — passed to git through "
@@ -65,6 +66,7 @@ CREDENTIAL_ENV_NAMES = (
     "ANTHROPIC_API_KEY",
     "OPENROUTER_API_KEY",
     "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
     "CONFLUENCE_API_TOKEN",
     "CONFLUENCE_USERNAME",
     "GITHUB_TOKEN",

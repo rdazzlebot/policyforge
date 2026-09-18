@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Checks
+
+- **`check` reports a Standard or Procedure that cites no framework
+  requirement at all.** The tag is the whole traceability story — how a
+  document says which control it answers for, and how `satisfies`, the
+  drift report and the edit path find it — so a Standard carrying none is
+  not weakly traced, it is untraced, and the two ways that happens are
+  both worth seeing: a generation cut off part-way, or citations written
+  and then lost in an edit. Tier-scoped, and the scoping is the check: all
+  nineteen Policies in the bundled 20-topic starter set cite nothing by
+  design, so an unscoped rule would report nineteen correct documents
+  beside the two wrong ones and be switched off inside a week. Measured on
+  that set: two flagged, both real — a Standard truncated mid-sentence at
+  1,066 bytes and a full-length Procedure whose tags are simply absent —
+  and nineteen Policies silent. Both were found by hand during the
+  citation-measurement reconciliation; this is that finding made
+  mechanical. A warning, never an error: a hand-written Standard not yet
+  mapped to a framework is a normal thing to have mid-migration. It reads
+  tags through `content/tags.py`, so a citation the old framework-name
+  list could not see now counts as one.
+
 ### Fixes
 
 - **The `etl-*` commands write catalogs with LF on every platform.** The

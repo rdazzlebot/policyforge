@@ -12,7 +12,14 @@
     "enhancements": [],
     "related_controls": [],
     "source_crosswalk": {},
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.306"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.306",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.306(b)",
@@ -27,7 +34,14 @@
     "enhancements": [],
     "related_controls": [],
     "source_crosswalk": {},
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.306"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.306",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.306(c)",
@@ -42,7 +56,14 @@
     "enhancements": [],
     "related_controls": [],
     "source_crosswalk": {},
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.306"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.306",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.306(d)",
@@ -57,7 +78,14 @@
     "enhancements": [],
     "related_controls": [],
     "source_crosswalk": {},
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.306"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.306",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.306(e)",
@@ -72,7 +100,14 @@
     "enhancements": [],
     "related_controls": [],
     "source_crosswalk": {},
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.306"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.306",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.308(a)(1)(i)",
@@ -90,6 +125,8 @@
         "title": "Risk analysis",
         "baseline": "Required",
         "description": "Conduct an accurate and thorough assessment of the potential risks and vulnerabilities to the confidentiality, integrity, and availability of electronic protected health information held by the covered entity or business associate.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "RA-2, RA-3"
         }
@@ -99,6 +136,8 @@
         "title": "Risk management",
         "baseline": "Required",
         "description": "Implement security measures sufficient to reduce risks and vulnerabilities to a reasonable and appropriate level to comply with \u00a7 164.306(a).",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "PL-2, RA-2, RA-3"
         }
@@ -108,6 +147,8 @@
         "title": "Sanction policy",
         "baseline": "Required",
         "description": "Apply appropriate sanctions against workforce members who fail to comply with the security policies and procedures of the covered entity or business associate.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "PS-8"
         }
@@ -117,6 +158,8 @@
         "title": "Information system activity review",
         "baseline": "Required",
         "description": "Implement procedures to regularly review records of information system activity, such as audit logs, access reports, and security incident tracking reports.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "AU-6, AU-7, CA-7, IR-5, IR-6, SI-4"
         }
@@ -126,7 +169,14 @@
     "source_crosswalk": {
       "nist": "RA-1"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.308(a)(2)",
@@ -143,7 +193,14 @@
     "source_crosswalk": {
       "nist": "CA-6, PM-2"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.308(a)(3)(i)",
@@ -161,6 +218,8 @@
         "title": "Authorization and/or supervision",
         "baseline": "Addressable",
         "description": "Implement procedures for the authorization and/or supervision of workforce members who work with electronic protected health information or in locations where it might be accessed.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "AC-1, AC-2, AC-3, AC-4, MA-5, MP-2, PS-1, PS-6, PS-7"
         }
@@ -170,6 +229,8 @@
         "title": "Workforce clearance procedure",
         "baseline": "Addressable",
         "description": "Implement procedures to determine that the access of a workforce member to electronic protected health information is appropriate.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "AC-2, PS-1, PS-2, PS-3, PS-5, PS-6, PS-7"
         }
@@ -179,6 +240,8 @@
         "title": "Termination procedures",
         "baseline": "Addressable",
         "description": "Implement procedures for terminating access to electronic protected health information when the employment of, or other arrangement with, a workforce member ends or as required by determinations made as specified in paragraph (a)(3)(ii)(B) of this section.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "PS-1, PS-4, PS-5"
         }
@@ -188,7 +251,14 @@
     "source_crosswalk": {
       "nist": "AC-1, AC-2, AC-3, AC-5, AC-6"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.308(a)(4)(i)",
@@ -206,6 +276,8 @@
         "title": "Isolating health care clearinghouse functions",
         "baseline": "Required",
         "description": "If a health care clearinghouse is part of a larger organization, the clearinghouse must implement policies and procedures that protect the electronic protected health information of the clearinghouse from unauthorized access by the larger organization.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "AC-5, AC-6, CA-3"
         }
@@ -215,6 +287,8 @@
         "title": "Access authorization",
         "baseline": "Addressable",
         "description": "Implement policies and procedures for granting access to electronic protected health information, for example, through access to a workstation, transaction, program, process, or other mechanism.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "AC-1, AC-2, AC-3, AC-4, PS-6, PS-7"
         }
@@ -224,6 +298,8 @@
         "title": "Access establishment and modification",
         "baseline": "Addressable",
         "description": "Implement policies and procedures that, based upon the covered entity's or the business associate's access authorization policies, establish, document, review, and modify a user's right of access to a workstation, transaction, program, or process.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "AC-1, AC-2"
         }
@@ -233,7 +309,14 @@
     "source_crosswalk": {
       "nist": "AC-1, AC-2, AC-5, AC-6"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.308(a)(5)(i)",
@@ -250,7 +333,14 @@
     "source_crosswalk": {
       "nist": "AT-1, AT-2, AT-3, AT-4"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.308(a)(5)(ii)",
@@ -268,6 +358,8 @@
         "title": "Security reminders",
         "baseline": "Addressable",
         "description": "Periodic security updates.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "AT-2, AT-3"
         }
@@ -277,6 +369,8 @@
         "title": "Protection from malicious software",
         "baseline": "Addressable",
         "description": "Procedures for guarding against, detecting, and reporting malicious software.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "AT-2, AT-3"
         }
@@ -286,6 +380,8 @@
         "title": "Log-in monitoring",
         "baseline": "Addressable",
         "description": "Procedures for monitoring log-in attempts and reporting discrepancies.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "AT-3, AU-6"
         }
@@ -295,6 +391,8 @@
         "title": "Password management",
         "baseline": "Addressable",
         "description": "Procedures for creating, changing, and safeguarding passwords.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "AT-2, AT-3"
         }
@@ -302,7 +400,14 @@
     ],
     "related_controls": [],
     "source_crosswalk": {},
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.308(a)(6)(i)",
@@ -320,6 +425,8 @@
         "title": "Implementation specification: Response and reporting",
         "baseline": "Required",
         "description": "Identify and respond to suspected or known security incidents; mitigate, to the extent practicable, harmful effects of security incidents that are known to the covered entity or business associate; and document security incidents and their outcomes.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "IR-4, IR-5, IR-6, IR-7, IR-8, IR-9"
         }
@@ -329,7 +436,14 @@
     "source_crosswalk": {
       "nist": "IR-1, IR-2, IR-3, IR-4"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.308(a)(7)(i)",
@@ -347,6 +461,8 @@
         "title": "Data backup plan",
         "baseline": "Required",
         "description": "Establish and implement procedures to create and maintain retrievable exact copies of electronic protected health information.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "CP-6, CP-9, CP-9(1)"
         }
@@ -356,6 +472,8 @@
         "title": "Disaster recovery plan",
         "baseline": "Required",
         "description": "Establish (and implement as needed) procedures to restore any loss of data.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "CP-2, CP-6, CP-7, CP-8, CP-9, CP-10"
         }
@@ -365,6 +483,8 @@
         "title": "Emergency mode operation plan",
         "baseline": "Required",
         "description": "Establish (and implement as needed) procedures to enable continuation of critical business processes for protection of the security of electronic protected health information while operating in emergency mode.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "CP-2, CP-10"
         }
@@ -374,6 +494,8 @@
         "title": "Testing and revision procedures",
         "baseline": "Addressable",
         "description": "Implement procedures for periodic testing and revision of contingency plans.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "CP-2, CP-3, CP-4"
         }
@@ -383,6 +505,8 @@
         "title": "Applications and data criticality analysis",
         "baseline": "Addressable",
         "description": "Assess the relative criticality of specific applications and data in support of other contingency plan components.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "CP-2, CP-2(8), RA-2, RA-2(1)"
         }
@@ -392,7 +516,14 @@
     "source_crosswalk": {
       "nist": "CP-1, CP-2"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.308(a)(8)",
@@ -409,7 +540,14 @@
     "source_crosswalk": {
       "nist": "CA-1, CA-2, CA-6, CA-7, CA-8"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.308(b)(1)",
@@ -427,6 +565,8 @@
         "title": "Implementation specifications: Written contract or other arrangement",
         "baseline": "Required",
         "description": "Document the satisfactory assurances required by paragraph (b)(1) or (b)(2) of this section through a written contract or other arrangement with the business associate that meets the applicable requirements of \u00a7 164.314(a).",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "CA-3, SA-4, SA-9"
         }
@@ -436,7 +576,14 @@
     "source_crosswalk": {
       "nist": "CA-3, PS-7, SA-9"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.308",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.310(a)(1)",
@@ -454,6 +601,8 @@
         "title": "Contingency operations",
         "baseline": "Addressable",
         "description": "Establish (and implement as needed) procedures that allow facility access in support of restoration of lost data under the disaster recovery plan and emergency mode operations plan in the event of an emergency.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "CP-2, CP-6, CP-7, PE-2, PE-3, PE-17"
         }
@@ -463,6 +612,8 @@
         "title": "Facility security plan",
         "baseline": "Addressable",
         "description": "Implement policies and procedures to safeguard the facility and the equipment therein from unauthorized physical access, tampering, and theft.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "PE-1, PL-2"
         }
@@ -472,6 +623,8 @@
         "title": "Access control and validation procedures",
         "baseline": "Addressable",
         "description": "Implement procedures to control and validate a person's access to facilities based on their role or function, including visitor control, and control of access to software programs for testing and revision.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "PE-1, PE-2, PE-3, PE-3(1), PE-6, PE-8"
         }
@@ -481,6 +634,8 @@
         "title": "Maintenance records",
         "baseline": "Addressable",
         "description": "Implement policies and procedures to document repairs and modifications to the physical components of a facility which are related to security (for example, hardware, walls, doors, and locks).",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "MA-1, MA-2, MA-6"
         }
@@ -490,7 +645,14 @@
     "source_crosswalk": {
       "nist": "PE-1, PE-2, PE-3, PE-3(1), PE-4, PE-5"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.310"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.310",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.310(b)",
@@ -507,7 +669,14 @@
     "source_crosswalk": {
       "nist": "AC-3, AC-4, AC-11, AC-12, AC-16, AC-17, AC-19, PE-3, PE-5, PL-4, PS-6"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.310"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.310",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.310(c)",
@@ -524,7 +693,14 @@
     "source_crosswalk": {
       "nist": "MP-2, MP-3, MP-4, PE-2, PE-3, PE-4, PE-5, PE-18"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.310"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.310",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.310(d)(1)",
@@ -542,6 +718,8 @@
         "title": "Disposal",
         "baseline": "Required",
         "description": "Implement policies and procedures to address the final disposition of electronic protected health information, and/or the hardware or electronic media on which it is stored.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "MP-6"
         }
@@ -551,6 +729,8 @@
         "title": "Media re-use",
         "baseline": "Required",
         "description": "Implement procedures for removal of electronic protected health information from electronic media before the media are made available for re-use.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "MP-6"
         }
@@ -560,6 +740,8 @@
         "title": "Accountability",
         "baseline": "Addressable",
         "description": "Maintain a record of the movements of hardware and electronic media and any person responsible therefore.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "CM-8, MP-5, PE-16, PE-20, PS-6"
         }
@@ -569,6 +751,8 @@
         "title": "Data backup and storage",
         "baseline": "Addressable",
         "description": "Create a retrievable, exact copy of electronic protected health information, when needed, before movement of equipment.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "CP-9, MP-4"
         }
@@ -578,7 +762,14 @@
     "source_crosswalk": {
       "nist": "CM-8, MP-1, MP-2, MP-3, MP-4, MP-5, MP-6, PE-16, PE-20"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.310"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.310",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.312(a)(1)",
@@ -596,6 +787,8 @@
         "title": "Unique user identification",
         "baseline": "Required",
         "description": "Assign a unique name and/or number for identifying and tracking user identity.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "AC-2, AC-3, IA-2, IA-3, IA-4, IA-8"
         }
@@ -605,6 +798,8 @@
         "title": "Emergency access procedure",
         "baseline": "Required",
         "description": "Establish (and implement as needed) procedures for obtaining necessary electronic protected health information during an emergency.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "AC-2, AC-3, CP-2"
         }
@@ -614,6 +809,8 @@
         "title": "Automatic logoff",
         "baseline": "Addressable",
         "description": "Implement electronic procedures that terminate an electronic session after a predetermined time of inactivity.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "AC-12"
         }
@@ -623,6 +820,8 @@
         "title": "Encryption and decryption",
         "baseline": "Addressable",
         "description": "Implement a mechanism to encrypt and decrypt electronic protected health information.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "SC-13"
         }
@@ -632,7 +831,14 @@
     "source_crosswalk": {
       "nist": "AC-1, AC-3, AC-5, AC-6"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.312"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.312",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.312(b)",
@@ -649,7 +855,14 @@
     "source_crosswalk": {
       "nist": "AU-1, AU-2, AU-3, AU-4, AU-6, AU-7, AU-8"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.312"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.312",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.312(c)(1)",
@@ -667,6 +880,8 @@
         "title": "Implementation specification: Mechanism to authenticate electronic protected health information",
         "baseline": "Addressable",
         "description": "Implement electronic mechanisms to corroborate that electronic protected health information has not been altered or destroyed in an unauthorized manner.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "SC-8, SI-7"
         }
@@ -676,7 +891,14 @@
     "source_crosswalk": {
       "nist": "CP-9, MP-2, MP-5, SC-8, SI-1, SI-7"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.312"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.312",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.312(d)",
@@ -693,7 +915,14 @@
     "source_crosswalk": {
       "nist": "IA-2, IA-3, IA-4, IA-8, IA-9"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.312"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.312",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.312(e)(1)",
@@ -711,6 +940,8 @@
         "title": "Integrity controls",
         "baseline": "Addressable",
         "description": "Implement security measures to ensure that electronically transmitted electronic protected health information is not improperly modified without detection until disposed of.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "SC-8, SI-7"
         }
@@ -720,6 +951,8 @@
         "title": "Encryption",
         "baseline": "Addressable",
         "description": "Implement a mechanism to encrypt electronic protected health information whenever deemed appropriate.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "SC-8, SC-12, SC-13"
         }
@@ -729,7 +962,14 @@
     "source_crosswalk": {
       "nist": "SC-8"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.312"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.312",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.314(a)(1)",
@@ -747,6 +987,8 @@
         "title": "Implementation specifications",
         "baseline": "Required",
         "description": "",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {}
       }
     ],
@@ -754,7 +996,14 @@
     "source_crosswalk": {
       "nist": "PS-6, PS-7, SA-4, SA-9"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.314"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.314",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.314(a)(2)(i)",
@@ -771,7 +1020,14 @@
     "source_crosswalk": {
       "nist": "IR-6, PS-6, PS-7, SA-4, SA-9"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.314"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.314",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.314(a)(2)(ii)",
@@ -788,7 +1044,14 @@
     "source_crosswalk": {
       "nist": "CA-3, PS-6, PS-7, SA-9"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.314"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.314",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.314(a)(2)(iii)",
@@ -805,7 +1068,14 @@
     "source_crosswalk": {
       "nist": "IR-6, PS-6, PS-7, SA-4, SA-9"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.314"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.314",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.314(b)(1)",
@@ -823,6 +1093,8 @@
         "title": "Implementation specifications",
         "baseline": "Required",
         "description": "The plan documents of the group health plan must be amended to incorporate provisions to require the plan sponsor to\u2014 Implement administrative, physical, and technical safeguards that reasonably and appropriately protect the confidentiality, integrity, and availability of the electronic protected health information that it creates, receives, maintains, or transmits on behalf of the group health plan; Ensure that the adequate separation required by \u00a7 164.504(f)(2)(iii) is supported by reasonable and appropriate security measures; Ensure that any agent to whom it provides this information agrees to implement reasonable and appropriate security measures to protect the information; and Report to the group health plan any security incident of which it becomes aware.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "IR-6, PL-2, SA-9"
         }
@@ -832,7 +1104,14 @@
     "source_crosswalk": {
       "nist": "PL-2"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.314"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.314",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.316(a)",
@@ -849,7 +1128,14 @@
     "source_crosswalk": {
       "nist": "PL-1, PL-2, RA-1, RA-3"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.316"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.316",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.316(b)(1)",
@@ -867,6 +1153,8 @@
         "title": "Time limit",
         "baseline": "Required",
         "description": "Retain the documentation required by paragraph (b)(1) of this section for 6 years from the date of its creation or the date when it last was in effect, whichever is later.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "SI-12"
         }
@@ -876,6 +1164,8 @@
         "title": "Availability",
         "baseline": "Required",
         "description": "Make documentation available to those persons responsible for implementing the procedures to which the documentation pertains.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "AC-1, AT-1, AU-1, CA-1, CM-1, CP-1, IA-1, IR-1, MA-1, MP-1, PE-1, PL-1, PM-1, PS-1, PT-1, RA-1, SA-1, SC-1, SI-1, SR-1"
         }
@@ -885,6 +1175,8 @@
         "title": "Updates",
         "baseline": "Required",
         "description": "Review documentation periodically, and update as needed, in response to environmental or operational changes affecting the security of the electronic protected health information.",
+        "parameter_values": {},
+        "additional_requirements": "",
         "source_crosswalk": {
           "nist": "AC-1, AT-1, AU-1, CA-1, CM-1, CP-1, IA-1, IR-1, MA-1, MP-1, PE-1, PL-1, PL-2, PM-1, PS-1, PT-1, RA-1, SA-1, SC-1, SI-1, SR-1"
         }
@@ -894,7 +1186,14 @@
     "source_crosswalk": {
       "nist": "CA-2, PL-2"
     },
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.316"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.316",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.318(a)",
@@ -909,7 +1208,14 @@
     "enhancements": [],
     "related_controls": [],
     "source_crosswalk": {},
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.318"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.318",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.318(b)",
@@ -924,7 +1230,14 @@
     "enhancements": [],
     "related_controls": [],
     "source_crosswalk": {},
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.318"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.318",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   },
   {
     "control_id": "164.318(c)",
@@ -939,6 +1252,13 @@
     "enhancements": [],
     "related_controls": [],
     "source_crosswalk": {},
-    "source_path": "https://www.ecfr.gov/current/title-45/section-164.318"
+    "source_path": "https://www.ecfr.gov/current/title-45/section-164.318",
+    "parameter_values": {},
+    "additional_requirements": "",
+    "objective_id": "",
+    "objective_title": "",
+    "objective_statement": "",
+    "factor_type": "",
+    "requirements": []
   }
 ]

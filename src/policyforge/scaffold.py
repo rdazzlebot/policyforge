@@ -30,7 +30,13 @@ from pathlib import Path
 
 #: Catalogs whose licence lets them ship. Mirrors the package-data list in
 #: pyproject.toml; the test compares the two.
-BUNDLED_CATALOGS = ("arc-ampe", "fedramp", "hipaa-security-rule", "nist-800-53-r5")
+BUNDLED_CATALOGS = (
+    "arc-ampe",
+    "cfr-171-information-blocking",
+    "fedramp",
+    "hipaa-security-rule",
+    "nist-800-53-r5",
+)
 
 #: Bring-your-own catalogs: only the README explaining how to supply one.
 BYOC_CATALOGS = ("govramp", "hitrust-csf")

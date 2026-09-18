@@ -1,0 +1,13 @@
+id: cfr-171-information-blocking
+name: Information Blocking (45 CFR Part 171)
+licence: public-domain
+source: eCFR public API, via policyforge etl-info-blocking
+notes: A US government work, so freely redistributable. Bundled with this project and safe
+  to commit to any repository. Not a control catalog - Part 171 defines information blocking
+  and then sets out the exceptions to it, so each entry is a condition under which a practice
+  does NOT count as blocking, rather than a safeguard to implement. Read README.md before
+  mapping it to a control framework.
+source_ref: '2026-09-16'
+source_url: https://www.ecfr.gov/api/versioner/v1/full/2026-09-16/title-45.xml?part=171
+content_sha256: 59716d14bd000ecea82f84415c497b8685066914a06d2dac81cd593b1a4b1fb0
+fetched_at: '2026-09-18'

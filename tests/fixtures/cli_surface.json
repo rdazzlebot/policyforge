@@ -1739,6 +1739,51 @@
         }
       ]
     },
+    "etl-info-blocking": {
+      "help": "Fetch 45 CFR Part 171 (information blocking) from eCFR's public API\nand parse it into this project's data schema. Public domain - a US\nfederal regulation, same basis as NIST/FedRAMP/ARC-AMPE/HIPAA - so safe\nto bundle directly.\n\nThis part is not a control catalog. It defines information blocking and\nthen sets out the exceptions to it, so each \"control\" here is a\ncondition under which a practice does NOT count as blocking. Citing\n171.203(a) says a practice qualifies for the security exception, not\nthat a safeguard exists. See ingest/info_blocking.py and the catalog's\nREADME before mapping it to anything.",
+      "name": "etl-info-blocking",
+      "params": [
+        {
+          "default": null,
+          "help": "Specific eCFR effective date (YYYY-MM-DD) to fetch, for reproducibility. Default: eCFR's current published date for Title 45.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "date",
+          "nargs": 1,
+          "opts": [
+            "--date"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "data/frameworks/cfr-171-information-blocking/controls.json",
+          "help": "Where to write the parsed data.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
     "etl-oscal": {
       "help": "Fetch NIST's official OSCAL edition of SP 800-53 Rev 5 (plus the\nLow/Moderate/High baseline profiles) and parse it into this project's\ndata schema.\n\nPublic domain - a US government work, same basis as the eCFR and CPRT\nsources. Unlike `etl-vault`, this needs no pre-existing vault, so it's\nthe way to populate 800-53 data from scratch. See ingest/oscal_loader.py.",
       "name": "etl-oscal",

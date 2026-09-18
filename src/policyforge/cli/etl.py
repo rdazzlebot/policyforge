@@ -160,6 +160,65 @@ def etl_hipaa(date: str | None, out: Path):
     click.echo(f"Parsed {len(controls)} HIPAA Security Rule requirements -> {out}")
 
 
+@cli.command("etl-info-blocking")
+@click.option(
+    "--date",
+    default=None,
+    help="Specific eCFR effective date (YYYY-MM-DD) to fetch, for reproducibility. "
+    "Default: eCFR's current published date for Title 45.",
+)
+@click.option(
+    "--out",
+    default=Path("data/frameworks/cfr-171-information-blocking/controls.json"),
+    type=click.Path(path_type=Path),
+    help="Where to write the parsed data.",
+)
+def etl_info_blocking(date: str | None, out: Path):
+    """Fetch 45 CFR Part 171 (information blocking) from eCFR's public API
+    and parse it into this project's data schema. Public domain - a US
+    federal regulation, same basis as NIST/FedRAMP/ARC-AMPE/HIPAA - so safe
+    to bundle directly.
+
+    This part is not a control catalog. It defines information blocking and
+    then sets out the exceptions to it, so each "control" here is a
+    condition under which a practice does NOT count as blocking. Citing
+    171.203(a) says a practice qualifies for the security exception, not
+    that a safeguard exists. See ingest/info_blocking.py and the catalog's
+    README before mapping it to anything.
+    """
+    import dataclasses
+    import json
+
+    from policyforge.ingest.info_blocking import (
+        current_ecfr_date,
+        ecfr_source_url,
+        fetch_part_xml,
+        parse_information_blocking,
+    )
+    from policyforge.ingest.provenance import record_source_provenance
+
+    # Resolved here rather than inside the fetch, so the date recorded is
+    # provably the date fetched — same reasoning as etl-hipaa above.
+    date = date or current_ecfr_date()
+
+    xml_text = fetch_part_xml(date=date)
+    controls = parse_information_blocking(xml_text)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
+    stamp = record_source_provenance(
+        out.parent / "framework.yaml",
+        source_ref=date,
+        source_url=ecfr_source_url(date),
+        content=out.read_bytes(),
+    )
+    if stamp is not None:
+        click.echo(f"Recorded provenance: {date} sha256:{stamp[:16]}… -> {out.parent}")
+    conditions = sum(len(c.enhancements) for c in controls)
+    click.echo(
+        f"Parsed {len(controls)} Part 171 sections carrying {conditions} conditions -> {out}"
+    )
+
+
 def _bundled_catalog_dirs() -> list[Path]:
     """The bundled catalog directories that exist and must never take licensed data.
 

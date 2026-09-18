@@ -55,3 +55,23 @@ jobs:
           policyforge drift \
             --controls data/frameworks/nist-800-53-r5/controls.json \
             --detail --fail-on-change
+
+      # 45 CFR 171 moves on its own schedule, and by a different mechanism:
+      # a rule change is published in the Federal Register and eCFR's
+      # effective date moves. Subparts E-I are reserved, so this part has
+      # room set aside to grow into — a new subpart would appear here as
+      # added sections rather than as changed text.
+      #
+      # `if: always()` so a NIST change does not hide a Part 171 change.
+      # Without it the first red step ends the job, and the month NIST
+      # republishes is exactly a month nobody hears about this one.
+      - name: Fetch the current information blocking rule
+        if: always()
+        run: policyforge etl-info-blocking
+
+      - name: What changed in 45 CFR 171
+        if: always()
+        run: |
+          policyforge drift \
+            --controls data/frameworks/cfr-171-information-blocking/controls.json \
+            --detail --fail-on-change

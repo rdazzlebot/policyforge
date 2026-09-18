@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### A claim is judged whole, or the judge is answering about debris
+
+- **The entailment check split claims on every full stop, including the
+  ones inside `Section 4.2`, `164.308(a)(3)`, `45 C.F.R.`, `Rev. 5`, `e.g.`
+  and `99.9%`.** Each break cost two things and only one was visible: the
+  judge was handed a fragment such as `2 of the Standard`, reported it
+  unsupported, and that appeared in the finding list as a false positive —
+  while the claim the fragment was carved out of was never judged at all,
+  and that appeared as nothing. A claim never examined is indistinguishable
+  from one that passed. Measured on a real run over the Zardoz eval suite,
+  26 of the 42 findings carrying claim text were fragments, so most of the
+  finding list was the splitter reporting on itself. The rule now breaks
+  only at a terminator that ends a sentence — at the end of the text, or
+  followed by whitespace and something that starts one — which leaves
+  decimals, abbreviations, legal references and quoted spans intact. It
+  deliberately splits on fewer things than before: under-splitting merges
+  two claims into a coarser unit and both are still judged, while
+  over-splitting drops claims silently, so the failure direction is chosen
+  rather than inherited. A legal reference is the case it is designed
+  against, not a decimal: `45 C.F.R. 164.312` is how every HIPAA citation
+  is written, and a rule special-casing digit-dot-digit would have left the
+  framework this tool exists to handle broken while looking fixed. The
+  tests are built from the fragments the real run recorded, and each one
+  asserts the whole claim comes back rather than only that no fragment
+  does. Found by policyforge-b5 while measuring the entailment check;
+  widened by policyforge-ba and policyforge-1d.
+
 ### Publish to a wiki from CI
 
 - **A `publish-wiki` job in `content.yml`**, behind its own `github-wiki`

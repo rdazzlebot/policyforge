@@ -783,6 +783,22 @@ comfortable.
    when a destination *is* set, which remains untested and is the reason the
    reopen condition below stands.
 
+   **The environment gate is secret scoping today, not review.** Both publish
+   jobs name an `environment:`, and `content.yml` says that gates the token
+   "so a publish *can* require review and so the secret is not readable by
+   every other job". The second half is what a named environment delivers on
+   its own; the first is a capability nobody has used. Read from the API on
+   2026-09-18: the repository has two environments, `confluence` and
+   `copilot`, and **both have zero protection rules** — no required
+   reviewers, no branch policy. `github-wiki` does not exist at all, and
+   GitHub creates an environment on first use, with no rules, if one is
+   named by a job that runs. So the first real publish is the moment the
+   gate is weakest: an environment created by a publish is created by the
+   thing it was meant to gate, and nobody adds reviewers to an environment
+   they did not know had appeared. The reopen condition below therefore has
+   two parts, in this order — create the environment with its reviewers
+   first, set the variable second.
+
    Neither job can publish anything while no destination is configured, so
    what is marked unverified here is the fence, not the outcome. Exercising
    the publish path on demand would mean widening `event_name == 'push'`,

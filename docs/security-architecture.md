@@ -736,11 +736,15 @@ comfortable.
    enriched catalog would be the fix; it is a behaviour change and has not
    been made.
 
-1. **Catalog provenance is populated for most bundled catalogs, not all.**
-   `nist-800-53-r5`, `arc-ampe` and `fedramp` verify; `hipaa-security-rule`
-   is unstamped and reports as unverifiable rather than as passing. An
-   unstamped catalog is still usable, so its integrity rests on git history
-   and review until it is re-fetched.
+1. **Catalog provenance now verifies for every bundled catalog.** This entry
+   used to say `hipaa-security-rule` was unstamped and reported as
+   unverifiable. It was stamped on 2026-09-18, and all four —
+   `nist-800-53-r5`, `arc-ampe`, `fedramp`, `hipaa-security-rule` — match
+   their recorded hashes, checked against this tree on that date. Kept here
+   rather than deleted because an adopter who read the old sentence deserves
+   to find out it stopped being true, and because the general shape stands: a
+   catalog carrying no stamp is still usable, and its integrity then rests on
+   git history and review rather than on a hash.
 
 1. **FedRAMP no longer publishes a machine-readable baseline.**
    `GSA/fedramp-automation` is gone — the repository and its API both 404,

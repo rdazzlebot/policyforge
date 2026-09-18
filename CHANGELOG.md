@@ -51,6 +51,29 @@ trusted.
 The bundled HIPAA crosswalk's 65 mappings were re-keyed from `nist` to
 `nist-800-53` and the catalog re-stamped; every mapping value is unchanged.
 
+### The HIPAA catalog verifies, and one fetcher serves every CFR part
+
+- **`hipaa-security-rule` now carries a provenance stamp and verifies.** It
+  was the one bundled catalog shipping control text with no `content_sha256`,
+  so it reported as unverifiable rather than as passing, and its integrity
+  rested on git history and review. It is stamped from the eCFR source it was
+  built from, and all five bundled catalogs now match their recorded hashes:
+  `arc-ampe`, `cfr-171-information-blocking`, `fedramp`,
+  `hipaa-security-rule`, `nist-800-53-r5`. Anyone who
+  ran `policyforge frameworks` and saw HIPAA reported as unverifiable was
+  seeing a real gap, not a display quirk; it is closed.
+- **`ingest/ecfr.py` is one fetcher for every CFR part.** `current_date`,
+  `source_url` and `fetch_part_xml` take a title and a part, and
+  `hipaa_loader` keeps its own names and signatures as thin wrappers naming
+  45 CFR 164. Nothing about the HIPAA path changed — the same 34 controls
+  with the same ids, the same statements, and all 65 crosswalk entries — and
+  `tests/test_ecfr_fetch.py` pins the pre-refactor URLs as literal strings
+  so a change of behaviour fails rather than a change of shape. It is what the
+  45 CFR 171 catalog is built on, and what 45 CFR 170.315 and 42 CFR Part 2
+  will use.
+  It arrived inside the stamping change rather than under its own heading,
+  which is worth knowing if you go looking for when it landed.
+
 **A fifth bundled catalog: information blocking (45 CFR Part 171).**
 `policyforge etl-info-blocking` fetches it from eCFR's public API and
 writes `data/frameworks/cfr-171-information-blocking/` — 21 sections

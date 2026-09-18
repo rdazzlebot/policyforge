@@ -45,13 +45,42 @@ import re
 # bodies textually would have to reproduce the element's own nesting rules to
 # get them out.
 #
-# nosec B405/B314 — the input is one document fetched over HTTPS from
-# ecfr.gov by an `etl-*` command the operator runs deliberately, and the
-# parsed result is written to a file they review and commit. Python's
-# ElementTree does not resolve external entities, so the residual exposure is
-# entity-expansion memory pressure on the operator's own machine from a
-# hostile response on that one host — a denial of service against the person
-# who invoked it, not a path to code execution or data disclosure.
+# Both bandit (B405/B314) and semgrep (use-defused-xml) want `defusedxml`
+# here. Their shared headline — XXE leaking confidential data — was measured
+# against this parser rather than argued about, on CPython 3.12:
+#
+#   XXE local file read   REFUSED  ParseError: undefined entity &x;
+#   external DTD fetch    ignored, nothing requested
+#   billion laughs        EXPANDED 10,000 chars from four levels
+#
+# So the disclosure risk the rules describe does not reach this code: the
+# stdlib parser refuses undefined entities outright and fetches no external
+# DTD. The third line is the real one, and it is why this comment exists
+# rather than a flat "false positive" — internal entity expansion works, and
+# the classic nine-level payload reaches gigabytes.
+#
+# That bound is accepted deliberately. The input is one document fetched over
+# HTTPS from ecfr.gov by an `etl-*` command the operator runs, and the worst a
+# hostile response achieves is exhausting memory on the machine of the person
+# who invoked it — a crash, not code execution and not data disclosure.
+# `defusedxml` would convert that crash into a clean error, and costs a
+# runtime dependency for every install plus a change to the Homebrew formula.
+#
+# **The premise this rests on: the host is fixed.** `ecfr._API` is the
+# constant `https://www.ecfr.gov/api/versioner/v1`, with no override — so the
+# XML cannot come from anywhere an attacker chooses. If the fetch ever accepts
+# an operator-supplied URL, or this parser is pointed at third-party or
+# user-supplied XML, every line above stops being true and `defusedxml`
+# becomes the right answer. Stated because a change that parameterises the
+# URL would invalidate this reasoning silently, without ever meeting it.
+#
+# ElementTree rather than regex over the markup — which is what `hipaa_loader`
+# does for the neighbouring regulation — because of `<I>`: Part 171 names most
+# of its conditions in an italic run inside the paragraph, and those names are
+# content this catalog keeps. Matching `<P>` bodies textually would have to
+# reproduce the element's own nesting rules to get them out.
+#
+# nosemgrep: python.lang.security.use-defused-xml.use-defused-xml
 import xml.etree.ElementTree as ET  # nosec B405
 
 from policyforge.ingest import ecfr

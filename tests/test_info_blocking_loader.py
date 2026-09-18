@@ -164,6 +164,34 @@ def test_provenance_points_at_the_section_it_came_from(by_id):
     assert by_id["171.203"].source_path == "https://www.ecfr.gov/current/title-45/section-171.203"
 
 
+def test_the_xml_parser_suppression_premise_still_holds():
+    """The bandit/semgrep suppression in `info_blocking` rests on a premise.
+
+    That premise is that the XML cannot come from anywhere an attacker
+    chooses: `ecfr._API` is a constant, and no caller can point the fetch
+    at another host. Python's stdlib parser refuses undefined entities and
+    ignores external DTDs, so with a fixed host the residual exposure is
+    entity expansion on the operator's own machine — accepted, and argued
+    in a comment beside the import.
+
+    A comment is not a check. A change that parameterised the URL would
+    invalidate that reasoning without anyone rereading it, which is the
+    failure this project keeps finding: a true claim that quietly stops
+    being true. So the premise is asserted here, and this test failing
+    means the suppression needs revisiting rather than repairing.
+    """
+    import inspect
+
+    from policyforge.ingest import ecfr
+
+    assert ecfr._API.startswith("https://www.ecfr.gov/")
+
+    # No parameter through which a caller could supply a different host.
+    for func in (ecfr.fetch_part_xml, ecfr.source_url, ecfr.current_date):
+        params = set(inspect.signature(func).parameters)
+        assert not params & {"url", "api", "base_url", "host", "endpoint"}
+
+
 def test_framework_is_named_as_the_regulation(controls):
     assert {c.framework for c in controls} == {"45 CFR 171"}
     assert {c.framework_version for c in controls} == {"45 CFR Part 171"}

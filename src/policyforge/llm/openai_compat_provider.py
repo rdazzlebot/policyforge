@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import os
 
-from ._inline_thinking import answer_of, exhausted, needs_more_room, retry_budget
+from ._inline_thinking import answer_and_stripped, exhausted, needs_more_room, retry_budget
 from .base import LLMProvider, LLMResponse, ProviderRejected
 
 #: The statuses that mean "the request, as written, was refused": bad
@@ -139,7 +139,7 @@ class OpenAICompatProvider(LLMProvider):
 
         data = self._post(payload)
         choice = (data.get("choices") or [{}])[0]
-        text = answer_of((choice.get("message") or {}).get("content", ""))
+        text, stripped = answer_and_stripped((choice.get("message") or {}).get("content", ""))
 
         # A reasoning model spends `max_tokens` thinking before it writes
         # anything, so a tight budget can return a stop-on-length reply whose
@@ -153,7 +153,7 @@ class OpenAICompatProvider(LLMProvider):
             second = retry_budget(max_tokens)
             data = self._post({**payload, "max_tokens": second})
             choice = (data.get("choices") or [{}])[0]
-            text = answer_of((choice.get("message") or {}).get("content", ""))
+            text, stripped = answer_and_stripped((choice.get("message") or {}).get("content", ""))
             if needs_more_room(text, choice.get("finish_reason")):
                 raise exhausted(self.model, max_tokens, second)
 
@@ -170,6 +170,7 @@ class OpenAICompatProvider(LLMProvider):
             # the docs recommend for licensed content. It travels now, as it
             # does from every other provider.
             stop_reason=choice.get("finish_reason"),
+            stripped_reasoning_chars=stripped,
         )
 
     def check(self) -> bool:

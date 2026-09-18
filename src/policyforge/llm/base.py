@@ -78,6 +78,32 @@ class LLMResponse:
     #: returned tokens, so roughly half of what was billed was invisible to
     #: the ledger before this existed.
     hidden_output_tokens: int | None = None
+    #: Characters removed from the reply before it was recorded — inline
+    #: reasoning that `_inline_thinking.answer_of` cuts. The pair to
+    #: `hidden_output_tokens` from the other side: that field is what the
+    #: vendor billed and did not return, this is what arrived and was not
+    #: kept. Both were unrecoverable after the fact until they existed.
+    #:
+    #: None means this provider does not strip, which is every provider
+    #: reaching a vendor that separates reasoning for us. Zero means the
+    #: strip ran and found nothing, which is the common case on a model
+    #: that does not think inline. The difference matters for the same
+    #: reason it does on the token counts: a zero asserted on behalf of a
+    #: provider that never looked is a measurement nobody made.
+    #:
+    #: **Read this when a reply came back empty.** An empty `text` has two
+    #: causes that were indistinguishable until this field existed: the
+    #: model said nothing, or it said only unclosed reasoning that was cut.
+    #: A non-zero count beside an empty answer means the whole reply was
+    #: thinking the budget never escaped — the case `needs_more_room` and
+    #: `ReasoningBudgetExhausted` exist for — and a zero means the model
+    #: genuinely returned nothing. The ledger now records which, so the
+    #: question can be answered about a run that has already finished
+    #: rather than only by making the call again. That is the difference
+    #: between recording a symptom and recording a cause, and it is the
+    #: reason to reach for this field from the `EmptyReply` path, where
+    #: nothing else would point you at it.
+    stripped_reasoning_chars: int | None = None
     #: The provider's own id for the request, which is the first thing
     #: Anthropic support asks for. Free on every response and impossible to
     #: reconstruct afterwards.

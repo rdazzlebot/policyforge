@@ -48,6 +48,30 @@ def answer_of(content: str | None) -> str:
     return _UNCLOSED_THINK.sub("", without_closed).strip()
 
 
+def answer_and_stripped(content: str | None) -> tuple[str, int]:
+    """The answer, and how many characters were removed to get it.
+
+    The pair to `LLMResponse.hidden_output_tokens`, from the other side.
+    That field records what the vendor says it billed and did not return;
+    this records what *we* removed before writing. Today neither is
+    recoverable afterwards: a reply arrives, its reasoning is cut, and the
+    ledger stores the remainder with nothing to say a cut happened. So
+    "did this model spend most of its reply thinking?" is a question that
+    needs a fresh run to answer, and a run is not the same run.
+
+    The count is characters rather than tokens, because characters are
+    exact here and tokens would need a tokenizer this project does not
+    carry for every model. It answers "how much was removed" and not "what
+    it cost", which is the honest scope for a subtraction.
+
+    Zero and None stay apart at the call site: this function always returns
+    a number, and a provider that never strips leaves the response field
+    None. Zero means the strip ran and found nothing to cut.
+    """
+    answer = answer_of(content)
+    return answer, len(content or "") - len(answer)
+
+
 def needs_more_room(text: str, finish_reason: str | None) -> bool:
     """Whether an empty answer was truncation rather than a decision.
 

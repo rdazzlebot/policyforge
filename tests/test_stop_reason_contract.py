@@ -120,6 +120,45 @@ class _OpenAISession:
         return Response()
 
 
+class _GeminiSession:
+    """`session.post(...)` returning a generateContent reply cut off.
+
+    Gemini spells the cut-off signal `finishReason: "MAX_TOKENS"` inside
+    the first candidate, not beside the choice like the OpenAI shape and
+    not as `stop_reason` like Anthropic's, so this fake exists to drive
+    that spelling through the real parsing path.
+    """
+
+    def __init__(self):
+        self.calls: list[dict] = []
+
+    def post(self, url, *, json, headers, timeout):
+        self.calls.append(json)
+        payload = {
+            "candidates": [
+                {
+                    "content": {"role": "model", "parts": [{"text": CUT_TEXT}]},
+                    "finishReason": "MAX_TOKENS",
+                }
+            ],
+            "usageMetadata": {
+                "promptTokenCount": 40,
+                "candidatesTokenCount": json["generationConfig"]["maxOutputTokens"],
+            },
+            "modelVersion": "gemini-3.6-flash",
+        }
+
+        class Response:
+            status_code = 200
+            text = ""
+
+            @staticmethod
+            def json():
+                return payload
+
+        return Response()
+
+
 def _litellm_completion(**kwargs):
     """`litellm.completion(...)` returning a ModelResponse cut off at length."""
 
@@ -181,6 +220,10 @@ def _build(name: str):
         return OpenAICompatProvider(
             model="qwen3:14b", base_url="http://localhost:11434/v1", session=_OpenAISession()
         )
+    if name == "gemini":
+        from policyforge.llm.gemini_provider import GeminiProvider
+
+        return GeminiProvider(model="gemini-3.6-flash", api_key_env=_KEY, session=_GeminiSession())
     if name == "litellm":
         from policyforge.llm.litellm_provider import LiteLLMProvider
 
@@ -228,6 +271,7 @@ def test_the_factory_list_is_the_one_everybody_knows():
         "anthropic",
         "bedrock",
         "cascade",
+        "gemini",
         "litellm",
         "local",
         "openai-compat",

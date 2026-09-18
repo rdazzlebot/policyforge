@@ -2318,8 +2318,9 @@ data/frameworks/         Bundled, redistributable framework data (NIST, FedRAMP,
 local_content/           Gitignored. Drop your own HITRUST/GovRAMP exports here.
 src/policyforge/
   llm/                    Provider abstraction. Ships Anthropic, Amazon Bedrock
-                          (`pip install "policyforge[bedrock]"`), and Google Cloud
-                          Vertex AI Model Garden (`pip install "policyforge[vertex]"`) —
+                          (`pip install "policyforge[bedrock]"`), Google Cloud
+                          Vertex AI Model Garden (`pip install "policyforge[vertex]"`),
+                          and Gemini via an AI Studio key (no extra needed) —
                           adding another provider means one new class, no changes to
                           calling code.
   ingest/                 Parses framework sources (bundled markdown, BYOC exports) into
@@ -2966,7 +2967,11 @@ What already exists, kept as the record of what the prose above refers to.
   (the framework's structure) and `ingest/hitrust_export.py` (CSV/TSV/XLSX/HTML/MHTML
   readers and column detection). Run it with `policyforge etl-hitrust`
 - [x] Google Cloud Vertex AI Model Garden LLM provider (`llm/vertex_provider.py`) —
-  install with `pip install "policyforge[vertex]"`
+  install with `pip install "policyforge[vertex]"`. Note this serves **Claude**
+  models in Google Cloud through Anthropic's client; for Google's own models
+  see the Gemini provider below
+- [x] Gemini LLM provider (`llm/gemini_provider.py`) — Google AI Studio's API
+  key flow, no cloud project and no extra to install
 - [x] OpenAI-compatible endpoint provider (`llm/openai_compat_provider.py`) — a model
   running on your own machine (Ollama, LM Studio, llama.cpp's server, vLLM) or any
   hosted endpoint speaking `/v1/chat/completions`, including a LiteLLM proxy. Needs no

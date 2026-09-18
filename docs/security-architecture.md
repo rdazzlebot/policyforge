@@ -767,6 +767,38 @@ comfortable.
    written down, treat the fence as read-but-unexercised rather than as
    confirmed by that run.
 
+   **Observed, 2026-09-18 (run
+   [35374922282](https://github.com/rdazzlebot/policyforge/actions/runs/35374922282),
+   commit `e948154`):** the prediction held. The content workflow ran on that
+   push and listed **three** jobs — `check the content tree` succeeded,
+   `publish to Confluence` skipped, `publish to a GitHub wiki` **skipped**.
+   Listed and skipped, not absent, which is the distinction that matters: an
+   absent job would have meant the fence was never wired in. Two of the three
+   clauses were true in that run and are read from the run itself — the event
+   was `push` and the repository is this one — so the clause that did the
+   skipping is `vars.WIKI_REPOSITORY != ''`, and that one is an observation
+   rather than an inference: the repository has no Actions variables defined
+   at all. What this evidences is that the fence is evaluated and that it
+   holds closed while unconfigured. It says nothing about what the job does
+   when a destination *is* set, which remains untested and is the reason the
+   reopen condition below stands.
+
+   **The environment gate is secret scoping today, not review.** Both publish
+   jobs name an `environment:`, and `content.yml` says that gates the token
+   "so a publish *can* require review and so the secret is not readable by
+   every other job". The second half is what a named environment delivers on
+   its own; the first is a capability nobody has used. Read from the API on
+   2026-09-18: the repository has two environments, `confluence` and
+   `copilot`, and **both have zero protection rules** — no required
+   reviewers, no branch policy. `github-wiki` does not exist at all, and
+   GitHub creates an environment on first use, with no rules, if one is
+   named by a job that runs. So the first real publish is the moment the
+   gate is weakest: an environment created by a publish is created by the
+   thing it was meant to gate, and nobody adds reviewers to an environment
+   they did not know had appeared. The reopen condition below therefore has
+   two parts, in this order — create the environment with its reviewers
+   first, set the variable second.
+
    Neither job can publish anything while no destination is configured, so
    what is marked unverified here is the fence, not the outcome. Exercising
    the publish path on demand would mean widening `event_name == 'push'`,

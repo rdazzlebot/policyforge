@@ -52,7 +52,73 @@ NEUTRAL = "neutral"
 CONTRADICTED = "contradicted"
 
 _CITATION_RE = re.compile(r"\[(\d+)\]")
-_SENTENCE_RE = re.compile(r"[^.!?]+(?:[.!?]+|$)")
+
+#: Where one claim ends and the next begins: a run of `.!?` that is either
+#: at the end of the text, or followed by whitespace and something that
+#: starts a sentence — a capital, a quote, a bracket, or the `[n]` marker of
+#: a trailing citation.
+#:
+#: It splits on *fewer* things than a full stop, on purpose. The rule this
+#: replaced was `[^.!?]+(?:[.!?]+|$)`, which broke at every full stop,
+#: including the ones inside `Section 4.2`, `164.308(a)(3)`, `45 C.F.R.`,
+#: `Rev. 5`, `e.g.` and `99.9%`. Each break cost two things and only one of
+#: them was visible: the judge was handed a fragment like `2 of the Standard`
+#: and reported it unsupported, which shows up as a false finding — and the
+#: claim the fragment was carved out of was never judged at all, which shows
+#: up as nothing. **A claim that is never examined looks exactly like a claim
+#: that passed.** Measured over a real run: of 43 findings whose text could be
+#: parsed, 19 were fragments.
+#:
+#: So the failure direction is chosen. Under-splitting merges two sentences
+#: into one unit, and the claim is still judged, just in a coarser chunk.
+#: Over-splitting drops claims silently. Fewer, whole claims beats more,
+#: broken ones. A legal reference is the case to design against rather than
+#: a decimal: `45 C.F.R. 164.312` is how every HIPAA citation is written, so
+#: a rule that special-cased digit-dot-digit would leave the framework this
+#: tool exists to handle still broken while looking fixed. `_segments` adds
+#: one exception to this pattern, for an initial followed by a capital.
+_BOUNDARY_RE = re.compile(r"""[.!?]+(?=\s+["'\[(A-Z]|\s*\Z)""")
+
+
+def _ends_an_initial(text: str, stop: int) -> bool:
+    """Whether the stop at `stop` closes a one-letter capital token.
+
+    `U.S.`, `D.C.`, `J. Smith`: the letter before the stop is a capital and
+    the character before *it* is not a letter, so the token is a single
+    initial rather than a word. `CISO.` and `IAM.` are words and are not
+    matched, so a sentence ending in an acronym still ends.
+    """
+    if stop == 0 or not (text[stop - 1].isalpha() and text[stop - 1].isupper()):
+        return False
+    return stop - 1 == 0 or not text[stop - 2].isalpha()
+
+
+def _starts_with_a_capital(text: str, after: int) -> bool:
+    """Whether what follows the stop opens with a capital letter, as opposed
+    to a quote, a bracket, a `[n]` citation, or the end of the text."""
+    rest = text[after:].lstrip()
+    return bool(rest) and rest[0].isalpha() and rest[0].isupper()
+
+
+def _segments(text: str) -> list[str]:
+    """`text` cut at claim boundaries, each piece keeping its terminator."""
+    pieces: list[str] = []
+    start = 0
+    for match in _BOUNDARY_RE.finditer(text):
+        # "The U.S. Department of Health and Human Services enforces it":
+        # `S.` followed by a space and a capital reads as a sentence start
+        # by every other rule here, and that phrase is in essentially every
+        # HIPAA document. An initial followed by a capital is not a
+        # boundary. The cost is a sentence genuinely ending in a one-letter
+        # token — "signed by J. The auditor then…" — which does not occur
+        # in compliance prose, and which fails by merging rather than by
+        # dropping, so it cannot lose a claim.
+        if _ends_an_initial(text, match.start()) and _starts_with_a_capital(text, match.end()):
+            continue
+        pieces.append(text[start : match.end()])
+        start = match.end()
+    pieces.append(text[start:])
+    return [piece for piece in (p.strip() for p in pieces) if piece]
 
 
 @dataclass(frozen=True)
@@ -108,11 +174,7 @@ def cited_sentences(text: str, count: int) -> list[tuple[str, list[int]]]:
     how this project's answers are written, not a quirk of one module.
     """
     pairs: list[tuple[str, list[int]]] = []
-    for match in _SENTENCE_RE.finditer(text or ""):
-        segment = match.group(0).strip()
-        if not segment:
-            continue
-
+    for segment in _segments(text or ""):
         leading: list[int] = []
         while True:
             found = _CITATION_RE.match(segment)

@@ -883,7 +883,7 @@ against the previous version, and one index line per version. Regenerating
 identical content is a no-op (it doesn't pad the history). This is **not**
 a replacement for your org's actual system of record — Confluence's own
 page version history, git history if you commit `output/` somewhere
-private, a GRC platform like Drata. It exists because those systems only
+private, or a GRC platform. It exists because those systems only
 see what got *published*; this also captures drafts you regenerated but
 never pushed. Since `output/` is gitignored, this history is local to your
 machine, not shared or backed up by this repo.

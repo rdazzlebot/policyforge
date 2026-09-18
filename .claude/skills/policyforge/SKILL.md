@@ -353,7 +353,7 @@ Optional, after generating:
 
 - **Local version history (`output/.history/`) is a convenience, not the
   system of record.** Don't present it as an authoritative changelog if the
-  user's actual system of record is Confluence/Git/Drata — it's a
+  user's actual system of record is Confluence, git or a GRC platform — it's a
   supplementary local trail, per `history/version_store.py`'s docstring.
 
 ## Typical end-to-end request

@@ -188,7 +188,7 @@ def _check_citations(documents: list[ContentDocument], synthesis_dir: Path) -> l
     dropped somewhere between them, which is a compliance defect rather than
     a formatting one — and it is invisible in a diff of the prose.
     """
-    from policyforge.edit.apply import _SOURCE_TAG_RE
+    from policyforge.content.tags import source_tags
 
     if not synthesis_dir.exists():
         return []
@@ -198,8 +198,8 @@ def _check_citations(documents: list[ContentDocument], synthesis_dir: Path) -> l
         source = synthesis_dir / f"{doc.slug}.md"
         if not source.exists():
             continue
-        expected = set(_SOURCE_TAG_RE.findall(source.read_text(encoding="utf-8")))
-        present = set(_SOURCE_TAG_RE.findall(doc.body))
+        expected = set(source_tags(source.read_text(encoding="utf-8")))
+        present = set(source_tags(doc.body))
         missing = sorted(expected - present)
         if missing:
             shown = ", ".join(missing[:5]) + (" ..." if len(missing) > 5 else "")

@@ -25,6 +25,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from policyforge.content.tags import SOURCE_TAG_RE
 from policyforge.edit.fencing import fence_contract, fenced_document
 from policyforge.edit.plan import EditPlan
 from policyforge.llm.base import LLMProvider
@@ -33,7 +34,8 @@ from policyforge.llm.prompts import Prompt, register
 #: Inline framework source tags, e.g. `[NIST AC-2 | HIPAA 164.308(a)(3)(i)]`.
 #: These are the document's traceability back to the frameworks it was drawn
 #: from; losing one silently is a compliance defect, not a formatting nit.
-_SOURCE_TAG_RE = re.compile(r"\[(?:NIST|HIPAA|FedRAMP|HITRUST|GovRAMP|ARC-AMPE)\s[^\]]*\]")
+#: The shape is decided in `content/tags.py`, once, for every reader.
+_SOURCE_TAG_RE = SOURCE_TAG_RE
 
 #: Confluence macros this project's own exporter emits. Anything else in a
 #: fetched page came from elsewhere and will not survive the

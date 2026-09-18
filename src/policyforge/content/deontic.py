@@ -28,6 +28,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .tags import SOURCE_TAG_RE
+
 #: A sentence binds the organization to something.
 OBLIGATION = "obligation"
 #: A sentence binds the organization *not* to something. Also binding.
@@ -45,8 +47,9 @@ BINDING = frozenset({OBLIGATION, PROHIBITION})
 
 #: Framework citations, the same shape `edit/apply.py` protects when it
 #: rewrites a page. A sentence carrying one is claiming to implement a
-#: control, which is what makes its modality checkable at all.
-_CITATION_RE = re.compile(r"\[(?:NIST|HIPAA|FedRAMP|HITRUST|GovRAMP|ARC-AMPE)\s[^\]]*\]")
+#: control, which is what makes its modality checkable at all. Decided in
+#: `content/tags.py`, once, for every reader.
+_CITATION_RE = SOURCE_TAG_RE
 
 #: Ordered strongest first, because the longer forms contain the shorter
 #: ones: "must not" must be tested before "must", or every prohibition in

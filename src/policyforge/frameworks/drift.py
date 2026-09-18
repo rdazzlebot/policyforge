@@ -39,6 +39,8 @@ import subprocess  # nosec B404
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from policyforge.content.tags import SOURCE_TAG_RE
+
 ADDED = "added"
 REMOVED = "removed"
 CHANGED = "changed"
@@ -49,8 +51,9 @@ SUBSTANTIVE_FIELDS = ("control_statement", "baseline", "enhancements", "paramete
 
 #: Inline source tags in a generated document — `[NIST AC-2 | HIPAA 164.x]`.
 #: How a document says which control it answers for, and therefore how this
-#: works out which documents a control change reaches.
-_SOURCE_TAG_RE = re.compile(r"\[(?:NIST|HIPAA|FedRAMP|HITRUST|GovRAMP|ARC-AMPE)\s[^\]]*\]")
+#: works out which documents a control change reaches. The shape is decided
+#: in `content/tags.py`, once, for every reader.
+_SOURCE_TAG_RE = SOURCE_TAG_RE
 _CONTROL_ID_RE = re.compile(r"\b([A-Z]{2}-\d+(?:\(\d+\))?)")
 
 

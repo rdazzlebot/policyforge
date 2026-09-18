@@ -88,6 +88,24 @@
   prints that table so the trade is visible; a test builds such a cascade
   through `get_provider` and holds every discovered flag to the rule.
 
+### A citation tag is recognised by its shape, not by a list of names
+
+- **Every reader of `[NIST AC-2 | HIPAA 164.308(a)(3)(i)]` tags now takes
+  one pattern from `content/tags.py`.** The edit path (refuses a revision
+  that dropped a tag), `check` (reports a tag the synthesis carries and the
+  document lost), `frameworks/drift` (finds the documents a changed control
+  reaches) and the deontic analysis (which sentences claim to implement a
+  control) each carried a hand-written list of framework names, and the
+  bundled starter set writes `[ARC PE-1 ...]` where the lists said
+  `ARC-AMPE`: twenty-two tags, thirty-one citations, invisible to all four
+  at once and counted by `satisfies` only as a stated floor. A tag is now a
+  capitalised framework name followed by a requirement identifier carrying
+  a digit, never a link. Measured over every document and catalog in the
+  repository: the shape matches every tag the lists matched, adds none, and
+  stops treating six prose brackets such as `[NIST AI RMF alignment]` as
+  citations, which they never were. A test holds the four readers to the
+  one object so a private copy cannot grow back.
+
 ### Repository hardening
 
 - **The gate refuses to run against a `policyforge` that is not the tree

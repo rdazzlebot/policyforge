@@ -75,8 +75,29 @@ _CITATION_RE = re.compile(r"\[(\d+)\]")
 #: broken ones. A legal reference is the case to design against rather than
 #: a decimal: `45 C.F.R. 164.312` is how every HIPAA citation is written, so
 #: a rule that special-cased digit-dot-digit would leave the framework this
-#: tool exists to handle still broken while looking fixed.
+#: tool exists to handle still broken while looking fixed. `_segments` adds
+#: one exception to this pattern, for an initial followed by a capital.
 _BOUNDARY_RE = re.compile(r"""[.!?]+(?=\s+["'\[(A-Z]|\s*\Z)""")
+
+
+def _ends_an_initial(text: str, stop: int) -> bool:
+    """Whether the stop at `stop` closes a one-letter capital token.
+
+    `U.S.`, `D.C.`, `J. Smith`: the letter before the stop is a capital and
+    the character before *it* is not a letter, so the token is a single
+    initial rather than a word. `CISO.` and `IAM.` are words and are not
+    matched, so a sentence ending in an acronym still ends.
+    """
+    if stop == 0 or not (text[stop - 1].isalpha() and text[stop - 1].isupper()):
+        return False
+    return stop - 1 == 0 or not text[stop - 2].isalpha()
+
+
+def _starts_with_a_capital(text: str, after: int) -> bool:
+    """Whether what follows the stop opens with a capital letter, as opposed
+    to a quote, a bracket, a `[n]` citation, or the end of the text."""
+    rest = text[after:].lstrip()
+    return bool(rest) and rest[0].isalpha() and rest[0].isupper()
 
 
 def _segments(text: str) -> list[str]:
@@ -84,6 +105,16 @@ def _segments(text: str) -> list[str]:
     pieces: list[str] = []
     start = 0
     for match in _BOUNDARY_RE.finditer(text):
+        # "The U.S. Department of Health and Human Services enforces it":
+        # `S.` followed by a space and a capital reads as a sentence start
+        # by every other rule here, and that phrase is in essentially every
+        # HIPAA document. An initial followed by a capital is not a
+        # boundary. The cost is a sentence genuinely ending in a one-letter
+        # token — "signed by J. The auditor then…" — which does not occur
+        # in compliance prose, and which fails by merging rather than by
+        # dropping, so it cannot lose a claim.
+        if _ends_an_initial(text, match.start()) and _starts_with_a_capital(text, match.end()):
+            continue
         pieces.append(text[start : match.end()])
         start = match.end()
     pieces.append(text[start:])

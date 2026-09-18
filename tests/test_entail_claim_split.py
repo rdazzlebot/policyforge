@@ -176,6 +176,47 @@ def test_abbreviations_and_legal_references_stay_whole(text, claim):
     assert any(claim in unit for unit in units), f"{claim!r} is in no unit: {units}"
 
 
+# ---- an initial followed by a capital is not a sentence end -------------
+
+
+@pytest.mark.parametrize(
+    "text,claim",
+    [
+        (
+            "The U.S. Department of Health and Human Services enforces it [1].",
+            "The U.S. Department of Health and Human Services enforces it",
+        ),
+        ("The D.C. office is exempt [1].", "The D.C. office is exempt"),
+        ("Reviewed by J. Smith on Tuesday [1].", "Reviewed by J. Smith on Tuesday"),
+        ("Notify H.H.S. within 60 days [1].", "Notify H.H.S. within 60 days"),
+        ("The vendor (Acme Inc.) signs a BAA [1].", "The vendor (Acme Inc.) signs a BAA"),
+    ],
+)
+def test_an_initial_before_a_capital_does_not_end_a_claim(text, claim):
+    """`U.S. Department` is a sentence start by every other rule here, and
+    that phrase is in essentially every HIPAA document. Found by
+    policyforge-1d attacking the first version of this fix."""
+    units = [sentence for sentence, _ in cited_sentences(text, 3)]
+
+    assert any(claim in unit for unit in units), f"{claim!r} is in no unit: {units}"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Contact the CISO. The lead reviews it [1].",
+        "Reviewed by IAM. The owner signs [1].",
+    ],
+)
+def test_a_sentence_ending_in_an_acronym_still_ends(text):
+    """The exception is for a *one-letter* token. `CISO` and `IAM` are
+    words, so a claim after one of them is still judged on its own."""
+    units = [sentence for sentence, _ in cited_sentences(text, 3)]
+
+    assert len(units) == 1, units
+    assert "CISO" not in units[0] and "IAM" not in units[0]
+
+
 # ---- what must keep working ---------------------------------------------
 
 

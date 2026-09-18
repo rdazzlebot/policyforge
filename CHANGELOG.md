@@ -26,7 +26,13 @@
   framework this tool exists to handle broken while looking fixed. The
   tests are built from the fragments the real run recorded, and each one
   asserts the whole claim comes back rather than only that no fragment
-  does. Found by policyforge-b5 while measuring the entailment check;
+  does. One exception to the pattern, for an initial followed by a
+  capital: `The U.S. Department of Health and Human Services enforces it`
+  reads as two sentences by every other rule here, and that phrase is in
+  essentially every HIPAA document. A sentence ending in an acronym
+  (`Contact the CISO. The lead reviews it`) still ends, because the
+  exception is for a one-letter token.
+  Found by policyforge-b5 while measuring the entailment check;
   widened by policyforge-ba and policyforge-1d.
 
 ### Publish to a wiki from CI

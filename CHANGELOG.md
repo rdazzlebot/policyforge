@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### The ledger can see what was removed from a reply, not only what was billed
+
+- **`stripped_reasoning_chars` records how much inline reasoning was cut
+  before a reply was stored.** The pair to `hidden_output_tokens` from the
+  other side: that field is what the vendor says it billed and did not
+  return, this is what arrived and was not kept. Until both existed
+  neither was recoverable after the fact — a reply came back, its
+  `<think>` preamble was removed, and the ledger stored the remainder with
+  nothing to say a cut had happened, so "did this model spend most of its
+  reply thinking?" needed a fresh run to answer and a fresh run is a
+  different run. Populated by the two providers that strip, `local` and
+  `litellm`. Characters rather than tokens, because characters are exact
+  here and a tokenizer is not carried for every model; the field answers
+  how much was removed, not what it cost.
+- **Unknown and zero stay apart, as on the token counts.** None means the
+  provider does not strip at all, zero means it stripped and found
+  nothing. A zero asserted on behalf of a provider that never looked is a
+  measurement nobody made.
+
 ### Gemini, with a key from AI Studio
 
 - **`provider: gemini` calls Google's own models with an API key**, at

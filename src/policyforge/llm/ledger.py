@@ -107,6 +107,11 @@ class CallRecord:
     #: a reasoning call records a fraction of what it cost, silently, by a
     #: ratio that varies per call.
     hidden_output_tokens: int | None = None
+    #: Characters of inline reasoning removed before the reply was
+    #: recorded. None where the provider does not strip; zero where it
+    #: stripped nothing. Pairs with `hidden_output_tokens`: one is what the
+    #: vendor billed and withheld, the other is what it sent and we cut.
+    stripped_reasoning_chars: int | None = None
     #: The provider's own id for the request. Free on the response, the
     #: first thing a vendor asks for, and unrecoverable afterwards.
     request_id: str | None = None
@@ -356,6 +361,7 @@ class RecordingProvider(LLMProvider):
             stop_reason=response.stop_reason if response else None,
             cached_input_tokens=response.cached_input_tokens if response else None,
             hidden_output_tokens=response.hidden_output_tokens if response else None,
+            stripped_reasoning_chars=(response.stripped_reasoning_chars if response else None),
             request_id=response.request_id if response else None,
             prompt_sha=prompt_digest(system, prompt),
             error=error,

@@ -26,7 +26,7 @@ from __future__ import annotations
 import os
 import time
 
-from ._inline_thinking import answer_of, exhausted, needs_more_room, retry_budget
+from ._inline_thinking import answer_and_stripped, exhausted, needs_more_room, retry_budget
 from .base import LLMProvider, LLMResponse, ProviderRejected, SchemaReplyError
 
 
@@ -201,7 +201,7 @@ class LiteLLMProvider(LLMProvider):
             ) from exc
 
     @staticmethod
-    def _read(response) -> tuple[str, str | None, float | None]:
+    def _read(response) -> tuple[str, str | None, float | None, int]:
         """Text, finish reason, and cost from a LiteLLM ModelResponse.
 
         `answer_of` still runs even though LiteLLM normalises reasoning into
@@ -211,9 +211,9 @@ class LiteLLMProvider(LLMProvider):
         inline <think> block.
         """
         choice = response.choices[0]
-        text = answer_of(getattr(choice.message, "content", ""))
+        text, stripped = answer_and_stripped(getattr(choice.message, "content", ""))
         cost = (getattr(response, "_hidden_params", None) or {}).get("response_cost")
-        return text, getattr(choice, "finish_reason", None), cost
+        return text, getattr(choice, "finish_reason", None), cost, stripped
 
     def generate(
         self,
@@ -267,12 +267,12 @@ class LiteLLMProvider(LLMProvider):
             payload["api_key"] = self._api_key
 
         response = self._create(payload, temperature)
-        text, finish_reason, cost = self._read(response)
+        text, finish_reason, cost, stripped = self._read(response)
 
         if needs_more_room(text, finish_reason):
             second = retry_budget(max_tokens)
             response = self._create({**payload, "max_tokens": second}, temperature)
-            text, finish_reason, retry_cost = self._read(response)
+            text, finish_reason, retry_cost, stripped = self._read(response)
             if needs_more_room(text, finish_reason):
                 raise exhausted(self.model, max_tokens, second)
             # Both calls are billed, so both are reported. Charging a
@@ -294,6 +294,7 @@ class LiteLLMProvider(LLMProvider):
             input_tokens=getattr(usage, "prompt_tokens", None),
             output_tokens=getattr(usage, "completion_tokens", None),
             cost_usd=cost,
+            stripped_reasoning_chars=stripped,
             # LiteLLM's own spelling of the three facts the SDK providers
             # now carry. `finish_reason` is already read above to decide
             # whether to retry a truncation; it travels now instead of

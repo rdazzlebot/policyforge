@@ -1503,22 +1503,86 @@ promotes them once you've finished migrating.
 `.github/workflows/content.yml` runs the two halves with deliberately
 different privileges:
 
-|           | When                    | Credentials                               | Can block a merge |
-| --------- | ----------------------- | ----------------------------------------- | ----------------- |
-| `check`   | every pull request      | none                                      | yes               |
-| `publish` | after a merge to `main` | Confluence token, behind an `environment` | no                |
+|                | When                    | Credentials                               | Can block a merge |
+| -------------- | ----------------------- | ----------------------------------------- | ----------------- |
+| `check`        | every pull request      | none                                      | yes               |
+| `publish`      | after a merge to `main` | Confluence token, behind an `environment` | no                |
+| `publish-wiki` | after a merge to `main` | GitHub token, behind an `environment`     | no                |
 
 `check` needing nothing is what lets it run on a pull request from a fork —
-exactly where a gate is worth having. `publish` is fenced the other way: only
-on `push`, only from this repository, and behind a GitHub environment, because
-a workflow that could write to a live wiki from an untrusted pull request is a
-supply-chain problem rather than a convenience. It plans into the job log
-before applying, so when a publish does something surprising there's a record
-of what it believed it was doing.
+exactly where a gate is worth having. Both publishing jobs are fenced the
+other way: only on `push`, only from this repository, and behind a GitHub
+environment, because a workflow that could write to a live wiki from an
+untrusted pull request is a supply-chain problem rather than a convenience.
+Each states `github.event_name == 'push'` in its own condition rather than
+trusting the trigger list, so a trigger added later cannot quietly hand a
+fork a write path. They plan into the job log before applying, so when a
+publish does something surprising there's a record of what it believed it was
+doing.
 
-Set `CONFLUENCE_HOST` as a repository variable, `CONFLUENCE_USERNAME` and
-`CONFLUENCE_API_TOKEN` as secrets on the `confluence` environment. The
-workflow does not pass `--allow-macros`, on purpose.
+For Confluence, set `CONFLUENCE_HOST` as a repository variable, and
+`CONFLUENCE_USERNAME` and `CONFLUENCE_API_TOKEN` as secrets on the
+`confluence` environment. The workflow does not pass `--allow-macros`, on
+purpose.
+
+For a GitHub wiki, set `WIKI_REPOSITORY` (`owner/name`) as a repository
+variable and `WIKI_TOKEN` as a secret on the `github-wiki` environment. The
+job deliberately does **not** use the workflow's built-in `GITHUB_TOKEN`: a
+credential minted for every run of every workflow is the wrong thing to hold
+write access to your policy set. It also does not pass `--allow-public`, so
+it refuses a wiki that is public or whose visibility it could not determine
+— and documents carrying licensed catalog content are refused for a public
+wiki whether or not that flag is added.
+
+### Publishing to a GitHub wiki
+
+A wiki is a git repository of markdown pages, so the same three guards
+apply with git's answers: a commit sha where Confluence has a version
+number, this tool's commit trailer where it has a version message, the file
+itself where it has storage format.
+
+```yaml
+# config/config.yaml
+publish:
+  target: github-wiki
+  github_wiki:
+    repository: acme/security-policies
+    token_env: GITHUB_TOKEN     # optional; your git credential helper otherwise
+```
+
+Each document still names its own destination, so the file-to-page mapping
+stays in the repository under review:
+
+```yaml
+# docs/standards/access-review.md
+targets:
+  github_wiki: {}               # this wiki, page named by the document title
+```
+
+An empty block is the common case. Give it a `title:` when the page should
+be named something else, or a `repository:` when one tree publishes into two
+wikis. A file with no `github_wiki:` block is not published, which is how a
+draft stays a draft.
+
+What differs from Confluence, and why:
+
+- **Any byte difference counts as an edit.** Confluence reflows storage
+  format when it saves, so that adapter forgives whitespace between tags. A
+  wiki reflows nothing, so a page that differs was changed by somebody and
+  is reported rather than overwritten.
+- **The report names who changed it**, from `git log`, so you know whom to
+  ask before pulling.
+- **A page in another format is refused by name.** GitHub wikis accept
+  AsciiDoc, RST and six others; publishing markdown over one would replace
+  it, so those pages are skipped and named, the way Confluence macros are.
+- **Cross-references are rewritten both ways**, from tree paths to
+  `[[Page Title]]` on publish and back on pull. A link to a document with no
+  wiki page is left exactly as written and reported once.
+- **The plan's first line says whether the wiki is public**, every run.
+  Unknown visibility counts as public, and publishing to a public wiki needs
+  `--allow-public`.
+
+The working clone lives in `output/.wiki/`, which is gitignored.
 
 ### Starting from a space nobody catalogued
 

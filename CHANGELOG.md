@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### The ledger can see output tokens you paid for and cannot read
+
+- **`LLMResponse.hidden_output_tokens` and a matching ledger column record
+  tokens billed as output that never appear in the reply.** A reasoning
+  model charges for its own thinking; measured on a live Gemini call, 842
+  such tokens sat beside 813 returned ones, and on a schema-constrained
+  call 292 beside 12. Until now the ledger recorded only the returned
+  half, so a cost figure produced through such a provider was a floor
+  presented as a total — silently, and by a ratio that varied per call.
+  The ledger is a compliance artefact and the published cost measurements
+  are built from it, which is why this is a defect rather than a rounding
+  question.
+- **None and zero stay different answers.** The field defaults to None,
+  meaning the provider does not report such tokens, which is every
+  provider here today. Zero means it reports them and there were none.
+  Defaulting to zero would have asserted "nothing was hidden" on behalf of
+  providers that cannot tell. The run summary prints a hidden-token column
+  only where some call in the group actually reported one, for the same
+  reason.
+- **Not a Gemini property.** Gemini is the first provider here to surface
+  the count, not the first whose model thinks: the same tokens are billed
+  behind LiteLLM or an OpenAI-compatible endpoint and reported by neither,
+  so their ledger entries stay honestly unknown rather than falsely zero.
+
 ### The subprocessors page no longer characterises a third party
 
 - **`docs/subprocessors.md` said content routed through LiteLLM goes to

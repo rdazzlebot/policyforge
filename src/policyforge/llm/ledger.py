@@ -100,6 +100,13 @@ class CallRecord:
     #: zero is a call that could have hit the cache and did not, which is
     #: what a silently-too-short cacheable prefix looks like from here.
     cached_input_tokens: int | None = None
+    #: Output tokens the operator paid for and cannot read — a model's own
+    #: reasoning, where the provider reports it. None where the provider
+    #: does not report it at all, which is every provider but Gemini today,
+    #: so a reader can tell "none happened" from "cannot say". Without this
+    #: a reasoning call records a fraction of what it cost, silently, by a
+    #: ratio that varies per call.
+    hidden_output_tokens: int | None = None
     #: The provider's own id for the request. Free on the response, the
     #: first thing a vendor asks for, and unrecoverable afterwards.
     request_id: str | None = None
@@ -348,6 +355,7 @@ class RecordingProvider(LLMProvider):
             cost_usd=response.cost_usd if response else None,
             stop_reason=response.stop_reason if response else None,
             cached_input_tokens=response.cached_input_tokens if response else None,
+            hidden_output_tokens=response.hidden_output_tokens if response else None,
             request_id=response.request_id if response else None,
             prompt_sha=prompt_digest(system, prompt),
             error=error,
@@ -514,6 +522,11 @@ class Totals:
     calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    #: Summed like the others, but `hidden_reported` says whether any call
+    #: in the group could report it. A zero here with nothing reporting
+    #: means "unknown", not "none".
+    hidden_output_tokens: int = 0
+    hidden_reported: bool = False
     cost_usd: float = 0.0
     #: False when no call in the group reported a price, so a zero total can
     #: be read as "free" or "unknown" and not silently as the former.
@@ -524,6 +537,9 @@ class Totals:
         self.calls += 1
         self.input_tokens += record.input_tokens or 0
         self.output_tokens += record.output_tokens or 0
+        if record.hidden_output_tokens is not None:
+            self.hidden_output_tokens += record.hidden_output_tokens
+            self.hidden_reported = True
         if record.cost_usd is not None:
             self.cost_usd += record.cost_usd
             self.priced = True
@@ -554,7 +570,12 @@ def format_summary(records: list[CallRecord], by: str) -> str:
     for key, totals in order:
         line = (
             f"  {key.ljust(width)}  {totals.calls:>5} call(s)  "
-            f"{totals.input_tokens:>9} in  {totals.output_tokens:>8} out  {totals.cost:>10}"
+            f"{totals.input_tokens:>9} in  {totals.output_tokens:>8} out"
+            # Printed only where a provider reported it. A column of zeros
+            # against providers that cannot tell would be the false-zero
+            # this field exists to avoid.
+            + (f"  {totals.hidden_output_tokens:>8} hidden" if totals.hidden_reported else "")
+            + f"  {totals.cost:>10}"
         )
         if totals.errors:
             line += f"  ({totals.errors} failed)"

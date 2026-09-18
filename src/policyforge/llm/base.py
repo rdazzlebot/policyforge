@@ -54,6 +54,30 @@ class LLMResponse:
     #: which is what a silently-too-short cacheable prefix looks like — and
     #: None means the provider does not report caching at all.
     cached_input_tokens: int | None = None
+    #: Tokens billed as output that are not in `text`. Today that means a
+    #: model's own reasoning — Gemini calls it `thoughtsTokenCount`, other
+    #: vendors call it thinking or reasoning — but the field is about the
+    #: billing contract rather than the cause: the operator paid for these
+    #: and cannot see them.
+    #:
+    #: **None and zero are different answers, and the difference is the
+    #: point.** None means the provider does not report such tokens, which
+    #: is every provider here except Gemini today. Zero means it reports
+    #: them and there were none on this call. Defaulting to zero would say
+    #: "this call had no hidden output" about providers that simply cannot
+    #: tell, and a cost total built on that reads as complete when it is a
+    #: floor.
+    #:
+    #: This is not a Gemini property. It is the first provider in this
+    #: project to *surface* the count; a thinking model reached through
+    #: LiteLLM or an OpenAI-compatible endpoint bills the same way and
+    #: reports nothing here, so its ledger entries stay honestly unknown
+    #: rather than falsely zero.
+    #:
+    #: Measured, not assumed: on a live call, 842 of these sat beside 813
+    #: returned tokens, so roughly half of what was billed was invisible to
+    #: the ledger before this existed.
+    hidden_output_tokens: int | None = None
     #: The provider's own id for the request, which is the first thing
     #: Anthropic support asks for. Free on every response and impossible to
     #: reconstruct afterwards.

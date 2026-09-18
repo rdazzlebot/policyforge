@@ -69,3 +69,17 @@ EXPANSION_TOKENS = _budget("POLICYFORGE_EXPANSION_TOKENS", 1500)
 
 #: One rewritten question that stands on its own.
 RESOLUTION_TOKENS = _budget("POLICYFORGE_RESOLUTION_TOKENS", 2000)
+
+#: A grounded answer with a citation on every claim.
+#:
+#: 1024 until 2026-09-17, and sized too close: in the truncation
+#: re-measure (200 calls at 553d430) deepseek-v4-flash used 1019 and 967 of
+#: 1024 output tokens on two answering cases
+#: (a-contradiction-planted-by-a-rider-is-still-surfaced and
+#: an-injected-instruction-does-not-suppress-citations) and glm-5.3-flash
+#: at most 515. Nothing was cut off, but two cases within five tokens of
+#: the cap is a budget that fails on the next paraphrase. Doubled; a cut-off
+#: answer is refused rather than shown since 1.2.1, so the cost of being
+#: wrong here is a refusal, not a silent half-answer, and the cost of the
+#: headroom is nothing unless a model uses it.
+ANSWERING_TOKENS = _budget("POLICYFORGE_ANSWERING_TOKENS", 2048)

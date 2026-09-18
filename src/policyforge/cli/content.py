@@ -933,7 +933,7 @@ def _target_kind(target: str | None, config: dict) -> str:
     return target or str((config.get("publish") or {}).get("target") or "confluence")
 
 
-def _wiki_publisher(config: dict, *, repository: str, allow_public: bool):
+def _wiki_publisher(config: dict, *, repository: str, allow_public: bool, token_env: str = ""):
     """The GitHub-wiki adapter, with the wiki's visibility already asked.
 
     Visibility is resolved here rather than inside the adapter so that one
@@ -955,7 +955,10 @@ def _wiki_publisher(config: dict, *, repository: str, allow_public: bool):
             "        repository: acme/security-policies"
         )
 
-    token_env = str(block.get("token_env") or "")
+    # The flag wins over config, because a CI job has no config file and
+    # names its secret on the command line — the variable *name*, never the
+    # token, which stays in the environment.
+    token_env = token_env or str(block.get("token_env") or "")
     owner, repo = name.split("/")
     return GitHubWikiPublisher(
         name,
@@ -975,10 +978,13 @@ def _publisher_for(
     host: str = "",
     repository: str = "",
     allow_public: bool = False,
+    token_env: str = "",
 ):
     """The adapter for this run, or a usage error naming what is missing."""
     if kind == "github-wiki":
-        return _wiki_publisher(config, repository=repository, allow_public=allow_public)
+        return _wiki_publisher(
+            config, repository=repository, allow_public=allow_public, token_env=token_env
+        )
 
     from policyforge.export.publisher import ConfluencePublisher
 
@@ -1030,6 +1036,12 @@ def _refuse_public_wiki(publisher) -> None:
     help="GitHub wiki repository as owner/name. Defaults to `publish.github_wiki.repository`.",
 )
 @click.option(
+    "--token-env",
+    default="",
+    help="Name of the environment variable holding the GitHub token. Defaults to "
+    "`publish.github_wiki.token_env`; without either, git uses your credential helper.",
+)
+@click.option(
     "--allow-public",
     is_flag=True,
     help="Publish to a wiki that is public, or whose visibility could not be "
@@ -1060,6 +1072,7 @@ def publish_cmd(
     host: str,
     target: str | None,
     repository: str,
+    token_env: str,
     allow_public: bool,
     only: str,
     apply_: bool,
@@ -1094,6 +1107,7 @@ def publish_cmd(
         host=_zardoz_setting(config, "host", host) if kind == "confluence" else "",
         repository=repository,
         allow_public=allow_public,
+        token_env=token_env,
     )
     _refuse_public_wiki(publisher)
 
@@ -1135,6 +1149,12 @@ def publish_cmd(
     help="GitHub wiki repository as owner/name. Defaults to `publish.github_wiki.repository`.",
 )
 @click.option(
+    "--token-env",
+    default="",
+    help="Name of the environment variable holding the GitHub token. Defaults to "
+    "`publish.github_wiki.token_env`; without either, git uses your credential helper.",
+)
+@click.option(
     "--only",
     default="",
     help="Only look at documents whose path contains this substring.",
@@ -1149,6 +1169,7 @@ def wiki_drift_cmd(
     host: str,
     target: str | None,
     repository: str,
+    token_env: str,
     only: str,
     fail_on_change: bool,
 ):
@@ -1176,6 +1197,7 @@ def wiki_drift_cmd(
         config,
         host=_zardoz_setting(config, "host", host) if kind == "confluence" else "",
         repository=repository,
+        token_env=token_env,
     )
 
     documents, _ = load_content_tree(root)
@@ -1211,6 +1233,12 @@ def wiki_drift_cmd(
     default="",
     help="GitHub wiki repository as owner/name. Defaults to `publish.github_wiki.repository`.",
 )
+@click.option(
+    "--token-env",
+    default="",
+    help="Name of the environment variable holding the GitHub token. Defaults to "
+    "`publish.github_wiki.token_env`; without either, git uses your credential helper.",
+)
 @click.option("--space", default="", help="Pull one page: its space key (Confluence only).")
 @click.option("--title", default="", help="Pull one page: its exact title.")
 @click.option(
@@ -1234,6 +1262,7 @@ def pull_cmd(
     host: str,
     target: str | None,
     repository: str,
+    token_env: str,
     topics_path: Path,
     space: str,
     title: str,
@@ -1265,6 +1294,7 @@ def pull_cmd(
         config,
         host=_zardoz_setting(config, "host", host) if kind == "confluence" else "",
         repository=repository,
+        token_env=token_env,
     )
 
     if title:

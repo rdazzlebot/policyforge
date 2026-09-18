@@ -1,16 +1,20 @@
 # Publishing the content tree, driven by the repository.
 #
-# Two halves that deliberately have different privileges.
+# Three jobs, two privilege levels.
 #
 # `check` runs on every pull request with no credentials at all, which is
 # what lets it run on a fork's PR — exactly where you want a gate. It is the
 # one that can block a merge.
 #
-# `publish` runs only after a merge to the default branch, only from this
-# repository, and only when the tree actually changed. It needs the
-# Confluence token, so it lives behind an environment: a workflow that could
-# write to a live wiki from an untrusted pull request would be a supply
-# chain problem, not a convenience.
+# `publish` and `publish-wiki` run only after a merge to the default
+# branch, only from this repository, and only when the tree actually
+# changed. Each needs a credential, so each lives behind its own
+# environment: a workflow that could write to a live wiki from an untrusted
+# pull request would be a supply chain problem, not a convenience. The
+# `pull_request` trigger above reaches `check` and nothing else, and every
+# writing job states `github.event_name == 'push'` itself rather than
+# relying on that — a trigger added later must not quietly hand a fork a
+# write path.
 name: content
 
 on:
@@ -114,3 +118,71 @@ jobs:
           CONFLUENCE_USERNAME: ${{ secrets.CONFLUENCE_USERNAME }}
           CONFLUENCE_API_TOKEN: ${{ secrets.CONFLUENCE_API_TOKEN }}
         run: policyforge publish --content-dir docs --host "${{ vars.CONFLUENCE_HOST }}" --apply
+
+  publish-wiki:
+    name: publish to a GitHub wiki
+    needs: check
+    # The same fence as the Confluence job, for the same reason, and one
+    # more: this job pushes to a git remote, so it is the shortest path from
+    # a pull request to a write anybody can see. `github.event_name ==
+    # 'push'` is stated here and not left to the trigger list; a
+    # `pull_request_target` or a `workflow_call` added later would otherwise
+    # inherit a write path and a token.
+    #
+    # **Publishing is off until `WIKI_REPOSITORY` is set**, and a green run
+    # with this job skipped means nothing was published rather than that a
+    # publish succeeded.
+    if: >-
+      github.event_name == 'push'
+      && github.repository == 'rdazzlebot/policyforge'
+      && vars.WIKI_REPOSITORY != ''
+    runs-on: ubuntu-latest
+    # Its own environment, separate from `confluence`: a repository
+    # publishing to both should be able to review, restrict and rotate each
+    # destination on its own, and the wiki token is a GitHub credential
+    # where the other is an Atlassian one.
+    environment: github-wiki
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install project
+        run: |
+          pip install --require-hashes -r requirements/ci.txt
+          pip install --no-deps -e .
+
+      # The plan first, into the job log, and it carries the wiki's
+      # visibility on its first line. That line is the record of what this
+      # job believed about who can read the pages it was about to write.
+      - name: Plan
+        env:
+          # `--token-env` names the variable; the token itself only ever
+          # lives in the environment below, and reaches git through
+          # GIT_CONFIG_* rather than any command line.
+          #
+          # A token from the environment's secrets, never the workflow's
+          # default GITHUB_TOKEN: that one is scoped to this repository and
+          # minted for every run, including runs this job should have no
+          # part in. A wiki publish should carry a credential somebody
+          # granted for publishing to that wiki.
+          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN }}
+        run: >-
+          policyforge publish --content-dir docs --target github-wiki
+          --repository "${{ vars.WIKI_REPOSITORY }}" --token-env WIKI_TOKEN
+
+      # No --force and no --allow-macros, as above. No --allow-public
+      # either, and that one is not a default to change lightly: without it
+      # this job refuses a wiki that is public, or whose visibility could
+      # not be determined. A repository that means to publish policy to the
+      # world adds the flag here deliberately — and licensed catalog content
+      # is refused whether or not it is added.
+      - name: Publish
+        env:
+          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN }}
+        run: >-
+          policyforge publish --content-dir docs --target github-wiki
+          --repository "${{ vars.WIKI_REPOSITORY }}" --token-env WIKI_TOKEN --apply

@@ -2873,6 +2873,24 @@
           }
         },
         {
+          "default": "",
+          "help": "Name of the environment variable holding the GitHub token. Defaults to `publish.github_wiki.token_env`; without either, git uses your credential helper.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "token_env",
+          "nargs": 1,
+          "opts": [
+            "--token-env"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
           "default": false,
           "help": "Publish to a wiki that is public, or whose visibility could not be determined. Licensed catalog content is never published to a public wiki whether or not this is passed.",
           "hidden": false,
@@ -3062,6 +3080,24 @@
           "nargs": 1,
           "opts": [
             "--repository"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "",
+          "help": "Name of the environment variable holding the GitHub token. Defaults to `publish.github_wiki.token_env`; without either, git uses your credential helper.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "token_env",
+          "nargs": 1,
+          "opts": [
+            "--token-env"
           ],
           "required": false,
           "secondary_opts": [],
@@ -3585,6 +3621,24 @@
           "nargs": 1,
           "opts": [
             "--repository"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "",
+          "help": "Name of the environment variable holding the GitHub token. Defaults to `publish.github_wiki.token_env`; without either, git uses your credential helper.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "token_env",
+          "nargs": 1,
+          "opts": [
+            "--token-env"
           ],
           "required": false,
           "secondary_opts": [],

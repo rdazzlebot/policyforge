@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Publish to a wiki from CI
+
+- **A `publish-wiki` job in `content.yml`**, behind its own `github-wiki`
+  environment and fenced the way the Confluence job is: only on a push to
+  the default branch, only from this repository, only when
+  `vars.WIKI_REPOSITORY` is set, and `needs: check`. The push condition is
+  stated in the job rather than left to the trigger list, so a trigger added
+  later cannot hand a fork a write path. It plans before it applies, and the
+  plan's first line records what the job believed about who can read those
+  pages.
+- **The token is a secret on that environment, never the workflow's built-in
+  `GITHUB_TOKEN`** — that one is minted for every run of every workflow, and
+  write access to a policy set should be a credential granted for the
+  purpose. The job passes no `--allow-public`, `--force` or `--allow-macros`.
+- **`--token-env` on `publish`, `wiki-drift` and `pull`** names the variable
+  holding that token, for a runner with no config file to read
+  `publish.github_wiki.token_env` from. The name travels on the command
+  line; the value stays in the environment.
+
 ### Publish to a GitHub wiki, through the same guards as Confluence
 
 - **`policyforge publish --target github-wiki` writes your content tree to a

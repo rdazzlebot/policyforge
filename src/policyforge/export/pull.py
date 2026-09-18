@@ -76,12 +76,25 @@ def pull_pages(
     )
 
 
-def pages_from_topics(topics) -> list[tuple[str, str, str]]:
-    """Every page the topic registry declares, as pull targets."""
+def pages_from_topics(topics, *, kind: str = "confluence") -> list[tuple[str, str, str]]:
+    """Every page the topic registry declares for one store, as pull targets.
+
+    The container is the store's own: a space key for Confluence, a
+    repository for a wiki. A topic declaring no block of that kind
+    contributes nothing, which is how a registry mid-migration pulls only
+    what it has actually published.
+    """
     targets: list[tuple[str, str, str]] = []
     for topic in topics:
-        space = (topic.confluence or {}).get("space", "")
-        if not space:
+        block = topic.target(kind) if hasattr(topic, "target") else (topic.confluence or {})
+        container = str((block or {}).get("space") or (block or {}).get("repository") or "")
+        pages = topic.pages(kind) if hasattr(topic, "pages") else topic.confluence_pages()
+        if not block:
             continue
-        targets.extend((space, title, tier) for tier, title in topic.confluence_pages())
+        # A wiki topic may name no repository, taking it from config; its
+        # pages are still pullable, with the container filled in by the
+        # caller's publisher.
+        if kind == "confluence" and not container:
+            continue
+        targets.extend((container, title, tier) for tier, title in pages)
     return targets

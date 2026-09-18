@@ -85,6 +85,11 @@ class LivePage:
     body: str
     #: Identifier the store assigns, recorded in the binding a pull writes.
     page_id: str = ""
+    #: Who last wrote this version, and when, in whatever form the store
+    #: knows it ("Dana Okafor on 2026-09-14"). Empty when the store cannot
+    #: say — Confluence's importer does not carry it — and the moved report
+    #: falls back to "someone other than this tool".
+    author: str = ""
     #: What the round trip would flatten — macro names, or a page format —
     #: empty when the page can be published over safely.
     unsupported: tuple[str, ...] = ()
@@ -174,6 +179,39 @@ class Publisher(ABC):
         """The report line for documents that declare no target of this kind."""
         return f"{count} document(s) declare no `{self.kind}:` block and {verb}."
 
+    # -- hooks an adapter may take, each defaulting to what happens today ---
+
+    def prepare(self, documents) -> None:  # noqa: B027 - optional hook, not abstract
+        """Called once with every in-scope document before the first fetch.
+
+        For a store whose write depends on the whole tree rather than on one
+        file: the wiki rewrites cross-references between documents, and can
+        only know that `../standards/access-review.md` is a page once it has
+        seen which documents declare a wiki target.
+        """
+
+    def refuse(self, doc) -> str:
+        """Why this document must not be published at all, or "".
+
+        Checked before the page is fetched, because a refusal that depends
+        on the document alone should not need a network call to reach —
+        and because the reason a document is refused (licensed content to a
+        public wiki) must not be silently overtaken by a fetch failure.
+        """
+        return ""
+
+    def plan_header(self) -> str:
+        """One line printed above the report, or "".
+
+        Where a store has a fact the reader must see before reading the
+        plan: whether the wiki being published to is public.
+        """
+        return ""
+
+    def notes(self) -> list[str]:
+        """Anything the run should say once, rather than per document."""
+        return []
+
 
 # --------------------------------------------------------------------------
 # the guard, once
@@ -200,10 +238,12 @@ def moved_reason(publisher: Publisher, doc, live: LivePage) -> str:
         if recorded is not None
         else "the repository has no pulled version on record"
     )
-    return (
-        f"the live page is at version {live.version}, last written by someone other "
-        f"than this tool, and {known}"
+    by = (
+        f"last written by {live.author}"
+        if live.author
+        else "last written by someone other than this tool"
     )
+    return f"the live page is at version {live.version}, {by}, and {known}"
 
 
 # --------------------------------------------------------------------------
@@ -230,6 +270,11 @@ class PublishResult:
 class PublishReport:
     results: list[PublishResult] = field(default_factory=list)
     dry_run: bool = True
+    #: Printed above everything, when the store has something the reader
+    #: must see before the plan rather than after it.
+    header: str = ""
+    #: Said once for the run rather than once per document.
+    notes: list[str] = field(default_factory=list)
     #: Documents that declared no destination. Counted rather than listed:
     #: in a tree mid-migration this is most of them, and naming each one
     #: would bury the pages that did publish.
@@ -256,10 +301,11 @@ class PublishReport:
 
     def format_report(self) -> str:
         verb = "Would publish" if self.dry_run else "Published"
-        lines = [
+        lines = [self.header] if self.header else []
+        lines.append(
             f"{verb} {len(self.published)} page(s): "
             f"{len(self._of(CREATED))} new, {len(self._of(UPDATED))} updated"
-        ]
+        )
         for result in self.published:
             mark = "+" if result.action == CREATED else "~"
             note = f" ({result.reason})" if result.reason else ""
@@ -286,6 +332,9 @@ class PublishReport:
                 or f"{self.undeclared} document(s) declare no `confluence:` block and were "
                 "left alone.",
             ]
+
+        if self.notes:
+            lines += [""] + [f"  {note}" for note in self.notes]
 
         if self.dry_run and self.published:
             lines += ["", "Nothing was written. Pass --apply to publish."]
@@ -317,14 +366,31 @@ def publish_documents(
         for path, reason in problems
     )
 
-    for doc in documents:
-        if only and only not in doc.relative_path:
-            continue
+    in_scope = [doc for doc in documents if not only or only in doc.relative_path]
+    publisher.prepare(in_scope)
+
+    for doc in in_scope:
         location = publisher.location(doc)
         if not location:
             report.undeclared += 1
             continue
         title = publisher.title(doc)
+
+        # Before the fetch: a document that must not be published does not
+        # become publishable because its page could not be read, and does
+        # not need the network to say so.
+        refused = publisher.refuse(doc)
+        if refused:
+            report.results.append(
+                PublishResult(
+                    path=doc.relative_path,
+                    space=location,
+                    title=title,
+                    action=SKIPPED,
+                    reason=refused,
+                )
+            )
+            continue
 
         live = publisher.fetch_for(doc)
 
@@ -380,6 +446,8 @@ def publish_documents(
         )
 
     report.undeclared_note = publisher.undeclared_note(report.undeclared, "were left alone")
+    report.header = publisher.plan_header()
+    report.notes = publisher.notes()
     return report
 
 

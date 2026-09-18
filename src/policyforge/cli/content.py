@@ -921,6 +921,95 @@ def check_cmd(content_dir: Path | None, synthesis_dir: Path, strict: bool):
         raise SystemExit(1)
 
 
+#: The two stores `publish`, `wiki-drift` and `pull` can talk to. Spelled
+#: with a hyphen on the command line and with an underscore in frontmatter,
+#: because one is a flag and the other is a YAML key; `github_wiki.py` holds
+#: both spellings so they cannot drift apart.
+TARGETS = ("confluence", "github-wiki")
+
+
+def _target_kind(target: str | None, config: dict) -> str:
+    """Which store this run publishes to: the flag, else config, else Confluence."""
+    return target or str((config.get("publish") or {}).get("target") or "confluence")
+
+
+def _wiki_publisher(config: dict, *, repository: str, allow_public: bool):
+    """The GitHub-wiki adapter, with the wiki's visibility already asked.
+
+    Visibility is resolved here rather than inside the adapter so that one
+    question is asked once per run, and so the answer — including "could not
+    tell" — is on the plan's first line whatever happens afterwards.
+    """
+    from policyforge.export._wiki_auth import repository_visibility
+    from policyforge.export.github_wiki import GitHubWikiPublisher
+
+    block = (config.get("publish") or {}).get("github_wiki") or {}
+    name = repository or str(block.get("repository") or "")
+    if not name or name.count("/") != 1:
+        raise click.UsageError(
+            "No GitHub wiki repository. Pass --repository owner/name, or add one to "
+            "config/config.yaml:\n"
+            "    publish:\n"
+            "      target: github-wiki\n"
+            "      github_wiki:\n"
+            "        repository: acme/security-policies"
+        )
+
+    token_env = str(block.get("token_env") or "")
+    owner, repo = name.split("/")
+    return GitHubWikiPublisher(
+        name,
+        # Under output/, which is gitignored and outside the Docker build
+        # context, so a wiki clone never lands in a tracked tree or an image.
+        workdir=Path("output") / ".wiki" / f"{owner}-{repo}",
+        token_env=token_env,
+        public=repository_visibility(name, token_env),
+        allow_public=allow_public,
+    )
+
+
+def _publisher_for(
+    kind: str,
+    config: dict,
+    *,
+    host: str = "",
+    repository: str = "",
+    allow_public: bool = False,
+):
+    """The adapter for this run, or a usage error naming what is missing."""
+    if kind == "github-wiki":
+        return _wiki_publisher(config, repository=repository, allow_public=allow_public)
+
+    from policyforge.export.publisher import ConfluencePublisher
+
+    if not host:
+        raise click.UsageError(
+            "No Confluence host. Pass --host, or add one to config/config.yaml:\n"
+            "    zardoz:\n"
+            "      host: https://yourorg.atlassian.net/wiki"
+        )
+    return ConfluencePublisher(host=host)
+
+
+def _refuse_public_wiki(publisher) -> None:
+    """A public wiki needs saying yes to, and unknown counts as public."""
+    from policyforge.export.github_wiki import GitHubWikiPublisher
+
+    if not isinstance(publisher, GitHubWikiPublisher):
+        return
+    if publisher.public is False or publisher.allow_public:
+        return
+
+    click.echo(publisher.plan_header())
+    raise click.UsageError(
+        "This wiki is public, or its visibility could not be determined, and "
+        "publishing would put your documents where anyone can read them. Pass "
+        "--allow-public once you have decided that is what you want. Documents "
+        "carrying licensed catalog content are never published to a public wiki, "
+        "with or without that flag."
+    )
+
+
 @cli.command("publish")
 @click.option(
     "--content-dir",
@@ -929,6 +1018,24 @@ def check_cmd(content_dir: Path | None, synthesis_dir: Path, strict: bool):
     help="Markdown content tree to publish from.",
 )
 @click.option("--host", default="", help="Confluence base URL. Defaults to `zardoz.host`.")
+@click.option(
+    "--target",
+    default=None,
+    type=click.Choice(TARGETS),
+    help="Which store to publish to. Defaults to `publish.target`, else confluence.",
+)
+@click.option(
+    "--repository",
+    default="",
+    help="GitHub wiki repository as owner/name. Defaults to `publish.github_wiki.repository`.",
+)
+@click.option(
+    "--allow-public",
+    is_flag=True,
+    help="Publish to a wiki that is public, or whose visibility could not be "
+    "determined. Licensed catalog content is never published to a public wiki "
+    "whether or not this is passed.",
+)
 @click.option(
     "--only",
     default="",
@@ -951,6 +1058,9 @@ def check_cmd(content_dir: Path | None, synthesis_dir: Path, strict: bool):
 def publish_cmd(
     content_dir: Path | None,
     host: str,
+    target: str | None,
+    repository: str,
+    allow_public: bool,
     only: str,
     apply_: bool,
     allow_macros: bool,
@@ -969,23 +1079,33 @@ def publish_cmd(
 
     Plans by default and writes nothing; pass --apply once you have read it.
     """
-    from policyforge.export.publish import publish_tree
+    from policyforge.content.tree import load_content_tree
+    from policyforge.export.publisher import publish_documents
 
     root = _content_dir(content_dir)
     if not root.exists():
         raise click.UsageError(f"No content directory at {root}.")
 
     config = load_config_or_empty()
-    host = _zardoz_setting(config, "host", host)
-    if not host:
-        raise click.UsageError(
-            "No Confluence host. Pass --host, or add one to config/config.yaml:\n"
-            "    zardoz:\n"
-            "      host: https://yourorg.atlassian.net/wiki"
-        )
+    kind = _target_kind(target, config)
+    publisher = _publisher_for(
+        kind,
+        config,
+        host=_zardoz_setting(config, "host", host) if kind == "confluence" else "",
+        repository=repository,
+        allow_public=allow_public,
+    )
+    _refuse_public_wiki(publisher)
 
-    report = publish_tree(
-        root, host=host, dry_run=not apply_, allow_macros=allow_macros, only=only, force=force
+    documents, problems = load_content_tree(root)
+    report = publish_documents(
+        publisher,
+        documents,
+        problems,
+        dry_run=not apply_,
+        allow_unsupported=allow_macros,
+        only=only,
+        force=force,
     )
     click.echo(report.format_report())
     # A moved page fails the run even when others published. Exiting 0 would
@@ -1004,6 +1124,17 @@ def publish_cmd(
 )
 @click.option("--host", default="", help="Confluence base URL. Defaults to `zardoz.host`.")
 @click.option(
+    "--target",
+    default=None,
+    type=click.Choice(TARGETS),
+    help="Which store to compare against. Defaults to `publish.target`, else confluence.",
+)
+@click.option(
+    "--repository",
+    default="",
+    help="GitHub wiki repository as owner/name. Defaults to `publish.github_wiki.repository`.",
+)
+@click.option(
     "--only",
     default="",
     help="Only look at documents whose path contains this substring.",
@@ -1013,7 +1144,14 @@ def publish_cmd(
     is_flag=True,
     help="Exit non-zero when any page has moved, so a scheduled run is the notification.",
 )
-def wiki_drift_cmd(content_dir: Path | None, host: str, only: str, fail_on_change: bool):
+def wiki_drift_cmd(
+    content_dir: Path | None,
+    host: str,
+    target: str | None,
+    repository: str,
+    only: str,
+    fail_on_change: bool,
+):
     """Which published pages changed on the wiki since this tool wrote them.
 
     The question a policy owner asks before a review cycle. `publish` answers
@@ -1024,22 +1162,24 @@ def wiki_drift_cmd(content_dir: Path | None, host: str, only: str, fail_on_chang
     A page whose body already says what the repository says is in sync,
     whoever wrote its latest version.
     """
-    from policyforge.export.drift import wiki_drift
+    from policyforge.content.tree import load_content_tree
+    from policyforge.export.publisher import drift_documents
 
     root = _content_dir(content_dir)
     if not root.exists():
         raise click.UsageError(f"No content directory at {root}.")
 
     config = load_config_or_empty()
-    host = _zardoz_setting(config, "host", host)
-    if not host:
-        raise click.UsageError(
-            "No Confluence host. Pass --host, or add one to config/config.yaml:\n"
-            "    zardoz:\n"
-            "      host: https://yourorg.atlassian.net/wiki"
-        )
+    kind = _target_kind(target, config)
+    publisher = _publisher_for(
+        kind,
+        config,
+        host=_zardoz_setting(config, "host", host) if kind == "confluence" else "",
+        repository=repository,
+    )
 
-    report = wiki_drift(root, host=host, only=only)
+    documents, _ = load_content_tree(root)
+    report = drift_documents(publisher, documents, only=only)
     click.echo(report.format_report())
     if fail_on_change and report.moved:
         raise SystemExit(1)
@@ -1060,7 +1200,18 @@ def wiki_drift_cmd(content_dir: Path | None, host: str, only: str, fail_on_chang
     type=click.Path(path_type=Path),
     help="Registry whose declared pages to pull. Ignored if --title is given.",
 )
-@click.option("--space", default="", help="Pull one page: its space key.")
+@click.option(
+    "--target",
+    default=None,
+    type=click.Choice(TARGETS),
+    help="Which store to pull from. Defaults to `publish.target`, else confluence.",
+)
+@click.option(
+    "--repository",
+    default="",
+    help="GitHub wiki repository as owner/name. Defaults to `publish.github_wiki.repository`.",
+)
+@click.option("--space", default="", help="Pull one page: its space key (Confluence only).")
 @click.option("--title", default="", help="Pull one page: its exact title.")
 @click.option(
     "--tier",
@@ -1081,6 +1232,8 @@ def wiki_drift_cmd(content_dir: Path | None, host: str, only: str, fail_on_chang
 def pull_cmd(
     content_dir: Path | None,
     host: str,
+    target: str | None,
+    repository: str,
     topics_path: Path,
     space: str,
     title: str,
@@ -1099,37 +1252,50 @@ def pull_cmd(
     written, because the file would look correct and destroy them on the
     first publish.
     """
-    from policyforge.export.pull import pages_from_topics, pull_pages
+    from policyforge.export.publisher import pull_documents
+    from policyforge.export.pull import pages_from_topics, target_path
     from policyforge.topics.registry import load_topics
 
     root = _content_dir(content_dir)
 
     config = load_config_or_empty()
-    host = _zardoz_setting(config, "host", host)
-    if not host:
-        raise click.UsageError("No Confluence host. Pass --host, or set `zardoz.host`.")
+    kind = _target_kind(target, config)
+    publisher = _publisher_for(
+        kind,
+        config,
+        host=_zardoz_setting(config, "host", host) if kind == "confluence" else "",
+        repository=repository,
+    )
 
     if title:
-        if not space:
+        # A wiki page needs no space: the repository is the container, and it
+        # comes from config or --repository. That is why the reconcile
+        # command a wiki prints names only a title.
+        if kind == "confluence" and not space:
             raise click.UsageError("--title needs --space to say which space to look in.")
-        targets = [(space, title, tier)]
+        targets = [(space or publisher.repository, title, tier)]
     else:
         try:
-            targets = pages_from_topics(load_topics(topics_path))
+            targets = pages_from_topics(load_topics(topics_path), kind=kind)
         except FileNotFoundError:
             raise click.UsageError(
                 f"No topic registry at {topics_path}, and no --title given, so there is "
-                "nothing to pull. Name a page with --space/--title, or declare your "
+                "nothing to pull. Name a page with --title, or declare your "
                 "pages in the registry."
             ) from None
         if not targets:
             raise click.UsageError(
-                "No topic declares a `confluence:` block, so there are no pages to pull."
+                f"No topic declares a `{kind}:` block, so there are no pages to pull."
             )
 
     click.echo(f"Pulling {len(targets)} page(s) into {root}")
-    report = pull_pages(
-        targets, root=root, host=host, dry_run=not apply_, allow_macros=allow_macros
+    report = pull_documents(
+        publisher,
+        targets,
+        root=root,
+        target_path=target_path,
+        dry_run=not apply_,
+        allow_unsupported=allow_macros,
     )
     click.echo("")
     click.echo(report.format_report())

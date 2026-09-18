@@ -51,6 +51,10 @@ DECLARED_ENV_READERS: dict[str, str] = {
     "llm/litellm_provider.py": "same, for OpenRouter and other LiteLLM-routed providers",
     "llm/openai_compat_provider.py": "same, for an OpenAI-compatible endpoint",
     "export/_confluence_auth.py": "CONFLUENCE_API_TOKEN and CONFLUENCE_USERNAME",
+    "export/_wiki_auth.py": (
+        "the GitHub token, by the variable name config gives — passed to git through "
+        "GIT_CONFIG_* so it never reaches argv or .git/config"
+    ),
     "config.py": "POLICYFORGE_CONFIG, a path — lets a second config be run without editing one",
     "zardoz/budgets.py": "budget overrides, integers",
 }
@@ -63,6 +67,7 @@ CREDENTIAL_ENV_NAMES = (
     "OPENAI_API_KEY",
     "CONFLUENCE_API_TOKEN",
     "CONFLUENCE_USERNAME",
+    "GITHUB_TOKEN",
     "AWS_SECRET_ACCESS_KEY",
     "GOOGLE_APPLICATION_CREDENTIALS",
 )

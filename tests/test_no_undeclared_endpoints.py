@@ -51,7 +51,17 @@ ALLOWED_HOSTS: dict[str, str] = {
         "NIST's OSCAL edition of SP 800-53 (etl-oscal) and FedRAMP's consolidated "
         "rules dataset (etl-fedramp)"
     ),
-    "github.com": "cited as the provenance of OSCAL content in SSP output; not fetched",
+    "github.com": (
+        "the GitHub wiki remote (export/github_wiki.py), cloned and pushed to only when a "
+        "`github_wiki` target is configured — it RECEIVES the organization's documents, so "
+        "it is a subprocessor and appears in docs/subprocessors.md; also cited as the "
+        "provenance of OSCAL content in SSP output"
+    ),
+    "api.github.com": (
+        "asked whether the wiki's repository is public (export/_wiki_auth.py), only when a "
+        "`github_wiki` target is configured. One GET of the repository's metadata; no "
+        "document content is sent"
+    ),
     # Local model defaults. These are the reason `boundary.py` classifies a
     # loopback endpoint as `local`: nothing leaves the host.
     "localhost": "default base_url for a model running on this machine",

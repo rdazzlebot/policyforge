@@ -36,153 +36,40 @@ and compare — does not work from CI. A publish job runs on a checkout and
 cannot commit the new version back, so the recorded number would fall one
 behind after every publish and the next one would refuse forever. The
 version message this tool stamps on its own writes needs no write-back.
+
+The loop and both guards live in `publisher.py`, written once over a
+`LivePage` so that a second kind of store gets the same rules; this module
+is the Confluence entry point and keeps the names its callers import.
 """
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass, field
 from pathlib import Path
 
-CREATED = "created"
-UPDATED = "updated"
-SKIPPED = "skipped"
-#: Changed on the wiki since this tool last wrote it, by somebody the
-#: repository has not heard from. Kept apart from SKIPPED because it asks
-#: for a different action: not "read the reason", but "pull and review".
-MOVED = "moved"
-
-#: The reason attached to a page taken over from an unstamped publish.
-ADOPTED = "adopted: unchanged since a publish from before pages were stamped"
-
-
-@dataclass
-class PublishResult:
-    """What happened, or would happen, to one document."""
-
-    path: str
-    space: str
-    title: str
-    action: str
-    reason: str = ""
-    url: str = ""
-
-
-@dataclass
-class PublishReport:
-    results: list[PublishResult] = field(default_factory=list)
-    dry_run: bool = True
-    #: Documents that declared no destination. Counted rather than listed:
-    #: in a tree mid-migration this is most of them, and naming each one
-    #: would bury the pages that did publish.
-    undeclared: int = 0
-
-    def _of(self, action: str) -> list[PublishResult]:
-        return [r for r in self.results if r.action == action]
-
-    @property
-    def skipped(self) -> list[PublishResult]:
-        return self._of(SKIPPED)
-
-    @property
-    def moved(self) -> list[PublishResult]:
-        return self._of(MOVED)
-
-    @property
-    def published(self) -> list[PublishResult]:
-        return self._of(CREATED) + self._of(UPDATED)
-
-    def format_report(self) -> str:
-        verb = "Would publish" if self.dry_run else "Published"
-        lines = [
-            f"{verb} {len(self.published)} page(s): "
-            f"{len(self._of(CREATED))} new, {len(self._of(UPDATED))} updated"
-        ]
-        for result in self.published:
-            mark = "+" if result.action == CREATED else "~"
-            note = f" ({result.reason})" if result.reason else ""
-            lines.append(f"  {mark} {result.path} -> {result.space}/{result.title}{note}")
-            if result.url:
-                lines.append(f"      {result.url}")
-
-        if self.moved:
-            lines += [
-                "",
-                f"Changed on the wiki since this tool last published them ({len(self.moved)}) "
-                "— not overwritten. Pull them, review the change, then publish:",
-            ]
-            lines += [f"  {r.path}: {r.reason}" for r in self.moved]
-
-        if self.skipped:
-            lines += ["", f"Skipped {len(self.skipped)}:"]
-            lines += [f"  {r.path}: {r.reason}" for r in self.skipped]
-
-        if self.undeclared:
-            lines += [
-                "",
-                f"{self.undeclared} document(s) declare no `confluence:` block and were "
-                "left alone.",
-            ]
-
-        if self.dry_run and self.published:
-            lines += ["", "Nothing was written. Pass --apply to publish."]
-        return "\n".join(lines)
+from policyforge.export.publisher import (  # noqa: F401 — re-exported for callers
+    ADOPTED,
+    CREATED,
+    MOVED,
+    SKIPPED,
+    UPDATED,
+    ConfluencePublisher,
+    PublishReport,
+    PublishResult,
+    moved_reason,
+    publish_documents,
+)
 
 
 def moved_since_last_publish(doc, live) -> str:
-    """Why the live page may hold an edit the repository has not seen, or "".
-
-    Safe to overwrite in two cases. The latest version carries this tool's
-    stamp, so nothing has touched the page since it was last published from
-    here. Or its version is the one `pull` recorded in the document's
-    frontmatter, so a person has already brought that edit into the
-    repository and reviewed it as a diff.
-    """
-    from policyforge.export.confluence_exporter import PUBLISH_MARKER
-
-    if PUBLISH_MARKER in (live.version_message or ""):
-        return ""
-    recorded = doc.confluence.get("version")
-    try:
-        recorded = int(recorded) if recorded is not None else None
-    except (TypeError, ValueError):
-        recorded = None
-    if recorded is not None and recorded == live.version:
-        return ""
-
-    known = (
-        f"the repository last pulled version {recorded}"
-        if recorded is not None
-        else "the repository has no pulled version on record"
-    )
-    return (
-        f"the live page is at version {live.version}, last written by someone other "
-        f"than this tool, and {known}"
-    )
-
-
-def _storage_key(storage: str) -> str:
-    """Storage markup with the whitespace between tags collapsed.
-
-    Confluence may reflow storage format when it saves a page, and a
-    difference in the gaps between elements is not an edit anybody made.
-    Nothing else is normalized: any other difference counts as an edit,
-    which is the direction to be wrong in.
-    """
-    return re.sub(r">\s+<", "><", storage.strip())
+    """Why the live Confluence page may hold an edit the repository has not
+    seen, or "". `live` is a `ConfluencePage`; the rule is `moved_reason`."""
+    return moved_reason(ConfluencePublisher(host=""), doc, ConfluencePublisher.live_page(live))
 
 
 def unchanged_on_the_wiki(doc, live) -> bool:
-    """Whether the live page already says exactly what `doc` would publish.
-
-    Overwriting such a page destroys nothing, whoever wrote its latest
-    version. This is what lets a page published before the stamp existed be
-    adopted — published, and so stamped and tracked from then on — instead
-    of being reported as moved on the first run after upgrading.
-    """
-    from policyforge.export.confluence_exporter import markdown_to_confluence
-
-    return _storage_key(markdown_to_confluence(doc.body)) == _storage_key(live.storage_body or "")
+    """Whether the live Confluence page already says exactly what `doc`
+    would publish. `live` is a `ConfluencePage`."""
+    return ConfluencePublisher(host="").same_content(doc, ConfluencePublisher.live_page(live))
 
 
 def publish_tree(
@@ -202,80 +89,14 @@ def publish_tree(
     overwrites pages that have moved since this tool last wrote them.
     """
     from policyforge.content.tree import load_content_tree
-    from policyforge.edit.apply import detect_unsupported_macros
-    from policyforge.export.confluence_exporter import export_to_confluence
-    from policyforge.export.confluence_importer import fetch_confluence_page
 
     documents, problems = load_content_tree(root)
-    report = PublishReport(dry_run=dry_run)
-    report.results.extend(
-        PublishResult(path=path, space="", title="", action=SKIPPED, reason=reason)
-        for path, reason in problems
+    return publish_documents(
+        ConfluencePublisher(host=host),
+        documents,
+        problems,
+        dry_run=dry_run,
+        allow_unsupported=allow_macros,
+        only=only,
+        force=force,
     )
-
-    for doc in documents:
-        if only and only not in doc.relative_path:
-            continue
-        if not doc.space:
-            report.undeclared += 1
-            continue
-
-        try:
-            live = fetch_confluence_page(space=doc.space, title=doc.page_title, host=host)
-        except LookupError:
-            live = None
-
-        if live is not None and not allow_macros:
-            macros = detect_unsupported_macros(live.storage_body)
-            if macros:
-                report.results.append(
-                    PublishResult(
-                        path=doc.relative_path,
-                        space=doc.space,
-                        title=doc.page_title,
-                        action=SKIPPED,
-                        reason=(
-                            f"the live page uses macros this tool cannot round-trip "
-                            f"({', '.join(macros)}); publishing would flatten them"
-                        ),
-                    )
-                )
-                continue
-
-        reason = ""
-        if live is not None and not force:
-            moved = moved_since_last_publish(doc, live)
-            if moved and unchanged_on_the_wiki(doc, live):
-                # Nothing to lose: the page already says what the repository
-                # says. Publishing it stamps it, and it is tracked from here.
-                moved, reason = "", ADOPTED
-            if moved:
-                report.results.append(
-                    PublishResult(
-                        path=doc.relative_path,
-                        space=doc.space,
-                        title=doc.page_title,
-                        action=MOVED,
-                        reason=moved,
-                        url=live.webui_url,
-                    )
-                )
-                continue
-
-        action = UPDATED if live is not None else CREATED
-        url = ""
-        if not dry_run:
-            url = export_to_confluence(doc.body, space=doc.space, title=doc.page_title, host=host)
-
-        report.results.append(
-            PublishResult(
-                path=doc.relative_path,
-                space=doc.space,
-                title=doc.page_title,
-                action=action,
-                reason=reason,
-                url=url or (live.webui_url if live else ""),
-            )
-        )
-
-    return report

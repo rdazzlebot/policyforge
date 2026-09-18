@@ -121,7 +121,8 @@ def select_topic_files(content_dir: Path, topic, *, tiers: set[str] | None = Non
 
     A file belongs to the topic when its frontmatter says so (`topic:`), or
     when it is bound to one of the pages the registry declares for the topic
-    (`confluence.title` matching a declared page title for the same tier).
+    (`confluence.title`, or the title under any other declared `targets:` kind,
+    matching a declared page title for the same tier).
     The second rule is what makes pulled files work: `pull` records the page
     binding, not the topic.
 
@@ -132,7 +133,16 @@ def select_topic_files(content_dir: Path, topic, *, tiers: set[str] | None = Non
     from policyforge.content.tree import load_content_tree
 
     documents, _problems = load_content_tree(content_dir)
-    declared = {tier.lower(): title for tier, title in topic.confluence_pages()}
+    # Every kind of store the topic declares pages in, so a file pulled from
+    # any of them is matched the way a Confluence-pulled file is.
+    kinds = ["confluence"] + [
+        k for k in (getattr(topic, "targets", None) or {}) if k != "confluence"
+    ]
+    declared = {
+        (kind, tier.lower()): title
+        for kind in kinds
+        for tier, title in (topic.confluence_pages() if kind == "confluence" else topic.pages(kind))
+    }
     name = topic.name.strip().casefold()
 
     by_tier: dict[str, list[tuple[object, str]]] = {}
@@ -142,8 +152,16 @@ def select_topic_files(content_dir: Path, topic, *, tiers: set[str] | None = Non
             continue
         if document.topic.strip().casefold() == name:
             rule = "frontmatter topic"
-        elif declared.get(tier) and document.confluence.get("title") == declared[tier]:
-            rule = f"bound to page {declared[tier]!r}"
+        elif bound := next(
+            (
+                declared[kind, tier]
+                for kind in kinds
+                if declared.get((kind, tier))
+                and document.target(kind).get("title") == declared[kind, tier]
+            ),
+            "",
+        ):
+            rule = f"bound to page {bound!r}"
         else:
             continue
         by_tier.setdefault(tier, []).append((document, rule))

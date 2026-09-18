@@ -31,7 +31,8 @@ SRC = Path(__file__).resolve().parent.parent / "src" / "policyforge"
 #: `write_text_lf`; a module that starts writing markdown belongs here.
 LF_WRITERS = [
     "export/markdown_exporter.py",
-    "export/pull.py",
+    # The pull loop, shared by every kind of live page store.
+    "export/publisher.py",
     "edit/tree.py",
     "history/version_store.py",
     "cli/documents.py",

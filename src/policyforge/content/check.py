@@ -147,6 +147,32 @@ def _check_references(documents: list[ContentDocument], root: Path) -> list[Find
     return findings
 
 
+def _check_target_alias(documents: list[ContentDocument]) -> list[Finding]:
+    """`confluence:` at the top level and `targets.confluence` must agree.
+
+    The top-level block is the older spelling and is read as the alias of
+    the newer one. A file carrying both with different contents would
+    publish to whichever the reader happened to prefer, which is a page
+    nobody chose; reported rather than resolved.
+    """
+    findings: list[Finding] = []
+    for doc in documents:
+        legacy = doc.metadata.get("confluence")
+        general = doc.metadata.get("targets")
+        if not isinstance(legacy, dict) or not isinstance(general, dict):
+            continue
+        inner = general.get("confluence")
+        if isinstance(inner, dict) and inner != legacy:
+            findings.append(
+                Finding(
+                    doc.relative_path,
+                    "declares `confluence:` and `targets.confluence:` with different "
+                    "contents — keep one, or make them agree",
+                )
+            )
+    return findings
+
+
 def _check_publishable(documents: list[ContentDocument]) -> list[Finding]:
     findings: list[Finding] = []
     for doc in documents:
@@ -258,6 +284,7 @@ def check_tree(root: Path, *, synthesis_dir: Path | None = None) -> CheckReport:
     report = CheckReport(documents=len(documents))
 
     report.findings.extend(Finding(path, reason) for path, reason in problems)
+    report.findings.extend(_check_target_alias(documents))
     report.findings.extend(_check_page_claims(documents))
     report.findings.extend(_check_references(documents, root))
     report.findings.extend(_check_publishable(documents))

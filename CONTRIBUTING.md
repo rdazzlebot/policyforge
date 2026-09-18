@@ -65,7 +65,7 @@ The paths where this bites most often:
 | `llm/fence.py`, anything building a prompt from retrieved text | The fence is measured; changing it changes a security property                  |
 | `ingest/parser_gate.py`                                        | Gating of model-written code                                                    |
 | `ingest/byoc_loader.py` and the framework loaders              | Licensed content is read, never written to a public path                        |
-| `export/publish.py`, `export/pull.py`                          | Dry run is the default; a moved page is not overwritten                         |
+| `export/publisher.py`, `export/publish.py`, `export/pull.py`   | Dry run is the default; a moved page is not overwritten; the guards are generic |
 | Anything adding a URL or an env read                           | `tests/test_no_undeclared_endpoints.py`, `tests/test_credential_containment.py` |
 
 ## Adding a CLI command

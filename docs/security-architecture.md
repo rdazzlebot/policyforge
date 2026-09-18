@@ -767,6 +767,22 @@ comfortable.
    written down, treat the fence as read-but-unexercised rather than as
    confirmed by that run.
 
+   **Observed, 2026-09-18 (run
+   [35374922282](https://github.com/rdazzlebot/policyforge/actions/runs/35374922282),
+   commit `e948154`):** the prediction held. The content workflow ran on that
+   push and listed **three** jobs — `check the content tree` succeeded,
+   `publish to Confluence` skipped, `publish to a GitHub wiki` **skipped**.
+   Listed and skipped, not absent, which is the distinction that matters: an
+   absent job would have meant the fence was never wired in. Two of the three
+   clauses were true in that run and are read from the run itself — the event
+   was `push` and the repository is this one — so the clause that did the
+   skipping is `vars.WIKI_REPOSITORY != ''`, and that one is an observation
+   rather than an inference: the repository has no Actions variables defined
+   at all. What this evidences is that the fence is evaluated and that it
+   holds closed while unconfigured. It says nothing about what the job does
+   when a destination *is* set, which remains untested and is the reason the
+   reopen condition below stands.
+
    Neither job can publish anything while no destination is configured, so
    what is marked unverified here is the fence, not the outcome. Exercising
    the publish path on demand would mean widening `event_name == 'push'`,

@@ -25,6 +25,16 @@ the failure this project exists to avoid. Where a reviewed pair records a
 relationship of `superset` or `intersects` — the control covers part of the
 requirement — it is reported as *in part*, never as satisfied.
 
+**What counts as a citation here.** The population is
+`content/tags.SOURCE_TAG_RE`, shared with `content/check`,
+`content/deontic`, `edit/apply` and `frameworks/drift`, so every reader
+agrees on what a tag is. It is a shape rather
+than a list of framework names: a capitalised name followed by a token
+carrying a digit. What it excludes is a bracket with no digit-bearing
+identifier — `[Ticketing System]`, `[Assignment: organization-defined ...]`,
+`[HIPAA Documentation Review Frequency]` — which are the organisational
+placeholders `generate` writes on purpose, not citations.
+
 Deterministic: no model call and no network, like `coverage` and
 `addresses`. Requirement identifiers are printed; requirement text and
 titles are not, which is the same line the other analyses hold and keeps a
@@ -70,6 +80,11 @@ class Citation:
     #: applies, and paraphrasing it would be inventing a vocabulary.
     qualifier: str = ""
     sections: list[str] = field(default_factory=list)
+    #: How many times this requirement is cited in the document. Distinct
+    #: from the row itself, which is one per (framework, id): a control
+    #: cited in nine sections is one row and nine occurrences, and the two
+    #: answer different questions.
+    occurrences: int = 0
 
     @property
     def key(self) -> tuple[str, str]:
@@ -112,12 +127,30 @@ class DocumentEvidence:
     #: topic's whole set, or this file alone under `--document`. Printed, so
     #: a topic-level gap is never misread as a file-level one.
     anchored_scope: str = ""
-    #: Cited identifiers that match no requirement in any loaded catalog.
+    #: Cited identifiers that match no requirement in any loaded catalog,
+    #: deduplicated. `unknown_occurrences` counts every instance.
     unknown: list[str] = field(default_factory=list)
+    unknown_occurrences: int = 0
 
     @property
     def unreviewed(self) -> list[Reached]:
         return [r for r in self.reached if r.provenance == UNREVIEWED]
+
+    @property
+    def occurrences(self) -> int:
+        """Every citation instance in this document, resolved or not.
+
+        The headline denominator. Reported beside the distinct count
+        because the two are different questions — "how many citations does
+        this document make" against "how many requirements does it name" —
+        and a fraction quoted without saying which is not checkable.
+        """
+        return sum(c.occurrences for c in self.cited) + self.unknown_occurrences
+
+    @property
+    def distinct(self) -> int:
+        """Unique (framework, requirement id) pairs named in this document."""
+        return len(self.cited) + len(self.unknown)
 
 
 def resolve_framework(written: str, ids=None) -> str:
@@ -206,9 +239,9 @@ def parse_citations(body: str, frameworks=(), ids=None) -> list[tuple[str, str, 
 
     A tag is `[NIST 800-53 AC-2 | HIPAA Security Rule 164.308(a)(3)(i)]` —
     one or more citations separated by `|`. The pattern matching the tag
-    itself is the one `edit/apply.py` defines and `content/check.py`
-    already borrows: this report has to agree with the checker about what a
-    citation *is*, and two regexes would eventually disagree.
+    itself is `content/tags.SOURCE_TAG_RE`, which every reader of tags now
+    shares: this report has to agree with the checker about what a citation
+    *is*, and two regexes would eventually disagree.
 
     The section is the nearest heading above the citation, so a reader can
     be pointed at the paragraph rather than the file.
@@ -220,7 +253,7 @@ def parse_citations(body: str, frameworks=(), ids=None) -> list[tuple[str, str, 
     carried there. Silently: the requirements were simply absent from the
     report, which is the failure this command exists to catch.
     """
-    from policyforge.edit.apply import _SOURCE_TAG_RE
+    from policyforge.content.tags import SOURCE_TAG_RE
 
     known = sorted({str(f) for f in frameworks}, key=len, reverse=True)
     found: list[tuple[str, str, str, str]] = []
@@ -229,8 +262,8 @@ def parse_citations(body: str, frameworks=(), ids=None) -> list[tuple[str, str, 
         heading = _HEADING_RE.match(line.strip())
         if heading:
             # Without the tags, which are traceability rather than title.
-            section = _SOURCE_TAG_RE.sub("", heading.group("title")).strip()
-        for tag in _SOURCE_TAG_RE.findall(line):
+            section = SOURCE_TAG_RE.sub("", heading.group("title")).strip()
+        for tag in SOURCE_TAG_RE.findall(line):
             for part in tag.strip("[]").split("|"):
                 framework, requirement_id, qualifier = split_citation(part.strip(), known, ids)
                 if framework and requirement_id:
@@ -290,10 +323,12 @@ def document_evidence(
         # catalog holds, so it lands in `unknown` with the id as written.
         if requirement_id not in index.get(key[0], ()):
             label = f"{framework} {requirement_id}"
+            evidence.unknown_occurrences += 1
             if label not in evidence.unknown:
                 evidence.unknown.append(label)
             continue
         citation = cited.setdefault(key, Citation(key[0], requirement_id, qualifier))
+        citation.occurrences += 1
         if section and section not in citation.sections:
             citation.sections.append(section)
     evidence.cited = sorted(cited.values(), key=lambda c: (c.framework, c.requirement_id))
@@ -438,6 +473,7 @@ def as_records(evidences: list[DocumentEvidence]) -> list[dict]:
                     "framework": c.framework,
                     "requirement_id": c.requirement_id,
                     "qualifier": c.qualifier,
+                    "occurrences": c.occurrences,
                     "sections": c.sections,
                     "route": "cited",
                 }
@@ -461,6 +497,15 @@ def as_records(evidences: list[DocumentEvidence]) -> list[dict]:
             "anchored_not_cited": e.anchored_not_cited,
             "anchored_scope": e.anchored_scope,
             "unknown_citations": e.unknown,
+            "unknown_occurrences": e.unknown_occurrences,
+            # Both denominators, named. A fraction quoted without saying
+            # which one it counts cannot be checked by the person reading it.
+            "totals": {
+                "citation_occurrences": e.occurrences,
+                "distinct_citations": e.distinct,
+                "unresolved_occurrences": e.unknown_occurrences,
+                "unresolved_distinct": len(e.unknown),
+            },
         }
         for e in evidences
     ]
@@ -480,6 +525,11 @@ def format_report(evidences: list[DocumentEvidence]) -> str:
         lines.append("=" * 60)
         if evidence.topic:
             lines.append(f"  topic: {evidence.topic}")
+        lines.append(
+            f"  {evidence.occurrences} citation(s), "
+            f"{evidence.distinct} distinct requirement(s); "
+            f"{evidence.unknown_occurrences} resolving to nothing"
+        )
         if not evidence.cited:
             lines.append("  Cites no framework requirement. Nothing here is traceable.")
         for framework, citations in sorted(_by_framework(evidence.cited).items()):

@@ -672,3 +672,32 @@ def test_an_unresolvable_citation_on_a_heading_is_reported():
     """The regression that mattered: a bad citation on a heading was invisible."""
     evidence = _evidence("# X\n\n### Restore testing [NIST 800-53 CP-4(1)-(5)]\n\nSteps follow.\n")
     assert evidence.unknown == ["NIST 800-53 CP-4(1)-(5)"]
+
+
+def test_both_denominators_are_reported_and_named():
+    """A fraction whose denominator is unnamed cannot be checked by its reader.
+
+    Occurrences and distinct answer different questions — how many
+    citations the document makes, against how many requirements it names —
+    and two people scanning the same corpus reached different numbers
+    because they meant different things by "citations".
+    """
+    body = (
+        "## A\n\n[NIST 800-53 AC-2] [NIST 800-53 AC-2]\n\n"
+        "## B\n\n[NIST 800-53 AC-2] [HIPAA Security Rule 164.999]\n"
+    )
+    evidence = _evidence(body)
+    assert evidence.occurrences == 4
+    assert evidence.distinct == 2
+    assert evidence.unknown_occurrences == 1
+    (record,) = as_records([evidence])
+    assert record["totals"] == {
+        "citation_occurrences": 4,
+        "distinct_citations": 2,
+        "unresolved_occurrences": 1,
+        "unresolved_distinct": 1,
+    }
+    assert next(c for c in record["cited"] if c["requirement_id"] == "AC-2")["occurrences"] == 3
+    assert "4 citation(s), 2 distinct requirement(s); 1 resolving to nothing" in format_report(
+        [evidence]
+    )

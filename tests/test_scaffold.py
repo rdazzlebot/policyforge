@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 from click.testing import CliRunner
 
@@ -76,17 +77,95 @@ def test_the_readme_licensing_table_names_every_catalog_that_ships():
     catalog as well as this one. BYOC directories are exempt: they ship no
     `controls.json`, and `test_every_other_catalog_directory_is_bring_your_own`
     is what holds that.
+
+    **Scoped to the table, not to the file.** Searching the whole README
+    held only the three catalogs whose path happens to appear once. The
+    other three are referenced throughout — `nist-800-53-r5` ten times,
+    `hipaa-security-rule` seven — so deleting HIPAA's licensing row left
+    its path at lines 41 and 48 and the assertion passed. The guard
+    covered half the catalogs, and the half it missed were the
+    long-standing ones a reader is most likely to trust.
     """
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    table = _licensing_table(ROOT / "README.md")
 
     shipping = sorted(d.name for d in FRAMEWORKS.iterdir() if (d / "controls.json").is_file())
     assert shipping, "no catalog ships a controls.json -- this test is checking nothing"
 
-    missing = [name for name in shipping if f"data/frameworks/{name}/" not in readme]
+    missing = [name for name in shipping if f"data/frameworks/{name}/" not in table]
     assert not missing, (
-        f"catalogs that ship but are not in the README licensing table: {missing}. "
+        f"catalogs that ship but have no row in the README licensing table: {missing}. "
         f"That table is what a user reads to decide what they may redistribute."
     )
+
+
+def test_the_licensing_table_slice_excludes_the_rest_of_the_readme(tmp_path):
+    """The scoping itself, held against a document built for the purpose.
+
+    Widening the slice back to the whole file does not break any assertion
+    made against the real README, because every shipping catalog is in the
+    table today — so the check above passes either way and the regression
+    would be invisible. This is the test that fails when the scope goes.
+
+    Synthetic rather than the real README for the same reason: it needs a
+    catalog that is mentioned in the prose and **absent from the table**,
+    which is precisely the state the real file must never be in.
+    """
+    readme = tmp_path / "README.md"
+    readme.write_bytes(
+        b"Install from `data/frameworks/ghost-catalog/` first.\n"
+        b"\n"
+        b"| Framework | Status | How |\n"
+        b"| --------- | ------ | --- |\n"
+        b"| **Real**  | public | `data/frameworks/real-catalog/` |\n"
+        b"\n"
+        b"See `data/frameworks/ghost-catalog/` for more.\n"
+    )
+
+    table = _licensing_table(readme)
+
+    assert "data/frameworks/real-catalog/" in table
+    assert "data/frameworks/ghost-catalog/" not in table, (
+        "the slice is picking up prose outside the table, so a catalog "
+        "mentioned anywhere in the README would pass as listed"
+    )
+
+
+def test_a_readme_with_no_licensing_table_refuses_rather_than_passing(tmp_path):
+    """An empty slice would make every assertion against it vacuously
+    true, which is the failure this file keeps finding one level down."""
+    readme = tmp_path / "README.md"
+    readme.write_bytes(b"No table here.\n")
+
+    with pytest.raises(AssertionError, match="expected exactly one licensing table header"):
+        _licensing_table(readme)
+
+
+def _licensing_table(readme: Path) -> str:
+    """Just the licensing table, from its header row to the blank line.
+
+    Returned as its own slice so a catalog mentioned elsewhere in the
+    README cannot satisfy a check about the table. Refuses rather than
+    returning "" when the table cannot be found, because an empty slice
+    would make every assertion against it vacuously true — the failure
+    this file keeps finding one level down.
+    """
+    text = readme.read_bytes().decode("utf-8")
+    lines = text.split("\n")
+    starts = [i for i, line in enumerate(lines) if line.startswith("| Framework")]
+    if len(starts) != 1:
+        raise AssertionError(
+            f"expected exactly one licensing table header in {readme.name}, "
+            f"found {len(starts)}. If the README grew a second table, this "
+            f"helper has to be told which one is the licensing table."
+        )
+    start = starts[0]
+    end = next(
+        (i for i in range(start, len(lines)) if not lines[i].strip()),
+        len(lines),
+    )
+    rows = lines[start:end]
+    assert len(rows) > 2, f"licensing table has no rows: {rows}"
+    return "\n".join(rows)
 
 
 def test_package_data_names_exactly_the_files_init_copies():

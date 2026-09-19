@@ -253,3 +253,81 @@ def test_entailment_is_off_unless_asked_for():
 def test_an_unknown_provider_names_what_is_supported():
     with pytest.raises(ValueError, match="llm"):
         get_entailer({"entail": {"provider": "nonsense"}})
+
+
+# --------------------------------------------------------------------------
+# How many times the judge is asked
+# --------------------------------------------------------------------------
+
+
+def test_a_supported_sentence_stops_at_the_first_passage_that_carries_it():
+    """Each call here is a model call on a second model, and the supported
+    case is the common one. Judging all three citations before looking at
+    the first verdict made the common case pay for the rare one."""
+    judge = FakeEntailer(default=ENTAILED)
+
+    findings = unsupported_claims(
+        "Accounts are recertified quarterly [1][2][3].",
+        _passages("first says so", "second says so", "third says so"),
+        judge,
+    )
+
+    assert findings == []
+    assert len(judge.calls) == 1
+    assert judge.calls[0][0] == "first says so"
+
+
+def test_it_keeps_asking_until_something_supports_the_sentence():
+    """A passage that does not carry the claim does not end the search —
+    the sentence is supported if *any* cited passage carries it."""
+    judge = FakeEntailer({"silent": NEUTRAL}, default=ENTAILED)
+
+    findings = unsupported_claims(
+        "Accounts are recertified quarterly [1][2].", _passages("silent", "says so"), judge
+    )
+
+    assert findings == []
+    assert len(judge.calls) == 2
+
+
+def test_an_unsupported_sentence_is_still_judged_against_every_passage():
+    """**The saving is only on the supported path, and that is required.**
+    `worst` prefers a contradiction over a neutral, and it can only do that
+    if every verdict was collected — stopping early here would bury a real
+    contradiction behind whichever passage happened to be cited first."""
+    judge = FakeEntailer({"silent": NEUTRAL, "disagrees": CONTRADICTED}, default=NEUTRAL)
+
+    findings = unsupported_claims(
+        "Accounts are recertified monthly [1][2].", _passages("silent", "disagrees"), judge
+    )
+
+    assert len(judge.calls) == 2, "every citation must be judged when none supports"
+    assert len(findings) == 1
+    assert findings[0].verdict.label == CONTRADICTED
+
+
+def test_the_contradiction_is_reported_wherever_it_is_cited():
+    """The same finding whichever order the passages are cited in, which is
+    what "collect them all before choosing" buys."""
+    judge = FakeEntailer({"silent": NEUTRAL, "disagrees": CONTRADICTED}, default=NEUTRAL)
+
+    first = unsupported_claims(
+        "Recertified monthly [1][2].", _passages("disagrees", "silent"), judge
+    )
+    second = unsupported_claims(
+        "Recertified monthly [1][2].", _passages("silent", "disagrees"), judge
+    )
+
+    assert first[0].verdict.label == CONTRADICTED
+    assert second[0].verdict.label == CONTRADICTED
+
+
+def test_a_single_citation_costs_one_call_either_way():
+    """The case that cannot be improved, pinned so a later refactor does
+    not quietly make it worse."""
+    for label in (ENTAILED, NEUTRAL, CONTRADICTED):
+        judge = FakeEntailer(default=label)
+
+        unsupported_claims("Quarterly [1].", _passages("only passage"), judge)
+
+        assert len(judge.calls) == 1

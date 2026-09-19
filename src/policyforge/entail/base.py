@@ -215,8 +215,26 @@ def unsupported_claims(text: str, passages: list, entailer: Entailer) -> list[Un
     """
     findings: list[Unsupported] = []
     for sentence, cited in cited_sentences(text, len(passages)):
-        verdicts = [entailer.entails(passages[n - 1].chunk.text, sentence) for n in cited]
-        if any(v.supports for v in verdicts):
+        # Stop at the first passage that carries the sentence. The list
+        # comprehension this replaces judged every citation before `any()`
+        # looked at the first, so a *supported* sentence citing three
+        # passages cost three judge calls where one would do — and the
+        # supported case is the common one, so the common case was paying
+        # for the rare one. Each call is a model call on a second model.
+        #
+        # **The saving is only on the supported path, and that is a
+        # requirement rather than an accident.** When nothing supports the
+        # sentence this loop runs to completion, so `verdicts` holds every
+        # judgement exactly as before — which is what `worst` below needs
+        # to prefer a contradiction over a neutral. Short-circuiting the
+        # unsupported path too would bury a real contradiction behind
+        # whichever passage happened to be cited first.
+        verdicts: list[Verdict] = []
+        for n in cited:
+            verdicts.append(entailer.entails(passages[n - 1].chunk.text, sentence))
+            if verdicts[-1].supports:
+                break
+        if verdicts[-1].supports:
             continue
         # Report the most specific complaint available: a contradiction is
         # a stronger finding than "says nothing about it", and burying it

@@ -1349,3 +1349,62 @@ def test_the_harness_recognises_the_warnings_the_answer_path_writes(monkeypatch)
 
     answer = answer_question("who does it?", passages, provider, entailer=Broken())
     assert [w for w in answer.warnings if w.startswith(ENTAILMENT_FAILED_PREFIX)]
+
+
+def test_every_warning_prefix_the_answer_path_defines_survives_the_runners_filter(
+    monkeypatch,
+):
+    """The registration, not the registrants.
+
+    The test above pins that each prefix *reaches* `answer.warnings`. It
+    stops one step before the thing that breaks: `_answering` filters those
+    warnings into eval notes by `startswith` against a tuple it names
+    explicitly, and a prefix missing from that tuple is **dropped with
+    nothing reporting it**. The finding would be made, written into the
+    answer, and never reach a report — and the eval output would look
+    exactly as it does today.
+
+    That nearly happened. A conflict-reporting sibling for `entail/` needs
+    three edits outside `entail/`; two fail loudly and this one does not,
+    and no test covered it. The extension point was designed — the comment
+    above the filter says those words are constants rather than literals
+    for exactly this reason — but **a designed extension point with no test
+    over its registration is a convention, not a mechanism**.
+
+    So this enumerates the constants **from the module** rather than
+    listing them here. A hand-written list is the same defect one layer up:
+    it would need the same edit nobody remembered to make.
+    """
+    from evals import runner
+    from policyforge.zardoz import answer as answer_mod
+
+    prefixes = {
+        name: getattr(answer_mod, name)
+        for name in dir(answer_mod)
+        if name.endswith("_PREFIX") and isinstance(getattr(answer_mod, name), str)
+    }
+    assert len(prefixes) >= 2, f"expected the known prefixes, found {sorted(prefixes)}"
+
+    for name, prefix in sorted(prefixes.items()):
+        warning = f"{prefix} — marker for {name}"
+        fake = answer_mod.Answer(text="Quarterly. [1]", warnings=[warning])
+        monkeypatch.setattr(runner, "_passages", lambda *a, **k: [])
+        monkeypatch.setattr(
+            "policyforge.zardoz.answer.answer_question",
+            lambda *a, _answer=fake, **k: _answer,
+        )
+        monkeypatch.setattr("policyforge.zardoz.answer.check_answer", lambda *a, **k: (None, []))
+
+        # The filter sits behind `if _ENTAILER is not None`, so a test that
+        # does not set one measures nothing and passes. Found by this test
+        # failing on a prefix that *is* in the tuple.
+        monkeypatch.setattr(runner, "_ENTAILER", object())
+
+        notes: list[str] = []
+        runner._answering(dict(ENTAIL_CASE), Scripted("Quarterly. [1]"), None, notes)
+
+        assert any(n.startswith(prefix) for n in notes), (
+            f"{name} is defined in zardoz/answer.py but does not survive the filter in "
+            f"evals/runner.py — a warning opening with it is dropped from eval notes "
+            f"with nothing reporting it. Add it to the startswith tuple."
+        )

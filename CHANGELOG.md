@@ -2,6 +2,14 @@
 
 ## 1.5.0
 
+**If you gate CI on `satisfies --strict`, one citation changes under you.**
+A document citing `164.314(a)(2)` will now fail it: that entry is gone from
+the HIPAA catalog, so the citation resolves to nothing and `--strict` exits
+non-zero — the same red as a mistyped citation. Replace it with whichever of
+`164.314(a)(2)(i)`, `(ii)` or `(iii)` the sentence actually means; those
+carry the obligations and the NIST mappings. Documents that do not cite it
+are unaffected, and nothing else resolvable in 1.4.0 stops resolving here.
+
 **New bundled catalog: 42 CFR Part 2, substance use disorder patient
 records**, fetched from eCFR by `policyforge etl-part2`. Public domain, so
 it ships with the package like NIST and HIPAA rather than as BYOC.
@@ -66,15 +74,23 @@ filter, so adding one and forgetting the other edit fails a test instead.
 
 **The HIPAA catalog no longer ships an implementation specification with
 no text.** `164.314(a)(2)`, *"Implementation specifications"*, had a title
-and an empty description — the only such entry in any bundled catalog, 1
-of 1,044. A user citing it cited a title, and an assessor following that
-citation found nothing, while the obligation they wanted sat at
-`164.314(a)(2)(i)`. Its source paragraph is a run-in heading that
-delegates everything to its children, and all three children already ship
-as controls in their own right, so **no requirement is lost** — the
-citation that resolves to text is now the only one offered. The
-identically titled `164.314(b)(2)`, where the text really does follow the
-label, is unchanged.
+and an empty description — the only entry in any bundled catalog with a
+title and no text at all, 1 of 1,044. A user citing it cited a title, and
+an assessor following that citation found nothing, while the obligation
+they wanted sat at `164.314(a)(2)(i)`. Its source paragraph is a run-in
+heading that delegates everything to its children, and all three children
+already ship as controls in their own right, so **no requirement is lost
+from the catalog** — the citation that resolves to text is now the only
+one offered. The identically titled `164.314(b)(2)`, where the text really
+does follow the label, is unchanged.
+
+**One container of the same shape remains**, and it is not fixed here:
+`164.308(a)(5)(ii)`, whose entire statement is *"Implement:"*. It differs
+in the way that decides the remedy — its four children are nested inside
+it rather than shipping as controls of their own, so dropping it would
+orphan them. It needs them promoted first, which is a change to what the
+catalog contains rather than a removal from it, and that is not this
+release.
 
 **`policyforge etl-hipaa` can be re-run again.** It carries existing
 crosswalk mappings forward by citation, so re-parsing the regulation no

@@ -135,3 +135,48 @@ jobs:
 
       - name: pytest
         run: pytest -q
+
+  # Fails a pull request that changes what a user sees and says nothing about
+  # it in CHANGELOG.md. Two merges shipped that way on 2026-09-18, one of them
+  # a config flag that runs a second model; both pull requests were reviewed
+  # and every per-change check passed. A rule for it already existed in
+  # PULL_REQUEST_TEMPLATE.md's checklist and was not run — a checklist is the
+  # remembered form, and the remembered form is what failed three times in one
+  # evening. scripts/changelog_guard.py holds the rule and the opt-out; this
+  # job only supplies the two facts it cannot know, the branch point and the
+  # pull request body.
+  #
+  # pull_request only: on a push there is no body to read an exemption from,
+  # so running it there could fail a change nobody can exempt.
+  changelog:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0  # the merge-base has to exist for base...HEAD
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # BOTH values reach the shell through `env:`, never through `${{ }}`
+      # inside a `run:` block, which is a script injection. A pull request
+      # body is obviously attacker text — and so is a branch NAME, which a
+      # fork can set to anything a ref permits. The first draft handled the
+      # body correctly and interpolated `github.base_ref` two lines below
+      # it; semgrep caught that, which is what it is in the gate for. The
+      # lesson had been applied to one variable and not its neighbour.
+      - name: Write the pull request body to a file
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.txt"
+
+      - name: Changelog entry present, or exempted with a reason
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          python scripts/changelog_guard.py \
+            --base "origin/$BASE_REF" \
+            --body-file "$RUNNER_TEMP/pr-body.txt"

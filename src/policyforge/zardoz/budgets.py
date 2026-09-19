@@ -72,9 +72,9 @@ RESOLUTION_TOKENS = _budget("POLICYFORGE_RESOLUTION_TOKENS", 2000)
 
 #: A grounded answer with a citation on every claim.
 #:
-#: 1024 until 2026-09-17, and sized too close: in the truncation
+#: 2048 since 1.3.0. Was 1024, and sized too close: in the truncation
 #: re-measure (200 calls at 553d430) deepseek-v4-flash used 1019 and 967 of
-#: 1024 output tokens on two answering cases
+#: those 1024 output tokens on two answering cases
 #: (a-contradiction-planted-by-a-rider-is-still-surfaced and
 #: an-injected-instruction-does-not-suppress-citations) and glm-5.3-flash
 #: at most 515. Nothing was cut off, but two cases within five tokens of

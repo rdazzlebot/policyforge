@@ -255,13 +255,24 @@ _MACHINERY = (
 
 
 def test_the_catalog_still_matches_the_test_that_produced_it(excerpt):
-    """**Re-runs the independence test against the source**, so
-    CONTROL_SECTIONS cannot drift away from its own justification.
+    """**Sweeps every parsed section**, rather than spot-checking the two
+    the enumeration was argued from.
 
-    The list is enumerated rather than detected on purpose -- adding a
-    control to a compliance catalog should need a person -- but an
-    enumeration nobody re-checks is a hand-written list of exactly the kind
-    this module refuses elsewhere. This is what keeps it honest.
+    The earlier version asserted only that 2.19 still qualifies and 2.52
+    still does not. That catches a kept section ceasing to qualify, and a
+    *named* rejected one starting to -- and misses any section nobody
+    thought to name, which is the whole population the enumeration exists
+    to decide about. Checking the two cases you already believe is how a
+    test comes to agree with you rather than with the source.
+
+    **What this does not cover, stated rather than implied:** a
+    thirty-ninth section arriving in a future revision is not in the
+    fixture and cannot be. That case is caught by `_require_sections`,
+    which fails when the document carries a different number of sections
+    than `EXPECTED_SECTIONS` records -- deliberately forcing a person to
+    read the diff. The two guards are complementary: this one asks whether
+    the sections we have still sort the way we said, that one asks whether
+    the sections we have are still the sections there are.
     """
     parsed = {s.number: s.text.lower() for s in sections(excerpt, strict=False)}
     hub = parsed["2.16"]
@@ -269,11 +280,23 @@ def test_the_catalog_still_matches_the_test_that_produced_it(excerpt):
     def independent_of_the_hub(number):
         return [t for t in _MACHINERY if t in parsed[number] and t not in hub]
 
-    # 2.19 imposes duties 2.16 does not: encryption at rest, separated
-    # decryption tools, a backup copy, labelled sealed containers.
+    qualifying = {n for n in parsed if n != "2.16" and independent_of_the_hub(n)}
+
+    assert len(parsed) > 2, "a sweep over one section proves nothing"
+    assert qualifying | {"2.16"} == set(CONTROL_SECTIONS), (
+        f"the independence test no longer sorts these sections the way "
+        f"CONTROL_SECTIONS says it does. Qualifying now: {sorted(qualifying)}; "
+        f"CONTROL_SECTIONS: {sorted(CONTROL_SECTIONS)}. Adding or removing a "
+        f"control is a decision for a person -- read the sections, then "
+        f"change the enumeration, not this test."
+    )
+
+    # Named for the reader, after the sweep rather than instead of it:
+    # 2.19 imposes duties 2.16 does not -- encryption at rest, separated
+    # decryption tools, a backup copy, labelled sealed containers. 2.52
+    # mentions sanitization and uses no term 2.16 lacks, because it says
+    # "apply 2.16 to researchers", which is a requirement of 2.16.
     assert independent_of_the_hub("2.19")
-    # 2.52 mentions sanitization, and every term it uses 2.16 already has.
-    # It says "apply 2.16 to researchers", which is a requirement of 2.16.
     assert independent_of_the_hub("2.52") == []
 
 

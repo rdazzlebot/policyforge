@@ -139,9 +139,22 @@ _NON_OBLIGATION_RE = re.compile(
 #: the deliberate choice: a heuristic that decided this at parse time would
 #: quietly add a control the day a section's wording drifted, and adding a
 #: control to a compliance catalog is not something that should happen
-#: without a person. `test_the_catalog_is_exactly_the_sections_that_pass_the_test`
-#: re-runs the test against the source and fails if this list stops matching
-#: it, so the list cannot drift away from its own justification either.
+#: without a person.
+#:
+#: Two guards hold it, and they cover different things:
+#: `test_the_catalog_still_matches_the_test_that_produced_it` sweeps every
+#: parsed section and fails if the qualifying set stops equalling this one
+#: -- so a section here ceasing to qualify, or one not here starting to, is
+#: caught. `_require_sections` fails when the part carries a different
+#: number of sections than `EXPECTED_SECTIONS` records, which is what
+#: catches a *new* section arriving and forces someone to decide whether it
+#: belongs here.
+#:
+#: Neither is a claim that this list cannot go stale. A revision that
+#: rewords a section without changing the section count, in a way the
+#: machinery terms do not reach, would pass both. The terms are a search,
+#: not a definition -- see the README on § 2.66, where the one term the
+#: sweep finds is a judicial seal rather than a container.
 CONTROL_SECTIONS = ("2.16", "2.19")
 
 #: A paragraph marker opening a top-level requirement: `(a)`, `(b)`. Digits

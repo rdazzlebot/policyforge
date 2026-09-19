@@ -180,3 +180,11 @@ jobs:
           python scripts/changelog_guard.py \
             --base "origin/$BASE_REF" \
             --body-file "$RUNNER_TEMP/pr-body.txt"
+
+      # Fragments are validated here rather than at release, because a
+      # malformed one discovered while cutting a tag is discovered at the
+      # worst possible moment. The defects it catches — a CR, a stray `## `,
+      # an empty file — are the ones that did real damage in the shared
+      # section this directory replaces.
+      - name: Changelog fragments are well-formed
+        run: python scripts/changelog_fragments.py --check

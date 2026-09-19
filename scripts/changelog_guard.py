@@ -50,6 +50,11 @@ from pathlib import Path
 
 CHANGELOG = "CHANGELOG.md"
 
+#: Fragments live here, one file per branch, assembled at release by
+#: `scripts/changelog_fragments.py`. A new file cannot conflict with
+#: another branch's new file, which is the whole point.
+FRAGMENT_DIR = "changelog.d/"
+
 #: Surfaces where a change alters what someone running the tool experiences.
 #: Listed rather than inferred, and kept narrow on purpose — see the module
 #: docstring on why a check that trips on refactors is worse than no check.
@@ -87,6 +92,31 @@ def decide(paths: list[str], body: str) -> tuple[bool, str]:
     Separate from the git and CI plumbing so the rule can be tested against
     real pull requests from history rather than against a mock.
     """
+    # A fragment satisfies this as fully as an edit to CHANGELOG.md, and is
+    # the preferred form — `changelog.d/` exists so branches stop conflicting
+    # in one shared section. Without this clause the guard would push every
+    # author back into the file the fragments were built to keep them out of,
+    # which is how a well-meant check defeats the change it sits beside.
+    # The README exclusion belongs INSIDE the filter, not after it. Written
+    # as `next(...)` then `if not ...README.md`, this took the first `.md`
+    # under changelog.d/ and only then asked whether it was the README — so a
+    # branch adding a real fragment AND touching the README was rejected,
+    # because `git diff --name-only` sorts and uppercase `R` sorts first.
+    # The boolean was a true answer about the first file it happened to see
+    # rather than about the branch, and the case it broke is the likely one:
+    # whoever writes the first fragment and improves the instructions while
+    # they are in there. Found by 9b reviewing this clause.
+    fragment = next(
+        (
+            p
+            for p in paths
+            if p.startswith(FRAGMENT_DIR) and p.endswith(".md") and not p.endswith("/README.md")
+        ),
+        None,
+    )
+    if fragment:
+        return True, f"{fragment} is in this change."
+
     if CHANGELOG in paths:
         return True, f"{CHANGELOG} is in this change."
 
@@ -100,10 +130,13 @@ def decide(paths: list[str], body: str) -> tuple[bool, str]:
 
     listed = "\n".join(f"    {p}" for p in touched)
     return False, (
-        f"{len(touched)} user-facing path(s) changed and {CHANGELOG} did not:\n"
+        f"{len(touched)} user-facing path(s) changed with no changelog entry:\n"
         f"{listed}\n\n"
-        "Add an entry saying what a user does differently — not what the code\n"
-        "now does. If no entry is genuinely needed, say so in the pull request\n"
+        f"Add a file in {FRAGMENT_DIR} named after your branch, saying what a\n"
+        "user does differently — not what the code now does. Editing\n"
+        f"{CHANGELOG} directly also satisfies this, but fragments do not\n"
+        "conflict with other branches and that is why they exist.\n\n"
+        "If no entry is genuinely needed, say so in the pull request\n"
         "body on its own line, with the reason:\n\n"
         "    No changelog entry: <why>\n\n"
         "e.g. 'No changelog entry: pure reflow, word-level diff against main\n"

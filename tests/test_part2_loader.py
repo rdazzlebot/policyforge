@@ -17,9 +17,13 @@ from pathlib import Path
 import pytest
 
 from policyforge.ingest.part2_loader import (
+    CONTROL_SECTIONS,
     EXPECTED_SECTIONS,
     SECTION_ID_RE,
     Section,
+    _opens_requirement,
+    _require_unique_ids,
+    parse_part2,
     sections,
 )
 
@@ -207,3 +211,240 @@ def test_a_reserved_section_states_no_obligation():
     reserved = Section(number="2.99", title="[Reserved]", text="")
 
     assert not reserved.states_an_obligation
+
+
+# --------------------------------------------------------------------------
+# The catalog: two sections of thirty-eight
+# --------------------------------------------------------------------------
+
+
+def test_the_catalog_is_the_two_sections_and_nothing_else(excerpt):
+    """Thinness is the correct answer here, so it is asserted rather than
+    left as an outcome a later change could quietly inflate."""
+    catalog = parse_part2(excerpt, strict=False)
+
+    assert [c.control_id for c in catalog] == ["2.16", "2.19"]
+    assert CONTROL_SECTIONS == ("2.16", "2.19")
+
+
+def test_conduct_sections_are_not_controls(excerpt):
+    """A section can state obligations and still not be a control. 2.13
+    says what may be disclosed, not what must be implemented, and citing
+    it as a control would assert a safeguard exists where the regulation
+    says a disclosure was lawful."""
+    catalog = parse_part2(excerpt, strict=False)
+
+    assert "2.13" not in {c.control_id for c in catalog}
+    assert "2.52" not in {c.control_id for c in catalog}
+
+
+#: Security machinery an implementer would have to build. Beside the test
+#: that uses it, so the evidence and the claim move together.
+_MACHINERY = (
+    "encrypt",
+    "decrypt",
+    "backup",
+    "sealed",
+    "envelope",
+    "label",
+    "climate",
+    "retention period",
+    "portable electronic device",
+    "access control",
+)
+
+
+def test_the_catalog_still_matches_the_test_that_produced_it(excerpt):
+    """**Re-runs the independence test against the source**, so
+    CONTROL_SECTIONS cannot drift away from its own justification.
+
+    The list is enumerated rather than detected on purpose -- adding a
+    control to a compliance catalog should need a person -- but an
+    enumeration nobody re-checks is a hand-written list of exactly the kind
+    this module refuses elsewhere. This is what keeps it honest.
+    """
+    parsed = {s.number: s.text.lower() for s in sections(excerpt, strict=False)}
+    hub = parsed["2.16"]
+
+    def independent_of_the_hub(number):
+        return [t for t in _MACHINERY if t in parsed[number] and t not in hub]
+
+    # 2.19 imposes duties 2.16 does not: encryption at rest, separated
+    # decryption tools, a backup copy, labelled sealed containers.
+    assert independent_of_the_hub("2.19")
+    # 2.52 mentions sanitization, and every term it uses 2.16 already has.
+    # It says "apply 2.16 to researchers", which is a requirement of 2.16.
+    assert independent_of_the_hub("2.52") == []
+
+
+# --------------------------------------------------------------------------
+# Requirements
+# --------------------------------------------------------------------------
+
+
+def test_a_roman_numeral_does_not_open_a_requirement(excerpt):
+    """`(i)` is roman one here, not the ninth letter, and eCFR gives no
+    structural hint -- every marker is a flat sibling `<P>`.
+
+    Read as a letter it gave 2.16 a phantom `2.16(i)` that stole the
+    paper-records list out of `2.16(a)`, and gave 2.19 **two** requirements
+    numbered `2.19(i)` plus a `2.19(v)`.
+    """
+    catalog = parse_part2(excerpt, strict=False)
+
+    ids = {e.enhancement_id for c in catalog for e in c.enhancements}
+    assert ids == {"2.16(a)", "2.16(b)", "2.19(a)", "2.19(b)"}
+
+
+def test_two_requirements_may_not_answer_to_one_citation(excerpt):
+    """The guard that would have caught the roman-numeral bug without a
+    person reading the output. Duplicate ids are well-formed, plausible,
+    and wrong only to a reader who follows the citation."""
+    catalog = parse_part2(excerpt, strict=False)
+    catalog[1].enhancements.append(catalog[1].enhancements[0])
+
+    with pytest.raises(ValueError) as caught:
+        _require_unique_ids(catalog)
+
+    assert "more than one requirement under the same id" in str(caught.value)
+    assert "2.19(a)" in str(caught.value)
+
+
+def test_nesting_stays_inside_the_requirement_it_qualifies(excerpt):
+    """`(a)(1)(i)(A)` qualifies `(a)`; it is not a sibling of it. The whole
+    paper-and-electronic-records list belongs to `2.16(a)`."""
+    catalog = {c.control_id: c for c in parse_part2(excerpt, strict=False)}
+    a = next(e for e in catalog["2.16"].enhancements if e.enhancement_id == "2.16(a)")
+
+    for nested in (
+        "Transferring and removing such records",
+        "sanitizing the hard copy media",
+        "Creating, receiving, maintaining, and transmitting such records",
+        "45 CFR 164.514(b)",
+    ):
+        assert nested in a.description, nested
+
+
+def test_a_requirement_keeps_the_italic_run_as_its_title(excerpt):
+    """eCFR names the paragraph in an `<I>`, and that name is the
+    requirement's title rather than the first words of its body."""
+    catalog = {c.control_id: c for c in parse_part2(excerpt, strict=False)}
+    b = next(e for e in catalog["2.19"].enhancements if e.enhancement_id == "2.19(b)")
+
+    assert b.title == "Special procedure where retention period required by law"
+    assert not b.description.startswith("Special procedure")
+
+
+def test_the_special_procedure_carries_what_makes_2_19_a_control(excerpt):
+    """These are the duties absent from 2.16 -- the reason 2.19 is a
+    control rather than a requirement of it. If they stop appearing here,
+    CONTROL_SECTIONS needs re-deciding, not repairing."""
+    catalog = {c.control_id: c for c in parse_part2(excerpt, strict=False)}
+    b = next(e for e in catalog["2.19"].enhancements if e.enhancement_id == "2.19(b)")
+
+    for duty in (
+        "encryption to encrypt the data at rest",
+        "backup copy",
+        "Within one year",
+        "climate-controlled",
+        "decryption tools",
+    ):
+        assert duty in b.description, duty
+
+
+# --------------------------------------------------------------------------
+# Nothing emitted is empty, at any level
+# --------------------------------------------------------------------------
+
+
+def test_the_reserved_paragraph_is_in_the_source(excerpt):
+    """The first half of the two-sided assertion. If the CFR ever fills
+    `(b)(1)(i)(B)` in, this fails and the omission below must be revisited
+    rather than left quietly dropping real text."""
+    source = {s.number: s.text for s in sections(excerpt, strict=False)}
+
+    assert "(B) [Reserved]" in source["2.19"]
+
+
+def test_the_reserved_paragraph_is_absent_from_the_requirements(excerpt):
+    """The second half. It sits four levels down, so it would never appear
+    as an entry -- it would be folded into `2.19(b)`'s prose, where an
+    empty statement inherits the credibility of the real requirements
+    around it. Which is why this is checked on the text, not on the ids."""
+    catalog = {c.control_id: c for c in parse_part2(excerpt, strict=False)}
+    b = next(e for e in catalog["2.19"].enhancements if e.enhancement_id == "2.19(b)")
+
+    assert "Reserved" not in b.description
+
+
+def test_no_requirement_is_empty(excerpt):
+    """80's ruling generalised: nothing emitted is empty, at any level."""
+    for control in parse_part2(excerpt, strict=False):
+        assert control.title.strip()
+        for requirement in control.enhancements:
+            assert requirement.description.strip(), requirement.enhancement_id
+
+
+def test_a_missing_control_section_refuses_rather_than_shipping_one(excerpt):
+    """A catalog of two that silently becomes a catalog of one is the same
+    failure as an empty parse, one level up."""
+    without = excerpt.replace('N="2.19"', 'N="2.199"')
+
+    with pytest.raises(ValueError) as caught:
+        parse_part2(without)
+
+    assert "2.19" in str(caught.value)
+
+
+# --------------------------------------------------------------------------
+# Guards that Part 2's own text never exercises
+# --------------------------------------------------------------------------
+
+
+def test_a_list_that_descended_to_digits_does_not_step_back_up_to_a_letter():
+    """`(h)`, `(1)`, `(2)`, `(i)` -- the case both readings fit.
+
+    **Constructed, because Part 2 never produces it.** Its sections stop
+    well before a ninth lettered paragraph, so `(i)` here is always roman
+    and the successor rule alone is enough. That is exactly why this test
+    exists: a mutation removing the `saw_digit` guard passed the entire
+    suite against real text, which means the guard was being trusted and
+    not held.
+
+    A section that did reach `(h)` and then descended to digits would, with
+    the guard gone, read the roman `(i)` beneath it as a ninth sibling --
+    silently moving a nested obligation up a level.
+    """
+    assert _opens_requirement("i", previous="h", saw_digit=False) is True
+    assert _opens_requirement("i", previous="h", saw_digit=True) is False
+    # Not a successor at all: roman one under (c), which is the real shape
+    # everywhere in Part 2.
+    assert _opens_requirement("i", previous="c", saw_digit=True) is False
+    # An ordinary letter is unaffected by the digit guard -- only i, v and
+    # x are ambiguous, and treating (d) as roman cost Part 171 three
+    # conditions when it was tried there.
+    assert _opens_requirement("d", previous="c", saw_digit=True) is True
+
+
+def test_the_duplicate_id_guard_is_wired_into_the_parse(excerpt, monkeypatch):
+    """The guard is unreachable by data and that is not a reason to leave
+    it unheld.
+
+    With the successor rule in place, `_requirements` cannot emit two
+    paragraphs under one id -- each letter increments. So the guard is
+    defence against the successor rule regressing, and the only honest way
+    to test it is to regress the successor rule.
+
+    Testing `_require_unique_ids` directly, which is what this suite did
+    first, passes happily when the call is deleted from `parse_part2`. A
+    guard nothing calls is a comment.
+    """
+    monkeypatch.setattr(
+        "policyforge.ingest.part2_loader._opens_requirement",
+        lambda letter, previous, saw_digit: True,
+    )
+
+    with pytest.raises(ValueError) as caught:
+        parse_part2(excerpt, strict=False)
+
+    assert "more than one requirement under the same id" in str(caught.value)

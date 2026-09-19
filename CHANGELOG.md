@@ -155,6 +155,22 @@ published yet* — a claim about the crosswalk, when the truth was a claim
 about the name, and the two want opposite responses. It now names the
 frameworks actually present and marks any that cannot anchor a crosswalk.
 
+**Generated documents now cite `NIST 800-53 AC-2` rather than `NIST AC-2`.**
+The prompts that write citations teach by example, and their example named
+the family rather than the catalog. Since every NIST-family catalog got its
+own key, a bare `NIST` keys to the shared bucket: it resolves while one NIST
+catalog is loaded and becomes a reported unknown the moment a user brings
+800-171 or the CSF. The qualified form resolves either way. Only the
+generation prompts changed — `edit/apply.py` and `edit/plan.py` still show
+the short form, because they instruct a model to preserve existing tags
+*exactly as written* and run on documents written before the split, where a
+qualified example would read as licence to rewrite one. Documents generated
+before this release are unaffected until regenerated.
+
+Only the NIST half of the example moved: `HIPAA` and `HIPAA Security Rule`
+already key to the same catalog, as do `GovRAMP` and `GovRAMP Moderate`.
+NIST is the only family where naming the catalog changes what resolves.
+
 ## 1.3.0
 
 Three things this release lets you do that 1.2.1 could not: map your own

@@ -7,7 +7,7 @@ the enabled frameworks, dedupe overlapping requirements, and produce a
 single prose statement per requirement with inline source tags, e.g.:
 
     "Passwords must be a minimum of 14 characters for privileged accounts.
-    [NIST IA-5 | GovRAMP Moderate]"
+    [NIST 800-53 IA-5 | GovRAMP Moderate]"
 
 This is the highest-value, most novel piece of the pipeline — it's what
 turns a pile of controls into something a policy can actually be written
@@ -125,7 +125,10 @@ Rules:
 - Output a markdown bullet list, one requirement per bullet, and nothing
   else — no preamble, no closing remarks.
 - End every bullet with an inline source tag listing every framework/control
-  it was drawn from, e.g. `[NIST IA-5 | GovRAMP IA-5]`. Include the baseline
+  it was drawn from, e.g. `[NIST 800-53 IA-5 | GovRAMP IA-5]`. Name the
+  framework as its catalog declares it — `NIST 800-53`, not `NIST` — so a
+  citation still resolves when a second NIST-family catalog is loaded.
+  Include the baseline
   in the tag when the source control specifies one, e.g.
   `[GovRAMP IA-5 Moderate]`.
 """

@@ -1492,6 +1492,43 @@ produce identical output** — so "it did not bite" is a fact about this run
 and not about the parser. A pattern that reads the right thing by accident
 passes every check a pattern that reads it on purpose does.
 
+**Reproduced on a second implementation and a second judge.** The same
+suites on `deepseek-v4-flash` judging, run independently with a separately
+written extractor:
+
+| arm, suite                  | before | after |
+| --------------------------- | ------ | ----- |
+| sonnet, answering           | 28%    | 0%    |
+| sonnet, answer_paraphrase   | 61%    | 0%    |
+| deepseek, answering         | 28%    | 0%    |
+| deepseek, answer_paraphrase | 59%    | 0%    |
+
+**Four suite-halves reaching exactly zero from four different pre-fix
+figures.** The differing befores are what make the zeros mean something: a
+shared artefact in how the two extractors read the log would have produced
+the same before as well as the same after.
+
+**The suite gap disappearing is a result, not an absence.** Before the fix,
+paraphrase carried fragments at 1.90× (sonnet) and 2.12× (deepseek) the
+answering rate, against a 1.5× threshold fixed before either ran, with the
+proposed mechanism that paraphrase rewrites more freely — more section
+references, more quoted spans — so a full-stop splitter breaks it harder.
+Post-fix both suites are zero and there is no ratio left to compute, which
+is what that mechanism predicts. **A residual gap would have meant
+something else was also at work.**
+
+**A control that did not move.** The second judge's *schema* failures —
+replies it could not be held to the verdict format — ran 3→2 on answering
+and 2→2 on paraphrase. Those have nothing to do with sentence splitting, so
+a fix touching only the input should leave them alone, and it did. Had they
+fallen with the fragments, the two would not be independent and the
+before/after delta would be confounded by the judge behaving differently.
+
+Real findings rose on that arm too — answering 39→47, paraphrase 11→19 —
+the same direction as this one. Three suite-halves moving together is
+slightly more than two, and still weak evidence for the account rather than
+a measurement of it, for the same run-to-run reason.
+
 **What this does not establish.** The instrument is sound; whether those 55
 findings are real defects or the judge over-flagging is a **different
 question and this cannot answer it**. A finding list contains only

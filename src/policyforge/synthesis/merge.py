@@ -128,9 +128,8 @@ Rules:
   it was drawn from, e.g. `[NIST 800-53 IA-5 | GovRAMP IA-5]`. Name the
   framework as its catalog declares it — `NIST 800-53`, not `NIST` — so a
   citation still resolves when a second NIST-family catalog is loaded.
-  Include the baseline
-  in the tag when the source control specifies one, e.g.
-  `[GovRAMP IA-5 Moderate]`.
+  Include the baseline in the tag when the source control specifies one,
+  e.g. `[GovRAMP IA-5 Moderate]`.
 """
 
 

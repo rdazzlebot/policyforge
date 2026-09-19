@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0
 
 **If you script any of this, three commands change their exit code.** Each is
 explained in full in its own entry below; they are collected here because a

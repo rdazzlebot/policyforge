@@ -81,20 +81,46 @@ def test_a_parse_that_finds_nothing_refuses_rather_than_returning_empty():
         sections("<DIV5><DIV8 N='171.203'><HEAD>Security exception.</HEAD></DIV8></DIV5>")
 
     message = str(caught.value)
-    assert "0 sections" in message
+    assert "matched 0 of the 1 sections" in message
     assert "parser fault" in message, "an empty parse must be named a parser fault, not a change"
+    assert "171.203" in message, "the message must name the section the pattern missed"
 
 
-def test_a_short_parse_names_the_regulation_changing_as_the_other_possibility(excerpt):
-    """Six sections is not thirty-eight, and the message has to leave room
-    for the part having changed — otherwise whoever reads it goes looking
-    for a bug in the parser when the CFR moved underneath it."""
+def test_the_primary_count_check_asks_the_document_not_the_constant():
+    """**The check that catches a wrong pattern uses no hand-written
+    number.** Both sides come from the XML: what eCFR says is there, and
+    what the pattern matched. A constant nobody can re-derive is the same
+    shape as a hand-written prefix list — right the day it is written and
+    unverifiable after.
+
+    Pinned with a document whose section count is *not* `EXPECTED_SECTIONS`
+    and not zero, so passing it cannot be an accident of either number.
+    """
+    three_unmatched = (
+        "<DIV5>"
+        + "".join(f"<DIV8 N='171.{n}'><HEAD>x</HEAD></DIV8>" for n in (203, 204, 205))
+        + "</DIV5>"
+    )
+
+    with pytest.raises(ValueError) as caught:
+        sections(three_unmatched)
+
+    message = str(caught.value)
+    assert "matched 0 of the 3 sections" in message
+    assert str(EXPECTED_SECTIONS) not in message, "the pattern check must not cite the constant"
+
+
+def test_a_document_the_pattern_fully_matches_is_still_held_to_the_pinned_count(excerpt):
+    """The second check, for the failure the first cannot see: a response
+    that is internally consistent and is not the whole part. Six sections
+    all match the pattern, so only the pinned count can catch it."""
     with pytest.raises(ValueError) as caught:
         sections(excerpt)
 
     message = str(caught.value)
     assert f"expected {EXPECTED_SECTIONS}" in message
-    assert "may have changed" in message
+    assert "the pattern is fine" in message
+    assert "truncated" in message
     assert "2.16" in message, "the message should name what it did find"
 
 

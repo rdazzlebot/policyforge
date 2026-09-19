@@ -98,11 +98,17 @@ FRAMEWORK_VERSION = "42 CFR Part 2"
 #: nothing. `_require_sections` exists so that failure is loud.
 SECTION_ID_RE = re.compile(r"^2\.\d{1,2}$")
 
-#: How many sections Part 2 had when this parser was written, at the
-#: 2026-09-17 revision. **A pinned observation, not an invariant** — the CFR
-#: gains and loses sections, and the day this number is wrong is a day
-#: someone should look at the part rather than a day the parser is broken.
-#: `_require_sections` says which of the two it is looking at.
+#: How many sections Part 2 had at the 2026-09-17 revision. **A pinned
+#: observation, not an invariant** — the CFR gains and loses sections, and
+#: the day this number is wrong is a day someone should read the part
+#: rather than a day the parser is broken.
+#:
+#: It is the *weaker* of the two count checks and it is second on purpose.
+#: A hand-written expected count is something nobody can re-derive, so
+#: `_require_sections` asks the document how many sections it has before it
+#: consults this number at all — see there. This one exists for the failure
+#: the document cannot self-report: a truncated or wrong response, where
+#: the XML is internally consistent and simply is not the whole part.
 EXPECTED_SECTIONS = 38
 
 #: Sections that carry a number and a title and no obligation. Dropped for
@@ -158,30 +164,45 @@ def _section_title(head: str, number: str) -> str:
     return stripped.strip()
 
 
-def _require_sections(found: list[Section]) -> None:
-    """Refuse a parse that found too little, and say which failure it is.
+def _require_sections(found: list[Section], *, in_document: list[str]) -> None:
+    """Refuse a parse that found less than the document contains.
 
-    The failure this guards against does not raise on its own. A pattern
+    The failure guarded against here does not raise on its own: a pattern
     that matches nothing yields an empty catalog, and an empty catalog
-    passes every check that asks whether its entries are well-formed. So
-    the count is checked against a number someone wrote down, and the two
-    ways it can be wrong are reported differently, because they need
-    different responses from whoever reads the message.
+    passes every check that asks whether its entries are well-formed.
+
+    **The primary check asks the document, not a constant.** `in_document`
+    is every section-level node eCFR emitted, counted without consulting
+    `SECTION_ID_RE` — so comparing it against `found` tests the pattern
+    against the source rather than against a number someone typed. A
+    hand-written expected count is the same shape as a hand-written prefix
+    list: correct on the day it is written and unverifiable afterwards.
+    This route needs no such number and cannot go stale, because both sides
+    come from the document being parsed.
+
+    `EXPECTED_SECTIONS` is consulted afterwards and catches only what that
+    cannot: a response that is internally consistent and is not the whole
+    part.
     """
-    if not found:
+    missed = [n for n in in_document if n not in {s.number for s in found}]
+    if missed:
         raise ValueError(
-            f"Parsed 0 sections from 42 CFR Part {PART}. Expected about "
-            f"{EXPECTED_SECTIONS}. This is a parser fault rather than a change "
-            f"in the regulation: check SECTION_ID_RE ({SECTION_ID_RE.pattern!r}) "
-            f"against the section numbers the XML actually carries."
+            f"SECTION_ID_RE ({SECTION_ID_RE.pattern!r}) matched "
+            f"{len(found)} of the {len(in_document)} sections that 42 CFR Part "
+            f"{PART} actually contains. This is a parser fault rather than a "
+            f"change in the regulation — the document says these sections are "
+            f"there and the pattern did not match them: {', '.join(missed[:12])}"
+            + (f" (+{len(missed) - 12} more)" if len(missed) > 12 else "")
         )
     if len(found) != EXPECTED_SECTIONS:
         raise ValueError(
             f"Parsed {len(found)} sections from 42 CFR Part {PART}, expected "
-            f"{EXPECTED_SECTIONS} as of the 2026-09-17 revision. The part may "
-            f"have changed, which is information rather than a bug: read the "
-            f"diff, then update EXPECTED_SECTIONS in the same commit that "
-            f"accounts for it. Found: {', '.join(s.number for s in found)}"
+            f"{EXPECTED_SECTIONS} as of the 2026-09-17 revision. Every section "
+            f"the document carries was matched, so the pattern is fine and the "
+            f"document is not the one this parser was pinned against: either "
+            f"the part changed, or the response was truncated. Read the diff, "
+            f"then update EXPECTED_SECTIONS in the commit that accounts for it. "
+            f"Found: {', '.join(s.number for s in found)}"
         )
 
 
@@ -193,8 +214,13 @@ def sections(xml: str, *, strict: bool = True) -> list[Section]:
     """
     root = ET.fromstring(xml)  # nosec B314
 
+    # Every section-level node, counted before the pattern is applied. This
+    # is the document's own answer to "how many sections are there", and it
+    # is what `_require_sections` holds the pattern to.
+    divisions = [d for d in root.findall(".//DIV8") if (d.get("N") or "").strip()]
+
     found: list[Section] = []
-    for div in root.findall(".//DIV8"):
+    for div in divisions:
         number = (div.get("N") or "").strip()
         if not SECTION_ID_RE.match(number):
             continue
@@ -208,5 +234,5 @@ def sections(xml: str, *, strict: bool = True) -> list[Section]:
         )
 
     if strict:
-        _require_sections(found)
+        _require_sections(found, in_document=[(d.get("N") or "").strip() for d in divisions])
     return found

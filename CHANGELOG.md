@@ -1,5 +1,89 @@
 # Changelog
 
+## 1.5.0
+
+**New bundled catalog: 42 CFR Part 2, substance use disorder patient
+records**, fetched from eCFR by `policyforge etl-part2`. Public domain, so
+it ships with the package like NIST and HIPAA rather than as BYOC.
+
+**It has two controls, and that is the whole catalog.** Part 2 has 38
+sections; §2.16 (security for records and notification of breaches) and
+§2.19 (disposition of records by discontinued programs) are the only two
+that impose a safeguard. The rest is conduct — when a disclosure is
+permitted, what a consent must contain, what a court must find — and citing
+a conduct rule as a control would assert that a safeguard exists where the
+regulation says only that a disclosure was lawful. The thinness is the
+correct answer rather than a parse failure, and the catalog's README states
+the count, the test that produced it, and the sections it rejected, so a
+reader who thinks something is missing gets the reasoning instead of
+re-running the parser.
+
+Unlike `cfr-171-information-blocking`, this catalog **seeds a crosswalk
+normally**: its entries are safeguards to implement, so there is something
+for an 800-53 control to correspond to. It ships without a
+`source_crosswalk` because no authority publishes one for Part 2, which is
+a different thing from being unmappable.
+
+The monthly `framework-drift` job now covers it.
+
+**Reasoning a local server returns in its own field is no longer recorded as
+zero.** Ollama and vLLM put a reasoning model's chain of thought in
+`message.reasoning`, leaving `content` as the answer alone — so nothing was
+stripped and the ledger wrote `stripped_reasoning_chars: 0`, which is
+indistinguishable from a model that did not think. The stripper was working;
+it was pointed at a field that never had reasoning in it. `llm/base.py` is
+explicit that this is the one thing that field must not do: *a zero asserted
+by a provider that never looked is a measurement nobody made.* Measured on a
+live call, `qwen3:14b` returned **1,081 characters of reasoning against an
+85-character answer**, with 263 output tokens billed for it — roughly nine
+tokens in ten spent thinking, none of it visible to the ledger before.
+`reasoning_content` is read too, since a local endpoint is whichever of the
+two you happen to run, and `completion_tokens_details.reasoning_tokens` now
+populates `hidden_output_tokens` where a server reports it, staying `None`
+where it does not.
+
+**`generate_json` works against a local endpoint**, so a schema-constrained
+call no longer requires a vendor. **This is the only route on which a
+licensed catalog's text never leaves the machine**, which is the argument for
+running locally at all. `supports_schema` is True because a live call proved
+it rather than because a capability table says so, and the reply is still
+parsed and checked — an endpoint that ignores `response_format` answers with
+prose and a 200, and that now raises rather than returning unconstrained text
+from a method whose contract is that the text is constrained.
+
+**A cascade with a local primary now advertises `schema`.** A cascade reports
+the conjunction of its halves; the local half gained a capability, so the
+conjunction gained one. Nothing about the rule changed.
+
+**A warning the answering path writes can no longer be silently dropped from
+eval reports.** `evals/runner.py` picks entailment findings out of an
+answer's warnings by the words they open with, and a new prefix that was not
+added to its filter would have been discarded with nothing reporting it —
+the finding made, written into the answer, and absent from every report,
+with the output looking exactly as it does today. The prefixes are now
+enumerated from `zardoz/answer.py` and each is asserted to survive the
+filter, so adding one and forgetting the other edit fails a test instead.
+
+**Nothing user-facing.** `scripts/release_check.py` is a release step for
+maintainers: after cutting a tag it asserts that the published Homebrew
+formula installs that tag, that its pinned resources match
+`requirements/runtime.txt`, and that no changelog fragment survived the
+release. It exists because 1.4.0 was declared done while `brew install` —
+the first command in this project's README — still served 1.3.0 for about
+three hours.
+
+**Nothing user-facing.** `scripts/stale_prs.py` reports pull requests that
+are ready to merge and have not been — `CLEAN`, no pending checks, and
+untouched past a threshold. It exists because a pull request sat ready for
+ten hours while being described in status reports as "other sessions'
+work", which is a fact about whose branch it is rather than whose turn.
+
+**Nothing user-facing.** `CONTRIBUTING.md` now says how to suppress a
+`bandit` or `semgrep` finding: put the marker on the offending line,
+state the bound rather than asserting a false positive, name the premise
+a future change could break, and test rather than silence when two
+scanners flag the same line.
+
 ## 1.4.0
 
 **If you script any of this, three commands change their exit code.** Each is

@@ -138,6 +138,17 @@ def _selects(controls, typed: str, declared: str) -> bool:
     matches nothing at all still falls through to the empty-catalog error,
     which names what *is* loaded rather than implying the mapping is
     merely unpublished.
+
+    **"Every distinguishing word appears" reads unbounded, and is not.**
+    The rule is gated on `declared`, which comes from the loaded catalogs —
+    so a name only reaches this test when the catalog that declares it is
+    actually in front of the command. `Guidance on 45 CFR 160 164 171`
+    carries all of `{45, cfr, 171}` and refuses **when 171 is loaded**;
+    with 171 absent, the same string gets the empty-catalog error instead.
+    Both directions err toward refusing rather than seeding, which is the
+    safe direction for this guard, and `test_the_token_match_is_gated_on_
+    the_loaded_catalog` holds it. Stated because a future reader asked to
+    simplify this would otherwise see an unbounded substring rule.
     """
     if any(_canonical(name) == _canonical(typed) for name in _declared_frameworks(controls)):
         return False

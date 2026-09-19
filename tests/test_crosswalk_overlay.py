@@ -615,3 +615,32 @@ def test_a_similar_name_is_not_swept_into_the_refusal():
         with pytest.raises(OverlayError) as excinfo:
             seed_overlay(_conditions_catalog(), other)
         assert not isinstance(excinfo.value, NotAnchorableError)
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["HIPAA 45 CFR 164 and 171 combined", "Guidance on 45 CFR 160 164 171"],
+)
+def test_the_token_match_is_gated_on_the_loaded_catalog(name):
+    """The token rule is not an unbounded substring match.
+
+    "Every distinguishing word appears" invites false positives on its
+    face, so this pins what actually bounds it: the rule only consults a
+    framework the loaded catalogs declare. A name carrying all of
+    `{45, cfr, 171}` refuses when 171 is loaded, and gets the
+    empty-catalog error when it is not — the same string, two answers,
+    decided by the data rather than by the string.
+
+    Both answers err toward refusing rather than seeding, which is the
+    safe direction here: a wrongly-refused seed is a message, a wrongly
+    seeded one is a crosswalk asserting something no document says.
+
+    Built by policyforge-1d in review, as names that satisfy the token
+    rule without being that catalog.
+    """
+    with pytest.raises(NotAnchorableError):
+        seed_overlay(_conditions_catalog(), name)
+
+    with pytest.raises(OverlayError) as excinfo:
+        seed_overlay(_catalogs(), name)
+    assert not isinstance(excinfo.value, NotAnchorableError)

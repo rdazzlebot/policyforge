@@ -33,6 +33,7 @@ from pathlib import Path
 BUNDLED_CATALOGS = (
     "arc-ampe",
     "cfr-171-information-blocking",
+    "cfr-42-part-2-sud-records",
     "fedramp",
     "hipaa-security-rule",
     "nist-800-53-r5",

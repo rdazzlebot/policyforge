@@ -297,6 +297,67 @@ def etl_info_blocking(date: str | None, out: Path):
     )
 
 
+@cli.command("etl-part2")
+@click.option(
+    "--date",
+    default=None,
+    help="Specific eCFR effective date (YYYY-MM-DD) to fetch, for reproducibility. "
+    "Default: eCFR's current published date for Title 42.",
+)
+@click.option(
+    "--out",
+    default=Path("data/frameworks/cfr-42-part-2-sud-records/controls.json"),
+    type=click.Path(path_type=Path),
+    help="Where to write the parsed data.",
+)
+def etl_part2(date: str | None, out: Path):
+    """Fetch 42 CFR Part 2 (confidentiality of substance use disorder patient
+    records) from eCFR's public API and parse its security sections into this
+    project's data schema. Public domain - a US federal regulation, same basis
+    as NIST/FedRAMP/ARC-AMPE/HIPAA - so safe to bundle directly.
+
+    TWO of this part's thirty-eight sections are controls, and that is the
+    whole catalog. Most of Part 2 is conduct: when a disclosure is permitted,
+    what a consent must contain, what a court must find before it orders a
+    record produced. Citing 2.66 says a court may authorise a disclosure; it
+    does not say a safeguard exists. The thinness is the correct answer rather
+    than a parse failure - see the catalog's README for the test that decided
+    it and for what it rejected.
+    """
+    import dataclasses
+    import json
+
+    from policyforge.ingest.part2_loader import (
+        current_ecfr_date,
+        ecfr_source_url,
+        fetch_part_xml,
+        parse_part2,
+    )
+    from policyforge.ingest.provenance import record_source_provenance
+
+    # Resolved here rather than inside the fetch, so the date recorded is
+    # provably the date fetched - same reasoning as etl-hipaa above.
+    date = date or current_ecfr_date()
+
+    xml_text = fetch_part_xml(date=date)
+    controls = parse_part2(xml_text)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
+    stamp = record_source_provenance(
+        out.parent / "framework.yaml",
+        source_ref=date,
+        source_url=ecfr_source_url(date),
+        content=out.read_bytes(),
+    )
+    if stamp is not None:
+        click.echo(f"Recorded provenance: {date} sha256:{stamp[:16]}… -> {out.parent}")
+    requirements = sum(len(c.enhancements) for c in controls)
+    click.echo(
+        f"Parsed {len(controls)} Part 2 security sections carrying "
+        f"{requirements} requirements -> {out}"
+    )
+
+
 def _bundled_catalog_dirs() -> list[Path]:
     """The bundled catalog directories that exist and must never take licensed data.
 

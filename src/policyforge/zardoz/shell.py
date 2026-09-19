@@ -81,6 +81,10 @@ class ShellState:
     #: Why there is no provider, if there isn't one — shown once, when it
     #: first matters, rather than as a launch-time complaint.
     provider_note: str = ""
+    #: The second model that judges whether a cited passage supports the
+    #: claim made from it, or None when `entail.answering` is off — which is
+    #: the default, because it costs a model call per cited sentence.
+    entailer: object | None = field(default=None, repr=False)
     #: The last answer, so `/sources` can show what it was drawn from in
     #: full rather than in the excerpts that fit beside the prose.
     last_answer: object | None = field(default=None, repr=False)
@@ -638,7 +642,7 @@ def _answer_turn(question: str, state: ShellState, scope) -> str:
         )
 
     try:
-        answer = answer_question(resolved, passages, state.provider)
+        answer = answer_question(resolved, passages, state.provider, entailer=state.entailer)
     except TruncatedResponse as exc:
         # The model was reached and answered; its answer ran past the
         # budget twice and is not shown, because half an answer with the

@@ -71,6 +71,13 @@ class Outcome:
     #: whether a failure came from a reply cut off at its budget, and how
     #: close a passing reply came to it.
     replies: list = field(default_factory=list)
+    #: What a model judge said about this run, reported and never counted.
+    #: The entailment judge is the only thing that writes here, and the rule
+    #: it was built under is that it is never an eval grader: its findings
+    #: are opinions, `check_answer`'s warnings are facts, and a pass rate
+    #: that moved because a second model disagreed would not be comparable
+    #: with any epoch before it.
+    notes: list[str] = field(default_factory=list)
 
     @property
     def cut_off(self) -> bool:
@@ -328,8 +335,34 @@ def check_attribution(text: str, passages, attributions) -> str:
     return ""
 
 
+#: The judge the answering suites hand to `answer_question`, or None. Set by
+#: `eval_zardoz.py --entail-model`, because a run measuring entailment needs
+#: one and every other run must not pay for it. A module-level setting rather
+#: than a fourth runner argument: every runner takes the same three, and a
+#: suite that quietly stopped receiving one is the bug that comment exists to
+#: prevent.
+_ENTAILER = None
+
+
+def set_entailer(entailer) -> None:
+    """Judge cited claims in the answering suites with `entailer`, or None."""
+    global _ENTAILER
+    _ENTAILER = entailer
+
+
 def run_answering(case: dict, provider, corpora: dict | None = None) -> Outcome:
-    """Does the answer stay inside its passages, and refuse when it must?"""
+    """Does the answer stay inside its passages, and refuse when it must?
+
+    A judge set by `set_entailer` reads along and its findings ride on the
+    outcome as notes. They do not change the verdict — see `Outcome.notes`.
+    """
+    notes: list[str] = []
+    outcome = _answering(case, provider, corpora, notes)
+    outcome.notes = notes
+    return outcome
+
+
+def _answering(case: dict, provider, corpora: dict | None, notes: list[str]) -> Outcome:
     from policyforge.zardoz.answer import answer_question, check_answer
 
     passages = _passages(case, corpora)
@@ -340,7 +373,20 @@ def run_answering(case: dict, provider, corpora: dict | None = None) -> Outcome:
             f"{case['expect_passages']} — the case, not the model, is wrong",
         )
 
-    answer = answer_question(case["question"], passages, provider)
+    answer = answer_question(case["question"], passages, provider, entailer=_ENTAILER)
+
+    # Collected here, before any of the graded checks can return, so a run
+    # that fails for another reason still reports what the judge said about
+    # it. Recognised by the words the warnings open with, which is why those
+    # words are constants rather than literals.
+    if _ENTAILER is not None:
+        from policyforge.zardoz.answer import ENTAILMENT_FAILED_PREFIX, UNSUPPORTED_PREFIX
+
+        notes += [
+            warning
+            for warning in answer.warnings
+            if warning.startswith((UNSUPPORTED_PREFIX, ENTAILMENT_FAILED_PREFIX))
+        ]
 
     if case.get("expect_refusal") and not answer.refused:
         return Outcome(False, "answered, expected a refusal", answer.text)
@@ -1190,6 +1236,37 @@ def prompt_epoch_report() -> list[str]:
     return lines
 
 
+def _entailment_report(results: list[CaseResult]) -> list[str]:
+    """What the judge said, kept apart from what the suite scored.
+
+    Separate on purpose. These are one model's opinion of another's work, and
+    a reader has to be able to see the pass rate without them folded in —
+    both because the judge has its own error rate, and because a rate that
+    moved when a judge was switched on would not be comparable with any epoch
+    before it.
+    """
+    from policyforge.zardoz.answer import ENTAILMENT_FAILED_PREFIX
+
+    judged = [(r, o) for r in results for o in r.outcomes if o.notes]
+    if not judged:
+        return []
+
+    broke = [n for _, o in judged for n in o.notes if n.startswith(ENTAILMENT_FAILED_PREFIX)]
+    lines = [
+        "",
+        f"entailment: {len(judged)} run(s) carry a finding, reported and not scored",
+    ]
+    for result, outcome in judged:
+        lines.append(f"  {result.suite}/{result.name}")
+        for note in outcome.notes:
+            lines.append(f"    {' '.join(note.split())[:200]}")
+    if broke:
+        # Loudly, because a judge that never ran reports nothing, which
+        # reads exactly like a judge that found nothing.
+        lines.append(f"  {len(broke)} of these are the judge failing to run, not a claim it read")
+    return lines
+
+
 def format_report(results: list[CaseResult], *, repeat: int) -> str:
     lines = []
     for suite in SUITES:
@@ -1238,6 +1315,7 @@ def format_report(results: list[CaseResult], *, repeat: int) -> str:
         )
     if not failed and not flaky:
         lines.append("  every case passed every run")
+
     if cut_off_runs:
         # Said even when every case passed: a reply that stopped at its
         # budget and was retried into a pass is a budget one paraphrase
@@ -1246,6 +1324,8 @@ def format_report(results: list[CaseResult], *, repeat: int) -> str:
             f"  {cut_off_runs} run(s) had a reply cut off at its budget "
             "(see `replies:` on any failure, or the ledger's stop_reason)"
         )
+
+    lines += _entailment_report(results)
     lines += code_provenance()
     lines += prompt_epoch_report()
     return "\n".join(lines)

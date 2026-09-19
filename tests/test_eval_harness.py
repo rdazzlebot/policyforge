@@ -1209,3 +1209,143 @@ def test_a_crosswalk_case_expecting_nothing_fails_on_any_mapping():
     quote = "A covered health care provider must comply with the applicable requirements"
     mapped = _Proposer([_row("PL-1", quote, _control_words("PL-1"))])
     assert not run_crosswalk(case, mapped).passed
+
+
+# --------------------------------------------------------------------------
+# Entailment, when a run asked for it
+# --------------------------------------------------------------------------
+
+
+ENTAIL_CASE = {
+    "documents": [
+        {
+            "title": "Access Control Standard",
+            "body": (
+                "# A\n\n## 4.1 Account Review\n\n"
+                "Account entitlements are recertified quarterly. [NIST AC-2]\n\n"
+                "## 4.2 Privileged Access\n\nAdmin credentials need tokens.\n"
+            ),
+        }
+    ],
+    "question": "how often are accounts recertified?",
+    "expect_refusal": False,
+}
+
+
+class Judge:
+    """Answers every question about entailment the same way, and counts."""
+
+    def __init__(self, label, reason="the passage says nothing about it"):
+        self.label = label
+        self.reason = reason
+        self.calls = 0
+
+    def entails(self, premise, hypothesis):
+        from policyforge.entail import Verdict
+
+        self.calls += 1
+        return Verdict(label=self.label, reason=self.reason)
+
+
+def test_no_judging_happens_unless_a_run_asked_for_one(monkeypatch):
+    """The default, and the one that has to stay free: a judge is a model
+    call per cited sentence, and every run that did not ask for it pays
+    nothing and grades exactly as it did before."""
+    from evals import runner
+
+    monkeypatch.setattr(runner, "_ENTAILER", None)
+
+    assert run_case("answering", dict(ENTAIL_CASE), Scripted("Quarterly. [1]")).rate == 1.0
+
+
+def test_an_unsupported_claim_is_reported_and_does_not_change_the_score(monkeypatch):
+    """The property the flag exists to measure — and the line the judge is
+    built under. This answer passes every other check on the path: the
+    marker resolves, nothing is quoted, no interval is invented. The judge
+    disagrees, that disagreement is reported, and the case still passes,
+    because a model judging a model is an opinion and a pass rate that moved
+    with it would not be comparable with any epoch before it."""
+    from evals import runner
+    from policyforge.entail import NEUTRAL
+
+    judge = Judge(NEUTRAL)
+    monkeypatch.setattr(runner, "_ENTAILER", judge)
+
+    result = run_case(
+        "answering",
+        dict(ENTAIL_CASE),
+        Scripted("The Security Officer performs the recertification. [1]"),
+    )
+
+    assert judge.calls, "the cited sentence should have been judged"
+    assert result.rate == 1.0, "the judge does not grade"
+    notes = [note for outcome in result.outcomes for note in outcome.notes]
+    assert notes and "says nothing about it" in notes[0]
+
+    report = format_report([result], repeat=1)
+    assert "entailment:" in report
+    assert "reported and not scored" in report
+    assert "says nothing about it" in report
+
+
+def test_a_supported_claim_still_passes(monkeypatch):
+    from evals import runner
+    from policyforge.entail import ENTAILED
+
+    judge = Judge(ENTAILED)
+    monkeypatch.setattr(runner, "_ENTAILER", judge)
+
+    result = run_case("answering", dict(ENTAIL_CASE), Scripted("Quarterly. [1]"))
+
+    assert result.rate == 1.0
+    assert judge.calls, "the judge is asked even when it agrees"
+    assert not [note for outcome in result.outcomes for note in outcome.notes]
+    assert "entailment:" not in format_report([result], repeat=1)
+
+
+def test_a_judge_that_could_not_run_says_so_loudly(monkeypatch):
+    """A judge that never ran reports nothing, which reads exactly like a
+    judge that found nothing — numbers that look like evidence, which is the
+    one outcome this file exists to prevent. It cannot fail the case without
+    becoming a grader, so it says so in the report instead."""
+    from evals import runner
+
+    class Broken:
+        def entails(self, premise, hypothesis):
+            raise RuntimeError("cannot be held to a schema")
+
+    monkeypatch.setattr(runner, "_ENTAILER", Broken())
+
+    result = run_case("answering", dict(ENTAIL_CASE), Scripted("Quarterly. [1]"))
+
+    assert result.rate == 1.0, "a broken judge does not fail the prompt under test"
+    report = format_report([result], repeat=1)
+    assert "did not run" in report
+    assert "the judge failing to run, not a claim it read" in report
+
+
+def test_the_harness_recognises_the_warnings_the_answer_path_writes(monkeypatch):
+    """The coupling this grading rests on: the runner picks entailment
+    findings out of `answer.warnings` by their opening words. Pinned here so
+    a rewording is a failing test rather than a suite that silently stops
+    measuring."""
+    from evals.runner import _passages
+    from policyforge.entail import NEUTRAL
+    from policyforge.zardoz.answer import (
+        ENTAILMENT_FAILED_PREFIX,
+        UNSUPPORTED_PREFIX,
+        answer_question,
+    )
+
+    passages = _passages(dict(ENTAIL_CASE))
+    provider = Scripted("The Security Officer performs the recertification. [1]")
+
+    answer = answer_question("who does it?", passages, provider, entailer=Judge(NEUTRAL))
+    assert [w for w in answer.warnings if w.startswith(UNSUPPORTED_PREFIX)]
+
+    class Broken:
+        def entails(self, premise, hypothesis):
+            raise RuntimeError("no")
+
+    answer = answer_question("who does it?", passages, provider, entailer=Broken())
+    assert [w for w in answer.warnings if w.startswith(ENTAILMENT_FAILED_PREFIX)]

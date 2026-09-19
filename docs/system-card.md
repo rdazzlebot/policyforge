@@ -71,8 +71,9 @@ recorded as unmeasured.
 1. **Prompt injection is mitigated and not solved.** The fence is measured;
    the corpus scanner is a word list; the planner gap is open and documented.
 1. **Model choice matters for security**, not just cost, on the edit path.
-1. **Entailment checking is implemented but not wired in**, so a statement
-   can cite a real passage that does not support it.
+1. **Entailment checking is off by default, answering-only and
+   unmeasured**, so outside that path a statement can cite a real passage
+   that does not support it.
 1. **Native citations are provider-dependent and unmeasured.**
 1. **Content classification is by provenance, not contents.**
 1. **Register bias:** generated procedures can assume a larger, better

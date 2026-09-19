@@ -623,12 +623,52 @@ def check_answer(
     return cited, warnings
 
 
+#: How an unsupported claim is reported, and how a judge that could not run
+#: is. Constants because `evals/runner.py` grades on them: a reworded warning
+#: would leave the harness quietly measuring nothing.
+UNSUPPORTED_PREFIX = "cited passage does not support this claim"
+ENTAILMENT_FAILED_PREFIX = "entailment check did not run"
+
+
+def _entailment_warnings(text: str, passages: list[Passage], entailer) -> list[str]:
+    """Cited sentences their own passages do not carry, when one is configured.
+
+    Off unless `entail.answering` is set, because it costs a model call per
+    cited sentence and a second model to judge with. Every other check on
+    this path is free and runs always; this one is the exception and is
+    opted into.
+
+    It answers the question no other check here asks. `check_answer` proves
+    a marker points at a supplied passage and a quotation is verbatim;
+    `citation_disagreements` compares the model's markers with the spans the
+    API says it quoted. All of them can pass on a sentence the passage does
+    not support — the marker is real, the quote is real, and the claim built
+    around them is not.
+
+    A judge that cannot run is reported, never silently skipped: an
+    entailment check nobody can tell did not happen is worse than one that
+    is plainly off, and `LLMEntailer` refuses rather than degrades when its
+    provider cannot be held to a schema.
+    """
+    if entailer is None:
+        return []
+
+    from policyforge.entail import unsupported_claims
+
+    try:
+        findings = unsupported_claims(text, passages, entailer)
+    except Exception as exc:  # noqa: BLE001 - a judge failing must not lose the answer
+        return [f"{ENTAILMENT_FAILED_PREFIX} ({type(exc).__name__}: {exc})"]
+    return [f"{UNSUPPORTED_PREFIX} — {finding}" for finding in findings]
+
+
 def answer_question(
     question: str,
     passages: list[Passage],
     provider,
     *,
     max_tokens: int = ANSWERING_TOKENS,
+    entailer=None,
 ) -> Answer:
     """Answer `question` from `passages`, or decline to.
 
@@ -704,6 +744,7 @@ def answer_question(
             f"contains {REFUSAL_SENTINEL} inside an answer — part of the question may "
             "be unanswered, or a passage carries the token"
         )
+    warnings += _entailment_warnings(text, passages, entailer)
     return Answer(text=text, passages=passages, cited=cited, warnings=warnings, citations=citations)
 
 

@@ -2946,9 +2946,11 @@ asked to do.
   reranker would trade a measured strength for a speculative gain. Classified,
   gated and recorded the same way as the embedder, with the question counted as
   part of what is sent
-- [ ] **Entailment checking** (`entail/`) — **built, off by default.** Asks
-  whether the cited passage actually carries the claim, which no deterministic
-  check can: a sentence citing correctly, quoting nothing and inventing no
+- [ ] **Entailment checking** (`entail/`) — **runs on the answering path
+  behind `entail.answering`, off by default; not yet on generated
+  documents.** What it catches, where it has been measured, is in
+  `MEASUREMENTS.md`. Asks whether the cited passage actually carries the
+  claim, which no deterministic check can: a sentence citing correctly, quoting nothing and inventing no
   interval can still name the wrong actor. This is a model judging a model, so
   three lines are drawn and written into the module — `check_answer` is untouched
   and its warnings remain facts, these findings are opinions and are labelled as

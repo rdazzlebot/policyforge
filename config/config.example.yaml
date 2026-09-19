@@ -45,6 +45,23 @@ llm:
   #   enabled: true                        # the default
   #   path: output/.model-log/calls.jsonl  # the default; under gitignored output/
 
+# Optional. A second model that judges whether a cited passage actually
+# supports the claim made from it. Off unless `answering: true`, because it
+# costs one model call per cited sentence, on top of the answer itself.
+#
+# It must be a DIFFERENT model from the one writing the answers: a model
+# checking its own work shares every blind spot it had while producing it.
+# It also refuses to run on a provider that cannot be held to a schema —
+# an unconstrained verdict is not worth having — so it reports rather than
+# degrades. A failed judgement is shown as a warning above the answer, the
+# way a citation disagreement already is; it never rewrites or withholds
+# the answer.
+# entail:
+#   answering: true
+#   model: openrouter/deepseek/deepseek-v4-pro
+#   api_key_env: OPENROUTER_API_KEY
+#   max_tokens: 2000        # the judge's own budget, separate from the answer's
+
 frameworks:
   # Where to look for framework catalogs, in order. The first match for an
   # id wins, so your own newer export shadows a bundled one without deleting

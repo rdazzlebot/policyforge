@@ -52,9 +52,10 @@ who doubts a claim should be able to falsify it in under a minute.
 
 Several claims in this set were **corrected during review** because the code
 did not support them — entailment checking described as an operating control
-when nothing calls it, native citations described as active when they engage
-only on some providers, catalog integrity described in general when only one
-catalog was stamped. Those corrections are the documentation working as
+when nothing called it (it now runs, on the answering path, only if you
+switch it on), native citations described as active when they engage only on
+some providers, catalog integrity described in general when only one catalog
+was stamped. Those corrections are the documentation working as
 intended, and each is now stated with its limit in place.
 
 If you find a claim here that the code does not support, that is a security

@@ -453,3 +453,104 @@ def test_check_with_no_overlays_says_how_to_start(tmp_path, monkeypatch):
     result = _cli(tmp_path, monkeypatch, "check")
     assert result.exit_code == 0
     assert "crosswalk seed" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Catalogs that state conditions rather than controls
+#
+# 45 CFR 171 defines information blocking and then sets out the exceptions, so
+# its entries are conditions under which a practice is *not* blocking. There is
+# no obligation for an 800-53 control to correspond to, which makes the mapping
+# wrong rather than unreviewed — and an overlay's whole job is to hold that
+# mapping.
+# ---------------------------------------------------------------------------
+
+CONDITIONS_FRAMEWORK = "45 CFR 171"
+
+
+def _conditions_catalog():
+    """Two 171 sections, shaped as the real catalog is: no source_crosswalk."""
+    return [
+        Control(
+            control_id="171.203",
+            title="Security exception",
+            framework=CONDITIONS_FRAMEWORK,
+            framework_version="45 CFR Part 171",
+            control_statement="...",
+            enhancements=[
+                ControlEnhancement(
+                    enhancement_id="171.203(a)", title="", baseline="", description="..."
+                )
+            ],
+        ),
+        Control(
+            control_id="171.201",
+            title="Preventing harm exception",
+            framework=CONDITIONS_FRAMEWORK,
+            framework_version="45 CFR Part 171",
+            control_statement="...",
+        ),
+    ]
+
+
+def test_seeding_a_conditions_catalog_is_refused():
+    with pytest.raises(OverlayError) as excinfo:
+        seed_overlay(_conditions_catalog(), CONDITIONS_FRAMEWORK)
+
+    assert CONDITIONS_FRAMEWORK in str(excinfo.value)
+
+
+def test_the_refusal_says_why_and_where_to_read_more():
+    """A refusal that only refuses teaches the user to work around it.
+
+    The message has to carry the reason, because the natural next move
+    after "cannot" is to find another way to do the same thing — and here
+    the other ways (hand-writing the overlay, proposing with a model) are
+    worse than the one being refused.
+    """
+    with pytest.raises(OverlayError) as excinfo:
+        seed_overlay(_conditions_catalog(), CONDITIONS_FRAMEWORK)
+
+    message = str(excinfo.value)
+    assert "conditions" in message
+    assert "cfr-171-information-blocking/README.md" in message
+
+
+def test_the_refusal_beats_the_empty_overlay_it_replaces():
+    """Nothing is returned, rather than an overlay with every row empty.
+
+    Before this guard the same call produced 76 rows reading `0 published
+    pairs, 76 with none` and exited 0. That is not a refusal a reader can
+    tell from "this catalog's crosswalk has not been published yet", and it
+    is a filled-in worklist for `crosswalk propose`.
+    """
+    with pytest.raises(OverlayError):
+        seed_overlay(_conditions_catalog(), CONDITIONS_FRAMEWORK)
+
+
+def test_a_normal_framework_still_seeds():
+    """The guard must not cost the case it is not about."""
+    overlay = seed_overlay(_catalogs(), HIPAA)
+
+    assert overlay.requirements
+    assert any(rows for rows in overlay.requirements.values())
+
+
+@pytest.mark.parametrize("written", ["45 CFR 171", "45 cfr 171", "  45   CFR   171 "])
+def test_the_name_is_matched_however_it_was_typed(written):
+    """`--framework` is typed by a person, so spacing and case vary."""
+    with pytest.raises(OverlayError):
+        seed_overlay(_conditions_catalog(), written)
+
+
+@pytest.mark.parametrize("other", ["45 CFR 164", "45 CFR 1710", "HIPAA Security Rule"])
+def test_a_merely_similar_name_is_not_refused(other):
+    """Matched whole, not by prefix.
+
+    `45 CFR 1710` does not exist today, and that is the point: a guard that
+    refused it would be keying on a prefix, and the next real catalog whose
+    name starts the same way would be silently unseedable.
+    """
+    from policyforge.crosswalk.overlay import _refusal_reason
+
+    assert _refusal_reason(other) is None

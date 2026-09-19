@@ -89,6 +89,11 @@ ninth letter and roman one.
 Unlike `hipaa-security-rule`, this catalog carries no
 `source_crosswalk` and is not wired into `mapping/crosswalk.py`.
 
+**`crosswalk seed` refuses this catalog**, rather than writing an overlay
+with every row empty. An empty overlay reads as "no mappings found yet"
+and is a worklist `crosswalk propose` will offer to fill in; the refusal
+says why there is nothing to fill. Every other framework seeds as normal.
+
 That is a decision, not an omission. HIPAA's mapping exists because NIST
 publishes an official HIPAA-to-800-53 crosswalk that this project ingests
 (`etl-hipaa-crosswalk`); there is no equivalent authority mapping Part 171

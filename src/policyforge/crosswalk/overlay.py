@@ -61,6 +61,48 @@ class OverlayError(ValueError):
     """An overlay file that cannot be read as one."""
 
 
+#: Catalogs that state **conditions** rather than controls, and the sentence
+#: each refusal prints.
+#:
+#: The crosswalk is 800-53-anchored by construction: an overlay maps a
+#: framework's requirements onto `NIST_ANCHOR`, and every row asserts *this
+#: requirement and that control are about the same obligation*. For a catalog
+#: whose entries are conditions of an exception, there is no such obligation
+#: to be the same as, so the mapping cannot be right — not "is unreviewed",
+#: but has no true form.
+#:
+#: Refusing rather than seeding an empty overlay, because the empty one is
+#: the more dangerous artefact. `seed` against 45 CFR 171 produced 76 rows
+#: reading `0 published pairs, 76 with none` and exited 0, which says *no
+#: mappings found* — indistinguishable from a catalog whose crosswalk nobody
+#: has published yet, and it hands `crosswalk propose` a ready-made worklist
+#: to fill in with a model's guesses.
+#:
+#: Keyed on the framework name as the catalog declares it. Matching is
+#: case- and space-insensitive, because the name arrives from `--framework`
+#: typed by a person.
+NOT_CROSSWALK_ANCHORABLE: dict[str, str] = {
+    "45 CFR 171": (
+        "45 CFR 171 states the conditions under which a practice is NOT information "
+        "blocking. Its entries are conditions of an exception, not controls to "
+        "implement, so there is nothing for an 800-53 control to correspond to. "
+        "Mapping them would assert something neither document says: that qualifying "
+        "for an exception is evidence a safeguard exists. Cite 171.203(a) to show a "
+        "practice qualifies; do not map it. See "
+        "data/frameworks/cfr-171-information-blocking/README.md."
+    ),
+}
+
+
+def _refusal_reason(framework: str) -> str | None:
+    """Why `framework` cannot anchor a crosswalk, or None if it can."""
+    wanted = " ".join(framework.split()).casefold()
+    for name, reason in NOT_CROSSWALK_ANCHORABLE.items():
+        if " ".join(name.split()).casefold() == wanted:
+            return reason
+    return None
+
+
 def printable(text) -> str:
     """`text` with control characters replaced by spaces, tabs kept.
 
@@ -421,7 +463,15 @@ def seed_overlay(controls, framework: str, anchor: str = NIST_ANCHOR) -> Overlay
     Applying a seeded overlay changes nothing, which is the point: it is the
     starting file an organization edits, and until somebody does, the
     pipeline behaves as it did before overlays existed.
+
+    Refuses outright for a framework in `NOT_CROSSWALK_ANCHORABLE`, where
+    the mapping this file exists to hold has no true form. The refusal is
+    here rather than in the CLI so that every caller meets it.
     """
+    reason = _refusal_reason(framework)
+    if reason is not None:
+        raise OverlayError(f"{framework} cannot anchor a crosswalk. {reason}")
+
     overlay = Overlay(framework=framework, anchor=anchor)
     for rid, ids in published_pairs(controls, framework, anchor).items():
         overlay.requirements[rid] = [

@@ -89,7 +89,7 @@ Rules:
 - Every requirement in the input must be reflected in the output — do not
   drop or water down a requirement, and do not add requirements that
   weren't in the input.
-- Preserve each requirement's inline source tag (e.g. `[NIST IA-5 |
+- Preserve each requirement's inline source tag (e.g. `[NIST 800-53 IA-5 |
   GovRAMP IA-5]`) so the document stays traceable back to the frameworks it
   was drawn from.
 - Where a requirement is vendor/tool-specific: if the tool list below fills
@@ -195,7 +195,7 @@ Rules:
   tool/system — that satisfy that requirement. Every requirement in the
   input must be reflected here; do not drop, water down, or merge unrelated
   requirements together the way the Policy tier does. Preserve each
-  requirement's inline source tag (e.g. `[NIST IA-5 | GovRAMP IA-5]`) at the
+  requirement's inline source tag (e.g. `[NIST 800-53 IA-5 | GovRAMP IA-5]`) at the
   end of its subsection heading or its first step, so the document stays
   traceable back to the frameworks it was drawn from.
 - Steps invite deadlines. Never state a frequency, deadline, duration or count that is not given

@@ -388,8 +388,13 @@ def test_example_registry_fully_owns_every_baseline(baseline):
 
 
 def test_example_registry_reaches_every_crosswalked_hipaa_requirement():
-    """65 of the 75 HIPAA requirements map to a NIST control; all 65 should be
-    reachable from an owned topic."""
+    """65 of the 74 HIPAA requirements map to a NIST control; all 65 should be
+    reachable from an owned topic.
+
+    74 rather than 75 since `164.314(a)(2)` was dropped: it had a title and
+    no description, so it counted toward the total while stating nothing
+    for a topic to cover.
+    """
     from policyforge.ingest.schema import load_controls
     from policyforge.mapping.crosswalk import build_crosswalk
     from policyforge.ssp.workbook import select_for_baseline
@@ -407,7 +412,7 @@ def test_example_registry_reaches_every_crosswalked_hipaa_requirement():
 
     (hipaa_coverage,) = report.framework_coverage
     assert len(hipaa_coverage.covered) == 65
-    assert hipaa_coverage.total == 75
+    assert hipaa_coverage.total == 74
 
 
 def test_a_registry_that_is_not_valid_yaml_raises_the_registry_error(tmp_path):

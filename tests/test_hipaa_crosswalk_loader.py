@@ -221,7 +221,12 @@ def test_uncovered_requirements_are_reported_not_hidden():
     report = apply_crosswalk(_controls(), _mapping())
     assert "164.306(a)" in report.unmapped_requirements
     assert "164.318(a)" in report.unmapped_requirements
-    assert len(report.unmapped_requirements) == 10
+    # Nine, not ten. The tenth was `164.314(a)(2)`, which carried a title
+    # and no text -- so NIST had nothing to map it to and it sat in this
+    # list looking like a real gap in the crosswalk. It is no longer
+    # emitted, and its three children are mapped.
+    assert len(report.unmapped_requirements) == 9
+    assert "164.314(a)(2)" not in report.unmapped_requirements
 
 
 def test_nist_ids_are_sorted_the_way_nist_prints_them():

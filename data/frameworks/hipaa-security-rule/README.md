@@ -5,8 +5,8 @@ Public domain (US federal regulation — 45 CFR Part 164, Subpart C:
 Information"). Same basis as NIST 800-53/FedRAMP/ARC-AMPE, so unlike
 HITRUST/GovRAMP this is safe to bundle directly rather than treat as BYOC.
 
-Populated: 34 top-level Standards carrying 41 Required/Addressable
-implementation specifications between them (75 requirements in total),
+Populated: 34 top-level Standards carrying 40 Required/Addressable
+implementation specifications between them (74 requirements in total),
 drawn from §§ 164.306, 164.308, 164.310, 164.312, 164.314, 164.316,
 164.318 — the definitions section, § 164.304, is intentionally excluded
 since defined terms aren't requirements.
@@ -35,14 +35,22 @@ specification carries NIST's official mapping to SP 800-53 Rev 5 in its
 ID to its HIPAA equivalents and `synthesize` pulls HIPAA requirements into
 a NIST-anchored topic.
 
-Coverage: **65 of the 75** requirements are mapped (25 Standards, 40
+Coverage: **65 of the 74** requirements are mapped (25 Standards, 40
 implementation specifications) across **278 distinct citation-to-control
-pairs**, reaching **108 distinct SP 800-53 controls**. The 10 unmapped are
+pairs**, reaching **108 distinct SP 800-53 controls**. The 9 unmapped are
 ones NIST's crosswalk doesn't cover, and are reported by name each time the
 ETL runs rather than left invisible: § 164.306(a)-(e) (general rules),
-§ 164.318(a)-(c) (compliance dates), and the two bare "Implementation
-specifications" container paragraphs, § 164.308(a)(5)(ii) and
-§ 164.314(a)(2), whose child specifications *are* individually mapped.
+§ 164.318(a)-(c) (compliance dates), and the bare "Implementation
+specifications" container paragraph § 164.308(a)(5)(ii), whose child
+specifications *are* individually mapped.
+
+§ 164.314(a)(2) was a second such container and is **no longer emitted**.
+It carried a title and no text, so citing it resolved to nothing while the
+obligation sat in its children — and unlike § 164.308(a)(5)(ii), whose
+children are nested inside it, its three children ship as top-level
+controls in their own right: § 164.314(a)(2)(i), (ii) and (iii). Cite
+those. Removing it is why the totals above are 74 and 9 rather than 75 and
+10; no requirement was lost.
 
 ### Source
 

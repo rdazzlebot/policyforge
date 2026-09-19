@@ -134,6 +134,69 @@ def _crosswalk_mappings(catalog: list[dict]) -> int:
     return total
 
 
+def _preserve_crosswalk(out: Path, replacement: list[dict]) -> None:
+    """Carry an existing catalog's crosswalk mappings onto a fresh parse.
+
+    **`etl-hipaa` only refrains from destroying mappings. It never decides
+    them** — `etl-hipaa-crosswalk` remains the single thing that reads
+    NIST's published crosswalk and says what maps to what. This copies
+    forward what is already on disk, keyed by citation, and invents
+    nothing.
+
+    Without it `_refuse_crosswalk_loss` refuses every re-parse, forever.
+    The regulation carries no crosswalk, so a fresh parse always has zero
+    mappings; once `etl-hipaa-crosswalk` has run the catalog has sixty-
+    five; `had > keeps` is then permanently true and there is no `--force`
+    on this command. **The refusal's own message told the reader to run
+    `etl-hipaa` — the command that had just refused.** A guard whose
+    remedy is circular is worse than one that simply says no, because the
+    reader spends their time doing what it said before concluding the tool
+    is wrong.
+
+    The guard keeps its teeth. An entry that disappears from the parse
+    takes its mapping with it, because there is nowhere to copy it to, and
+    the count check still fires. That is the case worth protecting: a
+    parser change that drops a mapped requirement is exactly what should
+    stop a write.
+
+    **Local to this command on purpose.** Preserving by citation means a
+    mapping survives even if the crosswalk source would no longer produce
+    it, which is right here — where the source is a separate command run
+    afterwards — and would be wrong as a general policy for a loader that
+    reads its own mappings from the document it parses.
+    """
+    import json
+
+    if not out.exists():
+        return
+    try:
+        existing = json.loads(out.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(existing, list):
+        return
+
+    # Flat by citation: a control and an enhancement never share one, and
+    # this avoids assuming the parse still nests them the same way.
+    known: dict[str, dict] = {}
+    for control in existing:
+        if control.get("control_id"):
+            known[control["control_id"]] = control.get("source_crosswalk") or {}
+        for enhancement in control.get("enhancements") or []:
+            if enhancement.get("enhancement_id"):
+                known[enhancement["enhancement_id"]] = enhancement.get("source_crosswalk") or {}
+
+    for control in replacement:
+        # Only where the fresh parse has nothing. A parser that learns to
+        # read mappings itself should win over a copy of yesterday's file.
+        if not control.get("source_crosswalk") and known.get(control.get("control_id")):
+            control["source_crosswalk"] = dict(known[control["control_id"]])
+        for enhancement in control.get("enhancements") or []:
+            citation = enhancement.get("enhancement_id")
+            if not enhancement.get("source_crosswalk") and known.get(citation):
+                enhancement["source_crosswalk"] = dict(known[citation])
+
+
 def _refuse_crosswalk_loss(out: Path, replacement: list[dict]) -> None:
     """Stop before overwriting a catalog that carries mappings this write drops.
 
@@ -171,12 +234,15 @@ def _refuse_crosswalk_loss(out: Path, replacement: list[dict]) -> None:
     raise click.ClickException(
         f"{out} carries {had} crosswalk mapping(s) and this write would leave "
         f"{keeps}, so nothing has been written.\n"
-        "`etl-hipaa` parses the regulation, which carries no crosswalk; the "
-        "mappings come from `etl-hipaa-crosswalk`, which runs after it. Run "
-        "the pipeline:\n"
-        "    policyforge etl-hipaa\n"
-        "    policyforge etl-hipaa-crosswalk\n"
-        "Both commands, in that order, leave the catalog with its mappings."
+        "`etl-hipaa` copies existing mappings forward by citation, so a "
+        "re-parse normally keeps all of them. Losing some means the parse no "
+        "longer produces entries that were mapped — a dropped or renamed "
+        "citation has taken its mapping with it, because there was nowhere "
+        "to copy it to.\n"
+        "Find which: compare the citations in the catalog against the ones "
+        "the parser now emits. If the change is intended, re-run "
+        "`etl-hipaa-crosswalk` afterwards to rebuild the mappings from "
+        "NIST's published crosswalk rather than from this file."
     )
 
 
@@ -220,6 +286,10 @@ def etl_hipaa(date: str | None, out: Path):
     xml_text = fetch_ecfr_subpart_c_xml(date=date)
     controls = parse_hipaa_security_rule(xml_text)
     parsed = [dataclasses.asdict(c) for c in controls]
+
+    # Carry the mappings across, then check for loss. Without this the
+    # check below refuses every re-parse forever — see `_preserve_crosswalk`.
+    _preserve_crosswalk(out, parsed)
 
     # Before anything is written, including the provenance stamp, so a
     # refusal leaves no half-updated catalog directory behind.

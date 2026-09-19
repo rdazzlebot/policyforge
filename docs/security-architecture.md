@@ -670,17 +670,22 @@ comfortable.
    longer invisible.** This entry used to say that a tag whose first
    citation leads with an unlisted framework name could not be seen by any
    check that reads tags: the allowlist was `edit/apply._SOURCE_TAG_RE`,
-   it listed `ARC-AMPE` but not the abbreviation `ARC`, and measured against
-   a 59-document tree it could not see **22 tags carrying 31 citations** —
-   21 in `standards/physical-environmental-security.md` and 1 in its
-   procedure.
+   it listed `ARC-AMPE` but not the abbreviation `ARC`, and measured
+   against the 59-document tree of epoch 21's run it could not see **22
+   tags carrying 31 citations** — 21 in
+   `standards/physical-environmental-security.md` and 1 in its procedure.
 
    The tag-shape refactor removed the allowlist. `content/tags.py` now
    recognises a tag by its shape — capitalised name tokens followed by a
    token carrying a digit — and `edit/apply._SOURCE_TAG_RE` is an alias to
    that one rule, so `check` and `drift` read tags the same way `apply`
-   does. `[ARC PE-8 AE Mandatory | NIST PE-8]` matches and reports its
-   framework as `ARC`, verified against this tree on 2026-09-18.
+   does. A tag opening with the abbreviation `ARC`, which is the form the
+   bundled starter set writes and the form the old list required to be
+   spelled `ARC-AMPE`, now matches and reports its framework as `ARC`.
+   Re-derived on 2026-09-18: the same 22 are now seen. That count came
+   from a session scratchpad rather than from this repository, so it is
+   **not reproducible from this repo alone** — what is checkable here is
+   the mechanism, in `tests/test_source_tags.py`.
 
    Kept rather than deleted, because a reader who acted on the old sentence
    may have discounted what `check` and `drift` reported for those pages,

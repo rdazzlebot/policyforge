@@ -97,8 +97,24 @@ def decide(paths: list[str], body: str) -> tuple[bool, str]:
     # in one shared section. Without this clause the guard would push every
     # author back into the file the fragments were built to keep them out of,
     # which is how a well-meant check defeats the change it sits beside.
-    fragment = next((p for p in paths if p.startswith(FRAGMENT_DIR) and p.endswith(".md")), None)
-    if fragment and not fragment.endswith("/README.md"):
+    # The README exclusion belongs INSIDE the filter, not after it. Written
+    # as `next(...)` then `if not ...README.md`, this took the first `.md`
+    # under changelog.d/ and only then asked whether it was the README — so a
+    # branch adding a real fragment AND touching the README was rejected,
+    # because `git diff --name-only` sorts and uppercase `R` sorts first.
+    # The boolean was a true answer about the first file it happened to see
+    # rather than about the branch, and the case it broke is the likely one:
+    # whoever writes the first fragment and improves the instructions while
+    # they are in there. Found by 9b reviewing this clause.
+    fragment = next(
+        (
+            p
+            for p in paths
+            if p.startswith(FRAGMENT_DIR) and p.endswith(".md") and not p.endswith("/README.md")
+        ),
+        None,
+    )
+    if fragment:
         return True, f"{fragment} is in this change."
 
     if CHANGELOG in paths:

@@ -49,6 +49,32 @@ def test_the_fragment_readme_does_not_count_as_an_entry() -> None:
     assert not ok
 
 
+@pytest.mark.parametrize(
+    "paths",
+    [
+        ["changelog.d/README.md", "changelog.d/feat.md"],
+        ["changelog.d/feat.md", "changelog.d/README.md"],
+        ["changelog.d/README.md", "changelog.d/adds-thing.md", "changelog.d/feat.md"],
+    ],
+    ids=["readme-first", "fragment-first", "readme-first-two-fragments"],
+)
+def test_a_real_fragment_counts_whatever_order_the_readme_arrives_in(paths: list[str]) -> None:
+    """The defect 9b found, in the likely case rather than a corner one.
+
+    Written as `next(...)` then `if not ...README.md`, the clause took the
+    first `.md` under changelog.d/ and only then asked whether it was the
+    README — so a branch with a real fragment *and* a README touch was
+    rejected. `git diff --name-only` sorts, and uppercase `R` sorts before
+    every lowercase letter, so the README is first by default. The author
+    most likely to hit it is whoever writes the first fragment and improves
+    the instructions while they are there, and the guard would have told
+    them to add the entry they were looking at.
+    """
+    ok, message = guard.decide(["src/policyforge/cli/etl.py", *paths], body="")
+    assert ok, message
+    assert "README.md" not in message
+
+
 def test_editing_the_changelog_directly_still_satisfies_it() -> None:
     ok, _ = guard.decide(["src/policyforge/cli/etl.py", "CHANGELOG.md"], body="")
     assert ok

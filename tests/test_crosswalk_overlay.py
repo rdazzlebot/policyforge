@@ -15,6 +15,7 @@ from policyforge.crosswalk.overlay import (
     ACCEPTED,
     REJECTED,
     MappingRow,
+    NotAnchorableError,
     OverlayError,
     apply_overlays,
     check_overlay,
@@ -554,3 +555,63 @@ def test_a_merely_similar_name_is_not_refused(other):
     from policyforge.crosswalk.overlay import _refusal_reason
 
     assert _refusal_reason(other) is None
+
+
+def test_the_manifest_spelling_is_refused_too():
+    """This repo calls the catalog two things, and both must refuse.
+
+    `controls.json` declares `45 CFR 171`; `framework.yaml` says
+    `Information Blocking (45 CFR Part 171)`. The manifest is where a
+    person looks up what a catalog is called, so the second spelling is the
+    one a careful user is most likely to type — and matching only the typed
+    string let it through to "no requirements found", which is a politer
+    spelling of the empty overlay this guard replaces.
+    """
+    with pytest.raises(NotAnchorableError):
+        seed_overlay(_conditions_catalog(), "Information Blocking (45 CFR Part 171)")
+
+
+def test_the_refusal_names_the_catalog_as_the_data_declares_it():
+    """However it was typed, the message names what the catalog calls itself."""
+    with pytest.raises(NotAnchorableError) as excinfo:
+        seed_overlay(_conditions_catalog(), "Information Blocking (45 CFR Part 171)")
+
+    assert str(excinfo.value).startswith("45 CFR 171 cannot anchor")
+
+
+def test_the_two_refusals_are_different_types():
+    """A reviewer should not be the only thing telling them apart.
+
+    Both were `OverlayError`, and 1d's review probe passed `[]` as controls,
+    hit the empty-catalog error, and read it as the guard — nearly reporting
+    that `45 CFR 164` was refused when it was not.
+    """
+    with pytest.raises(NotAnchorableError):
+        seed_overlay(_conditions_catalog(), CONDITIONS_FRAMEWORK)
+
+    with pytest.raises(OverlayError) as excinfo:
+        seed_overlay(_catalogs(), "Some Framework Nobody Loaded")
+    assert not isinstance(excinfo.value, NotAnchorableError)
+
+
+def test_an_unknown_name_names_what_was_actually_loaded():
+    """ "No requirements found" reads as "no mapping published yet".
+
+    That is a claim about the crosswalk; the truth is a claim about the
+    name. They want opposite responses, so the message lists the frameworks
+    present and marks any that cannot anchor one.
+    """
+    with pytest.raises(OverlayError) as excinfo:
+        seed_overlay(_conditions_catalog(), "45 CFR 164")
+
+    message = str(excinfo.value)
+    assert "45 CFR 164" in message
+    assert "'45 CFR 171' (cannot anchor a crosswalk)" in message
+
+
+def test_a_similar_name_is_not_swept_into_the_refusal():
+    """`45 CFR 164` and `45 CFR 1710` are different catalogs, not prefixes."""
+    for other in ("45 CFR 164", "45 CFR 1710"):
+        with pytest.raises(OverlayError) as excinfo:
+            seed_overlay(_conditions_catalog(), other)
+        assert not isinstance(excinfo.value, NotAnchorableError)

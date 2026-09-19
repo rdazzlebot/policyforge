@@ -63,7 +63,7 @@ SKIP_FLAGS = {
     "semgrep (broader SAST)": "semgrep",
     "gitleaks (secrets scan)": "gitleaks",
     "line endings (no CRLF in tracked files)": "git",
-    "conflict markers (none in tracked files)": "git",
+    "conflict markers (tracked and untracked)": "git",
 }
 
 
@@ -144,6 +144,44 @@ def _git(*args: str, root: Path | None = None) -> subprocess.CompletedProcess[st
     )
 
 
+def _tree_identity(root: Path | None = None) -> str:
+    """Which tree a check just examined, not merely how much of it.
+
+    A count answers "was this check empty or did it find nothing" and stops
+    there. It does not say *what was in front of it*, and on 2026-09-18 the
+    gate printed "321 tracked files scanned, 0 conflict marker(s) found" —
+    true of the tree it ran on, false of the tree pushed a minute later,
+    because the offending file was still untracked. Every check that reads
+    the repository prints this line so the answer is attached to a tree
+    rather than floating free.
+    """
+    head = _git("rev-parse", "--short", "HEAD", root=root)
+    sha = head.stdout.strip() if head.returncode == 0 else "no commits"
+    # `??` is an untracked file and is counted separately below. Reading
+    # its second column as a modification state counts it as "unstaged",
+    # which is how the first version of this line reported one untracked
+    # file as "0 staged, 1 unstaged, 1 untracked" — the same file twice,
+    # once under a name that does not describe it.
+    dirty = [
+        line
+        for line in _git("status", "--porcelain", root=root).stdout.splitlines()
+        if line.strip() and not line.startswith("??")
+    ]
+    staged = sum(1 for line in dirty if line[:1] not in {" ", ""})
+    unstaged = sum(1 for line in dirty if line[1:2] not in {" ", ""})
+    others = len(
+        [
+            line
+            for line in _git(
+                "ls-files", "--others", "--exclude-standard", root=root
+            ).stdout.splitlines()
+            if line.strip()
+        ]
+    )
+    state = "clean" if not dirty else f"{staged} staged, {unstaged} unstaged"
+    return f"tree: HEAD {sha}, {state}, {others} untracked (not ignored)"
+
+
 def check_line_endings(root: Path | None = None) -> bool | None:
     """No tracked file may carry CRLF in the index. None if git is absent.
 
@@ -157,9 +195,17 @@ def check_line_endings(root: Path | None = None) -> bool | None:
     index blob, which is what ships, and a working tree legitimately holds
     CRLF under autocrlf=true. Reading the working tree would flag every
     Windows checkout; reading the blob flags only what was committed.
+
+    Untracked files are deliberately NOT examined here, unlike the
+    conflict-marker check. A CRLF working-tree file is not yet a defect:
+    `core.autocrlf` and `.gitattributes` normalise at `git add`, so the
+    blob it becomes may well be LF, and flagging it would fire on every
+    Windows checkout. The count of untracked files is printed instead, so
+    the gap is stated rather than silent.
     """
     label = "line endings (no CRLF in tracked files)"
     print(f"\n{'=' * 60}\n{label}\n{'=' * 60}")
+    print(_tree_identity(root))
     result = _git("ls-files", "--eol", root=root)
     if result.returncode != 0:
         print(f"SKIPPED — `git ls-files --eol` failed:\n{result.stderr.strip()}")
@@ -179,13 +225,21 @@ def check_line_endings(root: Path | None = None) -> bool | None:
 
 
 def check_conflict_markers(root: Path | None = None) -> bool | None:
-    """No tracked file may contain a merge-conflict marker.
+    """No file about to be committed may contain a merge-conflict marker.
 
     `git add -A` mid-rebase happily stages a file git still reports as
     unresolved, and the rebase then completes clean. Every catch we have is
     incidental: a marker is a Python syntax error, and `=======` reads as a
     setext heading underline to mdformat. Nothing in the gate parses YAML
     at all, and `.yaml` covers every workflow file and `framework.yaml`.
+
+    Scans UNTRACKED files too, via `git grep --untracked`, which still
+    honours `.gitignore`. An earlier version read tracked files only and so
+    could not see the incident that produced it: the file carrying the
+    markers was untracked when the gate ran and committed a minute later,
+    and the gate reported "0 conflict marker(s) found" over a tree that did
+    not contain it. The untracked file is precisely the one about to become
+    a commit, so it is the one that most needs looking at.
 
     Deliberately does NOT search for `=======`. Seven equals signs are a
     legal setext heading underline and appear in ordinary prose, and git
@@ -196,10 +250,11 @@ def check_conflict_markers(root: Path | None = None) -> bool | None:
     while writing this and reported two hits in README.md: 60-character
     rules inside a fenced sample-output block.)
     """
-    label = "conflict markers (none in tracked files)"
+    label = "conflict markers (tracked and untracked)"
     print(f"\n{'=' * 60}\n{label}\n{'=' * 60}")
+    print(_tree_identity(root))
     unambiguous = r"^(<<<<<<< |>>>>>>> |\|\|\|\|\|\|\| )"
-    result = _git("grep", "-I", "-n", "-E", unambiguous, "--", ".", root=root)
+    result = _git("grep", "-I", "-n", "-E", "--untracked", unambiguous, "--", ".", root=root)
     if result.returncode not in (0, 1):
         print(f"SKIPPED — `git grep` failed:\n{result.stderr.strip()}")
         return None
@@ -208,7 +263,19 @@ def check_conflict_markers(root: Path | None = None) -> bool | None:
     tracked = len(
         [line for line in _git("ls-files", root=root).stdout.splitlines() if line.strip()]
     )
-    print(f"{tracked} tracked files scanned, {len(hits)} conflict marker(s) found")
+    others = len(
+        [
+            line
+            for line in _git(
+                "ls-files", "--others", "--exclude-standard", root=root
+            ).stdout.splitlines()
+            if line.strip()
+        ]
+    )
+    print(
+        f"{tracked} tracked + {others} untracked files scanned, "
+        f"{len(hits)} conflict marker(s) found"
+    )
     for line in hits:
         print(f"  {line}")
     if hits:
@@ -305,7 +372,7 @@ def main(argv: list[str] | None = None) -> int:
         # Tree hygiene last: both are fast, and both catch a class the rest
         # of the gate only ever caught by accident.
         "line endings (no CRLF in tracked files)": check_line_endings(),
-        "conflict markers (none in tracked files)": check_conflict_markers(),
+        "conflict markers (tracked and untracked)": check_conflict_markers(),
     }
 
     return summarise(results, allow_skip)

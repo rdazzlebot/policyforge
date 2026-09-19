@@ -94,9 +94,18 @@ now refuses CRLF in any tracked file and any merge-conflict marker
 anywhere in the tree. Both were previously caught only as side effects —
 CRLF because mdformat rejects a carriage return, conflict markers because
 they are a Python syntax error — and neither side effect covers `.yaml`,
-which is every workflow file and `framework.yaml`. The line-ending check
-reads the index blob rather than the working tree, so a Windows checkout
-under `core.autocrlf=true` is not flagged for doing the normal thing.
+which is every workflow file and `framework.yaml`.
+
+The conflict-marker check reads **untracked files too**, honouring
+`.gitignore`, because the file you have not added yet is the one about to
+become a commit — a tracked-only scan is green before `git add` and red
+after. The line-ending check deliberately does not: `core.autocrlf` and
+`.gitattributes` normalise at `git add`, so a CRLF working-tree file is
+not yet a defect and flagging it would fire on every Windows checkout. It
+reads the index blob instead, and prints the count of untracked files it
+did not examine. Both checks now name the tree they looked at — HEAD,
+clean or dirty, untracked count — because a total says how much was
+examined and never what.
 
 ## 1.3.0
 

@@ -183,6 +183,80 @@ def test_conflict_marker_check_on_a_non_repository_skips(tmp_path: Path) -> None
     assert check.check_conflict_markers(tmp_path) is None
 
 
+def test_an_untracked_marked_file_fails(tmp_path: Path) -> None:
+    """The incident this whole file exists for, as a test.
+
+    On 2026-09-18 the gate ran while `tests/test_tree_hygiene.py` was still
+    untracked, printed "321 tracked files scanned, 0 conflict marker(s)
+    found", and the file was committed a minute later. CI then failed on
+    it. A tracked-only scan is green before the commit and red after, and
+    the untracked file is precisely the one about to become a commit.
+
+    Every other test here commits before checking, so the suite could not
+    see this. Noted by 80 in review, with a scratch repository proving it,
+    after the tracked-only version had already shipped.
+    """
+    root = _repo(tmp_path, autocrlf="false")
+    (root / "kept.txt").write_bytes(b"ok\n")
+    _add_all(root)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=root, check=True)
+
+    (root / "ci.yaml").write_bytes(MARKED_YAML)  # written, never staged
+    assert check.check_conflict_markers(root) is False
+
+
+def test_an_ignored_marked_file_is_not_flagged(tmp_path: Path) -> None:
+    """Scanning untracked files must not mean scanning junk.
+
+    `git grep --untracked` still honours `.gitignore`, so scratch output,
+    virtualenvs and build directories stay out. Without this the check
+    would fire on files nobody is about to commit, and a check that cries
+    wolf on ignored paths gets turned off.
+    """
+    root = _repo(tmp_path, autocrlf="false")
+    (root / ".gitignore").write_bytes(b"scratch/\n")
+    _add_all(root)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=root, check=True)
+
+    (root / "scratch").mkdir()
+    (root / "scratch" / "ci.yaml").write_bytes(MARKED_YAML)
+    assert check.check_conflict_markers(root) is True
+
+
+def test_the_check_names_the_tree_it_examined(capsys: pytest.CaptureFixture[str]) -> None:
+    """A count says how much was examined, never what.
+
+    "321 tracked files scanned, 0 found" was true of the tree the gate ran
+    on and false of the tree pushed a minute later. Both checks now print
+    the HEAD sha, whether the tree is clean, and how many untracked files
+    there are, so the answer is attached to a tree rather than floating.
+    """
+    check.check_conflict_markers()
+    out = capsys.readouterr().out
+    assert "tree: HEAD " in out
+    assert "untracked (not ignored)" in out
+
+
+def test_the_line_ending_check_states_what_it_did_not_examine(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Untracked files are out of scope here, and that is stated, not silent.
+
+    Unlike conflict markers, a CRLF working-tree file is not yet a defect:
+    `core.autocrlf` and `.gitattributes` normalise at `git add`, so it may
+    well become an LF blob. Flagging it would fire on every Windows
+    checkout. The count is printed so the gap is visible.
+    """
+    root = _repo(tmp_path, autocrlf="false")
+    (root / "tracked.yaml").write_bytes(b"a: 1\n")
+    _add_all(root)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=root, check=True)
+    (root / "loose.yaml").write_bytes(b"b: 2\r\n")
+
+    assert check.check_line_endings(root) is True
+    assert "1 untracked (not ignored)" in capsys.readouterr().out
+
+
 def test_this_repository_has_no_conflict_markers_or_crlf() -> None:
     """Run both checks against the real tree, not a fixture.
 

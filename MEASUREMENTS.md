@@ -1601,6 +1601,55 @@ rule, the prompt is the likelier explanation.
 check.** Both `sonnet-5` and `deepseek-v4-flash` produced non-verbatim
 quotations from table content, on the same case.
 
+**A check can be wrong in two ways, and only one of them leaves anything
+working.** Three sessions hit this independently on 2026-09-18, and the
+cases look unrelated until they are put side by side.
+
+The first way: **the check that worked was not the one doing the work.** A
+defect in the tree guard's argument parsing was caught by
+`tests/test_tree_guard.py` calling `main()` for an entirely unrelated
+reason, while every test written for that change passed. A working check
+existed; it simply was not the one written for the job. That is
+recoverable, because something in the system still fails when the code is
+wrong.
+
+The second way is worse: **a check whose output was fixed before it ran.**
+A `CHANGELOG.md` line-ending verification used a `grep` incapable of
+returning anything but zero, and the result was reported inside an
+approval — right conclusion, worthless evidence, in the file this project
+singles out as the one to distrust. It surfaced only when the same tool was
+later needed for something else. Separately, a parser was verified by
+re-running it and observing that the numbers did not move — an output
+identical whether the parser was right by design or right by accident.
+
+**An incidental catch and a real one produce identical output.** A pattern
+that reads the right thing by accident passes every check a pattern that
+reads it on purpose does. That is why the second class has no working check
+anywhere in the system, and why an approval can carry one through.
+
+**The two are found by different means, which is the practical part.** A
+near-miss — code that *could* have failed and happened not to — is found by
+asking what data would break it. A check that could not have failed is
+found only by constructing the failing case and watching the check fail.
+Mutation is that, done deliberately: swap the correct rule for the naive
+one and see which tests notice. Run against a parser's tests it separated
+the ones carrying the property from the ones that passed on the broken
+version too. A measurement suite deserves the same treatment, and for the
+same reason — **a test that passes on both is not evidence about either.**
+
+**Keep the near-miss and the cannot-fail apart.** The parser above *could*
+have failed: it keyed on the citation brackets rather than the verdict
+label, so it read both verdicts by accident and would have broken on a
+claim quoted differently. It was one input away. Its *verification* is the
+one that could not fail. Collapsing them loses the distinction that says
+where to look.
+
+**This entry was itself corrected by the rule it describes.** The roster
+above arrived misattributed, in a specification written by the author of
+one of the mistakes, and was corrected by declining to inherit an
+attribution rather than by checking it later. A piece about checks that
+cannot fail should not contain an unchecked claim.
+
 ______________________________________________________________________
 
 ## Adding a run

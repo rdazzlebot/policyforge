@@ -74,8 +74,9 @@ filter, so adding one and forgetting the other edit fails a test instead.
 
 **The HIPAA catalog no longer ships an implementation specification with
 no text.** `164.314(a)(2)`, *"Implementation specifications"*, had a title
-and an empty description — the only entry in any bundled catalog with a
-title and no text at all, 1 of 1,044. A user citing it cited a title, and
+and an empty description — the only entry in any bundled catalog with no
+text **and nothing beneath it**, 1 of 1,044 implementation specifications,
+and now none. A user citing it cited a title, and
 an assessor following that citation found nothing, while the obligation
 they wanted sat at `164.314(a)(2)(i)`. Its source paragraph is a run-in
 heading that delegates everything to its children, and all three children
@@ -84,13 +85,18 @@ from the catalog** — the citation that resolves to text is now the only
 one offered. The identically titled `164.314(b)(2)`, where the text really
 does follow the label, is unchanged.
 
-**One container of the same shape remains**, and it is not fixed here:
-`164.308(a)(5)(ii)`, whose entire statement is *"Implement:"*. It differs
-in the way that decides the remedy — its four children are nested inside
-it rather than shipping as controls of their own, so dropping it would
-orphan them. It needs them promoted first, which is a change to what the
-catalog contains rather than a removal from it, and that is not this
-release.
+**One container is called out and not fixed here**, and the distinction
+matters for anyone auditing the rest. Section-level containers
+legitimately carry no text of their own — their paragraphs carry it, and
+seven entries across the bundled catalogs do exactly that, including
+`2.16` and `2.19` in the Part 2 catalog above. None of those is a defect.
+`164.308(a)(5)(ii)` is singled out because its statement is the fragment
+*"Implement:"*, which reads as an obligation rather than as a heading: a
+clean empty heading does not mislead a reader, and that one does. It is
+not fixed here because its four children are nested inside it rather than
+shipping as controls of their own, so dropping it would orphan them — it
+needs them promoted first, which changes what the catalog contains rather
+than removing from it, and that is not this release.
 
 **`policyforge etl-hipaa` can be re-run again.** It carries existing
 crosswalk mappings forward by citation, so re-parsing the regulation no

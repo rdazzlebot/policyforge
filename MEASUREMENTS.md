@@ -24,16 +24,73 @@ ______________________________________________________________________
 - **`--repeat 3`** unless noted. The harness reports a *rate*, not a
   verdict, because one run is not evidence — `evals/runner.py` explains
   why at length.
+
 - **2–3 points is noise at this sample size.** The same model, same code,
   two runs, moved 96% → 95% on `answer_paraphrase`. Trust a direction that
   holds across suites; do not trust a small gap.
+
 - **Costs are per whole suite run**, from the harness's own accounting
   (64 calls for the terse trio, 67 for `answering`, 198 for `paraphrase`).
+
 - **Costs before 2026-09-13 are understated** for any model that tripped
   `ReasoningBudgetExhausted`: a call that raised was billed but not
   counted until that was fixed.
+
 - **Third-party routing varies.** Models reached through OpenRouter may be
   served by different upstreams between runs, with different quantisation.
+
+- **Whether a cost is a total or a floor can be confirmed one way only, and
+  before 1.3.0 mostly not at all.** Nothing recorded reasoning: `LLMResponse`
+  carried input tokens, output tokens, cost, stop reason, cached input and
+  request id, and no reasoning field. Cost is *computed* — LiteLLM prices the
+  call from its own tables against the prompt and completion counts the
+  endpoint reported — so a cost is a total exactly when reasoning is inside
+  `completion_tokens`, and that is a property of each endpoint which our
+  records do not assert either way.
+
+  There is one test, and it works in one direction. Where the output
+  survives, output tokens can be compared against the characters delivered:
+  hidden output that *was counted* depresses that ratio, because tokens were
+  billed that never reached the page. So **a low ratio is positive evidence
+  the cost is a total**. A normal ratio proves nothing — "the model did not
+  reason" and "it reasoned and the endpoint never reported it" look
+  identical. A floor therefore cannot be confirmed from anything we hold,
+  only from the provider's own accounting.
+
+  Applied to the only runs that left both a ledger and their documents, all
+  from epoch 21, after dropping superseded retry attempts (the ledger records
+  one row per attempt, so a discarded first attempt otherwise gets paired
+  against the final document):
+
+  | run            | model                       | n   | median chars/token |
+  | -------------- | --------------------------- | --- | ------------------ |
+  | pre-1.2.1 glm  | `z-ai/glm-5.3-flash`        | 56  | 4.38               |
+  | 1.2.1 glm      | `z-ai/glm-5.3-flash`        | 59  | 3.93               |
+  | 1.2.1 sonnet-5 | `anthropic/claude-sonnet-5` | 15  | 2.44               |
+
+  English prose runs about four characters per token and dense markdown
+  lower, so the glm arms are what a run with no hidden channel looks like.
+  **The sonnet arm is systematically low — a whole arm, not one call** — which
+  is positive evidence that epoch 21's $3.0875 figure is a total. It is not
+  evidence that sonnet-5 reasoned: a tokeniser difference between vendors on
+  identical markdown is a competing explanation, and 38% is large for that
+  but not impossible.
+
+  **Every other epoch quoting a cost is unknowable**, and the reason is the
+  test's one-sidedness rather than missing ledgers alone: their runs left no
+  surviving output to compare tokens against, so even a complete ledger could
+  not have established a total. Do not infer from the model named in an
+  epoch — "this looks like a reasoning model" is the inference this note
+  exists to refuse.
+
+  **From 1.3.0 the question is a lookup rather than an inference.**
+  `hidden_output_tokens` records what the vendor says it billed and did not
+  return; `stripped_reasoning_chars` records what `answer_of` removed before
+  the reply was stored. Two different invisibilities, neither recoverable
+  after the fact before those fields existed. So the cut-off is clean: before
+  1.3.0, inferred where output survives and unknowable otherwise; after it,
+  recorded.
+
 - **From `7241d90` (2026-09-14) to `82d4b26`, the harness and the CLI did not
   send the same request.** Every provider built from config came back wrapped
   in the call ledger's `RecordingProvider`, which answered False for

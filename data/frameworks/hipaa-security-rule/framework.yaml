@@ -4,7 +4,7 @@ licence: public-domain
 source: eCFR public API, via policyforge etl-hipaa
 notes: A US government work, so freely redistributable. Bundled with this project and safe
   to commit to any repository.
-source_ref: '2026-09-16'
-source_url: https://www.ecfr.gov/api/versioner/v1/full/2026-09-16/title-45.xml?part=164
-content_sha256: 71e63bbdbcb40645645b8b814dfa7c75a10a2377cbdeae1f00dc4a450b65ac35
-fetched_at: '2026-09-18'
+source_ref: '2026-09-17'
+source_url: https://www.ecfr.gov/api/versioner/v1/full/2026-09-17/title-45.xml?part=164
+content_sha256: 13a0c28d51f23fc21b7c048255db83d3a420b7430835a04add748c077c451233
+fetched_at: '2026-09-19'

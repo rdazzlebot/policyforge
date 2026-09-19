@@ -130,3 +130,92 @@ def test_raises_on_missing_subpart_c():
         assert "Subpart C" in str(exc)
     else:
         raise AssertionError("expected ValueError when Subpart C is absent")
+
+
+# --------------------------------------------------------------------------
+# Nothing emitted is empty
+# --------------------------------------------------------------------------
+
+
+def test_the_source_carries_164_314_a_2_as_a_run_in_heading():
+    """First half of the two-sided assertion: the paragraph really is a
+    heading that delegates to its children.
+
+    If eCFR ever gives `(a)(2)` text of its own, this fails and the
+    omission below has to be revisited rather than left quietly dropping
+    a real requirement.
+    """
+    xml = FIXTURE.read_text(encoding="utf-8")
+
+    # The em dash is the entity `&#x2014;` in the raw fixture, not a decoded
+    # character: this reads the file as published rather than as parsed, so
+    # it must match what is actually on disk.
+    assert (
+        "<P>(2) <I>Implementation specifications (Required)</I>"
+        "&#x2014;(i) <I>Business associate contracts.</I>" in xml
+    ), "164.314(a)(2) is no longer the run-in heading this omission assumes"
+
+
+def test_the_catalog_has_no_entry_for_164_314_a_2():
+    """Second half. It carried a title and no text: an entry that counts,
+    renders and crosswalks while saying nothing.
+
+    Worse than a blank row -- a user citing `164.314(a)(2)` cited a title,
+    and an assessor following that citation found nothing, while the
+    obligation they wanted sat at `(a)(2)(i)`.
+    """
+    _, by_id = _load()
+
+    assert "164.314(a)(2)" not in by_id
+
+
+def test_dropping_it_loses_no_obligation():
+    """Its entire content is its children, and all three are emitted as
+    controls in their own right."""
+    _, by_id = _load()
+
+    for citation, opening in (
+        ("164.314(a)(2)(i)", "The contract must provide"),
+        ("164.314(a)(2)(ii)", "arrangement"),
+        ("164.314(a)(2)(iii)", "subcontractor"),
+    ):
+        assert citation in by_id, citation
+        assert opening.lower() in by_id[citation].control_statement.lower(), citation
+
+
+def test_the_identically_titled_specification_that_does_state_something_is_kept():
+    """`164.314(b)(2)` has the same title as the dropped entry and a real
+    description, because there the text follows the label instead of
+    delegating. The contrast is what shows this is not the phrase being
+    mishandled."""
+    _, by_id = _load()
+
+    kept = by_id["164.314(b)(2)"]
+
+    assert kept.title == "Implementation specifications"
+    assert "plan documents of the group health plan" in kept.description
+    assert len(kept.description) > 500
+
+
+def test_no_implementation_specification_is_empty():
+    """The general rule rather than the one instance, so the next
+    run-in heading is caught without anyone noticing it."""
+    controls, _ = _load()
+
+    empty = [
+        e.enhancement_id for c in controls for e in c.enhancements if not e.description.strip()
+    ]
+
+    assert empty == []
+
+
+def test_a_heading_shaped_control_may_still_have_no_statement():
+    """Deliberately **not** covered by the rule above. A control that is
+    purely structural legitimately carries no statement of its own, and
+    "fix" it and you would start dropping real sections."""
+    controls, _ = _load()
+
+    assert controls, "no controls parsed"
+    # The rule is about enhancements only; assert the parser still emits
+    # controls regardless of whether they carry a statement.
+    assert any(c.control_statement.strip() for c in controls)

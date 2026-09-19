@@ -187,7 +187,54 @@ def _parse_section(section_id: str, head: str, body: str) -> list[Control]:
             current_enh = None
             controls.append(current)
 
+    _drop_empty_enhancements(controls)
     return controls
+
+
+def _drop_empty_enhancements(controls: list[Control]) -> None:
+    """Remove implementation specifications that carry no obligation.
+
+    **Nothing emitted is empty**, the rule this project applies one level up
+    to `[Reserved]` sections and paragraphs. An entry with a title and no
+    text counts, renders and crosswalks while saying nothing, and every
+    check except "is this requirement real" passes on it.
+
+    One entry in one catalog meets this today: `164.314(a)(2)`,
+    *"Implementation specifications"*, in the Security Rule. Its source
+    paragraph is a run-in heading that delegates everything to its
+    children:
+
+        (2) Implementation specifications (Required)-(i) Business associate
+            contracts. The contract must provide that the business
+            associate will-
+
+    **No content is lost by dropping it.** All three children are emitted
+    as controls in their own right -- `(a)(2)(i)`, `(a)(2)(ii)` and
+    `(a)(2)(iii)` -- so the container's entire content is those entries.
+    What it cost was worse than a blank row: a user citing `164.314(a)(2)`
+    cited a title, and an assessor following the citation found nothing,
+    while the obligation they wanted sat at `(a)(2)(i)`.
+
+    The contrast that shows this is not the phrase's fault is in the same
+    section. `164.314(b)(2)` has the **identical title** and a 771-
+    character description, because there the text really does follow the
+    label. So this drops containers that delegate, and keeps every
+    specification that states something.
+
+    Applied after parsing rather than at creation, and that ordering is
+    load-bearing: prose following an italic run is appended to the open
+    enhancement as the loop proceeds, so a specification's description is
+    not final until the section is. Skipping creation instead would
+    redirect that trailing prose onto the parent `Control`, which changes
+    entries that were correct.
+
+    Empty `control_statement` is deliberately **not** touched. A heading-
+    shaped control legitimately has none -- `164.314(a)(1)` and `(b)(1)`
+    carry statements because those sections state obligations, and the
+    purely structural ones do not.
+    """
+    for control in controls:
+        control.enhancements = [e for e in control.enhancements if e.description.strip()]
 
 
 #: The Security Rule's own coordinates. Named here rather than passed by

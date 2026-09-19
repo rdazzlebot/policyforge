@@ -27,6 +27,28 @@ entries — `171.402`, `171.102` and `171.401` have a number, a title and no
 obligations, and an empty entry is the kind that counts, renders and
 crosswalks while meaning nothing.
 
+**The local gate no longer reports success for checks that did not run.**
+`scripts/check.py` decided its exit code on failures alone, so a skipped
+check left the verdict untouched and the script exited zero. On a machine
+without the two optional tools it printed a summary of passes and a green
+exit — and both optional tools are the security ones, semgrep's SAST and
+gitleaks' secrets scan. A skip now fails the gate unless you accept it by
+name, `--allow-skip gitleaks`, and the summary leads with what did not run
+and states `10 ran, 0 failed, 1 skipped`. Nothing about which checks exist
+or what they enforce has changed; what changed is that an absent tool is a
+decision someone made rather than a silence. If you script this, a machine
+that was exiting zero may now exit 1, and it was never telling you what
+you thought it was.
+
+**Two new checks, for defects that were being caught by luck.** The gate
+now refuses CRLF in any tracked file and any merge-conflict marker
+anywhere in the tree. Both were previously caught only as side effects —
+CRLF because mdformat rejects a carriage return, conflict markers because
+they are a Python syntax error — and neither side effect covers `.yaml`,
+which is every workflow file and `framework.yaml`. The line-ending check
+reads the index blob rather than the working tree, so a Windows checkout
+under `core.autocrlf=true` is not flagged for doing the normal thing.
+
 ## 1.3.0
 
 Three things this release lets you do that 1.2.1 could not: map your own

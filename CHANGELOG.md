@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+**If you script any of this, three commands change their exit code.** Each is
+explained in full in its own entry below; they are collected here because a
+release note that contains a warning but does not surface it has done half
+its job.
+
+- **`satisfies --strict` goes red** where two NIST-family catalogs are
+  loaded and documents still carry short-form citations. A one-catalog tree
+  does not move.
+- **`etl-hipaa` now exits non-zero** when run on its own, where it
+  previously succeeded while silently dropping the catalog's 65 crosswalk
+  mappings. Run `etl-hipaa-crosswalk` after it.
+- **`scripts/check.py` exits 1 when a check did not run** — contributors
+  only; this is the local gate, not the tool.
+
 **Every NIST-family catalog now has its own key.** A framework's key was the
 first word of its declared name, so `NIST 800-53`, `NIST 800-171`,
 `NIST 800-172`, `NIST 800-137` and `NIST Cybersecurity Framework` all filed
@@ -59,9 +73,9 @@ The bundled HIPAA crosswalk's 65 mappings were re-keyed from `nist` to
   rested on git history and review. It is stamped from the eCFR source it was
   built from, and all five bundled catalogs now match their recorded hashes:
   `arc-ampe`, `cfr-171-information-blocking`, `fedramp`,
-  `hipaa-security-rule`, `nist-800-53-r5`. Anyone who
-  ran `policyforge frameworks` and saw HIPAA reported as unverifiable was
-  seeing a real gap, not a display quirk; it is closed.
+  `hipaa-security-rule`, `nist-800-53-r5`. Anyone who ran
+  `policyforge frameworks` and saw HIPAA reported as unverifiable was seeing
+  a real gap, not a display quirk; it is closed.
 - **`ingest/ecfr.py` is one fetcher for every CFR part.** `current_date`,
   `source_url` and `fetch_part_xml` take a title and a part, and
   `hipaa_loader` keeps its own names and signatures as thin wrappers naming
@@ -71,7 +85,7 @@ The bundled HIPAA crosswalk's 65 mappings were re-keyed from `nist` to
   so a change of behaviour fails rather than a change of shape. It is what the
   45 CFR 171 catalog is built on, and what 45 CFR 170.315 and 42 CFR Part 2
   will use.
-  It arrived inside the stamping change rather than under its own heading,
+  It arrived inside the stamping change rather than as an entry of its own,
   which is worth knowing if you go looking for when it landed.
 
 **A fifth bundled catalog: information blocking (45 CFR Part 171).**
@@ -99,7 +113,8 @@ entries — `171.402`, `171.102` and `171.401` have a number, a title and no
 obligations, and an empty entry is the kind that counts, renders and
 crosswalks while meaning nothing.
 
-**The local gate no longer reports success for checks that did not run.**
+**For contributors: the local gate no longer reports success for checks that
+did not run.**
 `scripts/check.py` decided its exit code on failures alone, so a skipped
 check left the verdict untouched and the script exited zero. On a machine
 without the two optional tools it printed a summary of passes and a green
@@ -112,7 +127,8 @@ decision someone made rather than a silence. If you script this, a machine
 that was exiting zero may now exit 1, and it was never telling you what
 you thought it was.
 
-**Two new checks, for defects that were being caught by luck.** The gate
+**For contributors: two new gate checks, for defects that were being caught
+by luck.** The gate
 now refuses CRLF in any tracked file and any merge-conflict marker
 anywhere in the tree. Both were previously caught only as side effects —
 CRLF because mdformat rejects a carriage return, conflict markers because
@@ -164,8 +180,8 @@ catalog is loaded and becomes a reported unknown the moment a user brings
 generation prompts changed — `edit/apply.py` and `edit/plan.py` still show
 the short form, because they instruct a model to preserve existing tags
 *exactly as written* and run on documents written before the split, where a
-qualified example would read as licence to rewrite one. Documents generated
-before this release are unaffected until regenerated.
+qualified example would read as licence to rewrite one. This changes what is
+written next and rewrites nothing already on disk.
 
 Only the NIST half of the example moved: `HIPAA` and `HIPAA Security Rule`
 already key to the same catalog, as do `GovRAMP` and `GovRAMP Moderate`.

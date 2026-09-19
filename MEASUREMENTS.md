@@ -1418,8 +1418,9 @@ withheld**: 41% of runs carried a finding, but a large share of those
 findings were not claims at all — they were debris from a sentence splitter
 that broke on any full stop inside a token, so the judge was handed `'2 .'`
 and `'"'` and reported, correctly, that they were unsupported. The honest
-conclusion was that entailment was not yet measurable, and that is what was
-published.
+conclusion was that entailment was not yet measurable, and the measurement
+was held rather than written up. Nothing was published, which is why no
+epoch precedes this one.
 
 `entail/base.py`'s splitter has since been fixed. This is the same
 measurement run again against it.
@@ -1430,7 +1431,9 @@ nothing on the answering path). The tree was checked for conflict markers
 before the run rather than assumed clean, because the branch had been
 rebased through a conflict. Suites `answering` and `answer_paraphrase`,
 `--repeat 3`, `z-ai/glm-5.3-flash` under test, `claude-sonnet-5` judging.
-**$0.455** — 139 answer calls at $0.00018, 173 judge calls at $0.00249.
+**$0.455** — 139 answer calls at $0.00018, 173 judge calls at $0.00249. The
+answer count includes one harness probe; the 138 that answered a case are
+the 78 and 60 in the table below.
 
 |        | findings | fragments | share  | answering | paraphrase |
 | ------ | -------- | --------- | ------ | --------- | ---------- |
@@ -1440,8 +1443,7 @@ rebased through a conflict. Suites `answering` and `answer_paraphrase`,
 **Zero, not few.** The fragment population is gone, and with it the reason
 the first measurement was withheld. *Entailment is not yet measurable* was
 correct before this fix and is wrong after it — superseded by measurement
-rather than by opinion, which matters because that sentence appears
-elsewhere.
+rather than by opinion.
 
 **Real findings rose, 43 to 55, and this is consistent with the account
 rather than a measurement of it.** A mis-split ate a claim's head, so the

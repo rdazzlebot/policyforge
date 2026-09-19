@@ -106,8 +106,11 @@ def hash_of(url: str) -> str:
     disk. A hash taken from the archive you happen to be holding matches
     whatever you are holding, which is the question nobody asked.
     """
-    # nosec B310  # nosemgrep - an https URL read out of the published formula
-    with urllib.request.urlopen(url, timeout=120) as response:
+    # The URL is read out of the published formula, which is fetched from a
+    # fixed https address; `--formula-url` is a maintainer override used only
+    # to point this at a perturbed copy while proving it can fail. Suppression
+    # on the offending line, not above it — see CONTRIBUTING.
+    with urllib.request.urlopen(url, timeout=120) as response:  # nosec B310  # nosemgrep
         digest = hashlib.sha256()
         for chunk in iter(lambda: response.read(1 << 16), b""):
             digest.update(chunk)

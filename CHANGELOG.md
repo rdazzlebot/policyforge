@@ -1,5 +1,132 @@
 # Changelog
 
+## 1.5.0
+
+**If you gate CI on `satisfies --strict`, one citation changes under you.**
+A document citing `164.314(a)(2)` will now fail it: that entry is gone from
+the HIPAA catalog, so the citation resolves to nothing and `--strict` exits
+non-zero — the same red as a mistyped citation. Replace it with whichever of
+`164.314(a)(2)(i)`, `(ii)` or `(iii)` the sentence actually means; those
+carry the obligations and the NIST mappings. Documents that do not cite it
+are unaffected, and nothing else resolvable in 1.4.0 stops resolving here.
+
+**New bundled catalog: 42 CFR Part 2, substance use disorder patient
+records**, fetched from eCFR by `policyforge etl-part2`. Public domain, so
+it ships with the package like NIST and HIPAA rather than as BYOC.
+
+**It has two controls, and that is the whole catalog.** Part 2 has 38
+sections; §2.16 (security for records and notification of breaches) and
+§2.19 (disposition of records by discontinued programs) are the only two
+that impose a safeguard. The rest is conduct — when a disclosure is
+permitted, what a consent must contain, what a court must find — and citing
+a conduct rule as a control would assert that a safeguard exists where the
+regulation says only that a disclosure was lawful. The thinness is the
+correct answer rather than a parse failure, and the catalog's README states
+the count, the test that produced it, and the sections it rejected, so a
+reader who thinks something is missing gets the reasoning instead of
+re-running the parser.
+
+Unlike `cfr-171-information-blocking`, this catalog **seeds a crosswalk
+normally**: its entries are safeguards to implement, so there is something
+for an 800-53 control to correspond to. It ships without a
+`source_crosswalk` because no authority publishes one for Part 2, which is
+a different thing from being unmappable.
+
+The monthly `framework-drift` job now covers it.
+
+**Reasoning a local server returns in its own field is no longer recorded as
+zero.** Ollama and vLLM put a reasoning model's chain of thought in
+`message.reasoning`, leaving `content` as the answer alone — so nothing was
+stripped and the ledger wrote `stripped_reasoning_chars: 0`, which is
+indistinguishable from a model that did not think. The stripper was working;
+it was pointed at a field that never had reasoning in it. `llm/base.py` is
+explicit that this is the one thing that field must not do: *a zero asserted
+by a provider that never looked is a measurement nobody made.* Measured on a
+live call, `qwen3:14b` returned **1,081 characters of reasoning against an
+85-character answer**, with 263 output tokens billed for it — roughly nine
+tokens in ten spent thinking, none of it visible to the ledger before.
+`reasoning_content` is read too, since a local endpoint is whichever of the
+two you happen to run, and `completion_tokens_details.reasoning_tokens` now
+populates `hidden_output_tokens` where a server reports it, staying `None`
+where it does not.
+
+**`generate_json` works against a local endpoint**, so a schema-constrained
+call no longer requires a vendor. **This is the only route on which a
+licensed catalog's text never leaves the machine**, which is the argument for
+running locally at all. `supports_schema` is True because a live call proved
+it rather than because a capability table says so, and the reply is still
+parsed and checked — an endpoint that ignores `response_format` answers with
+prose and a 200, and that now raises rather than returning unconstrained text
+from a method whose contract is that the text is constrained.
+
+**A cascade with a local primary now advertises `schema`.** A cascade reports
+the conjunction of its halves; the local half gained a capability, so the
+conjunction gained one. Nothing about the rule changed.
+
+**A warning the answering path writes can no longer be silently dropped from
+eval reports.** `evals/runner.py` picks entailment findings out of an
+answer's warnings by the words they open with, and a new prefix that was not
+added to its filter would have been discarded with nothing reporting it —
+the finding made, written into the answer, and absent from every report,
+with the output looking exactly as it does today. The prefixes are now
+enumerated from `zardoz/answer.py` and each is asserted to survive the
+filter, so adding one and forgetting the other edit fails a test instead.
+
+**The HIPAA catalog no longer ships an implementation specification with
+no text.** `164.314(a)(2)`, *"Implementation specifications"*, had a title
+and an empty description — the only entry in any bundled catalog with no
+text **and nothing beneath it**, 1 of 1,044 implementation specifications,
+and now none. A user citing it cited a title, and
+an assessor following that citation found nothing, while the obligation
+they wanted sat at `164.314(a)(2)(i)`. Its source paragraph is a run-in
+heading that delegates everything to its children, and all three children
+already ship as controls in their own right, so **no requirement is lost
+from the catalog** — the citation that resolves to text is now the only
+one offered. The identically titled `164.314(b)(2)`, where the text really
+does follow the label, is unchanged.
+
+**One container is called out and not fixed here**, and the distinction
+matters for anyone auditing the rest. Section-level containers
+legitimately carry no text of their own — their paragraphs carry it, and
+seven entries across the bundled catalogs do exactly that, including
+`2.16` and `2.19` in the Part 2 catalog above. None of those is a defect.
+`164.308(a)(5)(ii)` is singled out because its statement is the fragment
+*"Implement:"*, which reads as an obligation rather than as a heading: a
+clean empty heading does not mislead a reader, and that one does. It is
+not fixed here because its four children are nested inside it rather than
+shipping as controls of their own, so dropping it would orphan them — it
+needs them promoted first, which changes what the catalog contains rather
+than removing from it, and that is not this release.
+
+**`policyforge etl-hipaa` can be re-run again.** It carries existing
+crosswalk mappings forward by citation, so re-parsing the regulation no
+longer destroys the NIST mappings that `etl-hipaa-crosswalk` attaches.
+Before this, the guard added in 1.3.0 correctly refused every re-parse and
+its error message told you to run the command that had just refused —
+there was no way through. The guard keeps its teeth: an entry the parser
+no longer produces still takes its mapping with it and is still refused.
+`etl-hipaa-crosswalk` remains the only thing that *decides* mappings.
+
+**Nothing user-facing.** `scripts/release_check.py` is a release step for
+maintainers: after cutting a tag it asserts that the published Homebrew
+formula installs that tag, that its pinned resources match
+`requirements/runtime.txt`, and that no changelog fragment survived the
+release. It exists because 1.4.0 was declared done while `brew install` —
+the first command in this project's README — still served 1.3.0 for about
+three hours.
+
+**Nothing user-facing.** `scripts/stale_prs.py` reports pull requests that
+are ready to merge and have not been — `CLEAN`, no pending checks, and
+untouched past a threshold. It exists because a pull request sat ready for
+ten hours while being described in status reports as "other sessions'
+work", which is a fact about whose branch it is rather than whose turn.
+
+**Nothing user-facing.** `CONTRIBUTING.md` now says how to suppress a
+`bandit` or `semgrep` finding: put the marker on the offending line,
+state the bound rather than asserting a false positive, name the premise
+a future change could break, and test rather than silence when two
+scanners flag the same line.
+
 ## 1.4.0
 
 **If you script any of this, three commands change their exit code.** Each is

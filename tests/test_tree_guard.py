@@ -113,7 +113,11 @@ def test_the_gate_script_runs_normally_when_the_tree_is_its_own(monkeypatch):
         lambda name="policyforge": check.REPO_ROOT / "src" / "policyforge" / "__init__.py",
     )
 
-    code = check.main()
+    # Both optional tools are faked as absent above, and an unacknowledged
+    # skip now fails the gate on its own (tests/test_check_gate.py). This
+    # test is about the guard standing aside, so the skips are accepted
+    # explicitly rather than the assertion being relaxed to let them pass.
+    code = check.main(["--allow-skip", "semgrep", "--allow-skip", "gitleaks"])
 
     assert code == 0
     assert "pytest" in ran

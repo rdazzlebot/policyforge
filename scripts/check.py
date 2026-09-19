@@ -62,6 +62,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SKIP_FLAGS = {
     "semgrep (broader SAST)": "semgrep",
     "gitleaks (secrets scan)": "gitleaks",
+    "line endings (no CRLF in tracked files)": "git",
+    "conflict markers (none in tracked files)": "git",
 }
 
 
@@ -132,9 +134,104 @@ def check_semgrep() -> bool | None:
     )
 
 
-def main(argv: list[str] | None = None) -> int:
+def _git(*args: str, root: Path | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=root or REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def check_line_endings(root: Path | None = None) -> bool | None:
+    """No tracked file may carry CRLF in the index. None if git is absent.
+
+    `.gitattributes` pins `*.md text eol=lf`, so markdown is safe whatever
+    `core.autocrlf` says — verified by writing CRLF markdown into a repo
+    with autocrlf off and watching the blob come back LF. Nothing protects
+    `.yaml`, `.json`, `.toml` or `.py`, and on a Windows machine with
+    autocrlf off those commit exactly as written.
+
+    Asked of git rather than by reading bytes: `ls-files --eol` reports the
+    index blob, which is what ships, and a working tree legitimately holds
+    CRLF under autocrlf=true. Reading the working tree would flag every
+    Windows checkout; reading the blob flags only what was committed.
+    """
+    label = "line endings (no CRLF in tracked files)"
+    print(f"\n{'=' * 60}\n{label}\n{'=' * 60}")
+    result = _git("ls-files", "--eol", root=root)
+    if result.returncode != 0:
+        print(f"SKIPPED — `git ls-files --eol` failed:\n{result.stderr.strip()}")
+        return None
+
+    rows = [line for line in result.stdout.splitlines() if line.strip()]
+    offenders = [line for line in rows if line.split()[0] in {"i/crlf", "i/mixed"}]
+    print(f"{len(rows)} tracked files examined, {len(offenders)} carrying CRLF in the index")
+    for line in offenders:
+        print(f"  {line}")
+    if offenders:
+        print(
+            "\nA file written with `Path.write_text` on Windows gets CRLF unless\n"
+            '`newline="\\n"` is passed. Renormalise with `git add --renormalize <file>`.'
+        )
+    return not offenders
+
+
+def check_conflict_markers(root: Path | None = None) -> bool | None:
+    """No tracked file may contain a merge-conflict marker.
+
+    `git add -A` mid-rebase happily stages a file git still reports as
+    unresolved, and the rebase then completes clean. Every catch we have is
+    incidental: a marker is a Python syntax error, and `=======` reads as a
+    setext heading underline to mdformat. Nothing in the gate parses YAML
+    at all, and `.yaml` covers every workflow file and `framework.yaml`.
+
+    Deliberately does NOT search for `=======`. Seven equals signs are a
+    legal setext heading underline and appear in ordinary prose, and git
+    never writes a `=======` without the `<<<<<<< ` that opens the
+    conflict — so the opening and closing markers are both sufficient and
+    free of false positives, which is what lets this run tree-wide with no
+    suppression list. (A tree-wide grep for `=======` was in fact tried
+    while writing this and reported two hits in README.md: 60-character
+    rules inside a fenced sample-output block.)
+    """
+    label = "conflict markers (none in tracked files)"
+    print(f"\n{'=' * 60}\n{label}\n{'=' * 60}")
+    unambiguous = r"^(<<<<<<< |>>>>>>> |\|\|\|\|\|\|\| )"
+    result = _git("grep", "-I", "-n", "-E", unambiguous, "--", ".", root=root)
+    if result.returncode not in (0, 1):
+        print(f"SKIPPED — `git grep` failed:\n{result.stderr.strip()}")
+        return None
+
+    hits = [line for line in result.stdout.splitlines() if line.strip()]
+    tracked = len(
+        [line for line in _git("ls-files", root=root).stdout.splitlines() if line.strip()]
+    )
+    print(f"{tracked} tracked files scanned, {len(hits)} conflict marker(s) found")
+    for line in hits:
+        print(f"  {line}")
+    if hits:
+        print(
+            "\nResolve the file and `git add` it by name. `git add -A` during a\n"
+            "rebase stages conflicts as though they were resolved."
+        )
+    return not hits
+
+
+def parse_allow_skip(argv: list[str] | None) -> set[str]:
+    """Tool names the caller has accepted as missing.
+
+    `argv or []`, never argparse's default of falling back to sys.argv:
+    `main()` is called directly by tests/test_tree_guard.py, and inside a
+    pytest process sys.argv holds pytest's flags. Left to the default,
+    `main()` died on pytest's own `-q` — caught by those tests, which call
+    it for an unrelated reason, and by none of the ones written alongside
+    this change.
+    """
     parser = argparse.ArgumentParser(
-        description="Run the full quality-check suite locally, in one command."
+        prog="check.py",
+        description="Run the full quality-check suite locally, in one command.",
     )
     parser.add_argument(
         "--allow-skip",
@@ -147,7 +244,11 @@ def main(argv: list[str] | None = None) -> int:
             "Repeatable. Without it, a check that did not run fails the gate."
         ),
     )
-    allow_skip = set(parser.parse_args(argv).allow_skip)
+    return set(parser.parse_args(argv or []).allow_skip)
+
+
+def main(argv: list[str] | None = None) -> int:
+    allow_skip = parse_allow_skip(argv)
 
     # Before anything runs: the `policyforge` every check below would import
     # has to be this tree's. In a git worktree it is not — the editable
@@ -201,6 +302,10 @@ def main(argv: list[str] | None = None) -> int:
             "mdformat --check", ["mdformat", "--check", *md_targets]
         ),
         "gitleaks (secrets scan)": check_gitleaks(),
+        # Tree hygiene last: both are fast, and both catch a class the rest
+        # of the gate only ever caught by accident.
+        "line endings (no CRLF in tracked files)": check_line_endings(),
+        "conflict markers (none in tracked files)": check_conflict_markers(),
     }
 
     return summarise(results, allow_skip)

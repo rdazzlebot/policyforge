@@ -20,8 +20,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-import check  # noqa: E402
-
+import check
 
 ALL_PASS = {
     "ruff (lint)": True,
@@ -96,6 +95,35 @@ def test_every_declared_skippable_label_is_one_the_script_really_uses(label: str
     """
     source = Path(check.__file__).read_text(encoding="utf-8")
     assert f'"{label}"' in source
+
+
+def test_no_arguments_means_no_arguments_not_whatever_sys_argv_holds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`main()` must not read the calling process's command line.
+
+    argparse falls back to sys.argv when handed None, so `main()` called
+    from inside a pytest process tried to parse pytest's own flags and
+    exited 2 on `-q`. It was caught by tests/test_tree_guard.py, which
+    calls `main()` for an entirely different reason — an incidental catch,
+    which is the thing this branch exists to stop relying on.
+    """
+    monkeypatch.setattr(sys, "argv", ["pytest", "-q", "--allow-skip", "nonsense"])
+    assert check.parse_allow_skip(None) == set()
+
+
+def test_allow_skip_is_parsed_when_actually_passed() -> None:
+    assert check.parse_allow_skip(["--allow-skip", "gitleaks"]) == {"gitleaks"}
+    assert check.parse_allow_skip(["--allow-skip", "gitleaks", "--allow-skip", "semgrep"]) == {
+        "gitleaks",
+        "semgrep",
+    }
+
+
+def test_an_unknown_tool_name_is_rejected_rather_than_ignored() -> None:
+    """A typo'd flag must not silently acknowledge nothing."""
+    with pytest.raises(SystemExit):
+        check.parse_allow_skip(["--allow-skip", "gitleeks"])
 
 
 def test_the_summary_names_what_did_not_run(capsys: pytest.CaptureFixture[str]) -> None:

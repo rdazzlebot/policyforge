@@ -1410,6 +1410,96 @@ on that basis. 1.2.1 raised Standards and Procedures to 16,384 with a retry,
 so the procedure case has room; the answering site's 1,024 is unchanged and
 is queued for sizing.
 
+### 22. The entailment judge, after its input was fixed — 2026-09-18
+
+The entailment check judges every cited sentence in an answer against the
+passage it cites. It was measured once before and **the measurement was
+withheld**: 41% of runs carried a finding, but a large share of those
+findings were not claims at all — they were debris from a sentence splitter
+that broke on any full stop inside a token, so the judge was handed `'2 .'`
+and `'"'` and reported, correctly, that they were unsupported. The honest
+conclusion was that entailment was not yet measurable, and that is what was
+published.
+
+`entail/base.py`'s splitter has since been fixed. This is the same
+measurement run again against it.
+
+*Provenance:* `feat/entailment-flag` at `9c382cc`, based on main `508647a`,
+one commit behind the tip at the time (`052c6d2`, a catalog bundle touching
+nothing on the answering path). The tree was checked for conflict markers
+before the run rather than assumed clean, because the branch had been
+rebased through a conflict. Suites `answering` and `answer_paraphrase`,
+`--repeat 3`, `z-ai/glm-5.3-flash` under test, `claude-sonnet-5` judging.
+**$0.455** — 139 answer calls at $0.00018, 173 judge calls at $0.00249.
+
+|        | findings | fragments | share  | answering | paraphrase |
+| ------ | -------- | --------- | ------ | --------- | ---------- |
+| before | 70       | 27        | 39%    | 28%       | 61%        |
+| after  | 55       | **0**     | **0%** | 0%        | 0%         |
+
+**Zero, not few.** The fragment population is gone, and with it the reason
+the first measurement was withheld. *Entailment is not yet measurable* was
+correct before this fix and is wrong after it — superseded by measurement
+rather than by opinion, which matters because that sentence appears
+elsewhere.
+
+**Real findings rose, 43 to 55, and this is consistent with the account
+rather than a measurement of it.** A mis-split ate a claim's head, so the
+real claim was never judged and nothing was reported — a false negative
+indistinguishable from a pass. Fixing the splitter should surface those.
+But the two runs produced different answers, and **that rise cannot be
+separated from run-to-run variance**, so it is not offered as a finding.
+
+Judge calls per answer, both denominators, since the suites differ and a
+blend hides it:
+
+| suite             | attempted | judged | judge calls | per attempt | per judged |
+| ----------------- | --------- | ------ | ----------- | ----------- | ---------- |
+| answering         | 78        | 69     | 101         | 1.29        | 1.46       |
+| answer_paraphrase | 60        | 57     | 72          | 1.20        | 1.26       |
+
+*Judged* excludes runs that refuse, which cite nothing and reach no judge.
+That denominator is not fixed across runs: whether a case refuses is
+model-dependent, so it is computed per run rather than taken from the case
+list.
+
+**Method: five parser bugs, every one inflating the rate.** The
+contamination figure moved three times on this side — **62% → 45% → 39%** —
+and twice more on the second implementation, and *every correction was
+downward*. A reader meeting a high contamination number will assume it errs
+conservative. On this instrument it erred the other way, five times in a
+row. The causes were: a length heuristic that missed long debris; a parser
+requiring a closing quote, which dropped truncated findings and so selected
+against the long real claims that reach the 200-character cut; a
+first-token rule counting a list as resolved; a key that collapsed
+documents sharing a filename; and a pattern matching only the `neutral`
+verdict when the harness also emits `contradicted`.
+
+The fifth was found by **counting the rows that failed to parse** — 47
+findings reported, 40 parsed — and then enumerating every finding-line
+shape in both logs rather than patching the one shape already noticed.
+Patching what you spotted is how a parser gets four bugs deep; counting
+what you failed to read is how it stops.
+
+A sixth was checked and did not bite: the second implementation's pattern
+keyed on the citation brackets rather than the verdict label, so it parsed
+both verdicts by accident. Its one double-quoted finding was a fragment by
+either route, so its numbers did not move — **but had that claim been a
+real sentence quoted that way because it contained an apostrophe, its rate
+would have been wrong in the same direction as every other error here. One
+finding away**, and recorded because **an incidental catch and a real one
+produce identical output** — so "it did not bite" is a fact about this run
+and not about the parser. A pattern that reads the right thing by accident
+passes every check a pattern that reads it on purpose does.
+
+**What this does not establish.** The instrument is sound; whether those 55
+findings are real defects or the judge over-flagging is a **different
+question and this cannot answer it**. A finding list contains only
+positives, so a claim absent from one run cannot be distinguished between
+*the judge cleared it* and *that sentence was never generated*. No matching
+scheme fixes that — it needs the harness to emit every judged claim with
+its verdict, which is sequenced after this run.
+
 ______________________________________________________________________
 
 ## Two ways a run can lie, found the hard way

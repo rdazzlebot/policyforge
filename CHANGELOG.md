@@ -51,7 +51,7 @@ trusted.
 The bundled HIPAA crosswalk's 65 mappings were re-keyed from `nist` to
 `nist-800-53` and the catalog re-stamped; every mapping value is unchanged.
 
-### The HIPAA catalog verifies, and one fetcher serves every CFR part
+**The HIPAA catalog verifies, and one fetcher serves every CFR part.**
 
 - **`hipaa-security-rule` now carries a provenance stamp and verifies.** It
   was the one bundled catalog shipping control text with no `content_sha256`,

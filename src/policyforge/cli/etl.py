@@ -108,6 +108,78 @@ def etl_oscal(out: Path, no_baselines: bool):
             click.echo(f"  {name} baseline: {len(ids)} controls")
 
 
+def _crosswalk_mappings(catalog: list[dict]) -> int:
+    """How many crosswalk mappings a parsed catalog carries.
+
+    Counted over controls **and** their enhancements, because most of them
+    are on enhancements: the bundled HIPAA catalog has 25 at the top level
+    and 40 below it, and a count that looked only at the top level would
+    call a loss of 40 "no change". policyforge-1d made exactly that mistake
+    when first counting, which is why it is counted this way here.
+
+    Deliberately agnostic about the *key*. A mapping is any non-empty
+    `source_crosswalk`, whatever framework it names — so this keeps working
+    across the `nist` to `nist-800-53` rename in `fix/nist-family-catalog-key`
+    and anything else added later. A guard that knew the key would need
+    editing every time one was introduced, and would silently stop counting
+    until someone did.
+    """
+    total = 0
+    for control in catalog:
+        if control.get("source_crosswalk"):
+            total += 1
+        for enhancement in control.get("enhancements") or []:
+            if enhancement.get("source_crosswalk"):
+                total += 1
+    return total
+
+
+def _refuse_crosswalk_loss(out: Path, replacement: list[dict]) -> None:
+    """Stop before overwriting a catalog that carries mappings this write drops.
+
+    `etl-hipaa` parses the regulation, which has no crosswalk in it; the
+    mappings arrive from `etl-hipaa-crosswalk`, run afterwards. So running
+    the first command alone — the obvious thing to do to refresh a
+    provenance stamp — silently reduced 65 mappings to 0. The catalog still
+    loaded and still parsed to 34 correct controls, and nothing said a word.
+
+    It refuses rather than warning. A warning printed by one command in a
+    two-command pipeline is a line nobody reads, and the failure it is
+    warning about is invisible in the result.
+
+    Compared as a count rather than as presence: a write that left 60 of 65
+    would pass a presence check and has lost five mappings.
+    """
+    import json
+
+    if not out.exists():
+        return
+    try:
+        existing = json.loads(out.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        # An unreadable or non-JSON file is not a catalog to protect, and
+        # refusing on it would block the first write into a broken path.
+        return
+    if not isinstance(existing, list):
+        return
+
+    had = _crosswalk_mappings(existing)
+    keeps = _crosswalk_mappings(replacement)
+    if had <= keeps:
+        return
+
+    raise click.ClickException(
+        f"{out} carries {had} crosswalk mapping(s) and this write would leave "
+        f"{keeps}, so nothing has been written.\n"
+        "`etl-hipaa` parses the regulation, which carries no crosswalk; the "
+        "mappings come from `etl-hipaa-crosswalk`, which runs after it. Run "
+        "the pipeline:\n"
+        "    policyforge etl-hipaa\n"
+        "    policyforge etl-hipaa-crosswalk\n"
+        "Both commands, in that order, leave the catalog with its mappings."
+    )
+
+
 @cli.command("etl-hipaa")
 @click.option(
     "--date",
@@ -147,8 +219,14 @@ def etl_hipaa(date: str | None, out: Path):
 
     xml_text = fetch_ecfr_subpart_c_xml(date=date)
     controls = parse_hipaa_security_rule(xml_text)
+    parsed = [dataclasses.asdict(c) for c in controls]
+
+    # Before anything is written, including the provenance stamp, so a
+    # refusal leaves no half-updated catalog directory behind.
+    _refuse_crosswalk_loss(out, parsed)
+
     out.parent.mkdir(parents=True, exist_ok=True)
-    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
+    write_text_lf(out, json.dumps(parsed, indent=2))
     stamp = record_source_provenance(
         out.parent / "framework.yaml",
         source_ref=date,

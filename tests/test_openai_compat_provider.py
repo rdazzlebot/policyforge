@@ -167,6 +167,36 @@ def test_an_unreachable_server_reports_a_connection_failure():
     assert "connection" in str(caught.value).lower()
 
 
+def test_the_connection_failure_is_actually_graded_as_infrastructure():
+    """The test above pins the word; this pins that the word still works.
+
+    `evals/runner.py` decides "this never ran" by matching its own
+    `_INFRASTRUCTURE` tuple against the message, so asserting that the
+    provider says "connection" is a proxy for the thing that matters. The
+    two agree today and nothing held them together: rename the tuple's
+    entry, or match on whole words, and the provider test goes on passing
+    while every down-server run is graded as the prompt answering wrongly.
+
+    The negative direction is already pinned — `test_litellm_provider.py`
+    asserts a budget-exhaustion message is *not* infrastructure, so a real
+    finding is not hidden. This is the positive one.
+    """
+    import requests
+
+    from evals.runner import _INFRASTRUCTURE
+
+    session = FakeSession(raise_exc=requests.exceptions.ConnectionError("refused"))
+
+    with pytest.raises(RuntimeError) as caught:
+        _provider(session).generate(system="s", prompt="p")
+
+    message = str(caught.value).lower()
+    assert [hint for hint in _INFRASTRUCTURE if hint in message], (
+        "a server that is not running must match evals/runner.py's "
+        "infrastructure hints, or the run is graded as a wrong answer"
+    )
+
+
 def test_a_non_200_reports_the_server_response():
     session = FakeSession([{}], status_code=500)
 
@@ -242,3 +272,84 @@ def test_a_second_truncation_is_raised_not_returned_as_silence():
         _provider(session).generate(system="s", prompt="p", max_tokens=150)
 
     assert len(session.calls) == 2
+
+
+def test_reasoning_in_its_own_field_is_counted_rather_than_reported_as_zero():
+    """A server that separates reasoning must not produce a measured zero.
+
+    Ollama and vLLM return a reasoning model's chain of thought in
+    `message.reasoning`, leaving `content` as the answer alone — no inline
+    `<think>` block for `answer_and_stripped` to cut. The provider read
+    only `content`, found nothing to strip, and recorded
+    `stripped_reasoning_chars=0`.
+
+    `llm/base.py` is explicit that this is the one thing the field must not
+    do: *a zero asserted on behalf of a provider that never looked is a
+    measurement nobody made.* Zero and never-looked have to stay
+    distinguishable, because the whole point of the pair is answering "did
+    this model spend most of its reply thinking?" after the fact.
+    """
+    reasoning = "Let me work through the retention requirement step by step. " * 12
+    session = FakeSession(
+        [
+            {
+                "model": "qwen3:14b",
+                "choices": [
+                    {
+                        "message": {"content": "Seven years.", "reasoning": reasoning},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 11, "completion_tokens": 900},
+            }
+        ]
+    )
+
+    response = _provider(session).generate(system="s", prompt="p")
+
+    assert response.text == "Seven years."
+    assert response.stripped_reasoning_chars == len(reasoning), (
+        "reasoning returned in its own field arrived and was not kept, "
+        "which is exactly what stripped_reasoning_chars records"
+    )
+
+
+def test_a_reply_with_no_reasoning_field_still_reports_a_real_zero():
+    """The control: zero must keep meaning "looked, found none"."""
+    session = FakeSession([_reply("Seven years.")])
+
+    response = _provider(session).generate(system="s", prompt="p")
+
+    assert response.stripped_reasoning_chars == 0
+
+
+def test_a_reported_reasoning_token_count_is_carried():
+    """When the server counts reasoning tokens, the ledger gets them.
+
+    The pair to the characters: `hidden_output_tokens` is what was billed
+    and not returned in the answer. Servers that report
+    `completion_tokens_details.reasoning_tokens` make that a lookup rather
+    than an inference from characters-per-token.
+    """
+    session = FakeSession(
+        [
+            {
+                "model": "qwen3:14b",
+                "choices": [
+                    {
+                        "message": {"content": "Seven years.", "reasoning": "thinking"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 11,
+                    "completion_tokens": 900,
+                    "completion_tokens_details": {"reasoning_tokens": 842},
+                },
+            }
+        ]
+    )
+
+    response = _provider(session).generate(system="s", prompt="p")
+
+    assert response.hidden_output_tokens == 842

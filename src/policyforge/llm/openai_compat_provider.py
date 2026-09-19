@@ -35,6 +35,26 @@ from .base import LLMProvider, LLMResponse, ProviderRejected
 REJECTED_AS_WRITTEN = frozenset({400, 404, 413, 422})
 
 
+def _separated_reasoning(message: dict) -> str:
+    """Reasoning the server returned beside the answer rather than inside it.
+
+    Ollama and vLLM put a reasoning model's chain of thought in
+    `message.reasoning`, leaving `content` as the answer alone — so
+    `answer_and_stripped` finds no inline `<think>` block, strips nothing,
+    and would record a zero for reasoning it never looked at. `llm/base.py`
+    is explicit that a zero asserted by a provider that never looked is a
+    measurement nobody made, which is the distinction this exists to keep.
+
+    `reasoning_content` is the spelling vLLM uses; both are read because a
+    local endpoint is whichever of the two the user happens to run.
+    """
+    for key in ("reasoning", "reasoning_content"):
+        value = message.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
 class OpenAICompatProvider(LLMProvider):
     """Calls any OpenAI-compatible chat-completions endpoint.
 
@@ -139,7 +159,9 @@ class OpenAICompatProvider(LLMProvider):
 
         data = self._post(payload)
         choice = (data.get("choices") or [{}])[0]
-        text, stripped = answer_and_stripped((choice.get("message") or {}).get("content", ""))
+        message = choice.get("message") or {}
+        text, stripped = answer_and_stripped(message.get("content", ""))
+        stripped += len(_separated_reasoning(message))
 
         # A reasoning model spends `max_tokens` thinking before it writes
         # anything, so a tight budget can return a stop-on-length reply whose
@@ -153,7 +175,9 @@ class OpenAICompatProvider(LLMProvider):
             second = retry_budget(max_tokens)
             data = self._post({**payload, "max_tokens": second})
             choice = (data.get("choices") or [{}])[0]
-            text, stripped = answer_and_stripped((choice.get("message") or {}).get("content", ""))
+            message = choice.get("message") or {}
+            text, stripped = answer_and_stripped(message.get("content", ""))
+            stripped += len(_separated_reasoning(message))
             if needs_more_room(text, choice.get("finish_reason")):
                 raise exhausted(self.model, max_tokens, second)
 
@@ -170,6 +194,13 @@ class OpenAICompatProvider(LLMProvider):
             # the docs recommend for licensed content. It travels now, as it
             # does from every other provider.
             stop_reason=choice.get("finish_reason"),
+            # What the server says it billed for thinking and did not put in
+            # the answer. Reported by servers that separate reasoning; left
+            # None by those that do not, so "not reported" stays apart from
+            # "reported as none".
+            hidden_output_tokens=(usage.get("completion_tokens_details") or {}).get(
+                "reasoning_tokens"
+            ),
             stripped_reasoning_chars=stripped,
         )
 

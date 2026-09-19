@@ -27,7 +27,7 @@ from __future__ import annotations
 import os
 
 from ._inline_thinking import answer_and_stripped, exhausted, needs_more_room, retry_budget
-from .base import LLMProvider, LLMResponse, ProviderRejected
+from .base import LLMProvider, LLMResponse, ProviderRejected, SchemaReplyError
 
 #: The statuses that mean "the request, as written, was refused": bad
 #: request, unknown model or route, payload too large, unprocessable.
@@ -146,6 +146,7 @@ class OpenAICompatProvider(LLMProvider):
         prompt: str,
         max_tokens: int = 4096,
         temperature: float = 0.2,
+        _response_format: dict | None = None,
     ) -> LLMResponse:
         payload = {
             "model": self.model,
@@ -156,6 +157,11 @@ class OpenAICompatProvider(LLMProvider):
             "max_tokens": max_tokens,
             "temperature": temperature,
         }
+        if _response_format is not None:
+            # Private, and not on the LLMProvider interface: callers ask for
+            # a schema through `generate_json`, which is also the method
+            # that checks the reply actually parsed.
+            payload["response_format"] = _response_format
 
         data = self._post(payload)
         choice = (data.get("choices") or [{}])[0]
@@ -203,6 +209,69 @@ class OpenAICompatProvider(LLMProvider):
             ),
             stripped_reasoning_chars=stripped,
         )
+
+    def supports_schema(self) -> bool:
+        """Whether a schema-constrained reply will actually be constrained.
+
+        True because a live call proved it, not because the endpoint says
+        so: `qwen3:14b` through Ollama's OpenAI-compatible endpoint
+        returned JSON matching a two-field schema on the first attempt.
+        That is the same standard `litellm_provider` holds — its own
+        docstring notes a capability table that was already wrong about
+        `temperature` on claude-sonnet-5 — and it is why `generate_json`
+        verifies the parse rather than trusting this flag.
+
+        The honest scope: True says *this provider sends the constraint and
+        checks the answer*, not that every server behind `base_url` honours
+        it. An endpoint that ignores `response_format` answers with prose
+        and a 200, and `generate_json` raises `SchemaReplyError` on it
+        rather than returning unconstrained text as though it were
+        constrained.
+        """
+        return True
+
+    def generate_json(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        schema: dict,
+        max_tokens: int = 4096,
+        temperature: float = 0.2,
+    ) -> LLMResponse:
+        """A reply constrained to `schema`, parsed and checked.
+
+        The reason this exists is containment rather than convenience: a
+        schema-constrained call is what the crosswalk and edit paths need,
+        and until the local provider had one, those paths could only run
+        through a vendor. This is the only route on which a licensed
+        catalog's text never leaves the machine.
+
+        The constraint is asked for and the result is still verified.
+        `llama.cpp` grammars and Ollama's structured outputs both hold a
+        model to a shape, but an endpoint that ignores `response_format`
+        answers with prose and a 200 — so the parse below is what turns a
+        server's silence about a capability into an error the caller can
+        act on.
+        """
+        import json
+
+        response = self.generate(
+            system=system,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            _response_format=schema,
+        )
+        try:
+            json.loads(response.text)
+        except (TypeError, ValueError) as exc:
+            raise SchemaReplyError(
+                f"{self.model} was asked for JSON matching a schema and returned "
+                f"something else: {response.text[:160]!r}",
+                text=response.text,
+            ) from exc
+        return response
 
     def check(self) -> bool:
         """Cheap round-trip to confirm the endpoint + model actually work."""

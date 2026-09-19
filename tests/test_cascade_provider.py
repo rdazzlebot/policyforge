@@ -469,7 +469,18 @@ def test_get_provider_builds_a_cascade_whose_flags_follow_the_rule(monkeypatch, 
         e = getattr(strong, flag, None)
         expected = bool(p and p()) and bool(e and e()) and flag != "supports_batch"
         assert getattr(built, flag)() is expected, flag
-    # The escalation advertises everything; the local half advertises
-    # nothing; so the cascade advertises nothing — and says so.
-    assert all(v is False for v in capabilities(built).values())
+    # The escalation advertises everything, so the cascade advertises
+    # exactly what the local half can do. That is schema and nothing else:
+    # `generate_json` on the local provider was implemented once a live
+    # call proved a served model honours `response_format`, which is the
+    # only route on which licensed text never leaves the machine. Pinned as
+    # the exact set rather than "all False", so the next capability the
+    # local half gains has to be asserted here deliberately.
+    assert capabilities(built) == {
+        "batch": False,
+        "caching": False,
+        "effort": False,
+        "grounding": False,
+        "schema": True,
+    }
     assert all(capabilities(strong).values())

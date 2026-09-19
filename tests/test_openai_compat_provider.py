@@ -353,3 +353,34 @@ def test_a_reported_reasoning_token_count_is_carried():
     response = _provider(session).generate(system="s", prompt="p")
 
     assert response.hidden_output_tokens == 842
+
+
+def test_a_schema_is_sent_and_a_matching_reply_comes_back():
+    session = FakeSession([_reply('{"years": 6}')])
+    schema = {"type": "json_schema", "json_schema": {"name": "r", "schema": {}}}
+
+    response = _provider(session).generate_json(system="s", prompt="p", schema=schema)
+
+    assert response.text == '{"years": 6}'
+    assert session.calls[0]["json"]["response_format"] == schema
+
+
+def test_an_endpoint_that_ignores_the_schema_raises_rather_than_returning_prose():
+    """A server that does not honour `response_format` answers with a 200.
+
+    That is the failure this guards: unconstrained prose returned from a
+    method whose whole contract is that the reply is constrained. Silence
+    about a capability becomes an error the caller can act on.
+    """
+    from policyforge.llm.base import SchemaReplyError
+
+    session = FakeSession([_reply("Six years, per the Standard.")])
+    schema = {"type": "json_schema", "json_schema": {"name": "r", "schema": {}}}
+
+    with pytest.raises(SchemaReplyError):
+        _provider(session).generate_json(system="s", prompt="p", schema=schema)
+
+
+def test_supports_schema_is_true_so_callers_will_use_the_local_path():
+    """Gated on a live call, not on a capability table — see the docstring."""
+    assert _provider(FakeSession()).supports_schema() is True

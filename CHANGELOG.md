@@ -193,6 +193,17 @@ cites. It does not run on generated documents. What it catches, and where
 that has been measured, is in `MEASUREMENTS.md` rather than stated here, so
 the claim cannot go stale the way its predecessor did.
 
+**It costs one extra model call per citation**, to a second model you
+configure as the judge — not one per answer. A sentence citing two
+passages is judged against both, and every citation in an answer is judged
+before any of them is allowed to settle it, so an answer with five cited
+sentences drawing on two passages each costs ten judge calls on top of the
+answer itself. That is why it is off by default and opted into rather than
+simply enabled: every other check on this path is free, and this one is
+the exception. A judge that cannot run is reported rather than silently
+skipped — an entailment check nobody can tell did not happen is worse than
+one that is plainly off.
+
 ## 1.3.0
 
 Three things this release lets you do that 1.2.1 could not: map your own

@@ -102,13 +102,25 @@ def test_git_failing_is_a_skip_not_a_pass(tmp_path: Path) -> None:
 
 # ------------------------------------------------------------ conflict markers
 
-MARKED_YAML = b"""jobs:
-<<<<<<< HEAD
-  build: {runs-on: ubuntu-latest}
-=======
-  build: {runs-on: windows-latest}
->>>>>>> other
-"""
+# Assembled at runtime, never written out. A literal marker at the start of
+# a line in this file would be a real conflict marker in a tracked file, and
+# the check under test would report this file — which is exactly what
+# happened: CI went red on `tests/test_tree_hygiene.py:106`. An example of a
+# conflict marker, in a tree scanned for conflict markers, is a conflict
+# marker; nothing about the intent behind it is visible to a grep.
+#
+# The local gate passed beforehand only because this file was still
+# untracked when it ran, and `git grep` searches tracked files. A green gate
+# on a tree that does not yet contain the file under test is not evidence.
+OPEN = b"<" * 7 + b" HEAD"
+SPLIT = b"=" * 7
+CLOSE = b">" * 7 + b" other"
+BASE = b"|" * 7 + b" base"
+
+MARKED_YAML = (
+    b"jobs:\n" + OPEN + b"\n  build: {runs-on: ubuntu-latest}\n" + SPLIT + b"\n"
+    b"  build: {runs-on: windows-latest}\n" + CLOSE + b"\n"
+)
 
 
 def test_a_clean_tree_has_no_markers(tmp_path: Path) -> None:
@@ -128,7 +140,7 @@ def test_a_marked_yaml_fails(tmp_path: Path) -> None:
 
 def test_a_marked_json_fails(tmp_path: Path) -> None:
     root = _repo(tmp_path, autocrlf="false")
-    (root / "data.json").write_bytes(b'{\n<<<<<<< HEAD\n  "a": 1\n>>>>>>> other\n}\n')
+    (root / "data.json").write_bytes(b"{\n" + OPEN + b'\n  "a": 1\n' + CLOSE + b"\n}\n")
     _add_all(root)
     assert check.check_conflict_markers(root) is False
 
@@ -161,7 +173,7 @@ def test_a_diff3_base_marker_fails(tmp_path: Path) -> None:
     """`merge.conflictStyle = diff3` adds a ||||||| section."""
     root = _repo(tmp_path, autocrlf="false")
     (root / "ci.yaml").write_bytes(
-        b"a\n<<<<<<< HEAD\nb\n||||||| base\nc\n=======\nd\n>>>>>>> other\n"
+        b"a\n" + OPEN + b"\nb\n" + BASE + b"\nc\n" + SPLIT + b"\nd\n" + CLOSE + b"\n"
     )
     _add_all(root)
     assert check.check_conflict_markers(root) is False
@@ -169,3 +181,21 @@ def test_a_diff3_base_marker_fails(tmp_path: Path) -> None:
 
 def test_conflict_marker_check_on_a_non_repository_skips(tmp_path: Path) -> None:
     assert check.check_conflict_markers(tmp_path) is None
+
+
+def test_this_repository_has_no_conflict_markers_or_crlf() -> None:
+    """Run both checks against the real tree, not a fixture.
+
+    Everything above builds a throwaway repository, so all of it passed
+    while the file it lives in was itself putting a conflict marker into
+    the tracked tree — the marker was in this file's own fixtures, and CI
+    reported `tests/test_tree_hygiene.py:106`. The local gate had been
+    green because the file was still untracked when it ran, and `git grep`
+    searches tracked files.
+
+    A test that only ever examines a fixture cannot notice that the suite
+    is the thing breaking the invariant. This one looks at the tree the
+    checks actually ship to guard.
+    """
+    assert check.check_conflict_markers() is True
+    assert check.check_line_endings() is True

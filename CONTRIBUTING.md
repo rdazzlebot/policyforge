@@ -226,6 +226,55 @@ gitleaks. The environments live in `/opt`, outside the workspace, so your
 host's `.venv` is not touched. A Windows checkout works as it is: the
 container has been run against one with CRLF line endings.
 
+## Suppressing a scanner finding
+
+Two scanners will stop you: `bandit` (`# nosec B123`) and `semgrep`
+(`# nosemgrep`). Suppressing either is a claim, and the claim has a shape.
+
+**Put the comment on the offending line, or the line directly above it.**
+Semgrep honours `# nosemgrep` in those two places and nowhere else. A
+suppression five lines up, above a block comment explaining it, reads as
+applied and suppresses nothing — the gate catches that immediately, but only
+because the gate runs semgrep. Write the reason as prose *above*, and put the
+marker *on the line*:
+
+```python
+# The default is a fixed https URL to this project's own tap. The override
+# is maintainer-supplied and unreachable from any user-facing command.
+with urllib.request.urlopen(url, timeout=30) as response:  # nosec B310  # nosemgrep
+```
+
+**State the bound, not the verdict.** "False positive" is not a reason; it is
+a conclusion with its argument missing. Say what the scanner would have to be
+right about for this to be exploitable, and why it is not — which host, whose
+input, what the worst outcome is. `ingest/info_blocking.py` is the long-form
+example: it records that XXE and external-DTD fetches were *measured* as
+refused and that entity expansion was measured as working, so the comment
+argues the real residual rather than claiming there is none.
+
+**Name the premise a future change could break.** That file also says the
+bound holds *because* `ecfr._API` is a constant, and a test asserts it — so
+the day someone parameterises that URL, something goes red rather than the
+reasoning silently becoming false.
+
+**When two scanners flag the same line, test before you silence the second.**
+One suppression is a judgement; two independent rule authors disagreeing with
+you is a reason to run the attack. Doing that on the XML parser found that the
+rules' headline risk did not reach the code at all while a different one did.
+
+### Comments wearing the costume of a control
+
+A misplaced `nosemgrep` belongs to a family worth recognising, because every
+member of it *looks* like a mechanism and is only prose:
+
+- a suppression outside the range the tool reads
+- a docstring claiming a test that does not exist
+- a stated invariant with nothing asserting it
+
+The next person copies the shape they see rather than reading the tool's
+rules, so a broken one propagates. If a comment is doing the work of a check,
+add the check.
+
 ## Documentation
 
 Markdown is a real deliverable here, not a nicety. `mdformat` runs in CI over

@@ -17,6 +17,9 @@ tap is.
 Three assertions, in the order they fail:
 
 1. The published formula's `url` names the tag just cut.
+1b. ...and its `sha256` matches the archive that URL actually serves. A
+    formula can name the right tag beside a stale hash, and then every
+    install fails at verification while assertion 1 reports it correct.
 2. The formula's pinned resource versions match the lock at that tag.
 3. `changelog.d/` is empty — no fragment survived the release.
 
@@ -37,6 +40,7 @@ your working copy.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import sys
 import urllib.request
@@ -53,6 +57,9 @@ FORMULA_URL = (
 LOCK = "requirements/runtime.txt"
 
 _FORMULA_URL_RE = re.compile(r'^\s*url "([^"]+)"', re.MULTILINE)
+#: The FIRST top-level sha256 — the source archive's. `resource` blocks
+#: carry their own below it; assertion 2 handles those against the lock.
+_FORMULA_SHA_RE = re.compile(r'^  sha256 "([0-9a-f]{64})"', re.MULTILINE)
 _RESOURCE_RE = re.compile(
     r'^  resource "([^"]+)" do\n\s*url "([^"]+)"',
     re.MULTILINE,
@@ -74,6 +81,37 @@ def fetch_formula(url: str = FORMULA_URL) -> str:
     # a few lines up reads as documentation and suppresses nothing.
     with urllib.request.urlopen(url, timeout=30) as response:  # nosec B310  # nosemgrep
         return response.read().decode("utf-8")
+
+
+def source_url_in_formula(formula: str) -> str | None:
+    """The source archive the formula fetches, as written."""
+    match = _FORMULA_URL_RE.search(formula)
+    return match.group(1) if match else None
+
+
+def sha256_in_formula(formula: str) -> str | None:
+    """The formula's top-level `sha256`, which is the source archive's.
+
+    The first one in the file: `resource` blocks carry their own further
+    down, and they are checked by assertion 2 against the lock instead.
+    """
+    match = _FORMULA_SHA_RE.search(formula)
+    return match.group(1) if match else None
+
+
+def hash_of(url: str) -> str:
+    """SHA-256 of whatever that URL actually serves, fetched now.
+
+    From the URL the formula names rather than from a copy already on
+    disk. A hash taken from the archive you happen to be holding matches
+    whatever you are holding, which is the question nobody asked.
+    """
+    # nosec B310  # nosemgrep - an https URL read out of the published formula
+    with urllib.request.urlopen(url, timeout=120) as response:
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: response.read(1 << 16), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def tag_in_formula(formula: str) -> str | None:
@@ -147,6 +185,45 @@ def main(argv: list[str] | None = None) -> int:
             print("  -> MISMATCH")
         else:
             print("  -> match")
+
+        # 1b. Naming the right tag is not the same as installing it. A
+        # formula edited by hand can carry the new url beside the previous
+        # release's sha256, and then *every* install fails at verification
+        # while this check reports the url as correct. Asked of the archive
+        # the formula actually names, fetched now — a hash taken from a copy
+        # already on disk matches whatever you are holding, which is the
+        # question nobody asked. (1d, who found assertion 1 could not see it.)
+        print()
+        print("=" * 62)
+        print("1b. ...and the sha256 matches what that URL serves")
+        print("=" * 62)
+        stated = sha256_in_formula(formula)
+        source = source_url_in_formula(formula)
+        if not stated or not source:
+            print(f"  could not read url/sha256 from the formula (url={source}, sha256={stated})")
+            print("  -> CANNOT ANSWER")
+            failures.append("the formula's url or sha256 could not be read — check its shape")
+        else:
+            try:
+                actual = hash_of(source)
+            except Exception as exc:  # noqa: BLE001 - not knowing is a failure
+                print(f"  could not fetch the archive: {type(exc).__name__}: {exc}")
+                print("  -> CANNOT ANSWER")
+                failures.append(
+                    f"could not fetch the source archive ({type(exc).__name__}) — cannot tell "
+                    "whether the formula's sha256 is current; retry"
+                )
+            else:
+                print(f"  formula sha256 : {stated}")
+                print(f"  archive served : {actual}")
+                if stated != actual:
+                    failures.append(
+                        "the formula's sha256 does not match the archive it names — every "
+                        "`brew install` fails at verification; recompute it from that URL"
+                    )
+                    print("  -> MISMATCH")
+                else:
+                    print("  -> match")
 
     # ---------------------------------------------------------------- 2
     print()

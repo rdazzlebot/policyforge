@@ -384,3 +384,74 @@ def test_an_endpoint_that_ignores_the_schema_raises_rather_than_returning_prose(
 def test_supports_schema_is_true_so_callers_will_use_the_local_path():
     """Gated on a live call, not on a capability table — see the docstring."""
     assert _provider(FakeSession()).supports_schema() is True
+
+
+def test_the_vllm_spelling_of_the_reasoning_field_is_read_too():
+    """`reasoning_content` is vLLM's name for the same field Ollama calls
+    `reasoning`, and a local endpoint is whichever of the two you run.
+
+    This fixture is the only evidence that spelling will ever have. Ollama
+    can be exercised by a live call and was; vLLM cannot be, here. So
+    deleting or misspelling `reasoning_content` would leave the suite green
+    and the vLLM path silently back to recording a zero for reasoning it
+    never looked at — the exact defect this pair of fields exists to make
+    impossible.
+    """
+    reasoning = "Weighing the retention clause against the exception. " * 9
+    session = FakeSession(
+        [
+            {
+                "model": "qwen3-14b",
+                "choices": [
+                    {
+                        "message": {
+                            "content": "Seven years.",
+                            "reasoning_content": reasoning,
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 11, "completion_tokens": 700},
+            }
+        ]
+    )
+
+    response = _provider(session).generate(system="s", prompt="p")
+
+    assert response.text == "Seven years."
+    assert response.stripped_reasoning_chars == len(reasoning)
+
+
+def test_inline_thinking_and_a_separated_field_are_both_counted():
+    """A server doing both must not be halved or double-counted.
+
+    `answer_and_stripped` cuts the inline block and `_separated_reasoning`
+    adds the field, so the total is the sum. Pinned because the `+=` that
+    makes it a sum reads exactly like an `=` that would make it a
+    replacement.
+    """
+    separated = "Field-side reasoning. " * 4
+    session = FakeSession(
+        [
+            {
+                "model": "qwen3:14b",
+                "choices": [
+                    {
+                        "message": {
+                            "content": "<think>Inline reasoning here.</think>Seven years.",
+                            "reasoning": separated,
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 11, "completion_tokens": 700},
+            }
+        ]
+    )
+
+    response = _provider(session).generate(system="s", prompt="p")
+
+    assert response.text == "Seven years."
+    assert response.stripped_reasoning_chars == len("<think>Inline reasoning here.</think>") + len(
+        separated
+    )

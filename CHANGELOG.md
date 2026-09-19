@@ -130,6 +130,31 @@ did not examine. Both checks now name the tree they looked at — HEAD,
 clean or dirty, untracked count — because a total says how much was
 examined and never what.
 
+**`crosswalk seed` refuses 45 CFR 171 instead of writing an empty
+overlay.** Seeding a crosswalk against the information-blocking catalog
+used to write 76 rows reading `0 published pairs, 76 with none` and exit
+0 — which reads as *no mappings found yet*, and hands `crosswalk propose`
+a ready-made worklist for a model to fill in. It now exits non-zero,
+writes nothing, and says why: Part 171's entries are conditions under
+which a practice is **not** information blocking, so there is no
+obligation for an 800-53 control to correspond to. The mapping is not
+unreviewed, it has no true form, and asserting one would say what neither
+document says — that qualifying for an exception is evidence a safeguard
+exists. Every other framework seeds exactly as before.
+
+The refusal is keyed on what the catalog **declares**, not on what you
+typed, because this repository calls that catalog two things: its
+`controls.json` says `45 CFR 171` and its `framework.yaml` says
+`Information Blocking (45 CFR Part 171)`. Both spellings refuse, and so
+does any other wording carrying the same words.
+
+**A framework name that matches no loaded catalog now says so, and lists
+the ones that are loaded.** It used to report "No requirements found for
+framework X", which reads as *that catalog's mapping has not been
+published yet* — a claim about the crosswalk, when the truth was a claim
+about the name, and the two want opposite responses. It now names the
+frameworks actually present and marks any that cannot anchor a crosswalk.
+
 ## 1.3.0
 
 Three things this release lets you do that 1.2.1 could not: map your own

@@ -38,6 +38,7 @@ surfaces as a question rather than a lost decision.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -59,6 +60,109 @@ STATUSES = (PROPOSED, ACCEPTED, REJECTED)
 
 class OverlayError(ValueError):
     """An overlay file that cannot be read as one."""
+
+
+#: Catalogs that state **conditions** rather than controls, and the sentence
+#: each refusal prints.
+#:
+#: The crosswalk is 800-53-anchored by construction: an overlay maps a
+#: framework's requirements onto `NIST_ANCHOR`, and every row asserts *this
+#: requirement and that control are about the same obligation*. For a catalog
+#: whose entries are conditions of an exception, there is no such obligation
+#: to be the same as, so the mapping cannot be right — not "is unreviewed",
+#: but has no true form.
+#:
+#: Refusing rather than seeding an empty overlay, because the empty one is
+#: the more dangerous artefact. `seed` against 45 CFR 171 produced 76 rows
+#: reading `0 published pairs, 76 with none` and exited 0, which says *no
+#: mappings found* — indistinguishable from a catalog whose crosswalk nobody
+#: has published yet, and it hands `crosswalk propose` a ready-made worklist
+#: to fill in with a model's guesses.
+#:
+#: Keyed on the framework name as the catalog declares it. Matching is
+#: case- and space-insensitive, because the name arrives from `--framework`
+#: typed by a person.
+NOT_CROSSWALK_ANCHORABLE: dict[str, str] = {
+    "45 CFR 171": (
+        "45 CFR 171 states the conditions under which a practice is NOT information "
+        "blocking. Its entries are conditions of an exception, not controls to "
+        "implement, so there is nothing for an 800-53 control to correspond to. "
+        "Mapping them would assert something neither document says: that qualifying "
+        "for an exception is evidence a safeguard exists. Cite 171.203(a) to show a "
+        "practice qualifies; do not map it. See "
+        "data/frameworks/cfr-171-information-blocking/README.md."
+    ),
+}
+
+
+class NotAnchorableError(OverlayError):
+    """Seeding was refused because the catalog states conditions, not controls.
+
+    A distinct type because `seed_overlay` has two refusals and a reader
+    cannot safely tell them apart by message alone. 1d's review probe
+    passed `[]` as controls, hit the *empty catalog* error, and read it as
+    this one — nearly reporting that `45 CFR 164` was being refused when it
+    was not. Two failures sharing an exception type means the only thing
+    separating them is whoever is reading, which is the arrangement this
+    project keeps finding at the bottom of a wrong answer.
+    """
+
+
+def _canonical(name: str) -> str:
+    return " ".join(name.split()).casefold()
+
+
+def _refusal_reason(framework: str) -> str | None:
+    """Why `framework` cannot anchor a crosswalk, or None if it can."""
+    wanted = _canonical(framework)
+    for name, reason in NOT_CROSSWALK_ANCHORABLE.items():
+        if _canonical(name) == wanted:
+            return reason
+    return None
+
+
+def _tokens(name: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", name.casefold()))
+
+
+def _selects(controls, typed: str, declared: str) -> bool:
+    """Does `typed` name the catalog that declares itself `declared`?
+
+    True when every distinguishing word of the declared name appears in the
+    typed one, so `Information Blocking (45 CFR Part 171)` reaches
+    `45 CFR 171` while `45 CFR 164` and `45 CFR 1710` do not — `164` and
+    `1710` are different tokens, not prefixes of `171`.
+
+    Only consulted when the typed name matched no catalog exactly, so a
+    name that already works is never reinterpreted. A typed name that
+    matches nothing at all still falls through to the empty-catalog error,
+    which names what *is* loaded rather than implying the mapping is
+    merely unpublished.
+
+    **"Every distinguishing word appears" reads unbounded, and is not.**
+    The rule is gated on `declared`, which comes from the loaded catalogs —
+    so a name only reaches this test when the catalog that declares it is
+    actually in front of the command. `Guidance on 45 CFR 160 164 171`
+    carries all of `{45, cfr, 171}` and refuses **when 171 is loaded**;
+    with 171 absent, the same string gets the empty-catalog error instead.
+    Both directions err toward refusing rather than seeding, which is the
+    safe direction for this guard, and `test_the_token_match_is_gated_on_
+    the_loaded_catalog` holds it. Stated because a future reader asked to
+    simplify this would otherwise see an unbounded substring rule.
+    """
+    if any(_canonical(name) == _canonical(typed) for name in _declared_frameworks(controls)):
+        return False
+    return _tokens(declared) <= _tokens(typed)
+
+
+def _declared_frameworks(controls) -> list[str]:
+    """Every framework name the loaded catalogs declare, in first-seen order."""
+    seen: dict[str, None] = {}
+    for control in controls:
+        name = getattr(control, "framework", "") or ""
+        if name:
+            seen.setdefault(name, None)
+    return list(seen)
 
 
 def printable(text) -> str:
@@ -421,14 +525,58 @@ def seed_overlay(controls, framework: str, anchor: str = NIST_ANCHOR) -> Overlay
     Applying a seeded overlay changes nothing, which is the point: it is the
     starting file an organization edits, and until somebody does, the
     pipeline behaves as it did before overlays existed.
+
+    Refuses outright for a framework in `NOT_CROSSWALK_ANCHORABLE`, where
+    the mapping this file exists to hold has no true form. The refusal is
+    here rather than in the CLI so that every caller meets it.
+
+    Keyed on what the loaded catalog **declares**, not only on what was
+    typed. This repository calls the same catalog two things — its
+    `controls.json` says `45 CFR 171` and its `framework.yaml` says
+    `Information Blocking (45 CFR Part 171)` — and `framework.yaml` is
+    where a person looks up what a catalog is called, so the un-guarded
+    spelling was the one a careful user was most likely to type. Matching
+    the typed string alone let it through to "No requirements found", which
+    is a politer spelling of exactly the reading this guard exists to
+    destroy. Adding the second name as a key would fix today and leave the
+    third spelling unguarded; taking the name from the data cannot drift.
     """
+    reason = _refusal_reason(framework)
+    named = framework
+    if reason is None:
+        # The typed name matched nothing in the table. Ask the catalogs
+        # themselves whether the thing being seeded is one of these.
+        for declared in _declared_frameworks(controls):
+            declared_reason = _refusal_reason(declared)
+            if declared_reason is not None and _selects(controls, framework, declared):
+                reason, named = declared_reason, declared
+                break
+    if reason is not None:
+        raise NotAnchorableError(f"{named} cannot anchor a crosswalk. {reason}")
+
     overlay = Overlay(framework=framework, anchor=anchor)
     for rid, ids in published_pairs(controls, framework, anchor).items():
         overlay.requirements[rid] = [
             MappingRow(control=i, status=ACCEPTED, sources=["published"]) for i in ids
         ]
     if not overlay.requirements:
-        raise OverlayError(f"No requirements found for framework {framework!r} in these catalogs.")
+        # Name what IS loaded. "No requirements found" alone reads as "this
+        # catalog has no published mapping yet", which is a claim about the
+        # crosswalk rather than about the name being wrong — and the two
+        # want opposite responses from the reader.
+        available = _declared_frameworks(controls)
+        if available:
+            listed = ", ".join(
+                f"{name!r}" + (" (cannot anchor a crosswalk)" if _refusal_reason(name) else "")
+                for name in available
+            )
+            detail = f"The catalogs you loaded declare: {listed}."
+        else:
+            detail = "No catalogs were loaded."
+        raise OverlayError(
+            f"No catalog here declares the framework {framework!r}, so there is nothing "
+            f"to seed. {detail}"
+        )
     return overlay
 
 

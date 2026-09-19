@@ -45,6 +45,7 @@ is skipped with a note, not silently ignored.
 
 from __future__ import annotations
 
+import argparse
 import shutil
 import subprocess
 import sys
@@ -53,6 +54,17 @@ from pathlib import Path
 import tree_guard
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Checks that can decline to run, and the `--allow-skip` name for each.
+# Written out rather than derived from the label, because deriving a key by
+# splitting a display string is how you get two checks silently sharing one
+# name. A check that returns None without an entry here stops the script.
+SKIP_FLAGS = {
+    "semgrep (broader SAST)": "semgrep",
+    "gitleaks (secrets scan)": "gitleaks",
+    "line endings (no CRLF in tracked files)": "git",
+    "conflict markers (none in tracked files)": "git",
+}
 
 
 def run(label: str, cmd: list[str]) -> bool:
@@ -122,7 +134,122 @@ def check_semgrep() -> bool | None:
     )
 
 
-def main() -> int:
+def _git(*args: str, root: Path | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=root or REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def check_line_endings(root: Path | None = None) -> bool | None:
+    """No tracked file may carry CRLF in the index. None if git is absent.
+
+    `.gitattributes` pins `*.md text eol=lf`, so markdown is safe whatever
+    `core.autocrlf` says — verified by writing CRLF markdown into a repo
+    with autocrlf off and watching the blob come back LF. Nothing protects
+    `.yaml`, `.json`, `.toml` or `.py`, and on a Windows machine with
+    autocrlf off those commit exactly as written.
+
+    Asked of git rather than by reading bytes: `ls-files --eol` reports the
+    index blob, which is what ships, and a working tree legitimately holds
+    CRLF under autocrlf=true. Reading the working tree would flag every
+    Windows checkout; reading the blob flags only what was committed.
+    """
+    label = "line endings (no CRLF in tracked files)"
+    print(f"\n{'=' * 60}\n{label}\n{'=' * 60}")
+    result = _git("ls-files", "--eol", root=root)
+    if result.returncode != 0:
+        print(f"SKIPPED — `git ls-files --eol` failed:\n{result.stderr.strip()}")
+        return None
+
+    rows = [line for line in result.stdout.splitlines() if line.strip()]
+    offenders = [line for line in rows if line.split()[0] in {"i/crlf", "i/mixed"}]
+    print(f"{len(rows)} tracked files examined, {len(offenders)} carrying CRLF in the index")
+    for line in offenders:
+        print(f"  {line}")
+    if offenders:
+        print(
+            "\nA file written with `Path.write_text` on Windows gets CRLF unless\n"
+            '`newline="\\n"` is passed. Renormalise with `git add --renormalize <file>`.'
+        )
+    return not offenders
+
+
+def check_conflict_markers(root: Path | None = None) -> bool | None:
+    """No tracked file may contain a merge-conflict marker.
+
+    `git add -A` mid-rebase happily stages a file git still reports as
+    unresolved, and the rebase then completes clean. Every catch we have is
+    incidental: a marker is a Python syntax error, and `=======` reads as a
+    setext heading underline to mdformat. Nothing in the gate parses YAML
+    at all, and `.yaml` covers every workflow file and `framework.yaml`.
+
+    Deliberately does NOT search for `=======`. Seven equals signs are a
+    legal setext heading underline and appear in ordinary prose, and git
+    never writes a `=======` without the `<<<<<<< ` that opens the
+    conflict — so the opening and closing markers are both sufficient and
+    free of false positives, which is what lets this run tree-wide with no
+    suppression list. (A tree-wide grep for `=======` was in fact tried
+    while writing this and reported two hits in README.md: 60-character
+    rules inside a fenced sample-output block.)
+    """
+    label = "conflict markers (none in tracked files)"
+    print(f"\n{'=' * 60}\n{label}\n{'=' * 60}")
+    unambiguous = r"^(<<<<<<< |>>>>>>> |\|\|\|\|\|\|\| )"
+    result = _git("grep", "-I", "-n", "-E", unambiguous, "--", ".", root=root)
+    if result.returncode not in (0, 1):
+        print(f"SKIPPED — `git grep` failed:\n{result.stderr.strip()}")
+        return None
+
+    hits = [line for line in result.stdout.splitlines() if line.strip()]
+    tracked = len(
+        [line for line in _git("ls-files", root=root).stdout.splitlines() if line.strip()]
+    )
+    print(f"{tracked} tracked files scanned, {len(hits)} conflict marker(s) found")
+    for line in hits:
+        print(f"  {line}")
+    if hits:
+        print(
+            "\nResolve the file and `git add` it by name. `git add -A` during a\n"
+            "rebase stages conflicts as though they were resolved."
+        )
+    return not hits
+
+
+def parse_allow_skip(argv: list[str] | None) -> set[str]:
+    """Tool names the caller has accepted as missing.
+
+    `argv or []`, never argparse's default of falling back to sys.argv:
+    `main()` is called directly by tests/test_tree_guard.py, and inside a
+    pytest process sys.argv holds pytest's flags. Left to the default,
+    `main()` died on pytest's own `-q` — caught by those tests, which call
+    it for an unrelated reason, and by none of the ones written alongside
+    this change.
+    """
+    parser = argparse.ArgumentParser(
+        prog="check.py",
+        description="Run the full quality-check suite locally, in one command.",
+    )
+    parser.add_argument(
+        "--allow-skip",
+        action="append",
+        default=[],
+        choices=sorted(set(SKIP_FLAGS.values())),
+        metavar="TOOL",
+        help=(
+            "Accept that this tool is missing and let the gate still pass. "
+            "Repeatable. Without it, a check that did not run fails the gate."
+        ),
+    )
+    return set(parser.parse_args(argv or []).allow_skip)
+
+
+def main(argv: list[str] | None = None) -> int:
+    allow_skip = parse_allow_skip(argv)
+
     # Before anything runs: the `policyforge` every check below would import
     # has to be this tree's. In a git worktree it is not — the editable
     # install pins the checkout it was made from — and the whole gate would
@@ -175,18 +302,74 @@ def main() -> int:
             "mdformat --check", ["mdformat", "--check", *md_targets]
         ),
         "gitleaks (secrets scan)": check_gitleaks(),
+        # Tree hygiene last: both are fast, and both catch a class the rest
+        # of the gate only ever caught by accident.
+        "line endings (no CRLF in tracked files)": check_line_endings(),
+        "conflict markers (none in tracked files)": check_conflict_markers(),
     }
 
+    return summarise(results, allow_skip)
+
+
+def summarise(results: dict[str, bool | None], allow_skip: set[str]) -> int:
+    """Print the summary and return the exit code.
+
+    Separate from `main` so the exit rule can be tested without installing
+    or uninstalling tools. The rule it encodes: a check that did not run is
+    not a check that passed.
+    """
+    # A check that declined to run but has no --allow-skip name would
+    # fall out of the accounting below and be reported as a pass. Stop
+    # instead: the failure mode this whole change exists to remove is
+    # exactly "absent, and therefore counted as fine".
+    undeclared = [
+        label for label, passed in results.items() if passed is None and label not in SKIP_FLAGS
+    ]
+    if undeclared:
+        print(
+            f"\nBUG in check.py: check(s) skipped with no SKIP_FLAGS entry: {undeclared}",
+            file=sys.stderr,
+        )
+        return 2
+
+    skipped = [label for label, passed in results.items() if passed is None]
+    unacknowledged = [label for label in skipped if SKIP_FLAGS[label] not in allow_skip]
+
+    # What did NOT run comes first, before the wall of PASS. A reader
+    # scanning a summary is looking for the word FAIL, and a SKIP sitting
+    # seventh in a list of nine reads as noise next to eight passes.
     print(f"\n{'=' * 60}\nSummary\n{'=' * 60}")
-    all_passed = True
+    if skipped:
+        print(f"  {len(skipped)} of {len(results)} checks DID NOT RUN:")
+        for label in skipped:
+            note = "" if SKIP_FLAGS[label] in allow_skip else "  <- not acknowledged"
+            print(f"      {label}{note}")
+        print()
+
     for label, passed in results.items():
         status = "SKIP" if passed is None else ("PASS" if passed else "FAIL")
         print(f"  {status}  {label}")
-        if passed is False:
-            all_passed = False
 
-    return 0 if all_passed else 1
+    failed = [label for label, passed in results.items() if passed is False]
+    print(f"\n  {len(results) - len(skipped)} ran, {len(failed)} failed, {len(skipped)} skipped")
+
+    if unacknowledged:
+        # The whole point of this script is to answer "is this safe to
+        # push". A tool that is absent has produced no evidence, and
+        # reporting its absence as success is the one answer that cannot
+        # be recovered from downstream: the reader has already stopped
+        # looking. Acknowledging a skip is cheap and leaves a record of
+        # who decided the gap was acceptable.
+        flags = " ".join(f"--allow-skip {SKIP_FLAGS[label]}" for label in unacknowledged)
+        print(
+            f"\n  FAILING because {len(unacknowledged)} check(s) did not run.\n"
+            f"  Install the missing tool (each SKIP above says how), or accept\n"
+            f"  the gap explicitly:\n\n      python scripts/check.py {flags}\n"
+        )
+        return 1
+
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

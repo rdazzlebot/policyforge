@@ -61,6 +61,34 @@ def test_every_other_catalog_directory_is_bring_your_own():
         assert not (FRAMEWORKS / name / "controls.json").exists()
 
 
+def test_the_readme_licensing_table_names_every_catalog_that_ships():
+    """The root README's licensing table is where a user goes to learn
+    **what they are allowed to redistribute**, and nothing was holding it
+    to what actually ships.
+
+    42 CFR Part 2 was registered in all three code places a catalog needs
+    -- `BUNDLED_CATALOGS`, the `pyproject` package data, and the
+    `framework-drift` job -- and was missing from that table, so a user
+    reading it counted five bundled catalogs and shipped six. Every code
+    registration had a test over it; the document did not.
+
+    Derived from the tree rather than from a list, so it covers the next
+    catalog as well as this one. BYOC directories are exempt: they ship no
+    `controls.json`, and `test_every_other_catalog_directory_is_bring_your_own`
+    is what holds that.
+    """
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    shipping = sorted(d.name for d in FRAMEWORKS.iterdir() if (d / "controls.json").is_file())
+    assert shipping, "no catalog ships a controls.json -- this test is checking nothing"
+
+    missing = [name for name in shipping if f"data/frameworks/{name}/" not in readme]
+    assert not missing, (
+        f"catalogs that ship but are not in the README licensing table: {missing}. "
+        f"That table is what a user reads to decide what they may redistribute."
+    )
+
+
 def test_package_data_names_exactly_the_files_init_copies():
     package_data = _pyproject()["tool"]["setuptools"]["package-data"]
     expected = {f"{c}/{f}" for c in BUNDLED_CATALOGS for f in CATALOG_FILES}

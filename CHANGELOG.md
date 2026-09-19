@@ -171,6 +171,39 @@ Only the NIST half of the example moved: `HIPAA` and `HIPAA Security Rule`
 already key to the same catalog, as do `GovRAMP` and `GovRAMP Moderate`.
 NIST is the only family where naming the catalog changes what resolves.
 
+**`etl-hipaa` now refuses to overwrite a catalog whose crosswalk it would
+drop.** `etl-hipaa` parses 45 CFR 164, which carries no mapping to NIST;
+the mappings arrive from `etl-hipaa-crosswalk`, run afterwards. So running
+the first command alone — the obvious thing to do for a fresh provenance
+stamp — rewrote the bundled catalog from **65 mappings to 0**, leaving a
+file that still loaded, still parsed to 34 controls with correct ids, and
+reported nothing wrong. It now stops and names both commands in order,
+because "run the other one" is the whole remedy. **If you script
+`etl-hipaa` on its own, it will now exit non-zero** where it previously
+succeeded; run `etl-hipaa-crosswalk` after it. The check counts mappings
+rather than asking whether any exist, so a write that left 60 of 65 is
+caught too.
+
+**The entailment judge can run on the answering path, behind
+`entail.answering` in config, off by default.** It asks whether a cited
+passage actually carries the claim made about it — the thing no
+deterministic check can answer, since a sentence can cite correctly, quote
+nothing and invent nothing while still not being supported by what it
+cites. It does not run on generated documents. What it catches, and where
+that has been measured, is in `MEASUREMENTS.md` rather than stated here, so
+the claim cannot go stale the way its predecessor did.
+
+**It costs one extra model call per citation**, to a second model you
+configure as the judge — not one per answer. A sentence citing two
+passages is judged against both, and every citation in an answer is judged
+before any of them is allowed to settle it, so an answer with five cited
+sentences drawing on two passages each costs ten judge calls on top of the
+answer itself. That is why it is off by default and opted into rather than
+simply enabled: every other check on this path is free, and this one is
+the exception. A judge that cannot run is reported rather than silently
+skipped — an entailment check nobody can tell did not happen is worse than
+one that is plainly off.
+
 ## 1.3.0
 
 Three things this release lets you do that 1.2.1 could not: map your own

@@ -35,17 +35,41 @@ _ID_RE = re.compile(r"[A-Za-z]{1,4}-\d+(?:\([A-Za-z0-9]+\))?")
 
 
 def normalize_framework(name: str) -> str:
-    """Normalize a framework name: "NIST 800-53" -> "nist", "FedRAMP" -> "fedramp".
+    """Normalize a framework name: "NIST 800-53" -> "nist-800-53".
 
     Public because other pipeline stages (e.g. synthesis/merge.py) need to
     look controls up by the same (framework, control_id) key this module
     uses internally.
+
+    This used to be the first word, and that was the defect. "NIST" alone
+    spans 800-53, 800-171, 800-172, 800-137 and the Cybersecurity
+    Framework, so every NIST-family catalog filed under one key and their
+    requirement identifiers merged into one set. An 800-171 identifier
+    cited as 800-53 was then *found* in that shared bucket and counted as
+    evidence rather than reported as unknown — a citation resolving to the
+    wrong catalog, silently, which for a tool an assessor reads is the one
+    failure mode this project exists to prevent.
+
+    The reasoning had already been done and written down, one function
+    below, for the HITRUST path: *folding those together would file CSF
+    outcome ids as 800-53 controls*. It simply never reached the catalog
+    path. So both now share `FRAMEWORK_ALIASES`, and there is one
+    definition of what a framework name keys to instead of two that
+    disagree.
+
+    The first word remains the fallback, which is what keeps every catalog
+    not named in the table — including one a user brings — working exactly
+    as before.
     """
-    return name.strip().lower().split()[0]
+    lowered = name.strip().lower()
+    for needle, framework in FRAMEWORK_ALIASES:
+        if needle in lowered:
+            return framework
+    return lowered.split()[0] if lowered.split() else ""
 
 
 def _is_nist(framework: str) -> bool:
-    return normalize_framework(framework) == "nist"
+    return normalize_framework(framework) == NIST_ANCHOR
 
 
 def _extract_ids(raw: str) -> list[str]:
@@ -64,21 +88,41 @@ def _crosswalk_sources(control: Control) -> list[tuple[str, dict[str, str]]]:
     return [(id_, cw) for id_, cw in sources if cw]
 
 
-#: HITRUST names its authoritative sources in full ("NIST SP 800-53 r5",
-#: "HIPAA Security Rule"), and `normalize_framework` — which keeps the first
-#: word — collapses several of them onto the same key. "NIST" alone spans
-#: 800-53, 800-171, 800-137 and the Cybersecurity Framework, whose
-#: identifiers look nothing alike: `AC-2`, `3.12.4[g]`, `GV.PO-02`. Folding
-#: those together would file CSF outcome ids as 800-53 controls, so the
-#: distinguishing substring is matched before the first-word fallback.
+#: Which framework a declared name keys to, where the first word will not do.
 #:
-#: Ordered longest-intent-first: `800-53` is tested before the bare `nist`.
-HITRUST_SOURCE_ALIASES: tuple[tuple[str, str], ...] = (
-    ("800-53", "nist"),
+#: Framework names are written in full by the people and exports that supply
+#: them — HITRUST names its authoritative sources as "NIST SP 800-53 r5", a
+#: catalog declares "HIPAA Security Rule", a user brings "NIST Cybersecurity
+#: Framework" — and the first word of several of those is the same word.
+#: "NIST" alone spans 800-53, 800-171, 800-172, 800-137 and the Cybersecurity
+#: Framework, whose identifiers look nothing alike: `AC-2`, `03.01.01`,
+#: `GV.PO-02`. Folding those together files CSF outcome ids as 800-53
+#: controls, so the distinguishing substring is matched before the first-word
+#: fallback.
+#:
+#: **Order is significant — first match wins.** The NIST document numbers
+#: come first because they are the most specific thing a name can carry.
+#:
+#: The abbreviations are here because people write them. "NIST CSF" and
+#: "NIST CSF 2.0" — the current version's actual name — miss a needle that
+#: only spells the framework out, and missing it means falling through to the
+#: first word, which is the bug this table exists to prevent.
+#:
+#: **Every needle here must be as narrow as the thing it names.** The CSF
+#: entries say `nist csf` rather than a bare `csf` because "HITRUST CSF"
+#: contains "csf" and belongs to HITRUST. A first draft of this table also
+#: carried a `hitrust` needle to guard that, which was unnecessary — the
+#: narrow needles already miss "HITRUST CSF" — and actively wrong: it
+#: swallowed the framework id `hitrust-csf` and returned `hitrust`, quietly
+#: merging a catalog that had been keyed correctly for as long as it existed.
+#: A guard against a hazard that is not there is not free.
+FRAMEWORK_ALIASES: tuple[tuple[str, str], ...] = (
+    ("800-53", "nist-800-53"),
     ("800-171", "nist-800-171"),
     ("800-172", "nist-800-172"),
     ("800-137", "nist-800-137"),
     ("cybersecurity framework", "nist-csf"),
+    ("nist csf", "nist-csf"),
     ("arc-ampe", "arc-ampe"),
     ("hipaa security rule", "hipaa"),
     ("hipaa privacy rule", "hipaa-privacy"),
@@ -90,19 +134,33 @@ HITRUST_SOURCE_ALIASES: tuple[tuple[str, str], ...] = (
     ("pci dss", "pci-dss"),
 )
 
-#: Which HITRUST sources are NIST 800-53 proper, and so may anchor a row of
-#: the crosswalk. The crosswalk is 800-53-anchored by construction, and an
+#: The old name, kept because the table's first readers were the HITRUST
+#: importer's authoritative-source names. It is the same table; the catalog
+#: path simply never used it, which is what let two definitions of one
+#: concept drift apart.
+HITRUST_SOURCE_ALIASES = FRAMEWORK_ALIASES
+
+#: Which framework is NIST 800-53 proper, and so may anchor a row of the
+#: crosswalk. The crosswalk is 800-53-anchored by construction, and an
 #: identifier from any other source is not an anchor no matter how much it
 #: looks like one.
-NIST_ANCHOR = "nist"
+#:
+#: This was `"nist"` until the NIST family got one key each. A bare `nist`
+#: cannot be the anchor any more, and not only for tidiness: while 800-53
+#: was filed under it, `resolve_framework` found `nist` in the index and
+#: returned it before its own ambiguity rule could run, so a citation
+#: reading `[NIST AC-2]` resolved to 800-53 by short-circuit rather than
+#: because anything had established which NIST catalog was meant.
+NIST_ANCHOR = "nist-800-53"
 
 
 def hitrust_framework(source: str) -> str:
-    """Normalize one HITRUST authoritative-source name to a framework key."""
-    lowered = source.strip().lower()
-    for needle, framework in HITRUST_SOURCE_ALIASES:
-        if needle in lowered:
-            return framework
+    """Normalize one HITRUST authoritative-source name to a framework key.
+
+    The same answer as `normalize_framework`, which is the point: these were
+    two functions with two tables and they disagreed about what `NIST 800-171`
+    keyed to. Kept as a name because the HITRUST importer reads better for it.
+    """
     return normalize_framework(source) if source.strip() else ""
 
 

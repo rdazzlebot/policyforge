@@ -774,6 +774,25 @@ comfortable.
    never received it. Scheduled into the framework expansion work rather than
    a patch release, on the user's decision, with the merged severity known.
 
+   **Closed.** Each family now has its own key — `nist-800-53`,
+   `nist-800-171`, `nist-800-172`, `nist-800-137`, `nist-csf` — and the two
+   normalisers share one table, so a citation naming one catalog cannot
+   resolve against another. Kept here rather than deleted, because the shape
+   is worth more than the instance: the reasoning had been done correctly and
+   written down for one code path and never reached the other, so the project
+   held two definitions of one concept and they disagreed. Three further
+   private copies of the same first-word rule turned up during the fix that a
+   search for the literal key could not find, because they derived it rather
+   than writing it. A search finds literals; it does not find rules.
+
+   Two consequences a reader should know about. `[NIST AC-2]` is now reported
+   unresolved once a second NIST-family catalog is loaded, which is the
+   intended behaviour and makes `satisfies --strict` fail until documents are
+   regenerated — a red gate on upgrade is the tool declining to guess, not a
+   regression. And the residual risk after this fix is **under-citation
+   rather than mis-citation**: a wrong catalog name now produces a visible
+   refusal instead of a silent hit, which is the direction to fail in.
+
 1. **The wiki publish job's fence had never been evaluated at runtime, as of
    2026-09-18.** The `publish-wiki` job in `.github/workflows/content.yml` is
    fenced to a push to this repository with `vars.WIKI_REPOSITORY` set. As

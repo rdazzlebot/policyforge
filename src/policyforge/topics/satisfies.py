@@ -47,7 +47,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
-from policyforge.mapping.crosswalk import normalize_framework
+from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
 
 _HEADING_RE = re.compile(r"^#{1,6}\s+(?P<title>.+?)\s*$")
 #: `AC-2(3)` -> `AC-2`. The same shape `coverage._parent_of` matches.
@@ -146,7 +146,7 @@ class DocumentEvidence:
         than print an empty section a reader will take for an absence of
         coverage.
         """
-        return [c.requirement_id for c in self.cited if c.framework == "nist"]
+        return [c.requirement_id for c in self.cited if c.framework == NIST_ANCHOR]
 
     @property
     def occurrences(self) -> int:
@@ -349,7 +349,7 @@ def document_evidence(
     reached: dict[tuple[str, str], Reached] = {}
     for anchor in sorted(anchor_ids):
         sections = next(
-            (c.sections for c in evidence.cited if c.key == ("nist", anchor)),
+            (c.sections for c in evidence.cited if c.key == (NIST_ANCHOR, anchor)),
             [],
         )
         for raw_framework, requirement_ids in sorted(crosswalk.get(anchor, {}).items()):
@@ -420,7 +420,7 @@ def build_report(
     for evidence, slug in zip(evidences, keys, strict=True):
         reached = cited_by_topic.setdefault(slug, set())
         for citation in evidence.cited:
-            if citation.framework != "nist":
+            if citation.framework != NIST_ANCHOR:
                 continue
             reached.add(citation.requirement_id)
             # Citing AC-2(3) is mentioning AC-2: the enhancement is part of

@@ -2,6 +2,55 @@
 
 ## Unreleased
 
+**Every NIST-family catalog now has its own key.** A framework's key was the
+first word of its declared name, so `NIST 800-53`, `NIST 800-171`,
+`NIST 800-172`, `NIST 800-137` and `NIST Cybersecurity Framework` all filed
+under `nist` and their requirement identifiers merged into one set. A
+citation could then cross between them without anything noticing: an
+800-171 identifier written as `[NIST 800-53 03.01.01]` was *found* in the
+shared bucket and counted as evidence, rather than reported as unknown. For
+a report an assessor reads, a citation that resolves to the wrong catalog is
+worse than one that resolves to nothing, because nothing says it happened.
+
+Keys are now `nist-800-53`, `nist-800-171`, `nist-800-172`, `nist-800-137`
+and `nist-csf`, and a citation naming one catalog cannot resolve against
+another. The rule lives in one place: `normalize_framework` and
+`hitrust_framework` were two functions with two tables that disagreed about
+what `NIST 800-171` meant, and they now share `FRAMEWORK_ALIASES`. Three
+further private copies of the first-word rule — in the crosswalk candidate
+list, the vault loader, and the anchor checks spread across nine modules —
+now route through it or through `NIST_ANCHOR`.
+
+**What this changes for you.** Nothing, if you load one NIST catalog, which
+is what the bundled set is: the first word remains the fallback, so every
+other catalog keys exactly as before and a short `[NIST AC-2]` resolves as
+it always has. If you load two NIST-family catalogs — the bundled 800-53
+plus a brought 800-171 or CSF — then `[NIST AC-2]` no longer names one of
+them and is **reported as unresolved** instead of silently picking 800-53.
+That is the intended outcome and the reason to regenerate: a reported
+unknown is a failure you can see and act on. Documents generated before this
+release keep their short-form citations until they are regenerated.
+
+**If you gate CI on `satisfies --strict`, expect it to go red — and only
+where it should.** A one-catalog tree does not move; a two-catalog tree goes
+red and should. `--strict` exits non-zero on the unresolved-citation count,
+so short-form citations that stop resolving will fail it until the documents
+are regenerated with fully-qualified tags. Measured on the shipped
+59-document corpus: 4,090 citation occurrences, 33 unresolved, identical to
+1.3.0. The red is the tool declining to guess which catalog you meant.
+
+Worth knowing which way this used to fail, because it is the reason the
+change is worth a red gate. Before this, declaring a second NIST-family
+catalog made unresolved counts *fall* — an 800-171 identifier under a bare
+`NIST` name went from unknown to cited evidence as soon as the second
+catalog joined the shared bucket. So `--strict` flipped from failing to
+passing at the moment attribution silently merged. A gate that fails when it
+should pass gets investigated; one that passes when it should fail gets
+trusted.
+
+The bundled HIPAA crosswalk's 65 mappings were re-keyed from `nist` to
+`nist-800-53` and the catalog re-stamped; every mapping value is unchanged.
+
 **A fifth bundled catalog: information blocking (45 CFR Part 171).**
 `policyforge etl-info-blocking` fetches it from eCFR's public API and
 writes `data/frameworks/cfr-171-information-blocking/` — 21 sections

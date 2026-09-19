@@ -322,7 +322,7 @@ def ssp_cmd(
     from dataclasses import fields as dataclasses_fields
 
     from policyforge.generate.policy_writer import OrgContext
-    from policyforge.mapping.crosswalk import build_crosswalk, normalize_framework
+    from policyforge.mapping.crosswalk import NIST_ANCHOR, build_crosswalk, normalize_framework
     from policyforge.ssp.narrative import SystemProfile, draft_implementation_narrative
     from policyforge.ssp.workbook import build_ssp_workbook, select_for_baseline
 
@@ -375,7 +375,7 @@ def ssp_cmd(
     all_controls = load_catalogs(controls_paths)
     crosswalk = build_crosswalk(all_controls)
 
-    nist_controls = [c for c in all_controls if normalize_framework(c.framework) == "nist"]
+    nist_controls = [c for c in all_controls if normalize_framework(c.framework) == NIST_ANCHOR]
     if not nist_controls:
         raise click.UsageError(
             "None of the --controls files contain NIST 800-53 controls. Populate them "

@@ -34,7 +34,7 @@ from policyforge.crosswalk.propose import (
 )
 from policyforge.ingest.schema import Control, ControlEnhancement
 from policyforge.llm.base import LLMResponse, SchemaReplyError
-from policyforge.mapping.crosswalk import build_crosswalk
+from policyforge.mapping.crosswalk import NIST_ANCHOR, build_crosswalk
 
 HIPAA = "HIPAA Security Rule"
 
@@ -73,7 +73,7 @@ def _catalogs():
                     baseline="Addressable",
                     description="Procedures for guarding against, detecting, and reporting "
                     "malicious software.",
-                    source_crosswalk={"nist": "AT-2"},
+                    source_crosswalk={NIST_ANCHOR: "AT-2"},
                 )
             ],
         ),

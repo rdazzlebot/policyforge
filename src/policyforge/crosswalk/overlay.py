@@ -41,6 +41,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from policyforge.mapping.crosswalk import NIST_ANCHOR
+
 DEFAULT_OVERLAY_DIR = Path("config/crosswalks")
 
 #: NIST's OLIR relationship vocabulary (IR 8278A), read from the mapped
@@ -119,7 +121,7 @@ class MappingRow:
 @dataclass
 class Overlay:
     framework: str
-    anchor: str = "nist"
+    anchor: str = NIST_ANCHOR
     requirements: dict[str, list[MappingRow]] = field(default_factory=dict)
     path: Path | None = None
 
@@ -161,7 +163,7 @@ def parse_overlay(data, *, path: Path | None = None) -> Overlay:
 
     overlay = Overlay(
         framework=printable(data["framework"]),
-        anchor=printable(data.get("anchor") or "nist"),
+        anchor=printable(data.get("anchor") or NIST_ANCHOR),
         path=path,
     )
     for requirement_id, rows in raw.items():
@@ -400,7 +402,7 @@ def apply_overlays(controls, overlays: list[Overlay]) -> int:
     return rewritten
 
 
-def published_pairs(controls, framework: str, anchor: str = "nist") -> dict[str, list[str]]:
+def published_pairs(controls, framework: str, anchor: str = NIST_ANCHOR) -> dict[str, list[str]]:
     """The catalog's own mapping for `framework`, before any overlay."""
     from policyforge.mapping.crosswalk import _extract_ids
 
@@ -413,7 +415,7 @@ def published_pairs(controls, framework: str, anchor: str = "nist") -> dict[str,
     return pairs
 
 
-def seed_overlay(controls, framework: str, anchor: str = "nist") -> Overlay:
+def seed_overlay(controls, framework: str, anchor: str = NIST_ANCHOR) -> Overlay:
     """An overlay holding exactly the published mapping, every pair accepted.
 
     Applying a seeded overlay changes nothing, which is the point: it is the

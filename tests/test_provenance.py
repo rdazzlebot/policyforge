@@ -180,7 +180,7 @@ def test_a_second_pipeline_step_updates_the_hash_not_the_source(tmp_path):
 
     # The enrichment step rewrites the file.
     controls.write_text(
-        '[{"control_id": "164.308", "source_crosswalk": {"nist": "RA-1"}}]', encoding="utf-8"
+        '[{"control_id": "164.308", "source_crosswalk": {"nist-800-53": "RA-1"}}]', encoding="utf-8"
     )
     assert verify_content(tmp_path).state == MISMATCH
 

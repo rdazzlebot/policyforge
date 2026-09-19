@@ -13,6 +13,8 @@ import json
 import re
 from pathlib import Path
 
+from policyforge.mapping.crosswalk import NIST_ANCHOR
+
 FIXTURE = Path(__file__).parent / "fixtures" / "cprt_hipaa_to_800-53r5.json"
 HIPAA_DATA = (
     Path(__file__).parent.parent / "data" / "frameworks" / "hipaa-security-rule" / "controls.json"
@@ -204,11 +206,11 @@ def test_apply_crosswalk_maps_standards_and_specifications():
 
     by_id = {c.control_id: c for c in controls}
     # Standard level.
-    assert by_id["164.308(a)(5)(i)"].source_crosswalk["nist"] == "AT-1, AT-2, AT-3, AT-4"
+    assert by_id["164.308(a)(5)(i)"].source_crosswalk[NIST_ANCHOR] == "AT-1, AT-2, AT-3, AT-4"
     # Implementation-specification level, mapped independently of its parent.
     specs = {e.enhancement_id: e for e in by_id["164.308(a)(1)(i)"].enhancements}
-    assert specs["164.308(a)(1)(ii)(A)"].source_crosswalk["nist"] == "RA-2, RA-3"
-    assert specs["164.308(a)(1)(ii)(C)"].source_crosswalk["nist"] == "PS-8"
+    assert specs["164.308(a)(1)(ii)(A)"].source_crosswalk[NIST_ANCHOR] == "RA-2, RA-3"
+    assert specs["164.308(a)(1)(ii)(C)"].source_crosswalk[NIST_ANCHOR] == "PS-8"
 
 
 def test_uncovered_requirements_are_reported_not_hidden():
@@ -228,11 +230,14 @@ def test_nist_ids_are_sorted_the_way_nist_prints_them():
     controls = _controls()
     by_id = {c.control_id: c for c in controls}
     assert (
-        by_id["164.310(b)"].source_crosswalk["nist"]
+        by_id["164.310(b)"].source_crosswalk[NIST_ANCHOR]
         == "AC-3, AC-4, AC-11, AC-12, AC-16, AC-17, AC-19, PE-3, PE-5, PL-4, PS-6"
     )
     specs = {e.enhancement_id: e for e in by_id["164.308(a)(7)(i)"].enhancements}
-    assert specs["164.308(a)(7)(ii)(E)"].source_crosswalk["nist"] == "CP-2, CP-2(8), RA-2, RA-2(1)"
+    assert (
+        specs["164.308(a)(7)(ii)(E)"].source_crosswalk[NIST_ANCHOR]
+        == "CP-2, CP-2(8), RA-2, RA-2(1)"
+    )
 
 
 # --------------------------------------------------------------------------
@@ -253,9 +258,9 @@ def test_bundled_data_matches_what_the_loader_produces():
 
     regenerated_controls = _controls()
     for control in regenerated_controls:
-        control.source_crosswalk.pop("nist", None)
+        control.source_crosswalk.pop(NIST_ANCHOR, None)
         for enhancement in control.enhancements:
-            enhancement.source_crosswalk.pop("nist", None)
+            enhancement.source_crosswalk.pop(NIST_ANCHOR, None)
     apply_crosswalk(regenerated_controls, _mapping())
 
     regenerated = {c.control_id: dict(c.source_crosswalk) for c in regenerated_controls} | {
@@ -290,7 +295,7 @@ def test_every_stored_mapping_traces_back_to_a_cprt_source_row():
         for requirement_id, crosswalk in [(control.control_id, control.source_crosswalk)] + [
             (e.enhancement_id, e.source_crosswalk) for e in control.enhancements
         ]:
-            for nist_id in crosswalk.get("nist", "").split(","):
+            for nist_id in crosswalk.get(NIST_ANCHOR, "").split(","):
                 if nist_id.strip():
                     stored_pairs.add((requirement_id, nist_id.strip()))
 

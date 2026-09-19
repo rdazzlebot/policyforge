@@ -22,7 +22,7 @@ from dataclasses import dataclass
 
 from policyforge.ingest.schema import Control
 from policyforge.llm.base import LLMProvider
-from policyforge.mapping.crosswalk import normalize_framework
+from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
 
 
 @dataclass
@@ -249,7 +249,7 @@ def build_synthesis_topic(
             topic_controls.append(control)
 
     for nist_id in nist_control_ids:
-        _add(by_framework_id.get(("nist", nist_id)))
+        _add(by_framework_id.get((NIST_ANCHOR, nist_id)))
         for framework, equivalent_ids in crosswalk.get(nist_id, {}).items():
             for equivalent_id in equivalent_ids:
                 _add(by_framework_id.get((framework, equivalent_id)))

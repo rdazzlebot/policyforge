@@ -75,13 +75,13 @@ def _topics_and_controls(topics_path: Path, controls_paths):
     reachable through the crosswalk. Shared rather than repeated because
     getting that split wrong makes a HIPAA requirement look anchorable.
     """
-    from policyforge.mapping.crosswalk import normalize_framework
+    from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
     from policyforge.topics.registry import load_topics
 
     topics = load_topics(topics_path)
     controls = load_catalogs(controls_paths)
-    nist = [c for c in controls if normalize_framework(c.framework) == "nist"]
-    other = [c for c in controls if normalize_framework(c.framework) != "nist"]
+    nist = [c for c in controls if normalize_framework(c.framework) == NIST_ANCHOR]
+    other = [c for c in controls if normalize_framework(c.framework) != NIST_ANCHOR]
     return topics, controls, nist, other
 
 
@@ -218,7 +218,7 @@ def coverage_cmd(
     import dataclasses
     import json as json_mod
 
-    from policyforge.mapping.crosswalk import build_crosswalk, normalize_framework
+    from policyforge.mapping.crosswalk import NIST_ANCHOR, build_crosswalk, normalize_framework
     from policyforge.ssp.workbook import select_for_baseline
     from policyforge.topics.coverage import analyze_coverage, format_report
     from policyforge.topics.registry import load_topics
@@ -227,13 +227,13 @@ def coverage_cmd(
 
     all_controls = load_catalogs(controls_paths)
 
-    nist_controls = [c for c in all_controls if normalize_framework(c.framework) == "nist"]
+    nist_controls = [c for c in all_controls if normalize_framework(c.framework) == NIST_ANCHOR]
     if not nist_controls:
         raise click.UsageError(
             "None of the --controls files contain NIST 800-53 controls. Topics anchor "
             "NIST control IDs, so at least one is required. Run `policyforge etl-oscal`."
         )
-    other_controls = [c for c in all_controls if normalize_framework(c.framework) != "nist"]
+    other_controls = [c for c in all_controls if normalize_framework(c.framework) != NIST_ANCHOR]
 
     scoped = nist_controls
     scope = "all controls"

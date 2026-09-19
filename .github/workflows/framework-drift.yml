@@ -75,3 +75,14 @@ jobs:
           policyforge drift \
             --controls data/frameworks/cfr-171-information-blocking/controls.json \
             --detail --fail-on-change
+
+      - name: Fetch the current 42 CFR Part 2
+        if: always()
+        run: policyforge etl-part2
+
+      - name: What changed in 42 CFR Part 2
+        if: always()
+        run: |
+          policyforge drift \
+            --controls data/frameworks/cfr-42-part-2-sud-records/controls.json \
+            --detail --fail-on-change

@@ -1829,6 +1829,51 @@
         }
       ]
     },
+    "etl-part2": {
+      "help": "Fetch 42 CFR Part 2 (confidentiality of substance use disorder patient\nrecords) from eCFR's public API and parse its security sections into this\nproject's data schema. Public domain - a US federal regulation, same basis\nas NIST/FedRAMP/ARC-AMPE/HIPAA - so safe to bundle directly.\n\nTWO of this part's thirty-eight sections are controls, and that is the\nwhole catalog. Most of Part 2 is conduct: when a disclosure is permitted,\nwhat a consent must contain, what a court must find before it orders a\nrecord produced. Citing 2.66 says a court may authorise a disclosure; it\ndoes not say a safeguard exists. The thinness is the correct answer rather\nthan a parse failure - see the catalog's README for the test that decided\nit and for what it rejected.",
+      "name": "etl-part2",
+      "params": [
+        {
+          "default": null,
+          "help": "Specific eCFR effective date (YYYY-MM-DD) to fetch, for reproducibility. Default: eCFR's current published date for Title 42.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "date",
+          "nargs": 1,
+          "opts": [
+            "--date"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "data/frameworks/cfr-42-part-2-sud-records/controls.json",
+          "help": "Where to write the parsed data.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
     "etl-vault": {
       "help": "Parse NIST 800-53 control notes from an existing vault into this\nproject's data schema. Public-domain content only - see\ningest/nist_vault_loader.py for what crosswalk columns are stripped\nby default and why.",
       "name": "etl-vault",

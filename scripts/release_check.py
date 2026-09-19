@@ -120,50 +120,69 @@ def main(argv: list[str] | None = None) -> int:
     print("=" * 62)
     print(f"1. The published formula installs {expected_tag}")
     print("=" * 62)
+    # Recorded rather than returned. An unreachable formula is a transient;
+    # a leftover fragment is deterministic and needs no network. Returning
+    # here let the transient mask it, so an operator fixed the network, re-ran,
+    # and only then learned a fragment had missed the release — two round
+    # trips, the second reporting the failure this script prints first
+    # precisely because nothing else will catch it. A transient must not be
+    # able to hide a result that was already known. (1d, demonstrated.)
+    formula: str | None = None
     try:
         formula = fetch_formula(args.formula_url)
     except Exception as exc:  # noqa: BLE001 - any fetch failure is a real answer
         print(f"  could not fetch the formula: {type(exc).__name__}: {exc}")
-        print("\n  Cannot answer what a user installs. Treating as FAILED.")
-        return 1
+        print("  -> CANNOT ANSWER")
+        failures.append(
+            f"could not fetch the formula ({type(exc).__name__}) — cannot tell what a "
+            "user installs, so this is a failure rather than a pass; retry"
+        )
 
-    found_tag = tag_in_formula(formula)
-    print(f"  formula url names : {found_tag}")
-    print(f"  tag just cut      : {expected_tag}")
-    if found_tag != expected_tag:
-        failures.append(f"the tap installs {found_tag}, not {expected_tag} — push the formula")
-        print("  -> MISMATCH")
-    else:
-        print("  -> match")
+    if formula is not None:
+        found_tag = tag_in_formula(formula)
+        print(f"  formula url names : {found_tag}")
+        print(f"  tag just cut      : {expected_tag}")
+        if found_tag != expected_tag:
+            failures.append(f"the tap installs {found_tag}, not {expected_tag} — push the formula")
+            print("  -> MISMATCH")
+        else:
+            print("  -> match")
 
     # ---------------------------------------------------------------- 2
     print()
     print("=" * 62)
     print("2. The formula's resources match the lock")
     print("=" * 62)
-    resources = formula_resources(formula)
-    pins = lock_pins((REPO_ROOT / LOCK).read_text(encoding="utf-8"))
-    overlap = sorted(set(resources) & set(pins))
-    mismatched = [(n, resources[n], pins[n]) for n in overlap if resources[n] != pins[n]]
-    unlocked = sorted(set(resources) - set(pins))
-
-    print(f"  formula resources : {len(resources)}")
-    print(f"  lock pins         : {len(pins)}")
-    print(f"  overlapping       : {len(overlap)}")
-    print(f"  version mismatches: {len(mismatched)}")
-    print(f"  in formula, not in lock: {len(unlocked)}")
-    for name, got, want in mismatched:
-        print(f"    {name}: formula {got}, lock {want}")
-    for name in unlocked:
-        print(f"    {name}: pinned by the formula and in no lock")
-    if mismatched or unlocked:
-        failures.append(
-            f"{len(mismatched)} resource(s) disagree with {LOCK} and "
-            f"{len(unlocked)} are unlocked — the lock decides"
-        )
-        print("  -> MISMATCH")
+    if formula is None:
+        # Skipped with a stated reason rather than silently absent. A check
+        # that did not run and does not say so is the gate defect #112 fixed.
+        # Flow continues: assertion 3 is local and must still be answered.
+        print("  SKIPPED — the formula could not be fetched (see 1 above)")
+        print("  -> not answered")
     else:
-        print("  -> match")
+        resources = formula_resources(formula)
+        pins = lock_pins((REPO_ROOT / LOCK).read_text(encoding="utf-8"))
+        overlap = sorted(set(resources) & set(pins))
+        mismatched = [(n, resources[n], pins[n]) for n in overlap if resources[n] != pins[n]]
+        unlocked = sorted(set(resources) - set(pins))
+
+        print(f"  formula resources : {len(resources)}")
+        print(f"  lock pins         : {len(pins)}")
+        print(f"  overlapping       : {len(overlap)}")
+        print(f"  version mismatches: {len(mismatched)}")
+        print(f"  in formula, not in lock: {len(unlocked)}")
+        for name, got, want in mismatched:
+            print(f"    {name}: formula {got}, lock {want}")
+        for name in unlocked:
+            print(f"    {name}: pinned by the formula and in no lock")
+        if mismatched or unlocked:
+            failures.append(
+                f"{len(mismatched)} resource(s) disagree with {LOCK} and "
+                f"{len(unlocked)} are unlocked — the lock decides"
+            )
+            print("  -> MISMATCH")
+        else:
+            print("  -> match")
 
     # ---------------------------------------------------------------- 3
     print()

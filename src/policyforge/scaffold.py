@@ -38,6 +38,7 @@ BUNDLED_CATALOGS = (
     "hipaa-security-rule",
     "nist-800-171-r3",
     "nist-800-53-r5",
+    "nist-ai-rmf",
 )
 
 #: Bring-your-own catalogs: only the README explaining how to supply one.

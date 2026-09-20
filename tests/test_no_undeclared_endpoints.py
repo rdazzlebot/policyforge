@@ -50,6 +50,11 @@ ALLOWED_HOSTS: dict[str, str] = {
         "information blocking, 45 CFR 171 (etl-info-blocking)"
     ),
     "www.cms.gov": "CMS: the ARC-AMPE Volume II control baseline (etl-arc-ampe)",
+    "airc.nist.gov": (
+        "NIST AIRC: the AI Risk Management Framework 1.0 Core "
+        "(etl-ai-rmf). CPRT does not publish the Core, which is why this "
+        "is a second NIST host rather than another csrc.nist.gov path"
+    ),
     "raw.githubusercontent.com": (
         "NIST's OSCAL edition of SP 800-53 (etl-oscal) and FedRAMP's consolidated "
         "rules dataset (etl-fedramp)"

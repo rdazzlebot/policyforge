@@ -1325,6 +1325,54 @@
         }
       ]
     },
+    "etl-ai-rmf": {
+      "help": "Fetch the NIST AI Risk Management Framework 1.0 Core and parse it into\nthis project's data schema. A US government work, so safe to bundle.\n\nNineteen categories carrying seventy-two subcategories, sourced from\nAIRC. CPRT does not publish the Core; that was checked rather than\nassumed.\n\nTHIS CATALOG STATES OUTCOMES, NOT OBLIGATIONS, and that changes what a\ncitation to it proves. Every other catalog here says what an\norganization must do; the AI RMF Core says what should end up true --\nNIST puts the actions in the separately versioned, explicitly voluntary\nPlaybook. So a document citing a subcategory can be fully traceable and\nstill commit nobody to anything, and `satisfies` will resolve the\ncitation and then stop, because there is no crosswalk. Mapping an\noutcome to a control would assert that the control achieves the\noutcome, which is the claim NIST declined to make. The catalog's README\ncarries the long form.",
+      "name": "etl-ai-rmf",
+      "params": [
+        {
+          "default": "data/frameworks/nist-ai-rmf/controls.json",
+          "help": "Where to write the parsed data.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Parse a saved copy of the Core page instead of fetching. For reproducing a past run, or working without a network.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "html",
+          "nargs": 1,
+          "opts": [
+            "--html"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": false,
+            "exists": true,
+            "file_okay": true,
+            "name": "file"
+          }
+        }
+      ]
+    },
     "etl-arc-ampe": {
       "help": "Fetch CMS's ARC-AMPE Volume II baseline and parse it into this schema.\n\nPublic domain - published by CMS, a federal agency, with no copyright\nnotice or redistribution restriction, same basis as the NIST and eCFR\nsources.\n\nNote which volume this reads. Volume I is the narrative PDF and holds no\ncontrols; Volume II is the System Security and Privacy Plan workbook,\nand its `AE Mandatory Baseline` sheet is the catalog - 402 controls\nrequired of an ACA Administering Entity, with CMS's parameter decisions\nalready written into the control text. The sheet is found by its shape\nrather than its name, so the Direct Enrollment Entity workbook reads the\nsame way via --export. See ingest/arc_ampe.py.",
       "name": "etl-arc-ampe",

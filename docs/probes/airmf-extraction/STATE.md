@@ -8,8 +8,10 @@ re-derive an afternoon's work. Delete it when the real loader lands.
 **The source is AIRC, not CPRT.** CPRT does not carry the AI RMF core.
 Canonical URL:
 
-    https://airc.nist.gov/airmf-resources/airmf/5-sec-core/
-    sha256 of the page as parsed: 123a92fe73a5e716306c949ed6496b5a04e54bfb35161f5074a3a83f7678e5ee
+```
+https://airc.nist.gov/airmf-resources/airmf/5-sec-core/
+sha256 of the page as parsed: 123a92fe73a5e716306c949ed6496b5a04e54bfb35161f5074a3a83f7678e5ee
+```
 
 **The extraction works, and `rows.json` here is its output** — 19 categories
 and 72 subcategories (Govern 6, Map 5, Measure 4, Manage 4), every entry
@@ -46,11 +48,13 @@ wall-clock and gets reviews instead will land where today landed.
 **Measured 13:58 today on `origin/main` (ab837a0), not inferred.** The
 remedy line this function prints, run verbatim:
 
-    $ policyforge crosswalk seed --framework 'NIST 800-171'
-    Error: No catalog here declares the framework 'NIST 800-171', so there
-    is nothing to seed. The catalogs you loaded declare: 'NIST 800-53',
-    'HIPAA Security Rule'.
-    EXIT=1
+```
+$ policyforge crosswalk seed --framework 'NIST 800-171'
+Error: No catalog here declares the framework 'NIST 800-171', so there
+is nothing to seed. The catalogs you loaded declare: 'NIST 800-53',
+'HIPAA Security Rule'.
+EXIT=1
+```
 
 The shell's `discover()` sees seven catalogs with controls; the `crosswalk`
 CLI's default context has two. **The report knows which catalog file

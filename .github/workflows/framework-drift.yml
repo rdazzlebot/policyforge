@@ -87,6 +87,15 @@ jobs:
             --controls data/frameworks/cfr-42-part-2-sud-records/controls.json \
             --detail --fail-on-change
 
+      - name: Fetch the current AI RMF Core
+        if: always()
+        run: policyforge etl-ai-rmf
+
+      - name: What changed in the NIST AI RMF
+        if: always()
+        run: |
+          policyforge drift             --controls data/frameworks/nist-ai-rmf/controls.json             --detail --fail-on-change
+
       - name: Fetch the current SP 800-171 rev 3
         if: always()
         run: policyforge etl-800-171

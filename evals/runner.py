@@ -380,12 +380,18 @@ def _answering(case: dict, provider, corpora: dict | None, notes: list[str]) -> 
     # it. Recognised by the words the warnings open with, which is why those
     # words are constants rather than literals.
     if _ENTAILER is not None:
-        from policyforge.zardoz.answer import ENTAILMENT_FAILED_PREFIX, UNSUPPORTED_PREFIX
+        from policyforge.zardoz.answer import (
+            CONFLICTING_PASSAGES_PREFIX,
+            ENTAILMENT_FAILED_PREFIX,
+            UNSUPPORTED_PREFIX,
+        )
 
         notes += [
             warning
             for warning in answer.warnings
-            if warning.startswith((UNSUPPORTED_PREFIX, ENTAILMENT_FAILED_PREFIX))
+            if warning.startswith(
+                (UNSUPPORTED_PREFIX, ENTAILMENT_FAILED_PREFIX, CONFLICTING_PASSAGES_PREFIX)
+            )
         ]
 
     if case.get("expect_refusal") and not answer.refused:

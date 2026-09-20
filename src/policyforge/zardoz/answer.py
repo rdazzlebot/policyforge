@@ -628,6 +628,11 @@ def check_answer(
 #: would leave the harness quietly measuring nothing.
 UNSUPPORTED_PREFIX = "cited passage does not support this claim"
 ENTAILMENT_FAILED_PREFIX = "entailment check did not run"
+#: How a sentence whose own cited passages disagree is reported. Named for
+#: what was found rather than for where it lives: the claim is carried, by a
+#: source another cited source denies, and calling that "unsupported" would
+#: say something false about which document said what.
+CONFLICTING_PASSAGES_PREFIX = "cited passages disagree with each other"
 
 
 def _entailment_warnings(text: str, passages: list[Passage], entailer) -> list[str]:
@@ -653,13 +658,32 @@ def _entailment_warnings(text: str, passages: list[Passage], entailer) -> list[s
     if entailer is None:
         return []
 
-    from policyforge.entail import unsupported_claims
+    from policyforge.entail.base import (
+        Conflict,
+        Unsupported,
+        conflicting_passages,
+        judge_cited_sentences,
+        unsupported_claims,
+    )
 
     try:
-        findings = unsupported_claims(text, passages, entailer)
+        # Judged once and read twice. Both findings want the same verdicts,
+        # and this check is opt-in precisely because each one costs a model
+        # call — so asking the judge the same question again to keep two
+        # call sites tidy would double the cost of the feature.
+        judged = judge_cited_sentences(text, passages, entailer)
+        findings: list[Unsupported | Conflict] = [
+            *unsupported_claims(text, passages, entailer, _judged=judged),
+            *conflicting_passages(text, passages, entailer, _judged=judged),
+        ]
     except Exception as exc:  # noqa: BLE001 - a judge failing must not lose the answer
         return [f"{ENTAILMENT_FAILED_PREFIX} ({type(exc).__name__}: {exc})"]
-    return [f"{UNSUPPORTED_PREFIX} — {finding}" for finding in findings]
+    return [
+        f"{UNSUPPORTED_PREFIX} — {finding}"
+        if isinstance(finding, Unsupported)
+        else f"{CONFLICTING_PASSAGES_PREFIX} — {finding}"
+        for finding in findings
+    ]
 
 
 def answer_question(

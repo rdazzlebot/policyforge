@@ -1095,6 +1095,78 @@ def test_a_judge_that_cannot_run_is_reported_and_the_answer_survives():
     assert [w for w in answer.warnings if "cannot be held to a schema" in w]
 
 
+class ScriptingEntailer:
+    """Judges by what the passage says, and counts the asking.
+
+    `RecordingEntailer` answers every question the same way, which cannot
+    express two passages disagreeing with each other.
+    """
+
+    def __init__(self, verdicts):
+        self.verdicts = verdicts
+        self.calls = []
+
+    def entails(self, premise, hypothesis):
+        from policyforge.entail import Verdict
+
+        self.calls.append((premise, hypothesis))
+        return Verdict(label=self.verdicts[premise], reason="scripted")
+
+
+def _judged_passages(*texts):
+    """Passage-shaped stand-ins. `_entailment_warnings` reads `chunk.text`
+    and nothing else, and building a corpus that retrieves two passages for
+    one question would put the retriever inside a test about the judge."""
+    from types import SimpleNamespace
+
+    return [SimpleNamespace(chunk=SimpleNamespace(text=text)) for text in texts]
+
+
+def test_the_judge_is_asked_once_per_citation_and_not_twice():
+    """Two findings are read off one pass of judging. A refactor that gives
+    each its own call site doubles the cost of the entailment path — which is
+    opt-in precisely because every citation costs a model call — and nothing
+    else here would notice: both findings would still be right, just billed
+    twice, and the only evidence would be on the bill."""
+    from policyforge.entail import ENTAILED
+    from policyforge.zardoz.answer import _entailment_warnings
+
+    judge = ScriptingEntailer({"carries it": ENTAILED, "denies it": ENTAILED})
+
+    _entailment_warnings(
+        "A claim. [1][2] Another claim. [1]",
+        _judged_passages("carries it", "denies it"),
+        judge,
+    )
+
+    assert len(judge.calls) == 3, "three citations, three judgements"
+
+
+def test_passages_that_disagree_are_reported_under_their_own_heading():
+    """Not as an unsupported claim: the sentence *is* carried, by a source
+    another cited source denies. The separate prefix is also what lets the
+    eval harness count the two apart."""
+    from policyforge.entail import CONTRADICTED, ENTAILED
+    from policyforge.zardoz.answer import (
+        CONFLICTING_PASSAGES_PREFIX,
+        UNSUPPORTED_PREFIX,
+        _entailment_warnings,
+    )
+
+    judge = ScriptingEntailer({"carries it": ENTAILED, "denies it": CONTRADICTED})
+
+    warnings = _entailment_warnings(
+        "Accounts are recertified quarterly. [1][2]",
+        _judged_passages("carries it", "denies it"),
+        judge,
+    )
+
+    assert len(warnings) == 1
+    assert warnings[0].startswith(CONFLICTING_PASSAGES_PREFIX)
+    assert not warnings[0].startswith(UNSUPPORTED_PREFIX)
+    assert "[1]" in warnings[0] and "[2]" in warnings[0]
+
+
 def test_the_shell_passes_its_judge_and_builds_one_only_when_asked():
     """The flag is `entail.answering`, and it lives in the block that already
     holds the judge's model, so there is one place to look."""

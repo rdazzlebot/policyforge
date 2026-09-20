@@ -17,6 +17,5 @@ is the proof: the AI RMF files it under Govern, Map and Manage separately,
 but one team is accountable for a vendor model end to end, so it is one
 topic here rather than a third of each of three.
 
-On the example registry this takes coverage from 73.7% to 81.9% and leaves
-200 orphaned — exactly the count from before the AI RMF became anchorable,
-so the 800-53 side is untouched.
+On the example registry this leaves 200 orphaned — exactly the count from
+before the AI RMF became anchorable, so the 800-53 side is untouched.

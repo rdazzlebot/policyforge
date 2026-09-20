@@ -95,9 +95,14 @@ a bare `NIST` no longer names one of them:
 That is `topics/satisfies.resolve_framework` declining to guess rather than
 a defect: an abbreviation resolves when it names exactly one loaded
 catalog, and accepting one that matches two would silently pick a catalog
-on the reader's behalf. If you have documents written when 800-53 was the
-only bundled NIST catalog, `[NIST AC-2]` in them will go unresolved on
-`satisfies --strict` — replace it with `[NIST 800-53 AC-2]`, or regenerate.
+on the reader's behalf.
+
+**This is a consequence of loading both, not of this catalog existing.**
+Bundling is not loading: every command that resolves citations takes the
+catalogs to load as a required option, and `map`'s default is 800-53 by
+itself. A document citing `[NIST AC-2]` keeps resolving until someone
+passes both catalogs in one run — at which point replace it with
+`[NIST 800-53 AC-2]`, or regenerate.
 
 ## Regenerating it
 

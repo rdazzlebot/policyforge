@@ -79,19 +79,27 @@ def test_the_readme_states_the_measured_label_finding(readme):
     assert stated.group(1) == stated.group(2), "the measurement only supports the strip if all fit"
 
 
-def test_the_readme_warns_that_a_bare_nist_citation_stops_resolving(readme):
-    """**The upgrade consequence, and it is the one that costs a reader
-    work.** Bundling a second NIST-family catalog makes `[NIST AC-2]`
-    ambiguous, so documents written when 800-53 was the only one go
-    unresolved on `satisfies --strict`. Measured, not assumed:
+def test_the_readme_says_loading_both_is_what_makes_a_bare_nist_ambiguous(readme):
+    """**The consequence of loading both catalogs — not of upgrading.**
 
-        bundled today   'NIST' -> 'nist-800-53'
-        after this      'NIST' -> ''            unresolved
-        'NIST 800-53'   resolves in both
+    Measured, not assumed:
+
+        one NIST catalog loaded   'NIST' -> 'nist-800-53'
+        both loaded               'NIST' -> ''            unresolved
+        'NIST 800-53'             resolves either way
+
+    The first draft of this said *bundling* a second catalog broke it, and
+    that was wrong in the direction that costs a reader work they do not
+    owe. **Bundling is not loading**: `satisfies`, `coverage`, `ssp` and
+    the rest take `--controls` as a required option, and `map` defaults to
+    800-53 alone. A catalog in `data/frameworks/` is not consulted until
+    someone names it, so nothing breaks on upgrade.
     """
     assert "[NIST AC-2]" in readme
     assert "[NIST 800-53 AC-2]" in readme, "it must say what to write instead"
-    assert "satisfies --strict" in readme
+    assert "Bundling is not loading" in readme, (
+        "the README must not let a reader think the upgrade itself broke their documents"
+    )
 
 
 def test_the_readme_leads_with_the_revision_a_cmmc_reader_needs(readme):
@@ -115,3 +123,47 @@ def test_the_empty_baseline_is_explained_rather_than_left_blank(controls, readme
 def test_the_readme_names_the_framework_key_the_catalog_uses(controls, readme):
     assert {c["framework"] for c in controls} == {"NIST 800-171"}
     assert "nist-800-171" in readme
+
+
+def test_no_command_loads_two_nist_catalogs_without_being_told_to():
+    """**The claim the README makes about behaviour, held to the CLI.**
+
+    "Bundling is not loading" is a statement about what commands do, and a
+    statement about observable behaviour with nothing checking it is how
+    the first draft of this README came to be wrong. If a command ever
+    gains a default that loads every bundled catalog, the README's
+    reassurance becomes false and this fails.
+
+    `map` is the one command with a catalog default, and it is 800-53 by
+    itself.
+    """
+    from policyforge.cli import cli
+
+    defaults_loading_catalogs = {}
+    for name, command in cli.commands.items():
+        for param in command.params:
+            if param.name not in ("controls_paths", "controls_path"):
+                continue
+            if param.required:
+                continue
+            default = param.default
+            paths = default if isinstance(default, (list, tuple)) else [default]
+            nist = [str(p) for p in paths if p and "nist-800-" in str(p)]
+            if len(nist) > 1:
+                defaults_loading_catalogs[name] = nist
+
+    assert defaults_loading_catalogs == {}, (
+        f"these commands load more than one NIST catalog by default: "
+        f"{defaults_loading_catalogs}. The catalog README tells users nothing "
+        f"breaks on upgrade because bundling is not loading; that is now false."
+    )
+
+
+def test_citation_resolution_requires_the_user_to_name_the_catalogs():
+    """The other half: the commands that resolve citations make it the
+    user's choice, so two NIST catalogs only meet each other deliberately."""
+    from policyforge.cli import cli
+
+    for name in ("satisfies", "coverage", "ssp", "addresses"):
+        param = next(p for p in cli.commands[name].params if p.name == "controls_paths")
+        assert param.required, f"{name} no longer requires --controls"

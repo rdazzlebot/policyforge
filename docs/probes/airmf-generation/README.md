@@ -31,6 +31,38 @@ placed outside every entry in `DEFAULT_SEARCH_PATHS`
 (`data/frameworks`, `frameworks`, `local_content`) so `discover()` cannot load
 it. Verified: 7 catalogs discovered with this directory present.
 
+## The stub's shape is NOT the shipped catalog's — read the conclusions accordingly
+
+Added after the real loader landed. **This probe ran before the catalog
+existed, and the stub guessed a structure the catalog does not use:**
+
+```
+             stub                     shipped catalog
+ids          GOVERN-1.1 … GOVERN-1.7  Govern 1.1 … Govern 1.7
+shape        7 flat controls          1 control "Govern 1" + 7 enhancements
+whole        7 of 72                  19 controls / 72 enhancements
+```
+
+Found by 1d comparing the two. **What still transfers, and what does not:**
+
+- **The hollowness finding transfers.** It is about what generation does to
+  *outcome-shaped requirement text*, and the text in the stub is the real AI
+  RMF wording, verbatim. Both models restating an outcome with an obligation
+  verb prefixed is a fact about the prompt and that text.
+- **The exact citation strings do not.** A real document will cite
+  `[NIST AI RMF Govern 1.1]`, not `[NIST AI RMF GOVERN-1.1]`. Both are legal
+  source tags and both split correctly — verified against the shipped catalog:
+  `split_citation("NIST AI RMF Govern 1.1", ...)` returns
+  `('NIST AI RMF', 'Govern 1.1', '')`, so the space in the identifier is not a
+  problem — but the strings in these documents are the stub's spelling.
+- **The synthesis input shape does not.** Real synthesis receives a control
+  carrying enhancements; this received seven flat controls. That is a
+  different prompt input, and nothing here measures it.
+
+**So do not calibrate a detector on these files and point it at the catalog.**
+It would join nothing, or count 19 where it meant 72, and report a plausible
+number either way.
+
 ## What it showed
 
 **The generated requirement is the outcome with an obligation verb prefixed,

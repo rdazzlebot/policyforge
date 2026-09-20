@@ -90,7 +90,15 @@ from policyforge.ingest.schema import Control, ControlEnhancement
 TITLE = 45
 PART = "171"
 
-FRAMEWORK = "45 CFR 171"
+#: **The declared name must be citable, which means it must not begin with
+#: a digit.** `content/tags.SOURCE_TAG_RE` builds a framework name from
+#: capital-initial words, so `[45 CFR 171 171.203(a)]` is not a tag at all -- it is
+#: prose, and a document citing this catalog reported nothing cited while
+#: `satisfies --strict` exited 0. `FRAMEWORK_ALIASES` cannot rescue it: the
+#: pattern rejects the string before any normalisation runs, so the alias
+#: table is downstream of the failure. The alias below pins the key; this
+#: name is what makes the citation reachable at all.
+FRAMEWORK = "Information Blocking"
 FRAMEWORK_VERSION = "45 CFR Part 171"
 
 #: A section identifier as this part writes them. Four digits are real and

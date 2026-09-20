@@ -192,6 +192,14 @@ def test_the_xml_parser_suppression_premise_still_holds():
         assert not params & {"url", "api", "base_url", "host", "endpoint"}
 
 
-def test_framework_is_named_as_the_regulation(controls):
-    assert {c.framework for c in controls} == {"45 CFR 171"}
+def test_the_framework_is_named_so_a_document_can_cite_it(controls):
+    """**This test used to assert the defect.** It was called
+    `test_framework_is_named_as_the_regulation` and pinned `45 CFR 171` —
+    which reads as obviously right and made the catalog uncitable, because
+    `SOURCE_TAG_RE` builds a framework name from capital-initial words and
+    a digit-initial name is not a tag at all. The regulation is still named,
+    in `framework_version` and in the catalog README; what the `framework`
+    field carries is the thing a person types inside a citation.
+    """
+    assert {c.framework for c in controls} == {"Information Blocking"}
     assert {c.framework_version for c in controls} == {"45 CFR Part 171"}

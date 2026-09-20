@@ -36,7 +36,11 @@ def test_the_shipped_catalog_is_the_two_security_sections(controls):
     conduct/control test had stopped being applied. Pinned here as well as
     in the loader, because this is the file that actually ships."""
     assert [c["control_id"] for c in controls] == ["2.16", "2.19"]
-    assert [c["framework"] for c in controls] == ["42 CFR Part 2"] * 2
+    # "Substance Use Disorder Records", not "42 CFR Part 2": a declared
+    # name beginning with a digit is not a legal source tag, so the
+    # regulation-shaped name made the catalog impossible to cite. The
+    # regulation is named in framework_version and in the README.
+    assert [c["framework"] for c in controls] == ["Substance Use Disorder Records"] * 2
 
 
 def test_every_shipped_requirement_has_a_distinct_citation(controls):

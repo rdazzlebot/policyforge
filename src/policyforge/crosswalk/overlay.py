@@ -83,13 +83,30 @@ class OverlayError(ValueError):
 #: case- and space-insensitive, because the name arrives from `--framework`
 #: typed by a person.
 NOT_CROSSWALK_ANCHORABLE: dict[str, str] = {
+    # Keyed on BOTH names this catalog has had. It now declares
+    # "Information Blocking" so that a citation to it is a legal tag --
+    # a name beginning with a digit is not one -- and matching here is by
+    # word overlap, so the old spelling shares no word with the new and
+    # would have stopped refusing. Renaming the catalog silently re-opened
+    # the defect this dict exists to close; both keys, and a test.
+    "Information Blocking": (
+        "Information Blocking (45 CFR Part 171) states the conditions under which a "
+        "practice is NOT information blocking. Its entries are conditions of an "
+        "exception, not controls to implement, so there is nothing for an 800-53 "
+        "control to correspond to. Mapping them would assert something neither "
+        "document says: that qualifying for an exception is evidence a safeguard "
+        "exists. Cite it instead -- `[Information Blocking 171.203(a)]` -- to show a "
+        "practice qualifies; do not map it. See "
+        "data/frameworks/cfr-171-information-blocking/README.md."
+    ),
     "45 CFR 171": (
         "45 CFR 171 states the conditions under which a practice is NOT information "
         "blocking. Its entries are conditions of an exception, not controls to "
         "implement, so there is nothing for an 800-53 control to correspond to. "
         "Mapping them would assert something neither document says: that qualifying "
-        "for an exception is evidence a safeguard exists. Cite 171.203(a) to show a "
-        "practice qualifies; do not map it. See "
+        "for an exception is evidence a safeguard exists. Cite it instead -- "
+        "`[Information Blocking 171.203(a)]` -- to show a practice qualifies; do "
+        "not map it. See "
         "data/frameworks/cfr-171-information-blocking/README.md."
     ),
 }

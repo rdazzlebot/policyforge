@@ -5,6 +5,18 @@ Public domain (US federal regulation — 42 CFR Part 2, made under 42 U.S.C.
 records). Same basis as NIST 800-53/FedRAMP/ARC-AMPE/HIPAA, so unlike
 HITRUST/GovRAMP this is safe to bundle directly rather than treat as BYOC.
 
+## How to cite it
+
+In a document, write **`[Substance Use Disorder Records 2.16(a)]`**.
+
+The catalog declares itself as `Substance Use Disorder Records` rather than
+as `42 CFR Part 2`. A framework name beginning with a digit is not a source
+tag, so `[42 CFR Part 2 2.16(a)]` was prose — a policy tagged that way
+reported *no citations* and passed `satisfies --strict` with exit 0. The
+four-word name is deliberate over `SUD Records`: the reader a citation
+exists for is an assessor, who may not work in behavioural health and may
+not expand the acronym.
+
 ## Two sections of thirty-eight, and that is the whole catalog
 
 **The thinness is the correct answer, not a parse failure.** Part 2 has 38

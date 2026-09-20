@@ -5,6 +5,22 @@ blocking rule made under section 3022 of the Public Health Service Act).
 Same basis as NIST 800-53/FedRAMP/ARC-AMPE/HIPAA, so unlike
 HITRUST/GovRAMP this is safe to bundle directly rather than treat as BYOC.
 
+## How to cite it
+
+In a document, write **`[Information Blocking 171.203(a)]`**.
+
+The catalog declares itself as `Information Blocking` rather than as
+`45 CFR 171`, and that is not cosmetic: a framework name beginning with a
+digit is not a source tag at all, so `[45 CFR 171 171.203(a)]` was prose. A
+policy tagged that way reported *no citations* and passed
+`satisfies --strict` with exit 0. The regulation is still named — in
+`framework.yaml`, in `framework_version`, and at the top of this file —
+because what a citation carries and what a catalog is called are different
+jobs.
+
+Remember what citing this catalog asserts: `171.203(a)` says a practice
+**qualifies for an exception**, not that a safeguard exists.
+
 ## Read this before you map it to anything
 
 **This is not a control catalog, and it does not become one by sitting in

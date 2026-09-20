@@ -97,7 +97,15 @@ from policyforge.ingest.schema import Control, ControlEnhancement
 TITLE = 42
 PART = "2"
 
-FRAMEWORK = "42 CFR Part 2"
+#: **The declared name must be citable, which means it must not begin with
+#: a digit.** `content/tags.SOURCE_TAG_RE` builds a framework name from
+#: capital-initial words, so `[42 CFR Part 2 2.16(a)]` is not a tag at all -- it is
+#: prose, and a document citing this catalog reported nothing cited while
+#: `satisfies --strict` exited 0. `FRAMEWORK_ALIASES` cannot rescue it: the
+#: pattern rejects the string before any normalisation runs, so the alias
+#: table is downstream of the failure. The alias below pins the key; this
+#: name is what makes the citation reachable at all.
+FRAMEWORK = "Substance Use Disorder Records"
 FRAMEWORK_VERSION = "42 CFR Part 2"
 
 #: A section identifier as *this part* numbers them, derived from the part

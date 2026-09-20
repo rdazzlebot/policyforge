@@ -220,3 +220,91 @@ topics:
     evidence:
       - Data inventory and classification register
       - Retention schedule
+
+  # ---- AI risk management (NIST AI RMF 1.0) --------------------------------
+  #
+  # Cut by PROCESS, not by the framework's four functions. A function-per-
+  # topic split is the obvious move and this file's own rule forbids it:
+  # "what breaks a topic is split accountability". Third-party AI is the
+  # proof - it lives in Govern 6, Map 4 and Manage 3, one accountability
+  # spread across three functions, so it is one topic here rather than a
+  # third of each of three.
+  #
+  # These anchor AI RMF identifiers directly rather than 800-53 ones. The
+  # AI RMF states OUTCOMES rather than obligations, so a document citing
+  # `[NIST AI RMF Govern 1.1]` can be perfectly traceable and still commit
+  # nobody to anything - read data/frameworks/nist-ai-rmf/README.md before
+  # writing against these, and judge a draft by what someone would have to
+  # do differently tomorrow.
+
+  - name: AI Governance & Accountability
+    owner: AI Risk / GRC
+    cadence: annual
+    description: >-
+      The AI policy set, who is accountable for what, the workforce and
+      culture expectations around AI risk, and engagement with affected AI
+      actors. Organizational obligations rather than system ones, which is
+      why they sit with the programme and not with a model team.
+    nist_controls: [Govern 1, Govern 2, Govern 3, Govern 4, Govern 5]
+    evidence:
+      - Approved AI policy set with review dates
+      - AI accountability matrix (who signs off a deployment)
+      - AI risk training completion records
+
+  - name: AI System Inventory & Impact Assessment
+    owner: AI Risk / Product
+    cadence: per-system, reviewed quarterly
+    description: >-
+      Establishing what an AI system is for before it ships - context,
+      categorization, claimed capabilities against benchmarks, and the
+      impacts on people and communities. The process that produces the
+      record everything downstream measures against.
+    nist_controls: [Map 1, Map 2, Map 3, Map 5]
+    evidence:
+      - AI system inventory with categorization
+      - Impact assessments, per system
+      - Benchmark results against stated capability claims
+
+  - name: AI Evaluation & Measurement
+    owner: AI / ML Engineering
+    cadence: per-release
+    description: >-
+      Choosing evaluation methods, evaluating systems for trustworthy
+      characteristics, tracking identified risks over time, and asking
+      whether the measurements are any good. Owned by the team that can
+      actually run an evaluation.
+    nist_controls: [Measure 1, Measure 2, Measure 3, Measure 4]
+    evidence:
+      - Evaluation plan and metric definitions per system
+      - Evaluation results with dates and model versions
+      - Record of measurement methods reviewed or retired
+
+  - name: AI Risk Treatment & Incident Response
+    owner: AI Risk / Incident Response
+    cadence: continuous
+    description: >-
+      Prioritizing the risks MAP and MEASURE surfaced, deciding and
+      documenting what is done about each, and responding, recovering and
+      communicating when an AI system causes harm. Spans the model team and
+      incident response; incident response owns the process.
+    nist_controls: [Manage 1, Manage 2, Manage 4]
+    evidence:
+      - AI risk register with treatment decisions and owners
+      - AI incident runbook
+      - Post-incident reviews for AI-caused incidents
+
+  - name: Third-Party AI & Data Supply Chain
+    owner: Vendor Risk / AI Risk
+    cadence: per-vendor, reviewed annually
+    description: >-
+      AI risk that arrives with someone else's model, API, or training
+      data - the policies that govern acquiring it, the mapping of what it
+      brings, and the management of it in production. **One topic across
+      three AI RMF functions on purpose:** the framework files this under
+      Govern, Map and Manage separately, but one team is accountable for a
+      vendor model end to end, and splitting it would split that.
+    nist_controls: [Govern 6, Map 4, Manage 3]
+    evidence:
+      - Third-party AI inventory (models, APIs, datasets)
+      - Vendor AI due-diligence records
+      - Contractual terms covering model change and data use

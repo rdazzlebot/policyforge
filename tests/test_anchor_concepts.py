@@ -372,3 +372,80 @@ def test_the_scope_line_names_the_catalogs_it_counted():
     assert "NIST AI RMF" in label
     assert scope_label(controls, "moderate").startswith("moderate baseline (")
     assert scope_label([]) == "all controls (no anchorable catalog)"
+
+
+def test_the_shipped_registry_owns_every_ai_rmf_requirement():
+    """The example registry ships clean, including the AI RMF.
+
+    **Shipping orphans would demonstrate the failure this tool exists to
+    detect** — and the AI RMF is the case where it would be easiest to do
+    accidentally, because its 91 requirements only entered the denominator
+    when the catalog became anchorable. Before the five AI topics: 291
+    orphaned. After: 200, which is exactly the count from before the AI RMF
+    was anchorable at all. The 800-53 side is untouched.
+    """
+    from policyforge.cli._common import load_catalogs
+    from policyforge.topics.coverage import analyze_coverage, scope_label
+    from policyforge.topics.registry import load_topics
+
+    paths = [str(p) for p in sorted((ROOT / "data" / "frameworks").glob("*/controls.json"))]
+    controls = load_catalogs(paths)
+    anchorable = [c for c in controls if anchors_a_topic(c.framework)]
+    report = analyze_coverage(
+        load_topics(ROOT / "config" / "topics.example.yaml"),
+        anchorable,
+        scope=scope_label(anchorable),
+        other_controls=[c for c in controls if not anchors_a_topic(c.framework)],
+        crosswalk=build_crosswalk(controls),
+    )
+
+    ai_rmf = {
+        identifier
+        for control in controls
+        if control.framework == "NIST AI RMF"
+        for identifier in [
+            control.control_id,
+            *(e.enhancement_id for e in control.enhancements),
+        ]
+    }
+    assert len(ai_rmf) == 91, f"expected 19 categories + 72 subcategories, got {len(ai_rmf)}"
+
+    assert not (ai_rmf & set(report.orphaned)), (
+        f"the shipped registry leaves {sorted(ai_rmf & set(report.orphaned))[:5]} "
+        f"unowned. A bundled, anchorable catalog with no topic owning it puts "
+        f"every user's coverage down for requirements nobody decided to take on."
+    )
+    assert not report.unknown_anchors, dict(report.unknown_anchors)
+    assert not (ai_rmf & set(report.contested)), (
+        f"{sorted(ai_rmf & set(report.contested))} is claimed by two topics. "
+        f"Third-party AI spans Govern 6, Map 4 and Manage 3 and is deliberately "
+        f"ONE topic for that reason; a contested AI id usually means it got "
+        f"split back along the framework's functions."
+    )
+
+
+def test_third_party_ai_is_one_topic_across_three_functions():
+    """The registry's rule is that **split accountability breaks a topic**,
+    and this is the case that tests whether it was followed.
+
+    Cutting the AI RMF one-topic-per-function is the obvious move and it
+    would split third-party AI — Govern 6 (policy), Map 4 (what the vendor
+    brings), Manage 3 (managing it in production) — across three teams for
+    one vendor model. Asserted because the obvious cut is the one someone
+    will reach for later.
+    """
+    from policyforge.topics.registry import load_topics
+
+    topics = load_topics(ROOT / "config" / "topics.example.yaml")
+    owners = {
+        anchor: topic.name
+        for topic in topics
+        for anchor in topic.nist_controls
+        if anchor in ("Govern 6", "Map 4", "Manage 3")
+    }
+    assert len(owners) == 3, f"expected all three third-party anchors, found {owners}"
+    assert len(set(owners.values())) == 1, (
+        f"third-party AI is split across {sorted(set(owners.values()))}. One team "
+        f"is accountable for a vendor model end to end; the framework files it "
+        f"under three functions but that is not three processes."
+    )

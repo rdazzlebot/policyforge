@@ -75,13 +75,13 @@ def _topics_and_controls(topics_path: Path, controls_paths):
     reachable through the crosswalk. Shared rather than repeated because
     getting that split wrong makes a HIPAA requirement look anchorable.
     """
-    from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
+    from policyforge.mapping.crosswalk import anchors_a_topic
     from policyforge.topics.registry import load_topics
 
     topics = load_topics(topics_path)
     controls = load_catalogs(controls_paths)
-    nist = [c for c in controls if normalize_framework(c.framework) == NIST_ANCHOR]
-    other = [c for c in controls if normalize_framework(c.framework) != NIST_ANCHOR]
+    nist = [c for c in controls if anchors_a_topic(c.framework)]
+    other = [c for c in controls if not anchors_a_topic(c.framework)]
     return topics, controls, nist, other
 
 
@@ -218,7 +218,7 @@ def coverage_cmd(
     import dataclasses
     import json as json_mod
 
-    from policyforge.mapping.crosswalk import NIST_ANCHOR, build_crosswalk, normalize_framework
+    from policyforge.mapping.crosswalk import TOPIC_ANCHORS, anchors_a_topic, build_crosswalk
     from policyforge.ssp.workbook import select_for_baseline
     from policyforge.topics.coverage import analyze_coverage, format_report
     from policyforge.topics.registry import load_topics
@@ -227,13 +227,19 @@ def coverage_cmd(
 
     all_controls = load_catalogs(controls_paths)
 
-    nist_controls = [c for c in all_controls if normalize_framework(c.framework) == NIST_ANCHOR]
+    nist_controls = [c for c in all_controls if anchors_a_topic(c.framework)]
     if not nist_controls:
         raise click.UsageError(
-            "None of the --controls files contain NIST 800-53 controls. Topics anchor "
-            "NIST control IDs, so at least one is required. Run `policyforge etl-oscal`."
+            # Derived from TOPIC_ANCHORS rather than naming 800-53, so it
+            # stays true when the set widens. A false error message is worse
+            # than a missing one: it is confident, it gets quoted back, and
+            # it sends the reader to fix the wrong thing -- the same family
+            # as a remedy command that cannot run.
+            "None of the --controls files contain a catalog a topic can anchor. "
+            f"Topics anchor identifiers from: {', '.join(sorted(TOPIC_ANCHORS))}. "
+            "At least one is required; run `policyforge etl-oscal` for 800-53."
         )
-    other_controls = [c for c in all_controls if normalize_framework(c.framework) != NIST_ANCHOR]
+    other_controls = [c for c in all_controls if not anchors_a_topic(c.framework)]
 
     scoped = nist_controls
     scope = "all controls"

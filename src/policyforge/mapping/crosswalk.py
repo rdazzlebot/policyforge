@@ -168,6 +168,53 @@ HITRUST_SOURCE_ALIASES = FRAMEWORK_ALIASES
 #: because anything had established which NIST catalog was meant.
 NIST_ANCHOR = "nist-800-53"
 
+#: The frameworks a **topic registry** may anchor identifiers from.
+#:
+#: **This is a different concept from `NIST_ANCHOR` above, and they were one
+#: constant until 2026-09-20.** Keeping them apart is the whole point of
+#: this definition, so the distinction is worth stating precisely:
+#:
+#:     NIST_ANCHOR    the crosswalk anchor - what every other framework's
+#:                    requirements are mapped ONTO. Singular by
+#:                    construction: an overlay row asserts "this
+#:                    requirement and that control are the same
+#:                    obligation", which needs one side to be fixed.
+#:
+#:     TOPIC_ANCHORS  which catalogs a topic may claim ids from. A set,
+#:                    because a programme can be organised around more
+#:                    than one catalog without either becoming the thing
+#:                    the other maps onto.
+#:
+#: **Why the split is safety-critical rather than tidiness.** The obvious
+#: way to let topics anchor a second catalog is to grep `NIST_ANCHOR` and
+#: widen it. That also widens the crosswalk-anchor sites, and a catalog
+#: that becomes a crosswalk *target* becomes something `crosswalk seed`
+#: will happily generate a mapping for. For the AI RMF that mapping is
+#: refused on product grounds -- it would assert an 800-53 control
+#: ACHIEVES an AI RMF outcome, the claim NIST declined to make when it
+#: split the Playbook out. So the natural refactor silently publishes the
+#: thing we decided not to publish, while looking like the change that was
+#: asked for.
+#:
+#: Widening THIS set cannot do that. Every site is consciously assigned to
+#: one concept or the other, and `test_anchor_concepts.py` holds the
+#: assignment: it widens `TOPIC_ANCHORS` and requires that seeding a
+#: crosswalk stays refused.
+#:
+#: Equal to `{NIST_ANCHOR}` today, so this definition changes no
+#: behaviour -- it only makes the two meanings separable.
+TOPIC_ANCHORS: frozenset[str] = frozenset({NIST_ANCHOR})
+
+
+def anchors_a_topic(framework: str) -> bool:
+    """Whether a topic registry may anchor identifiers from `framework`.
+
+    The B-side predicate. Use this wherever the question is *can a topic
+    claim these ids*; use `NIST_ANCHOR` directly where the question is
+    *what does the crosswalk map onto*.
+    """
+    return normalize_framework(framework) in TOPIC_ANCHORS
+
 
 def hitrust_framework(source: str) -> str:
     """Normalize one HITRUST authoritative-source name to a framework key.

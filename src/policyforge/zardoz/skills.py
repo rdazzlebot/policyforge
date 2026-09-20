@@ -686,9 +686,9 @@ def _is_nist_control(control) -> bool:
     know which half of a mixed catalog set is anchorable and which half is
     only reachable through the crosswalk.
     """
-    from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
+    from policyforge.mapping.crosswalk import anchors_a_topic
 
-    return normalize_framework(control.framework) == NIST_ANCHOR
+    return anchors_a_topic(control.framework)
 
 
 def _boundary(state, args: list[str]) -> str:

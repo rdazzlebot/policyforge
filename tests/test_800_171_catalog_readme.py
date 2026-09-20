@@ -167,3 +167,57 @@ def test_citation_resolution_requires_the_user_to_name_the_catalogs():
     for name in ("satisfies", "coverage", "ssp", "addresses"):
         param = next(p for p in cli.commands[name].params if p.name == "controls_paths")
         assert param.required, f"{name} no longer requires --controls"
+
+
+def test_addresses_answers_are_unchanged_by_installing_this_catalog():
+    """**The claim the README makes, measured rather than reasoned.**
+
+    Three people reasoned about this paragraph and all three were wrong
+    in a different way: the first draft said upgrading broke documents
+    (it does not), the correction said the shell resolves no citations so
+    nothing changes there (true, and incomplete), and the hold said the
+    shell's citations go ambiguous (it never calls that resolver).
+
+    What settles it is running the shell's own view with and without the
+    catalog. `/addresses` answers for existing citations must not move.
+    """
+    from policyforge.ingest.schema import load_controls
+    from policyforge.mapping.crosswalk import NIST_ANCHOR, build_crosswalk, normalize_framework
+    from policyforge.topics.bundles import requirement_view
+    from policyforge.topics.registry import load_topics
+
+    root = Path(__file__).parent.parent
+    topics = load_topics(root / "config" / "topics.example.yaml")
+
+    def load(names):
+        controls = []
+        for name in names:
+            controls.extend(load_controls(root / "data" / "frameworks" / name / "controls.json"))
+        return controls
+
+    without = load(["nist-800-53-r5", "hipaa-security-rule", "arc-ampe"])
+    with_171 = without + load(["nist-800-171-r3"])
+
+    def view(controls, requirement):
+        anchored = [c for c in controls if normalize_framework(c.framework) == NIST_ANCHOR]
+        other = [c for c in controls if normalize_framework(c.framework) != NIST_ANCHOR]
+        return requirement_view(
+            topics,
+            anchored,
+            requirement,
+            other_controls=other,
+            crosswalk=build_crosswalk(controls),
+        ).render()
+
+    for citation in ("AC-2", "164.308(a)(1)(i)"):
+        assert view(without, citation) == view(with_171, citation), (
+            f"installing 800-171 changed the answer for {citation}. The catalog "
+            f"README tells users existing citations are unaffected; that is now false."
+        )
+
+
+def test_the_readme_explains_the_coverage_zero_rather_than_leaving_it(readme):
+    """`/coverage` does gain a `0 of 97` section, and a measured zero that
+    nobody explains reads as a 97-requirement gap the reader just opened."""
+    assert "0 of 97" in readme
+    assert "not a gap you have opened" in readme

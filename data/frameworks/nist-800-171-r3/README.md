@@ -104,6 +104,27 @@ itself. A document citing `[NIST AC-2]` keeps resolving until someone
 passes both catalogs in one run — at which point replace it with
 `[NIST 800-53 AC-2]`, or regenerate.
 
+## What changes in the zardoz shell
+
+The shell loads whatever catalogs are on disk rather than asking you to
+name them, so `/coverage` gains a section as soon as this catalog is
+installed:
+
+```
+NIST-800-171 reachable via the crosswalk
+  0 of 97 requirements map to an owned NIST control
+```
+
+**That zero is this catalog shipping without a crosswalk, not a gap you
+have opened.** Nothing that was covered became uncovered. It is the same
+kind of measured zero as the empty `baseline` column above: true, and easy
+to read as a failure if nobody says what it means.
+
+`/addresses` and the citation-resolving commands are unaffected. Measured
+rather than reasoned: with the catalogs the shell loads, `/addresses AC-2`
+and `/addresses 164.308(a)(1)(i)` are byte-identical before and after this
+catalog is installed.
+
 ## Regenerating it
 
 Source is the `usnistgov/oscal-content` repository, pinned to the same

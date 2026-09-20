@@ -44,6 +44,7 @@ ROOT = Path(__file__).resolve().parent.parent
 B_SITE_FILES = (
     "cli/documents.py",
     "cli/programme.py",
+    "synthesis/merge.py",
     "zardoz/skills.py",
 )
 
@@ -52,9 +53,29 @@ A_SITE_FILES = (
     "crosswalk/overlay.py",
     "ingest/hipaa_crosswalk_loader.py",
     "mapping/crosswalk.py",
-    "synthesis/merge.py",
     "topics/satisfies.py",
 )
+
+#: **`synthesis/merge.py` moved from A to B on 2026-09-20, and the reason it
+#: was on the wrong side is the more useful finding: the A/B boundary is not
+#: file-shaped.**
+#:
+#: `build_synthesis_topic` resolves a topic's anchors to controls, which is a
+#: B question. It also expands each one through the crosswalk, which is an A
+#: concept -- but it does that via `crosswalk.get(nist_id)`, **without ever
+#: naming `NIST_ANCHOR`**. So one function did both, the file-level guard
+#: could not see it, and the anchor resolution stayed hardcoded to 800-53.
+#:
+#: The cost was not theoretical: every AI topic resolved to ZERO controls
+#: while `/coverage` reported those same topics owning 91 requirements. Two
+#: views of one registry disagreeing, with only one of them user-facing.
+#:
+#: Found by policyforge-80, who had reviewed and approved the enumeration --
+#: **it was checkable, and checking the files is not the same as checking
+#: the concepts.** The residual this leaves is named rather than closed: a
+#: file can still consume the crosswalk without naming the constant, so
+#: `test_ai_topics_resolve_to_their_own_controls` guards the behaviour
+#: directly rather than relying on the lists below.
 
 #: `mapping/crosswalk.py` is excluded from the "must not mention the topic
 #: anchor" guard for one stated reason: **it is where both constants are
@@ -68,6 +89,33 @@ A_SITE_FILES = (
 #: covers it behaviourally.
 DEFINITION_SITE = "mapping/crosswalk.py"
 A_SITE_CONSUMERS = tuple(f for f in A_SITE_FILES if f != DEFINITION_SITE)
+
+
+def _code_identifiers(relative: str) -> set[str]:
+    """Names appearing in a file's EXECUTABLE source, comments and
+    docstrings excluded.
+
+    **The guards below read code, not prose, and the difference is not
+    pedantic.** Their first version matched raw text, so explaining the
+    A/B distinction *in a comment* made the file fail its own guard: a
+    check that cannot tell `NIST_ANCHOR` the identifier from `NIST_ANCHOR`
+    the word punishes writing down why the rule exists. A rule that
+    penalises its own explanation will lose to the explanation being
+    deleted.
+
+    Tokenising rather than regexing, and taking NAME tokens only, is the
+    same move policyforge-9b used to establish that #166's loader change
+    was comments-only — compare what runs, not what is written.
+    """
+    import io
+    import tokenize
+
+    source = (ROOT / "src" / "policyforge" / relative).read_text(encoding="utf-8")
+    names = set()
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type == tokenize.NAME:
+            names.add(token.string)
+    return names
 
 
 def test_exactly_which_catalogs_a_topic_may_anchor():
@@ -145,8 +193,7 @@ def test_no_b_site_still_reads_the_crosswalk_anchor(relative: str):
     adding a framework filter to `programme.py` reaches for the constant
     they can see; this makes them reach for the right one.
     """
-    source = (ROOT / "src" / "policyforge" / relative).read_text(encoding="utf-8")
-    assert "NIST_ANCHOR" not in source, (
+    assert "NIST_ANCHOR" not in _code_identifiers(relative), (
         f"{relative} decides which catalogs a TOPIC may anchor, so it must use "
         f"`anchors_a_topic`/`TOPIC_ANCHORS`. `NIST_ANCHOR` is the crosswalk "
         f"anchor — what requirements are mapped ONTO — and widening this site "
@@ -162,8 +209,7 @@ def test_every_a_site_still_exists_and_still_uses_the_scalar(relative: str):
     concept entirely. Naming both lists means the assignment is the
     artefact, not one side of it.
     """
-    source = (ROOT / "src" / "policyforge" / relative).read_text(encoding="utf-8")
-    assert "NIST_ANCHOR" in source, (
+    assert "NIST_ANCHOR" in _code_identifiers(relative), (
         f"{relative} was assigned to the crosswalk-anchor side and no longer "
         f"mentions it. If that is deliberate, move it to B_SITE_FILES and say "
         f"why; if it is not, the crosswalk anchor has been widened."
@@ -205,9 +251,9 @@ def test_no_a_site_reads_the_topic_anchor(relative: str):
     prevented is textual: a name appearing in a file where it does not
     belong.
     """
-    source = (ROOT / "src" / "policyforge" / relative).read_text(encoding="utf-8")
+    names = _code_identifiers(relative)
     for forbidden in ("TOPIC_ANCHORS", "anchors_a_topic"):
-        assert forbidden not in source, (
+        assert forbidden not in names, (
             f"{relative} decides what requirements are mapped ONTO, and it now "
             f"consults `{forbidden}` -- the set of catalogs a TOPIC may anchor. "
             f"Widening that set would make those catalogs crosswalk targets. "
@@ -683,3 +729,94 @@ def test_adoption_only_ever_narrows(tmp_path):
 
     with pytest.raises(TopicRegistryError, match="non-empty"):
         parse_topics({"topics": []})
+
+
+def test_ai_topics_resolve_to_their_own_controls():
+    """**The defect the file-shaped A/B guard could not see.**
+
+    `build_synthesis_topic` resolved a topic's anchors with `NIST_ANCHOR`
+    hardcoded, so every AI topic pulled **zero** controls — while
+    `/coverage` reported those same topics owning 91 requirements. Two
+    views of one registry, disagreeing, and only the wrong one was on the
+    generation path.
+
+    Asserted on behaviour rather than on which constant a file mentions,
+    because the miss was precisely that a file can consume the crosswalk
+    without naming `NIST_ANCHOR`.
+    """
+    from policyforge.cli._common import load_catalogs
+    from policyforge.synthesis.merge import build_synthesis_topic
+
+    paths = [str(p) for p in sorted((ROOT / "data" / "frameworks").glob("*/controls.json"))]
+    controls = load_catalogs(paths)
+    crosswalk = build_crosswalk(controls)
+
+    # **Exact equality, and it is load-bearing for a second reason.**
+    # Moving `merge.py` to the B list means the source-text A-guard no
+    # longer watches its crosswalk expansion — policyforge-80's concern.
+    # This assertion covers it behaviourally instead: an AI RMF anchor must
+    # retrieve ONLY AI RMF controls, because there is no AI RMF crosswalk
+    # and there must not be one. Verified by mutation — widening the
+    # crosswalk expansion here turns this red.
+    ai = build_synthesis_topic("AI", ["Govern 1", "Govern 2"], controls, crosswalk)
+    assert {c.control_id for c in ai.controls} == {"Govern 1", "Govern 2"}, (
+        f"an AI-anchored topic resolved to {[c.control_id for c in ai.controls]}"
+    )
+
+    # 800-53 must not regress: its anchors still pull their crosswalk
+    # equivalents from the other frameworks.
+    nist = build_synthesis_topic("NIST", ["AC-2"], controls, crosswalk)
+    assert len(nist.controls) > 1, "800-53 anchors no longer expand through the crosswalk"
+    assert normalize_framework(nist.controls[0].framework) == "nist-800-53"
+
+    # And a mixed topic -- 80's grounded shape -- yields both.
+    mixed = build_synthesis_topic("Mixed", ["Govern 1", "PM-1"], controls, crosswalk)
+    frameworks = {normalize_framework(c.framework) for c in mixed.controls}
+    assert {"nist-ai-rmf", "nist-800-53"} <= frameworks, sorted(frameworks)
+
+
+def test_every_anchorable_catalog_resolves_through_synthesis():
+    """**The guard policyforge-9b asked for: it must fail if a third
+    anchorable catalog is added and this path is not widened again.**
+
+    The shape that produced the defect: `TOPIC_ANCHORS` gained
+    `nist-ai-rmf` in #169 and `build_synthesis_topic` did not notice,
+    because it named one framework key directly. **A constant that grows
+    while its consumers do not** — and the consumer failed silently,
+    returning zero controls rather than raising.
+
+    Derived from `TOPIC_ANCHORS` rather than listing the catalogs, so a
+    third one is covered the day it is added and nobody has to remember
+    this test exists. That is the whole point: the previous guards were
+    all things someone had to think of.
+    """
+    from policyforge.cli._common import load_catalogs
+    from policyforge.synthesis.merge import build_synthesis_topic
+
+    paths = [str(p) for p in sorted((ROOT / "data" / "frameworks").glob("*/controls.json"))]
+    controls = load_catalogs(paths)
+    crosswalk = build_crosswalk(controls)
+
+    # One real identifier per anchorable catalog, taken from the catalogs
+    # themselves rather than written down here.
+    sample: dict[str, str] = {}
+    for control in controls:
+        key = normalize_framework(control.framework)
+        if key in TOPIC_ANCHORS:
+            sample.setdefault(key, control.control_id)
+
+    assert set(sample) == set(TOPIC_ANCHORS), (
+        f"no control found on disk for {sorted(set(TOPIC_ANCHORS) - set(sample))}. "
+        f"An anchorable catalog with nothing installed cannot be checked here — "
+        f"install it or say why it is exempt."
+    )
+
+    for key, control_id in sorted(sample.items()):
+        topic = build_synthesis_topic(f"probe {key}", [control_id], controls, crosswalk)
+        retrieved = {c.control_id for c in topic.controls}
+        assert control_id in retrieved, (
+            f"a topic anchoring {control_id!r} from {key!r} retrieved "
+            f"{sorted(retrieved)}. `TOPIC_ANCHORS` contains {key!r} but the "
+            f"synthesis path does not resolve it — the same defect as the AI "
+            f"RMF one, with a different catalog."
+        )

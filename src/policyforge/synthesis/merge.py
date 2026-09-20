@@ -22,7 +22,7 @@ from dataclasses import dataclass
 
 from policyforge.ingest.schema import Control
 from policyforge.llm.base import LLMProvider
-from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
+from policyforge.mapping.crosswalk import TOPIC_ANCHORS, normalize_framework
 
 
 @dataclass
@@ -251,7 +251,26 @@ def build_synthesis_topic(
             topic_controls.append(control)
 
     for nist_id in nist_control_ids:
-        _add(by_framework_id.get((NIST_ANCHOR, nist_id)))
+        # **Both meanings of "anchor" meet on these two lines, and they are
+        # not the same meaning.**
+        #
+        # Resolving a topic's own anchor is a TOPIC-anchor question -- which
+        # catalogs may a topic claim ids from -- so it looks in every
+        # anchorable catalog. This line read `NIST_ANCHOR` until
+        # 2026-09-20, which meant a topic anchoring `Govern 1` resolved
+        # NOTHING: every AI topic pulled zero controls while `/coverage`
+        # reported those same topics owning 91 requirements. Two views of
+        # one registry, disagreeing, and only one of them user-facing.
+        #
+        # Expanding through the crosswalk below is a CROSSWALK-anchor
+        # question -- what a requirement is mapped ONTO -- and stays keyed
+        # on `NIST_ANCHOR` by construction. At most one anchorable catalog
+        # can hold any given id, so the loop cannot double-count.
+        #
+        # policyforge-80 found this: the A/B split that separated the two
+        # constants was assigned per FILE, and this file does both.
+        for anchor in TOPIC_ANCHORS:
+            _add(by_framework_id.get((anchor, nist_id)))
         for framework, equivalent_ids in crosswalk.get(nist_id, {}).items():
             for equivalent_id in equivalent_ids:
                 _add(by_framework_id.get((framework, equivalent_id)))

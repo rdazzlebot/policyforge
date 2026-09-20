@@ -160,6 +160,71 @@ def etl_800_171(out: Path):
     click.echo(f"Excluded {withdrawn} withdrawn requirements.")
 
 
+@cli.command("etl-onc")
+@click.option(
+    "--date",
+    default=None,
+    help="Specific eCFR effective date (YYYY-MM-DD) to fetch, for reproducibility. "
+    "Default: eCFR's current published date for Title 45.",
+)
+@click.option(
+    "--out",
+    default=Path("data/frameworks/cfr-170-315-onc-certification/controls.json"),
+    type=click.Path(path_type=Path),
+    help="Where to write the parsed data.",
+)
+def etl_onc(date: str | None, out: Path):
+    """Fetch the ONC certification criteria (45 CFR 170.315) from eCFR's
+    public API and parse them into this project's data schema. Public domain
+    - a US federal regulation, same basis as NIST/FedRAMP/ARC-AMPE/HIPAA - so
+    safe to bundle directly.
+
+    ONE CRITERION IS ONE CONTROL, cited the way developers and ONC's own
+    programme documents cite them: 170.315(g)(10). The lettered category
+    above it - (g) Design and performance - is the family, and the
+    sub-paragraphs below stay in the statement, because they are the
+    conditions of one capability rather than separate duties.
+
+    Reserved criteria are excluded and reported by id each run rather than
+    dropped silently. 170.315(i) is reserved in its entirety, and (j)(1)
+    through (j)(19) are a reserved range in a single paragraph.
+    """
+    import dataclasses
+    import json
+
+    from policyforge.ingest.onc_loader import (
+        FRAMEWORK_VERSION,
+        current_ecfr_date,
+        ecfr_source_url,
+        fetch_part_xml,
+        parse_onc_criteria,
+    )
+    from policyforge.ingest.provenance import record_source_provenance
+
+    # Resolved here rather than inside the fetch, so the date recorded is
+    # provably the date fetched - same reasoning as etl-hipaa above.
+    date = date or current_ecfr_date()
+
+    xml_text = fetch_part_xml(date=date)
+    controls, reserved = parse_onc_criteria(xml_text)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
+    stamp = record_source_provenance(
+        out.parent / "framework.yaml",
+        source_ref=date,
+        source_url=ecfr_source_url(date),
+        content=out.read_bytes(),
+    )
+    if stamp is not None:
+        click.echo(f"Recorded provenance: {date} sha256:{stamp[:16]}\u2026 -> {out.parent}")
+    click.echo(f"Parsed {len(controls)} certification criteria ({FRAMEWORK_VERSION}) -> {out}")
+    click.echo(
+        f"Excluded {len(reserved)} reserved criteria: "
+        + ", ".join(reserved[:6])
+        + (f", and {len(reserved) - 6} more" if len(reserved) > 6 else "")
+    )
+
+
 def _crosswalk_mappings(catalog: list[dict]) -> int:
     """How many crosswalk mappings a parsed catalog carries.
 

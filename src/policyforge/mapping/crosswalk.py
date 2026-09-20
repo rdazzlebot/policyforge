@@ -122,6 +122,7 @@ FRAMEWORK_ALIASES: tuple[tuple[str, str], ...] = (
     # The two CFR catalogs whose declared names had to become citable: a
     # name beginning with a digit is not a tag, so they were renamed and
     # pinned here rather than keying to `information` and `substance`.
+    ("onc certification criteria", "cfr-170-315-onc-certification"),
     ("information blocking", "cfr-171-information-blocking"),
     ("substance use disorder", "cfr-42-part-2-sud-records"),
     # The AI pair, pinned before either catalog exists — the cheap moment.

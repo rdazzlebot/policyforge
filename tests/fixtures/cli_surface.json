@@ -1811,6 +1811,51 @@
         }
       ]
     },
+    "etl-onc": {
+      "help": "Fetch the ONC certification criteria (45 CFR 170.315) from eCFR's\npublic API and parse them into this project's data schema. Public domain\n- a US federal regulation, same basis as NIST/FedRAMP/ARC-AMPE/HIPAA - so\nsafe to bundle directly.\n\nONE CRITERION IS ONE CONTROL, cited the way developers and ONC's own\nprogramme documents cite them: 170.315(g)(10). The lettered category\nabove it - (g) Design and performance - is the family, and the\nsub-paragraphs below stay in the statement, because they are the\nconditions of one capability rather than separate duties.\n\nReserved criteria are excluded and reported by id each run rather than\ndropped silently. 170.315(i) is reserved in its entirety, and (j)(1)\nthrough (j)(19) are a reserved range in a single paragraph.",
+      "name": "etl-onc",
+      "params": [
+        {
+          "default": null,
+          "help": "Specific eCFR effective date (YYYY-MM-DD) to fetch, for reproducibility. Default: eCFR's current published date for Title 45.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "date",
+          "nargs": 1,
+          "opts": [
+            "--date"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "data/frameworks/cfr-170-315-onc-certification/controls.json",
+          "help": "Where to write the parsed data.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
     "etl-oscal": {
       "help": "Fetch NIST's official OSCAL edition of SP 800-53 Rev 5 (plus the\nLow/Moderate/High baseline profiles) and parse it into this project's\ndata schema.\n\nPublic domain - a US government work, same basis as the eCFR and CPRT\nsources. Unlike `etl-vault`, this needs no pre-existing vault, so it's\nthe way to populate 800-53 data from scratch. See ingest/oscal_loader.py.",
       "name": "etl-oscal",

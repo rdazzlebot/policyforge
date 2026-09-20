@@ -803,7 +803,7 @@
         "baseline": "AE Mandatory",
         "description": "Disable, when not intended for use, wireless networking capabilities embedded within system components prior to issuance and deployment.",
         "parameter_values": {},
-        "additional_requirements": "\u2022  There are no supplemental control requirements & guidance at this time.",
+        "additional_requirements": "",
         "source_crosswalk": {
           "NIST 800-53": "AC-18(3)"
         }
@@ -908,7 +908,7 @@
         "baseline": "AE Mandatory",
         "description": "Permit authorized individuals to use an external system to access the system or to process, store, or transmit organization-controlled information only after:\n(a) Verification of the implementation of controls on the external system as specified in the organization\u2019s security and privacy policies and security and privacy plans; or\n(b) Retention of approved system connection or processing agreements with the organizational entity hosting the external system.",
         "parameter_values": {},
-        "additional_requirements": "\u2022  There are no supplemental control requirements & guidance at this time.",
+        "additional_requirements": "",
         "source_crosswalk": {
           "NIST 800-53": "AC-20(1)"
         }
@@ -1200,7 +1200,7 @@
     "family_abbr": "AT",
     "baseline": "AE Mandatory",
     "control_statement": "a. Document and monitor information security and privacy training activities, including security and privacy awareness training and specific role-based security and privacy training; and\nb. Retain individual training records for a minimum of five (5) years after completing a specific training course.",
-    "discussion": "\u2022  There are no supplemental control requirements & guidance at this time.",
+    "discussion": "",
     "enhancements": [],
     "related_controls": [
       "AT-2",
@@ -1523,7 +1523,7 @@
     "family_abbr": "AU",
     "baseline": "AE Mandatory",
     "control_statement": "Provide and implement an audit record reduction and report generation capability that:\na. Supports on-demand audit record review, analysis, and reporting requirements and after-the-fact investigations of incidents; and\nb. Does not alter the original content or time ordering of audit records.",
-    "discussion": "\u2022  There are no supplemental control requirements & guidance at this time.",
+    "discussion": "",
     "enhancements": [
       {
         "enhancement_id": "AU-7(1)",
@@ -1531,7 +1531,7 @@
         "baseline": "AE Mandatory",
         "description": "Provide and implement the capability to process, sort, and search audit records for events of interest based on the following content: organization-defined selectable event criteria and fields within audit records.",
         "parameter_values": {},
-        "additional_requirements": "\u2022  There are no supplemental control requirements & guidance at this time.",
+        "additional_requirements": "",
         "source_crosswalk": {
           "NIST 800-53": "AU-7(1)"
         }
@@ -1572,7 +1572,7 @@
     "family_abbr": "AU",
     "baseline": "AE Mandatory",
     "control_statement": "a. Use internal system clocks to generate time stamps for audit records; and\nb. Record time stamps for audit records that can be mapped to Coordinated Universal Time (UTC) or Greenwich Mean Time (GMT) and are accurate to within one hundred (100) milliseconds.",
-    "discussion": "\u2022  There are no supplemental control requirements & guidance at this time.",
+    "discussion": "",
     "enhancements": [],
     "related_controls": [
       "AU-3",
@@ -3527,7 +3527,7 @@
         "baseline": "AE Mandatory",
         "description": "Protect authenticators commensurate with the security category of the information to which use of the authenticator permits access.",
         "parameter_values": {},
-        "additional_requirements": "\u2022  There are no supplemental control requirements & guidance at this time.",
+        "additional_requirements": "",
         "source_crosswalk": {
           "NIST 800-53": "IA-5(6)"
         }
@@ -3538,7 +3538,7 @@
         "baseline": "AE Mandatory",
         "description": "Ensure that unencrypted static authenticators are not embedded in applications or other forms of static storage.",
         "parameter_values": {},
-        "additional_requirements": "\u2022  There are no supplemental control requirements & guidance at this time.",
+        "additional_requirements": "",
         "source_crosswalk": {
           "NIST 800-53": "IA-5(7)"
         }
@@ -3584,7 +3584,7 @@
     "family_abbr": "IA",
     "baseline": "AE Mandatory",
     "control_statement": "Obscure feedback of authentication information during the authentication process to protect the information from possible exploitation and use by unauthorized individuals.",
-    "discussion": "\u2022  There are no supplemental control requirements & guidance at this time.",
+    "discussion": "",
     "enhancements": [],
     "related_controls": [
       "AC-3"
@@ -3984,7 +3984,7 @@
     "family_abbr": "IR",
     "baseline": "AE Mandatory",
     "control_statement": "Track and document incidents.",
-    "discussion": "\u2022  There are no supplemental control requirements & guidance at this time.",
+    "discussion": "",
     "enhancements": [],
     "related_controls": [
       "AU-6",
@@ -4243,7 +4243,7 @@
         "baseline": "AE Mandatory",
         "description": "Inspect the maintenance tools used by maintenance personnel for improper or unauthorized modifications.",
         "parameter_values": {},
-        "additional_requirements": "\u2022  There are no supplemental control requirements & guidance at this time.",
+        "additional_requirements": "",
         "source_crosswalk": {
           "NIST 800-53": "MA-3(1)"
         }
@@ -4781,7 +4781,7 @@
     "family_abbr": "PE",
     "baseline": "AE Mandatory",
     "control_statement": "a. Develop, approve, and maintain a list of individuals with authorized access to the facility where the system resides;\nb. Issue authorization credentials for facility access;\nc. Review the access list detailing authorized facility access by individuals at least every six (6) months; and\nd. Remove individuals from the facility access list when access is no longer required.",
-    "discussion": "\u2022  There are no supplemental control requireandents and guidance at this time.",
+    "discussion": "",
     "enhancements": [],
     "related_controls": [
       "AT-3",
@@ -5389,7 +5389,7 @@
         "baseline": "AE Mandatory",
         "description": "Include in the rules of behavior restrictions on:\n   (a) Use of social media, social networking sites, and external sites/applications;\n   (b) Posting organizational information on public websites; and\n   (c) Use of organization-provided identifiers (e.g., email addresses) and authentication secrets (e.g., passwords) for creating accounts on external sites/applications.",
         "parameter_values": {},
-        "additional_requirements": "\u2022  There are no supplemental control requirements & guidance at this time.",
+        "additional_requirements": "",
         "source_crosswalk": {
           "NIST 800-53": "PL-4(1)"
         }
@@ -5536,7 +5536,7 @@
     "family_abbr": "PM",
     "baseline": "AE Mandatory",
     "control_statement": "Appoint a Senior Information Security Officer with the mission and resources to coordinate, develop, implement, and maintain an organization-wide information security program.",
-    "discussion": "\u2022  There are no supplemental control requirements & guidance at this time.",
+    "discussion": "",
     "enhancements": [],
     "related_controls": [],
     "source_crosswalk": {
@@ -5560,7 +5560,7 @@
     "family_abbr": "PM",
     "baseline": "AE Mandatory",
     "control_statement": "a. Include the resources needed to implement the information security and privacy programs in capital planning and investment requests and document all exceptions to this requirement;\nb. Prepare documentation required for addressing information security and privacy programs in capital planning and investment requests in accordance with applicable laws, Executive Orders, directives, policies, regulations, standards; and\nc. Make the planned information security and privacy resources available for expenditure.",
-    "discussion": "\u2022  There are no supplemental control requirements & guidance at this time.",
+    "discussion": "",
     "enhancements": [],
     "related_controls": [
       "PM-4",
@@ -6218,7 +6218,7 @@
     "family_abbr": "PM",
     "baseline": "AE Mandatory",
     "control_statement": "Implement a process for receiving and responding to complaints, concerns, or questions from individuals about the organizational security and privacy practices that includes:\na. Mechanisms that are easy to use and readily accessible by the public;\nb. All information necessary for successfully filing complaints;\nc. Tracking mechanisms to ensure all complaints received are reviewed and addressed within thirty (30) working days from timestamp of submission, unless unusual or exceptional circumstances preclude completing action by that time;\nd. Acknowledgement of receipt of complaints, concerns, or questions from individuals within ten (10) working days from timestamp of submission; and\ne. Response to complaints, concerns, or questions from individuals within thirty (30) working days from timestamp of submission, unless unusual or exceptional circumstances preclude completing action by that time.",
-    "discussion": "\u2022  There are no supplemental control requirements & guidance at this time.",
+    "discussion": "",
     "enhancements": [],
     "related_controls": [
       "IR-7",
@@ -7700,7 +7700,7 @@
         "baseline": "AE Mandatory",
         "description": "Require the developer of the system, system component, or system service to perform threat modeling and vulnerability analyses during development and subsequent testing and evaluation of the system, component, or service that:\n(a) Uses the following contextual information: organization-defined information concerning impact, environment of operations, known or assumed threats, and acceptable risk levels;\n(b) Employs organization-defined tools and methods;\n(c) Conducts the modeling and analyses at the following level of rigor: organization-defined breadth and depth of modeling and analyses; and\n(d) Produces evidence that meets organization-defined acceptance criteria.",
         "parameter_values": {},
-        "additional_requirements": "\u2022  There are no supplemental control requirements & guidance at this time.",
+        "additional_requirements": "",
         "source_crosswalk": {
           "NIST 800-53": "SA-11(2)"
         }
@@ -7711,7 +7711,7 @@
         "baseline": "AE Mandatory",
         "description": "Require the developer of the system, system component, or system service to employ dynamic code analysis tools to identify common flaws and document the results of the analysis.",
         "parameter_values": {},
-        "additional_requirements": "\u2022  There are no supplemental control requirements & guidance at this time.",
+        "additional_requirements": "",
         "source_crosswalk": {
           "NIST 800-53": "SA-11(8)"
         }
@@ -8200,7 +8200,7 @@
         "baseline": "AE Mandatory",
         "description": "Maintain the confidentiality and integrity of information during preparation for transmission and during reception.",
         "parameter_values": {},
-        "additional_requirements": "\u2022  There are no supplemental control requirements & guidance at this time.",
+        "additional_requirements": "",
         "source_crosswalk": {
           "NIST 800-53": "SC-8(2)"
         }

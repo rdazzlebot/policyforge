@@ -130,11 +130,18 @@ REQUIRED_FIELDS = ("control_id", "title", "statement")
 _CONTROL_ID_RE = re.compile(r"^([A-Za-z]{2})-(\d{1,3})(?:\s*\(\s*(\d{1,3})\s*\))?$")
 
 #: The template's way of saying a control has no supplemental guidance.
-#: Matched loosely because the sentence is retyped per row and the wording
-#: wobbles ("requirements and guidance" / "requirement and guidance").
+#: The sentence is retyped per row and the wording wobbles more than a
+#: regex over the raw cell can follow. v1.02 writes "requirements **&**
+#: guidance" in nineteen places, and `PE-2` reads "require**and**ents" —
+#: a find-and-replace of "&" with "and" that ran through the middle of a
+#: word. The trailing clause moves too: "at this time", "for this
+#: control". All nineteen shipped their boilerplate as if it were content.
+#:
+#: So only the opening is pinned, and the decision of whether the cell is
+#: empty is made per sentence below rather than by this pattern alone.
 _NO_GUIDANCE_RE = re.compile(
-    r"there\s+(?:are|is)\s+no\s+supplemental\s+control\s+requirements?\s+and\s+guidance",
-    re.IGNORECASE,
+    r"there\s+(?:are|is)\s+no\s+supplemental\s+control\s+"
+    r"require\w*\s+(?:and\s+)?guidance",
 )
 
 
@@ -194,9 +201,37 @@ def split_related(value: str) -> list[str]:
     return found
 
 
+def _says_no_guidance(sentence: str) -> bool:
+    """Is this one sentence CMS's "there is nothing here" boilerplate?"""
+    bare = " ".join(re.sub(r"[^\w\s]", " ", sentence.replace("&", " and ")).split())
+    return bool(_NO_GUIDANCE_RE.match(bare.lower()))
+
+
 def _guidance(value: str) -> str:
+    """The cell's guidance, or `""` when it says only that there is none.
+
+    **The test is whether the cell says nothing else, not whether the
+    sentinel appears in it.** Searching the raw text fails in both
+    directions, and ARC-AMPE v1.02 contains one of them: nineteen fields
+    spell the sentinel with "&", did not match, and shipped a sentence
+    meaning "there is nothing here" as content. The opposite failure is
+    the one a search invites — a cell that genuinely discusses
+    supplemental control requirements would be discarded whole.
+
+    Every sentence must be the boilerplate, so one real sentence beside
+    it keeps the cell. That also absorbs the trailing clause moving
+    between "at this time" and "for this control", which enumerating
+    endings would not.
+
+    A control carrying guidance that says it has no guidance is the
+    failure this project keeps finding rather than a hypothetical one:
+    it counts, it renders into a policy document, and it means nothing.
+    """
     text = _clean(value)
-    return "" if _NO_GUIDANCE_RE.search(text) else text
+    sentences = [s for s in re.split(r"[.;]", text) if s.strip()]
+    if sentences and all(_says_no_guidance(s) for s in sentences):
+        return ""
+    return text
 
 
 def detect_columns(header: list[object]) -> dict[str, int]:

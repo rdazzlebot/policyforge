@@ -171,6 +171,48 @@ def test_the_template_saying_there_is_no_guidance_becomes_no_guidance(workbook):
     assert summary.with_guidance == 2
 
 
+@pytest.mark.parametrize(
+    "wording",
+    [
+        "•  There are no supplemental control requirements and guidance for this control.",
+        "•  There are no supplemental control requirements & guidance at this time.",
+        "•  There are no supplemental control requireandents and guidance at this time.",
+        "There is no supplemental control requirement and guidance.",
+        "THERE ARE NO SUPPLEMENTAL CONTROL REQUIREMENTS & GUIDANCE.",
+    ],
+    ids=["and", "ampersand", "corrupted-word", "singular", "shouting"],
+)
+def test_every_spelling_of_the_boilerplate_becomes_no_guidance(wording: str):
+    """**v1.02 shipped nineteen fields that this used to miss.**
+
+    The sentence is retyped per row and drifts. Eighteen write "&" where
+    the pattern wanted "and"; `PE-2` reads "requireandents", a
+    find-and-replace of "&" that ran through the middle of the word. Each
+    one was kept and rendered into documents as if CMS had written it.
+
+    `corrupted-word` is not hypothetical tidiness — it is the exact
+    string in the published workbook.
+    """
+    assert arc_ampe._guidance(wording) == ""
+
+
+def test_guidance_that_merely_mentions_the_phrase_survives():
+    """**The opposite error, which searching the cell invites.**
+
+    A row whose guidance genuinely discusses supplemental control
+    requirements must not be discarded because the sentinel appears
+    inside it. The rule is that every sentence is boilerplate, so one
+    real sentence beside it keeps the whole cell.
+    """
+    cell = (
+        "Agencies must document supplemental control requirements and guidance "
+        "annually. There are no supplemental control requirements and guidance "
+        "for sub-part (b)."
+    )
+
+    assert arc_ampe._guidance(cell) == cell
+
+
 def test_bullets_and_curly_quotes_survive_but_editing_artifacts_do_not():
     """CMS structures normative prose with bullets; Excel leaves NBSPs."""
     assert arc_ampe._clean("•  Text\xa0here  \n\n") == "•  Text here"
@@ -256,3 +298,38 @@ def test_the_committed_catalog_holds_the_baseline_cms_published():
 
     assert items == 402
     assert all(c.baseline == arc_ampe.AE_BASELINE for c in controls)
+
+
+def test_no_shipped_field_says_there_is_no_guidance():
+    """**The artefact half, which the parser tests cannot cover.**
+
+    `_guidance` running correctly says nothing about what was committed:
+    `controls.json` is a static file, and a parser fixed after the
+    catalog was generated leaves the boilerplate sitting in it. Nineteen
+    fields shipped that way — nine control `discussion`s and ten
+    enhancement `additional_requirements`.
+
+    Stated over **every text field of every entry**, not over the one
+    field the defect was found in. I found nine by looking at
+    `discussion`; the fix found nineteen because it operates on the
+    function rather than on the field I happened to check.
+    """
+    controls = load_controls(CATALOG)
+    texts = [
+        (c.control_id, field, getattr(c, field))
+        for c in controls
+        for field in ("control_statement", "discussion", "additional_requirements")
+    ] + [
+        (e.enhancement_id, field, getattr(e, field))
+        for c in controls
+        for e in c.enhancements
+        for field in ("description", "additional_requirements")
+    ]
+    # Asked through the production decision rather than a copy of it, so the
+    # guard cannot drift from the rule it is guarding — and so it asks the
+    # same question: is this field *only* the boilerplate?
+    boilerplate = [
+        (ident, field) for ident, field, text in texts if text and arc_ampe._guidance(text) == ""
+    ]
+
+    assert boilerplate == []

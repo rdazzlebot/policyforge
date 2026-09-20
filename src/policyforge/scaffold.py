@@ -101,7 +101,7 @@ def bundled_root():
     checkout = Path(__file__).resolve().parents[2]
     if not (checkout / "data" / "frameworks" / "nist-800-53-r5" / "controls.json").is_file():
         raise RuntimeError(
-            "This installation of policyforge has no bundled catalogs, so there is "
+            "This PolicyForge installation has no bundled catalogs, so there is "
             "nothing to lay out. Reinstall it from a release, or run from a clone of "
             "the repository, where data/frameworks/ already holds them."
         )

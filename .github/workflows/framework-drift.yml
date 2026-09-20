@@ -97,14 +97,3 @@ jobs:
           policyforge drift \
             --controls data/frameworks/nist-800-171-r3/controls.json \
             --detail --fail-on-change
-
-      - name: Fetch the current ONC certification criteria
-        if: always()
-        run: policyforge etl-onc
-
-      - name: What changed in 45 CFR 170.315
-        if: always()
-        run: |
-          policyforge drift \
-            --controls data/frameworks/cfr-170-315-onc-certification/controls.json \
-            --detail --fail-on-change

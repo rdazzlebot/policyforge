@@ -751,6 +751,13 @@ def test_ai_topics_resolve_to_their_own_controls():
     controls = load_catalogs(paths)
     crosswalk = build_crosswalk(controls)
 
+    # **Exact equality, and it is load-bearing for a second reason.**
+    # Moving `merge.py` to the B list means the source-text A-guard no
+    # longer watches its crosswalk expansion — policyforge-80's concern.
+    # This assertion covers it behaviourally instead: an AI RMF anchor must
+    # retrieve ONLY AI RMF controls, because there is no AI RMF crosswalk
+    # and there must not be one. Verified by mutation — widening the
+    # crosswalk expansion here turns this red.
     ai = build_synthesis_topic("AI", ["Govern 1", "Govern 2"], controls, crosswalk)
     assert {c.control_id for c in ai.controls} == {"Govern 1", "Govern 2"}, (
         f"an AI-anchored topic resolved to {[c.control_id for c in ai.controls]}"

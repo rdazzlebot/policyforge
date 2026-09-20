@@ -322,7 +322,7 @@ def ssp_cmd(
     from dataclasses import fields as dataclasses_fields
 
     from policyforge.generate.policy_writer import OrgContext
-    from policyforge.mapping.crosswalk import NIST_ANCHOR, build_crosswalk, normalize_framework
+    from policyforge.mapping.crosswalk import TOPIC_ANCHORS, anchors_a_topic, build_crosswalk
     from policyforge.ssp.narrative import SystemProfile, draft_implementation_narrative
     from policyforge.ssp.workbook import build_ssp_workbook, select_for_baseline
 
@@ -375,11 +375,13 @@ def ssp_cmd(
     all_controls = load_catalogs(controls_paths)
     crosswalk = build_crosswalk(all_controls)
 
-    nist_controls = [c for c in all_controls if normalize_framework(c.framework) == NIST_ANCHOR]
+    # B-site: which catalogs a topic may anchor. Not the crosswalk anchor.
+    nist_controls = [c for c in all_controls if anchors_a_topic(c.framework)]
     if not nist_controls:
         raise click.UsageError(
-            "None of the --controls files contain NIST 800-53 controls. Populate them "
-            "first with `policyforge etl-oscal`."
+            "None of the --controls files contain a catalog a topic can anchor. "
+            f"Topics anchor identifiers from: {', '.join(sorted(TOPIC_ANCHORS))}. "
+            "Populate one first -- `policyforge etl-oscal` for 800-53."
         )
 
     scoped = select_for_baseline(nist_controls, baseline) if baseline else nist_controls

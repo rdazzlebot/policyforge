@@ -142,7 +142,13 @@ def _controls(state):
 
 def _coverage(state, args: list[str]) -> str:
     from policyforge.mapping.crosswalk import build_crosswalk
-    from policyforge.topics.coverage import analyze_coverage, format_report
+    from policyforge.topics.coverage import (
+        analyze_coverage,
+        format_report,
+        scope_label,
+        split_by_adoption,
+        unadopted_note,
+    )
 
     controls = _controls(state)
     if not controls:
@@ -157,10 +163,8 @@ def _coverage(state, args: list[str]) -> str:
     # meaningful relative to a stated scope, so the filtering is the
     # caller's job and the scope has to be named in the report.
     baseline = next((a for a in args if a.lower() in ("low", "moderate", "high")), None)
-    scope = "all controls"
     if baseline:
         controls = [c for c in controls if c.baseline and baseline in c.baseline.lower()]
-        scope = f"{baseline} baseline"
         if not controls:
             return f"No controls tagged for the {baseline} baseline in the loaded catalogs."
 
@@ -170,17 +174,34 @@ def _coverage(state, args: list[str]) -> str:
     # denominator grew with every catalog installed and the headline fell
     # while the numerator never moved: 1657 -> 1754 in scope, 814 owned
     # both sides, 49% -> 46%. Nothing about the programme had changed.
-    nist = [c for c in controls if _is_nist_control(c)]
-    other = [c for c in controls if not _is_nist_control(c)]
+    #
+    # **And in scope is what the registry ANCHORS, not what it COULD
+    # anchor.** Those read the same and are not: the first bundled
+    # catalog that is anchorable but OPTIONAL makes them diverge, and a
+    # user who has not adopted it loses six points for work they never
+    # took on. `unadopted` is named in the report rather than dropped,
+    # so the exclusion cannot become a place for a framework to hide.
+    nist, unadopted, other = split_by_adoption(state.topics, controls)
+    if not nist:
+        return (
+            "No topic anchors any catalog on disk, so there is nothing to "
+            "measure coverage against. The catalogs here are: "
+            + ", ".join(sorted({c.framework for c in controls}))
+            + "."
+        )
     report = analyze_coverage(
         state.topics,
         nist,
-        scope=scope,
+        scope=scope_label(nist, baseline),
         other_controls=other,
         crosswalk=build_crosswalk(controls),
     )
     return "\n".join(
-        [format_report(report), *_zero_row_reasons(controls, report, _catalog_paths(state))]
+        [
+            format_report(report),
+            *_zero_row_reasons(controls, report, _catalog_paths(state)),
+            *unadopted_note(unadopted),
+        ]
     )
 
 
@@ -686,9 +707,9 @@ def _is_nist_control(control) -> bool:
     know which half of a mixed catalog set is anchorable and which half is
     only reachable through the crosswalk.
     """
-    from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
+    from policyforge.mapping.crosswalk import anchors_a_topic
 
-    return normalize_framework(control.framework) == NIST_ANCHOR
+    return anchors_a_topic(control.framework)
 
 
 def _boundary(state, args: list[str]) -> str:

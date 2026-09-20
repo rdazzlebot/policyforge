@@ -262,3 +262,45 @@ def test_a_row_with_no_text_raises():
 
     with pytest.raises(AiRmfParseError, match=r"no text"):
         parse_ai_rmf(mutated)
+
+
+def test_parsing_more_than_nist_publishes_raises():
+    """**An over-parse is as much a defect as an under-parse, and the
+    structural checks do not catch it.**
+
+    Contiguity accepts an *extension*: an invented `Govern 7` gives 20
+    categories with every other assertion satisfied — every row
+    well-formed, every parent present, numbering contiguous from 1. An
+    extra subcategory is worse, since it disturbs nothing at all.
+
+    Raised by policyforge-9b against the widened row pattern, and it was
+    already true of the narrow one — widening made it visible rather than
+    introducing it.
+
+    The pin is an exact pair, not a floor, because a page yielding a
+    different shape is either a restyle or a new revision, and **both need
+    a person**: the first is a parser bug, the second makes this catalog's
+    pin, README and provenance stamp stale together.
+    """
+    html = FIXTURE.read_text(encoding="utf-8", errors="replace")
+
+    for label, extra in [
+        ("an extra category", '<th><span class="x">Govern 7</span>: invented</th>'),
+        ("an extra subcategory", '<th><span class="x">Govern 1.8</span>: invented</th>'),
+    ]:
+        mutated = html.replace("</table>", extra + "</table>", 1)
+        assert mutated != html, f"{label}: the mutation did not apply"
+        with pytest.raises(AiRmfParseError, match=r"revision 1\.0 has"):
+            parse_ai_rmf(mutated)
+
+
+def test_the_shape_guard_allows_the_real_page():
+    """What the guard must ALLOW, stated beside what it refuses.
+
+    A pinned shape is one typo away from refusing everything, and a guard
+    that refuses its own source is indistinguishable from a broken parser.
+    """
+    from policyforge.ingest.ai_rmf import EXPECTED_SHAPE
+
+    controls = parse_ai_rmf(FIXTURE.read_text(encoding="utf-8", errors="replace"))
+    assert (len(controls), sum(len(c.enhancements) for c in controls)) == EXPECTED_SHAPE

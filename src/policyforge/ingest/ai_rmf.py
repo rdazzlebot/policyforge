@@ -61,6 +61,21 @@ FRAMEWORK_VERSION = "1.0"
 #: silently skipped by a hard-coded list.
 FUNCTIONS = ("Govern", "Map", "Measure", "Manage")
 
+#: The Core's shape at revision 1.0, which this catalog is pinned to.
+#:
+#: **Parsing MORE than NIST publishes is as much a defect as parsing
+#: fewer**, and the structural checks do not catch it: contiguity accepts
+#: an *extension*, so an invented `Govern 7` yields 20 categories with
+#: every other assertion satisfied. policyforge-9b raised this against the
+#: widened row pattern and it was already true of the narrow one.
+#:
+#: Pinned as an exact pair rather than a floor. A page that yields a
+#: different shape is either a restyle or a new revision of the Framework,
+#: and **both need a person**: the first is a parser bug, the second means
+#: this catalog's pin, its README and its provenance stamp are all stale.
+#: Neither should be absorbed silently by a loader.
+EXPECTED_SHAPE = (19, 72)
+
 #: Abbreviations NIST uses in the Playbook and in its own crosswalks.
 _FUNCTION_ABBR = {"Govern": "GV", "Map": "MP", "Measure": "MS", "Manage": "MG"}
 
@@ -213,6 +228,17 @@ def parse_ai_rmf(html: str) -> list[Control]:
                 f"{function} categories are not contiguous from 1: {numbers}. "
                 f"A category row is missing."
             )
+
+    shape = (len(categories), len(subcategories))
+    if shape != EXPECTED_SHAPE:
+        raise AiRmfParseError(
+            f"the Core parsed to {shape[0]} categories and {shape[1]} "
+            f"subcategories; revision {FRAMEWORK_VERSION} has "
+            f"{EXPECTED_SHAPE[0]} and {EXPECTED_SHAPE[1]}. Either the page "
+            f"changed shape, or NIST has revised the Framework -- in which "
+            f"case this catalog's pin, README and provenance stamp are all "
+            f"stale and a person has to say so."
+        )
 
     controls = []
     for row in sorted(categories, key=_sort_key):

@@ -124,6 +124,16 @@ FRAMEWORK_ALIASES: tuple[tuple[str, str], ...] = (
     # pinned here rather than keying to `information` and `substance`.
     ("information blocking", "cfr-171-information-blocking"),
     ("substance use disorder", "cfr-42-part-2-sud-records"),
+    # The AI pair, pinned before either catalog exists — the cheap moment.
+    # `NIST AI RMF` would take the bare `nist` key, which is the orphan the
+    # NIST-family split existed to remove; `HITRUST AI Security
+    # Certification` collides with `HITRUST CSF` outright, and it is an
+    # add-on you cannot hold standalone, so any user with one has both.
+    # Two needles for AI RMF because NIST writes the name both ways and
+    # neither spelling contains the other.
+    ("ai rmf", "nist-ai-rmf"),
+    ("ai risk management", "nist-ai-rmf"),
+    ("hitrust ai", "hitrust-ai"),
     ("800-172", "nist-800-172"),
     ("800-137", "nist-800-137"),
     ("cybersecurity framework", "nist-csf"),

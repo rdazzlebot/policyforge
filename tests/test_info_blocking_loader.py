@@ -1,10 +1,13 @@
 """The 45 CFR 171 parse, against real eCFR XML.
 
-The fixture is six whole sections lifted from eCFR's published Part 171,
+The fixture is seven whole sections lifted from eCFR's published Part 171,
 not written by hand, because every defect this parser has actually had came
 from the regulation's shape rather than from an imagined one. Each section
 earns its place by carrying a hazard: `171.102` and `171.402` are the two
-kinds of section that must be dropped, `171.1101` is four-digit,
+kinds of section that must be dropped, `171.1001` is the *third* kind and
+was missing until a defect proved it was — a live section with a reserved
+paragraph inside it, which is not the same shape as a reserved section and
+was not caught by the check for one. `171.1101` is four-digit,
 `171.203` and `171.303` are where lettered conditions, digits and roman
 numerals interleave, and `171.201` carries the italic condition headings
 — while `171.203`, which has none, is what keeps that from being read
@@ -118,6 +121,55 @@ def test_no_condition_is_empty(controls):
     for control in controls:
         for enhancement in control.enhancements:
             assert enhancement.description.strip()
+
+
+def test_no_condition_is_merely_reserved(controls):
+    """**This test existed and checked the wrong shape.**
+
+    The one above names the hazard exactly right — "the reserved-section
+    failure one level down" — and then tests for an *empty* description.
+    `171.1001(b)`'s description is not empty: it is the eight characters
+    `[Reserved]`, so it passed, shipped, and sat in the catalog as a
+    condition whose entire obligation is a word meaning there isn't one.
+
+    Emptiness was the shape the defect took in `hipaa_loader`. Assuming a
+    hazard keeps the shape it had in the last catalog is what let this one
+    through, so this asserts the *property* — a condition carries an
+    obligation — rather than the spelling of one failure to.
+    """
+    reserved = [
+        e.enhancement_id
+        for c in controls
+        for e in c.enhancements
+        if "reserved" in e.description.lower()
+    ]
+
+    assert reserved == []
+
+
+def test_a_reserved_paragraph_does_not_take_its_live_neighbours_with_it(by_id):
+    """The drop has to be exact, and `171.1001` is where that is visible:
+    it has two conditions and only one of them is reserved. A rule that
+    dropped the section, or stopped the parse at `(b)`, would also pass
+    the test above while losing the disincentives CMS may actually apply.
+    """
+    disincentives = by_id["171.1001"]
+    ids = [e.enhancement_id for e in disincentives.enhancements]
+
+    assert ids == ["171.1001(a)"]
+    assert "Medicare Shared Savings Program" in disincentives.enhancements[0].description
+
+
+# There is deliberately no test here that the drop runs *after* the section
+# is parsed, though `_drop_reserved_enhancements` is written that way. I
+# wrote one, then implemented the drop the wrong way on purpose — refusing
+# to open the condition, so its body would land on the previous one — and
+# all nineteen tests still passed. `171.1001(b)` is the last paragraph in
+# its section, so nothing follows it to be misplaced, and the test could
+# not tell the two implementations apart. Asserting the ordering here would
+# have been a check that cannot fail, which is worse than no check: it
+# reads as coverage. The ordering is precautionary, and the docstring on
+# the helper says so rather than claiming this data proves it.
 
 
 def test_inline_emphasis_does_not_truncate_text(by_id):

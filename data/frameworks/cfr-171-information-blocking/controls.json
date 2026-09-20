@@ -828,15 +828,6 @@
         "parameter_values": {},
         "additional_requirements": "",
         "source_crosswalk": {}
-      },
-      {
-        "enhancement_id": "171.1001(b)",
-        "title": "",
-        "baseline": "",
-        "description": "[Reserved]",
-        "parameter_values": {},
-        "additional_requirements": "",
-        "source_crosswalk": {}
       }
     ],
     "related_controls": [],

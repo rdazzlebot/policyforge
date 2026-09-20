@@ -48,9 +48,15 @@ Two consequences worth stating plainly:
 
 ## What was parsed
 
-21 sections carrying 55 conditions between them, 39 of which the
+21 sections carrying 54 conditions between them, 39 of which the
 regulation gives its own italic heading ("Reasonable belief", "Practice
 breadth"), preserved in each condition's `title`.
+
+One further paragraph is found and not emitted: `171.1001(b)` is
+`[Reserved]`. It is excluded for the reason the whole reserved section
+`171.402` is — a paragraph reserved for future use carries no obligation,
+and a condition whose entire text is the word `[Reserved]` counts,
+renders and crosswalks while meaning nothing.
 
 | Subpart                                          | Sections                  |
 | ------------------------------------------------ | ------------------------- |

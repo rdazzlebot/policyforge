@@ -7,7 +7,7 @@ notes: A US government work, so freely redistributable. Bundled with this projec
   and then sets out the exceptions to it, so each entry is a condition under which a practice
   does NOT count as blocking, rather than a safeguard to implement. Read README.md before
   mapping it to a control framework.
-source_ref: '2026-09-16'
-source_url: https://www.ecfr.gov/api/versioner/v1/full/2026-09-16/title-45.xml?part=171
-content_sha256: dd6e863ac1fdb74f605a2d72c75a17744bb269b95e0c814edfe0917872e7ba2f
-fetched_at: '2026-09-18'
+source_ref: '2026-09-17'
+source_url: https://www.ecfr.gov/api/versioner/v1/full/2026-09-17/title-45.xml?part=171
+content_sha256: 96209b1b38f666ba0cad5dbe1102090aa171acdf16b8756dcd4b4a76fbe2e160
+fetched_at: '2026-09-20'

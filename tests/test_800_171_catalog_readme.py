@@ -216,19 +216,22 @@ def test_addresses_answers_are_unchanged_by_installing_this_catalog():
         )
 
 
-def test_the_readme_explains_the_coverage_move_rather_than_leaving_it(readme):
-    """`/coverage` moves, and a falling percentage reads as "you got
-    worse" unless someone says the owned count did not change.
+def test_the_readme_explains_that_the_coverage_move_is_gone(readme):
+    """The README's job here changed with the behaviour.
 
-    An earlier draft of this claimed a `0 of 97` section that the shell
-    never emits -- `_coverage` calls `analyze_coverage` without
-    `other_controls` or `crosswalk`, so `framework_coverage` is always
-    empty there. I had run the right function with my own arguments
-    instead of the caller's.
+    It used to reassure a reader that a falling percentage did not mean
+    the programme got worse — 814 owned on both sides. `_coverage` now
+    scopes to the 800-53 set the registry anchors to, so installing a
+    catalog does not move the numbers at all and there is nothing to
+    reassure anyone about.
+
+    What it must do instead is say what a zero in the crosswalk section
+    means, because `0 of 97` reads as ninety-seven unaddressed
+    requirements and is nothing of the kind.
     """
-    assert "814" in readme, "the unchanged owned count is the reassurance"
-    assert "Nothing that was covered became uncovered" in readme
-    assert "0 of 97" not in readme, "the shell does not emit that section"
+    assert "0 of 97" in readme, "the section the shell now emits"
+    assert "nobody has published" in readme, "what the zero means"
+    assert "relative to everything on disk" not in readme, "that is no longer true"
 
 
 def _shell_state(paths):
@@ -273,16 +276,22 @@ def _catalog_paths(*, including_800_171: bool):
     return [root / name / "controls.json" for name in names]
 
 
-def test_the_shell_coverage_report_does_not_claim_a_framework_section():
-    """`_coverage` passes neither `other_controls` nor `crosswalk`, so
-    `framework_coverage` is empty and no per-framework section is
-    rendered. Pinned because a README once said otherwise."""
+def test_the_shell_coverage_report_names_800_171_as_crosswalk_reachable():
+    """**This test asserted the defect, and it was right to at the time.**
+    It pinned that `_coverage` renders no per-framework section — true,
+    because it passed neither `other_controls` nor `crosswalk`, so every
+    non-NIST requirement was an orphan by construction.
+
+    e1 predicted the section would read `0 of 97`, measured by calling
+    `analyze_coverage` the way `_addresses` already does. That was the
+    fix, a day before anyone proposed it; the only wrong word was tense.
+    """
     from policyforge.zardoz.skills import _coverage
 
     output = _coverage(_shell_state(_catalog_paths(including_800_171=True)), [])
 
-    assert "reachable via the crosswalk" not in output
-    assert "0 of 97" not in output
+    assert "reachable via the crosswalk" in output
+    assert "0 of 97" in output
 
 
 def test_installing_the_catalog_does_not_reduce_what_the_shell_says_is_owned():
@@ -315,16 +324,14 @@ def test_a_scoped_coverage_report_is_untouched_because_rev_3_has_no_baselines():
     assert without == with_171
 
 
-def test_the_readme_claim_that_the_percentage_moves_is_still_true(readme):
-    """**Pins the README sentence to the behaviour it describes**, so a
-    change to `_coverage` forces the README to be revisited rather than
-    leaving a shipped file describing behaviour that no longer exists.
+def test_the_shell_scope_no_longer_grows_when_a_catalog_is_installed(readme):
+    """**The inverse of what this asserted, and the change is the point.**
 
-    The README tells a reader the bare percentage is relative to
-    everything on disk and therefore not comparable across machines or
-    across an install. That is only worth saying while it is true. If the
-    coverage scope stops growing when a catalog is installed, this fails
-    and the sentence has to go.
+    It pinned that installing a catalog enlarges the coverage scope, which
+    kept the README's paragraph about the bare percentage being relative
+    to what is on disk true while it was. It is not any more: the scope is
+    the 800-53-anchored set whatever else is installed, so the numbers
+    hold still across machines and across an install.
     """
     import re
 
@@ -339,10 +346,9 @@ def test_the_readme_claim_that_the_percentage_moves_is_still_true(readme):
     without = in_scope(_catalog_paths(including_800_171=False))
     with_171 = in_scope(_catalog_paths(including_800_171=True))
 
-    assert with_171 > without, (
-        "installing a catalog no longer enlarges the coverage scope, so the "
-        "catalog README's paragraph on the bare percentage being relative to "
-        "what is on disk is now describing behaviour that does not exist. "
-        "Update data/frameworks/nist-800-171-r3/README.md."
+    assert with_171 == without, (
+        "installing a catalog changed the coverage scope again, so the bare "
+        "percentage is relative to what is on disk once more. The catalog "
+        "README says it is not. Update the README."
     )
-    assert "relative to everything on disk" in readme
+    assert "relative to everything on disk" not in readme

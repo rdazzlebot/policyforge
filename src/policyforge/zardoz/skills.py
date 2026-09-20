@@ -131,6 +131,7 @@ def _controls(state):
 
 
 def _coverage(state, args: list[str]) -> str:
+    from policyforge.mapping.crosswalk import build_crosswalk
     from policyforge.topics.coverage import analyze_coverage, format_report
 
     controls = _controls(state)
@@ -153,7 +154,22 @@ def _coverage(state, args: list[str]) -> str:
         if not controls:
             return f"No controls tagged for the {baseline} baseline in the loaded catalogs."
 
-    return format_report(analyze_coverage(state.topics, controls, scope=scope))
+    # Split the way `_addresses` already does. Handing every catalog to a
+    # parameter named `nist_controls` made a HIPAA or CFR requirement an
+    # orphan by construction — no topic anchors to its ids — so the
+    # denominator grew with every catalog installed and the headline fell
+    # while the numerator never moved: 1657 -> 1754 in scope, 814 owned
+    # both sides, 49% -> 46%. Nothing about the programme had changed.
+    nist = [c for c in controls if _is_nist_control(c)]
+    other = [c for c in controls if not _is_nist_control(c)]
+    report = analyze_coverage(
+        state.topics,
+        nist,
+        scope=scope,
+        other_controls=other,
+        crosswalk=build_crosswalk(controls),
+    )
+    return "\n".join([format_report(report), *_zero_row_reasons(controls, report)])
 
 
 def _parameters(state, args: list[str]) -> str:
@@ -408,6 +424,87 @@ def _addresses(state, args: list[str]) -> str:
         other_controls=other,
         crosswalk=build_crosswalk(controls),
     ).render()
+
+
+def _first_sentence(text: str) -> str:
+    """The opening sentence, by the boundary rule this project already has.
+
+    **Neither `split(".")` nor `split(". ")` survives the house citation
+    spelling.** On *"A practice under 45 C.F.R. 171.203(a) qualifies."*
+    the first cuts to `45 C`; b5 caught that and proposed the second,
+    which cuts to `45 C.F.R` — `C.F.R. 171` carries a stop-space of its
+    own, so the one-character fix is still wrong.
+
+    `entail/base.py:_BOUNDARY_RE` requires a capital, quote or bracket
+    after the stop. It exists because full-stop splitting cost 19 of 43
+    findings there. Imported rather than copied, so there is one
+    definition of a sentence boundary — the same reason every reader of a
+    source tag shares `SOURCE_TAG_RE`.
+    """
+    from policyforge.entail.base import _BOUNDARY_RE
+
+    match = _BOUNDARY_RE.search(text)
+    return text[: match.end()] if match else text
+
+
+def _zero_row_reasons(controls, report) -> list[str]:
+    """Why each framework reachable through the crosswalk covers nothing.
+
+    **A zero under a heading that reads as a gap is not a finding until it
+    carries its cause.** Three frameworks report zero and they mean two
+    different things:
+
+    - `Information Blocking` is refused **by design**. Its entries are
+      conditions of an exception, not controls to implement, so mapping
+      them would assert something neither document says. That zero is the
+      correct answer and `NOT_CROSSWALK_ANCHORABLE` already holds the
+      reason as prose.
+    - `42 CFR Part 2` and `NIST 800-171` seed a crosswalk normally.
+      Nobody has published one. That zero is work nobody has done.
+
+    Those want opposite responses — *leave it alone* against *go and map
+    it* — and the report prints the same number for both. The reasons are
+    looked up from the declared framework name, which is reliable since
+    the two CFR catalogs were renamed to be citable.
+    """
+    from policyforge.crosswalk.overlay import _refusal_reason
+
+    declared = {}
+    for control in controls:
+        key = _framework_key(control.framework)
+        declared.setdefault(key, control.framework)
+
+    notes = []
+    for framework in report.framework_coverage:
+        if framework.covered:
+            continue
+        name = declared.get(_framework_key(framework.framework), framework.framework)
+        reason = _refusal_reason(name)
+        if reason is not None:
+            notes.append(
+                f"  {framework.framework.upper()}: not mapped by design. {_first_sentence(reason)}"
+            )
+        else:
+            notes.append(
+                f"  {framework.framework.upper()}: no published crosswalk yet — "
+                f"`policyforge crosswalk seed --framework {name!r}` starts one."
+            )
+    if not notes:
+        return []
+    return [
+        "",
+        "Why those are zero",
+        "-" * 60,
+        "  A zero here is either work nobody has done or a mapping that would be",
+        "  wrong to make. They are not the same and they want opposite responses.",
+        *notes,
+    ]
+
+
+def _framework_key(name: str) -> str:
+    from policyforge.mapping.crosswalk import normalize_framework
+
+    return normalize_framework(name)
 
 
 def _is_nist_control(control) -> bool:

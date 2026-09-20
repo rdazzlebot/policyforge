@@ -213,6 +213,37 @@ def test_guidance_that_merely_mentions_the_phrase_survives():
     assert arc_ampe._guidance(cell) == cell
 
 
+@pytest.mark.parametrize(
+    "cell",
+    [
+        "There are no supplemental control requirements and guidance at this time, "
+        "however agencies shall document exceptions in the SSP.",
+        "There is no supplemental control requirement and guidance - agencies must "
+        "still record the decision.",
+    ],
+    ids=["comma-continuation", "dash-continuation"],
+)
+def test_an_obligation_inside_the_sentinel_sentence_survives(cell: str):
+    """**The version of the test above that is actually hard.**
+
+    Found by policyforge-b5 in review of this PR. The test above passes
+    against a *prefix* match too, because its fixture is two sentences,
+    so `all()` is already False before anchoring matters. These are the
+    same hazard in **one** sentence: the boilerplate opens it and binding
+    guidance finishes it.
+
+    With `re.match` the opening consumed the rest and the obligation was
+    discarded silently and whole — the precise failure `_guidance`'s
+    docstring claims to prevent, reintroduced one level below where the
+    per-sentence split operates.
+
+    Latent, not live: v1.02 has nineteen sentinel-bearing fields and none
+    carries extra content in the same sentence. This pins the property so
+    the next CMS revision cannot introduce one unnoticed.
+    """
+    assert arc_ampe._guidance(cell) == cell
+
+
 def test_bullets_and_curly_quotes_survive_but_editing_artifacts_do_not():
     """CMS structures normative prose with bullets; Excel leaves NBSPs."""
     assert arc_ampe._clean("•  Text\xa0here  \n\n") == "•  Text here"

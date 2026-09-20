@@ -70,9 +70,22 @@ _FUNCTION_ABBR = {"Govern": "GV", "Map": "MP", "Measure": "MS", "Manage": "MG"}
 #: class-keyed parser would return zero rows on a restyle and report
 #: success — the silent-empty failure this project keeps finding. The
 #: structural assertions in `parse_ai_rmf` are what turn that into a crash.
+#: **The function word is captured, not enumerated, and that is the whole
+#: point.** It used to read `(?:Govern|Map|Measure|Manage)`, which made the
+#: `unrecognised AI RMF function` guard below **unreachable** -- the regex
+#: could not produce a name the guard would reject, so a fifth NIST
+#: function did not raise, it **vanished**: the row failed to match at all
+#: and the reader got a confusing complaint about category numbering
+#: instead.
+#:
+#: Found by policyforge-ba, constructively: deleting each guard in turn and
+#: recording which test noticed. Two noticed nothing, and this one could
+#: not have. Enumerating a vocabulary inside a pattern turns "I do not
+#: recognise this" into "this does not exist", which is the failure this
+#: module is otherwise written against.
 _ROW = re.compile(
     r'<span class="[^"]*">\s*'
-    r"(?P<id>(?:Govern|Map|Measure|Manage) \d+(?:\.\d+)?)\s*"
+    r"(?P<id>[A-Z][a-z]+ \d+(?:\.\d+)?)\s*"
     r"</span>\s*:\s*(?P<text>.*?)</th>",
     re.S,
 )

@@ -338,12 +338,39 @@ def test_the_report_names_the_partly_reached_requirements():
 # --------------------------------------------------------------------------
 
 
-def _real():
+def _anchorable_catalogs():
+    """Every catalog a topic may anchor, derived from `TOPIC_ANCHORS`.
+
+    **Derived, not listed.** This used to load only 800-53. When the AI RMF
+    became anchorable and the example registry gained topics anchoring it,
+    those anchors were not out of scope and were not typos — they were
+    identifiers from a catalog this fixture had never heard of, and
+    `analyze_coverage` reported them as `unknown_anchors`, which is its word
+    for a typo. Four tests went red claiming the shipped registry pointed at
+    non-existent controls.
+
+    That is the fixture's fault and it is the failure the `catalog`
+    parameter exists to prevent: *"pass the full, unfiltered catalog so an
+    anchor that's merely out of scope can be told apart from one that's a
+    typo"*. A fixture narrower than the thing under test turns one into the
+    other.
+    """
     from policyforge.ingest.schema import load_controls
+    from policyforge.mapping.crosswalk import anchors_a_topic
+
+    controls = []
+    for path in sorted(NIST_DATA.parent.parent.glob("*/controls.json")):
+        loaded = load_controls(path)
+        if loaded and anchors_a_topic(loaded[0].framework):
+            controls.extend(loaded)
+    return controls
+
+
+def _real():
     from policyforge.topics.registry import parse_topics
 
     topics = parse_topics(yaml.safe_load(EXAMPLE_REGISTRY.read_text(encoding="utf-8")))
-    return topics, load_controls(NIST_DATA)
+    return topics, _anchorable_catalogs()
 
 
 def test_example_registry_anchors_are_all_real_controls():

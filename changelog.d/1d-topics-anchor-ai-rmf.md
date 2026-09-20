@@ -11,6 +11,8 @@ the Playbook out. `crosswalk seed` still refuses it, with the reason.
 **A registry that adopts the AI topics counts the AI RMF's 91
 requirements; one that does not is untouched.** They enter the denominator
 only once a topic anchors them, and the numerator rises with them —
-see the coverage entry for the figures at both ends of the release. The coverage report's scope line now names the catalogs it
-counted, so a moved denominator is visible rather than inferred from a
-percentage changing.
+see the coverage entry for the figures at both ends of the release.
+
+The coverage report's scope line now names the catalogs it counted, so a
+moved denominator is visible rather than inferred from a percentage
+changing.

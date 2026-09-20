@@ -119,6 +119,11 @@ def _crosswalk_sources(control: Control) -> list[tuple[str, dict[str, str]]]:
 FRAMEWORK_ALIASES: tuple[tuple[str, str], ...] = (
     ("800-53", "nist-800-53"),
     ("800-171", "nist-800-171"),
+    # The two CFR catalogs whose declared names had to become citable: a
+    # name beginning with a digit is not a tag, so they were renamed and
+    # pinned here rather than keying to `information` and `substance`.
+    ("information blocking", "cfr-171-information-blocking"),
+    ("substance use disorder", "cfr-42-part-2-sud-records"),
     ("800-172", "nist-800-172"),
     ("800-137", "nist-800-137"),
     ("cybersecurity framework", "nist-csf"),

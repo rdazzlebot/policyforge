@@ -2,7 +2,7 @@
   {
     "control_id": "2.16",
     "title": "Security for records and notification of breaches.",
-    "framework": "42 CFR Part 2",
+    "framework": "Substance Use Disorder Records",
     "framework_version": "42 CFR Part 2",
     "family": null,
     "family_abbr": null,
@@ -43,7 +43,7 @@
   {
     "control_id": "2.19",
     "title": "Disposition of records by discontinued programs.",
-    "framework": "42 CFR Part 2",
+    "framework": "Substance Use Disorder Records",
     "framework_version": "42 CFR Part 2",
     "family": null,
     "family_abbr": null,

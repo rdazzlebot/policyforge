@@ -2,7 +2,7 @@
   {
     "control_id": "171.100",
     "title": "Statutory basis and purpose",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -43,7 +43,7 @@
   {
     "control_id": "171.101",
     "title": "Applicability",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -93,7 +93,7 @@
   {
     "control_id": "171.103",
     "title": "Information blocking",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -134,7 +134,7 @@
   {
     "control_id": "171.200",
     "title": "Availability and effect of exceptions",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -156,7 +156,7 @@
   {
     "control_id": "171.201",
     "title": "Preventing harm exception\u2014when will an actor's practice that is likely to interfere with the access, exchange, or use of electronic health information in order to prevent harm not be considered information blocking?",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -233,7 +233,7 @@
   {
     "control_id": "171.202",
     "title": "Privacy exception\u2014When will an actor's practice of not fulfilling a request to access, exchange, or use electronic health information in order to protect an individual's privacy not be considered information blocking?",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -301,7 +301,7 @@
   {
     "control_id": "171.203",
     "title": "Security exception\u2014When will an actor's practice that is likely to interfere with the access, exchange, or use of electronic health information in order to protect the security of electronic health information not be considered information blocking?",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -369,7 +369,7 @@
   {
     "control_id": "171.204",
     "title": "Infeasibility exception\u2014When will an actor's practice of not fulfilling a request to access, exchange, or use electronic health information due to the infeasibility of the request not be considered information blocking?",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -410,7 +410,7 @@
   {
     "control_id": "171.205",
     "title": "Health IT performance exception\u2014When will an actor's practice that is implemented to maintain or improve health IT performance and that is likely to interfere with the access, exchange, or use of electronic health information not be considered information blocking?",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -469,7 +469,7 @@
   {
     "control_id": "171.206",
     "title": "Protecting Care Access\u2014When will an actor's practice that is likely to interfere with the access, exchange, or use of electronic health information in order to reduce potential exposure to legal action not be considered information blocking?",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -537,7 +537,7 @@
   {
     "control_id": "171.300",
     "title": "Availability and effect of exceptions",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -559,7 +559,7 @@
   {
     "control_id": "171.301",
     "title": "Manner exception\u2014When will an actor's practice of limiting the manner in which it fulfills a request to access, exchange, or use electronic health information not be considered information blocking?",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -600,7 +600,7 @@
   {
     "control_id": "171.302",
     "title": "Fees exception\u2014When will an actor's practice of charging fees for accessing, exchanging, or using electronic health information not be considered information blocking?",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -659,7 +659,7 @@
   {
     "control_id": "171.303",
     "title": "Licensing exception\u2014When will an actor's practice to license interoperability elements in order for electronic health information to be accessed, exchanged, or used not be considered information blocking?",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -709,7 +709,7 @@
   {
     "control_id": "171.400",
     "title": "Availability and effect of exceptions",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -731,7 +731,7 @@
   {
     "control_id": "171.403",
     "title": "TEFCA manner exception\u2014When will an actor's practice of limiting the manner in which it fulfills a request to access, exchange, or use electronic health information to only via TEFCA not be considered information blocking?",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -790,7 +790,7 @@
   {
     "control_id": "171.1000",
     "title": "Scope",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -812,7 +812,7 @@
   {
     "control_id": "171.1001",
     "title": "Disincentives",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -853,7 +853,7 @@
   {
     "control_id": "171.1002",
     "title": "Notice of disincentive",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -912,7 +912,7 @@
   {
     "control_id": "171.1100",
     "title": "Scope",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,
@@ -934,7 +934,7 @@
   {
     "control_id": "171.1101",
     "title": "Posting of information for actors found to have committed information blocking",
-    "framework": "45 CFR 171",
+    "framework": "Information Blocking",
     "framework_version": "45 CFR Part 171",
     "family": null,
     "family_abbr": null,

@@ -97,7 +97,14 @@ def test_the_shape_matches_nothing_new_in_the_repository_and_drops_only_prose():
     only brackets that were never citations."""
     import re
 
-    old = re.compile(r"\[(?:NIST|HIPAA|FedRAMP|HITRUST|GovRAMP|ARC-AMPE)\s[^\]]*\]")
+    # The baseline enumerates the framework names that existed when this
+    # was written. Two more do now: the CFR catalogs were renamed from
+    # `45 CFR 171` and `42 CFR Part 2`, which were not legal tags at all,
+    # so their READMEs can carry a worked example for the first time.
+    old = re.compile(
+        r"\[(?:NIST|HIPAA|FedRAMP|HITRUST|GovRAMP|ARC-AMPE"
+        r"|Information Blocking|Substance Use Disorder Records)\s[^\]]*\]"
+    )
     gained: set[str] = set()
     dropped: set[str] = set()
     for path in [*ROOT.joinpath("docs").rglob("*.md"), *ROOT.joinpath("data").rglob("*")]:

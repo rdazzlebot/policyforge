@@ -20,7 +20,35 @@ catalog is called are different jobs, and conflating them is what made these
 two unusable.
 
 **If you have documents citing the old spellings, they were resolving to
-nothing already** and the report said so — rewrite them to the forms above.
+nothing already** — rewrite them to the forms above, and **rewrite every tag
+in a document at once.**
+
+A document written entirely against the old spellings says so plainly:
+*"Cites no framework requirement. Nothing here is traceable."* **That signal
+disappears the moment you fix the first tag.** A half-migrated document
+reports the tags you rewrote, counts `0 resolving to nothing`, and exits 0 —
+saying nothing at all about the ones still written the old way, because
+those are not citations to the tool, they are prose. A partly-rewritten
+document looks finished.
+
+**Find them with grep, not with `satisfies`.** The tool cannot list them —
+that is the whole defect: an old-form tag is prose to it, so it is not in
+the report to be counted. This is the search:
+
+```
+grep -rnE '\[[0-9]' --include=*.md .
+```
+
+Broad on purpose. Searching for `[45 CFR 171` and `[42 CFR Part 2` misses
+`[45 CFR Part 171 ...]` — **the spelling `framework.yaml` itself uses**, so
+it is what a careful person copied — along with `[42 CFR 2.16(a)]` and a
+bare `[2.16(a)]`. All are equally invisible to the tag reader, and the
+pattern above catches any bracket opening with a digit.
+
+It also catches footnote markers and citations that were never tags; those
+identify themselves. One worth naming so nobody chases it: the Part 2
+README carries `[89 FR 12622, Feb. 16, 2024]`, eCFR's own source note,
+correct as it stands.
 
 **`crosswalk seed`'s refusal for the information-blocking catalog now names
 an action you can take.** It told you to cite `171.203(a)` instead of

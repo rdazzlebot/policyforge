@@ -2,11 +2,13 @@
 NIST AI RMF categories, so a bundled anchorable catalog does not ship with
 91 unowned requirements.
 
-    AI Governance & Accountability        Govern 1-5
-    AI System Inventory & Impact          Map 1, 2, 3, 5
-    AI Evaluation & Measurement           Measure 1-4
-    AI Risk Treatment & Incident Response Manage 1, 2, 4
-    Third-Party AI & Data Supply Chain    Govern 6, Map 4, Manage 3
+```
+AI Governance & Accountability        Govern 1-5
+AI System Inventory & Impact          Map 1, 2, 3, 5
+AI Evaluation & Measurement           Measure 1-4
+AI Risk Treatment & Incident Response Manage 1, 2, 4
+Third-Party AI & Data Supply Chain    Govern 6, Map 4, Manage 3
+```
 
 **Cut by process, not by the framework's four functions.** A
 function-per-topic split is the obvious move and this registry's own rule

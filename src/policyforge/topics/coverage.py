@@ -43,7 +43,24 @@ from policyforge.ingest.schema import Control
 from policyforge.mapping.crosswalk import normalize_framework
 from policyforge.topics.registry import Topic
 
-_ENHANCEMENT_RE = re.compile(r"^([A-Za-z]{2}-\d+)\(\d+\)$")
+#: How a child identifier names its parent, per catalog grammar.
+#:
+#: **"Anchoring a control also claims its enhancements" is implemented
+#: here, so a grammar this does not know silently claims nothing.** A
+#: topic anchoring `Govern 1` used to report seven orphans -- no error, a
+#: plausible number, and a topic author would have "fixed" it by anchoring
+#: all seven subcategories, arriving at a correct-looking registry built
+#: around a defect. The workaround looks like diligence, which is what
+#: makes the silence expensive.
+#:
+#: Add a pattern when a catalog becomes anchorable, not before: a grammar
+#: listed here for a framework no topic can anchor is untestable.
+_PARENT_RES = (
+    # 800-53 / FedRAMP / ARC-AMPE: AC-2(1) -> AC-2
+    re.compile(r"^([A-Za-z]{2}-\d+)\(\d+\)$"),
+    # NIST AI RMF: Govern 1.1 -> Govern 1
+    re.compile(r"^([A-Za-z]+ \d+)\.\d+$"),
+)
 
 #: Relationships under which one control covers only part of a requirement.
 PARTIAL_RELATIONSHIPS = frozenset({"superset", "intersects"})
@@ -95,9 +112,142 @@ class CoverageReport:
         return not (self.orphaned or self.contested or self.unknown_anchors)
 
 
+def adopted_frameworks(topics, controls) -> set[str]:
+    """Framework keys this registry actually anchors identifiers from.
+
+    **"The catalogs a registry anchors" and "the catalogs a registry
+    *could* anchor" read the same and are not.** `anchors_a_topic` answers
+    the second -- membership in `TOPIC_ANCHORS` -- and using it as the
+    coverage scope was correct only while every bundled catalog was either
+    always-anchored (800-53) or never-anchorable (HIPAA, the CFR pair).
+
+    The AI RMF is the first that is **anchorable but optional**, and there
+    the two diverge with a bill attached: a customer who does no AI
+    upgrades, gains 91 requirements in their denominator, and loses six
+    points for work they never took on. Measured, not predicted -- 80
+    stripped the AI topics out of the example registry and got 1105 in
+    scope, 291 orphaned, against 1014 and 200 before.
+
+    **Our own example registry is what hid it**, because it anchors the AI
+    RMF and therefore looks fine.
+
+    Adoption is per *catalog*, not per identifier: anchoring one AI RMF id
+    brings all 91 into scope. Anything finer would make coverage
+    unfalsifiable, since a registry would only ever be measured against
+    what it had already claimed.
+    """
+    from policyforge.mapping.crosswalk import anchors_a_topic
+
+    anchored = {a for topic in topics for a in topic.nist_controls}
+    adopted = set()
+    for control in controls:
+        if not anchors_a_topic(control.framework):
+            continue
+        identifiers = {control.control_id} | {e.enhancement_id for e in control.enhancements}
+        if identifiers & anchored:
+            adopted.add(normalize_framework(control.framework))
+    return adopted
+
+
+def split_by_adoption(topics, controls):
+    """`(in scope, bundled but unadopted, reachable via the crosswalk)`.
+
+    The middle one exists so an unadopted catalog is **named rather than
+    silently absent** -- 80's condition on the ruling, and the same move
+    `_zero_row_reasons` already makes for a zero row. Excluding a catalog
+    from the denominator is right; making it invisible is not, or the
+    exclusion becomes a place for a framework to hide.
+    """
+    from policyforge.mapping.crosswalk import anchors_a_topic
+
+    adopted = adopted_frameworks(topics, controls)
+
+    # **Adoption only ever NARROWS.** If a registry adopts nothing, the
+    # scope is everything anchorable, not nothing.
+    #
+    # Found by the suite rather than by thinking: a test registry anchoring
+    # `ZZ-9` against a catalog of `AC-2` adopts no catalog, because its one
+    # anchor is a typo. Without this line the report became "no topic
+    # anchors any catalog on disk" -- which silently converts *you have a
+    # typo* into *you have no registry*, and `unknown_anchors` exists
+    # precisely to say the first.
+    #
+    # The empty-registry case lands the same way and should: somebody with
+    # no topics yet wants to see everything as orphaned, not 0 of 0.
+    #
+    # This cannot reintroduce the defect the narrowing exists for, because
+    # that case -- a real 800-53 registry meeting a newly bundled AI RMF --
+    # adopts 800-53 and is never empty.
+    if not adopted:
+        adopted = {
+            normalize_framework(c.framework) for c in controls if anchors_a_topic(c.framework)
+        }
+
+    in_scope, unadopted, reachable = [], [], []
+    for control in controls:
+        if not anchors_a_topic(control.framework):
+            reachable.append(control)
+        elif normalize_framework(control.framework) in adopted:
+            in_scope.append(control)
+        else:
+            unadopted.append(control)
+    return in_scope, unadopted, reachable
+
+
+def unadopted_note(unadopted) -> list[str]:
+    """Report lines naming catalogs that are bundled, anchorable, and
+    anchored by nothing."""
+    if not unadopted:
+        return []
+    by_framework: dict[str, int] = {}
+    for control in unadopted:
+        count = 1 + len(control.enhancements)
+        by_framework[control.framework] = by_framework.get(control.framework, 0) + count
+    lines = [
+        "",
+        "Bundled, anchorable, and not adopted",
+        "-" * 60,
+        "  These are excluded from the numbers above, because a catalog no",
+        "  topic anchors is not a gap in your programme -- it is a framework",
+        "  you have not taken on. Anchoring any one of its identifiers brings",
+        "  the whole catalog into scope.",
+    ]
+    for name, count in sorted(by_framework.items()):
+        lines.append(f"  {name}: {count} requirements, anchored by no topic")
+    return lines
+
+
+def scope_label(controls, baseline: str | None = None) -> str:
+    """What the coverage denominator actually contained, named.
+
+    **A percentage whose denominator can change without the reader being
+    told is not a measurement.** When the AI RMF became anchorable the
+    programme headline fell 80.3% -> 73.7% with the numerator unchanged
+    at 814: ninety-one requirements arrived that a topic *could* own and
+    none yet does. That is real information and it is indistinguishable,
+    from the number alone, from work having been lost.
+
+    The same arithmetic with the opposite meaning caused a live defect
+    once already -- every installed catalog was being counted as
+    anchorable, so requirements no topic could ever anchor were orphans
+    by construction and installing a catalog lowered the score. That was
+    wrong and was fixed. This is right and still needs saying, because a
+    reader cannot tell the two apart by looking at the percentage.
+
+    So the scope line names the catalogs, and a changed denominator is
+    visible in the report rather than inferred from a number moving.
+    """
+    names = sorted({c.framework for c in controls})
+    listed = ", ".join(names) if names else "no anchorable catalog"
+    return f"{baseline} baseline ({listed})" if baseline else f"all controls ({listed})"
+
+
 def _parent_of(requirement_id: str) -> str | None:
-    match = _ENHANCEMENT_RE.match(requirement_id)
-    return match.group(1) if match else None
+    for pattern in _PARENT_RES:
+        match = pattern.match(requirement_id)
+        if match:
+            return match.group(1)
+    return None
 
 
 def _in_scope_ids(controls: list[Control]) -> list[str]:

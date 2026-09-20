@@ -67,7 +67,15 @@ def test_a_needle_does_not_swallow_a_catalog_identifier(identifier: str):
 #: They carry no `controls.json` and no `framework.yaml`, so there is no
 #: declared name in this tree to key — the guard below cannot reach them,
 #: and says so rather than counting them as covered.
-BYOC_ONLY = {"govramp", "hitrust-csf"}
+#: **`hitrust-ai` is here deliberately, and its key is covered elsewhere.**
+#: The guard's own message asks for that decision rather than a quiet
+#: addition: its key cannot be checked from a declared name, because a
+#: README-only catalog has none to declare. It is checked at the alias
+#: level instead, by `test_hitrust_ai_does_not_share_a_key_with_the_csf`
+#: above, which needs no catalog because the pin lives in
+#: `FRAMEWORK_ALIASES`. That is the stronger place for it: the pin is what
+#: a user's own parsed catalog keys through, wherever they keep it.
+BYOC_ONLY = {"govramp", "hitrust-ai", "hitrust-csf"}
 
 
 def test_no_bundled_catalog_changed_key():

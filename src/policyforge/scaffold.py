@@ -42,7 +42,7 @@ BUNDLED_CATALOGS = (
 )
 
 #: Bring-your-own catalogs: only the README explaining how to supply one.
-BYOC_CATALOGS = ("govramp", "hitrust-csf")
+BYOC_CATALOGS = ("govramp", "hitrust-ai", "hitrust-csf")
 
 CATALOG_FILES = ("README.md", "controls.json", "framework.yaml")
 

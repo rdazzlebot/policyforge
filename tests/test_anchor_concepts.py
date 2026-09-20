@@ -449,3 +449,237 @@ def test_third_party_ai_is_one_topic_across_three_functions():
         f"is accountable for a vendor model end to end; the framework files it "
         f"under three functions but that is not three processes."
     )
+
+
+# ---- in scope is what the registry ANCHORS, not what it COULD anchor -------
+
+
+def _registry_without_ai(tmp_path):
+    """The shipped registry with every AI topic removed."""
+    import yaml
+
+    doc = yaml.safe_load((ROOT / "config" / "topics.example.yaml").read_text(encoding="utf-8"))
+    doc["topics"] = [
+        t
+        for t in doc["topics"]
+        if not any(
+            str(c).split()[0] in ("Govern", "Map", "Measure", "Manage") for c in t["nist_controls"]
+        )
+    ]
+    path = tmp_path / "topics.yaml"
+    path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+    return path
+
+
+def _coverage_for(registry_path):
+    from policyforge.cli._common import load_catalogs
+    from policyforge.topics.coverage import analyze_coverage, scope_label, split_by_adoption
+    from policyforge.topics.registry import load_topics
+
+    paths = [str(p) for p in sorted((ROOT / "data" / "frameworks").glob("*/controls.json"))]
+    controls = load_catalogs(paths)
+    topics = load_topics(registry_path)
+    in_scope, unadopted, reachable = split_by_adoption(topics, controls)
+    report = analyze_coverage(
+        topics,
+        in_scope,
+        scope=scope_label(in_scope),
+        other_controls=reachable,
+        crosswalk=build_crosswalk(controls),
+    )
+    return report, unadopted
+
+
+def test_a_registry_that_anchors_no_ai_is_unaffected_by_the_bundled_catalog(tmp_path):
+    """**The defect this ruling fixes, asserted as a number.**
+
+    A customer who does no AI upgrades to a release that bundles the AI
+    RMF. Before the fix their denominator grew by 91 and they lost six
+    points for work they never took on — measured by 80: 1105 in scope,
+    291 orphaned, against 1014 and 200.
+
+    `anchors_a_topic` answers *could this be anchored*; the coverage scope
+    needs *is this anchored*. Those read the same and only diverge once a
+    bundled catalog is anchorable **but optional**, which the AI RMF is and
+    no earlier catalog was.
+
+    The property to hold: **an existing user's number does not move unless
+    they change their own registry.**
+    """
+    report, unadopted = _coverage_for(_registry_without_ai(tmp_path))
+    owned = len(report.in_scope) - len(report.orphaned)
+
+    assert len(report.in_scope) == 1014, (
+        f"a registry anchoring no AI RMF id has {len(report.in_scope)} in scope; "
+        f"the bundled catalog is being counted against a user who never adopted it"
+    )
+    assert owned == 814
+    assert len(report.orphaned) == 200, "the 800-53 side moved, which it must not"
+    assert not any(c.framework == "NIST AI RMF" for c in report_frameworks(report))
+
+    # Excluded, but named: the exclusion must not become a hiding place.
+    assert any(c.framework == "NIST AI RMF" for c in unadopted)
+
+
+def report_frameworks(report):
+    """Controls whose ids are in the report's scope, for readability above."""
+    from policyforge.cli._common import load_catalogs
+
+    paths = [str(p) for p in sorted((ROOT / "data" / "frameworks").glob("*/controls.json"))]
+    in_scope = set(report.in_scope)
+    return [
+        c
+        for c in load_catalogs(paths)
+        if c.control_id in in_scope or any(e.enhancement_id in in_scope for e in c.enhancements)
+    ]
+
+
+def test_anchoring_one_ai_identifier_adopts_the_whole_catalog(tmp_path):
+    """Adoption is per catalog, not per identifier.
+
+    Anything finer makes coverage unfalsifiable: a registry would only ever
+    be measured against what it had already claimed, so it could never be
+    told it had missed something.
+    """
+    import yaml
+
+    doc = yaml.safe_load((ROOT / "config" / "topics.example.yaml").read_text(encoding="utf-8"))
+    doc["topics"] = [
+        t
+        for t in doc["topics"]
+        if not any(
+            str(c).split()[0] in ("Govern", "Map", "Measure", "Manage") for c in t["nist_controls"]
+        )
+    ]
+    doc["topics"].append(
+        {
+            "name": "A Toe In The Water",
+            "owner": "AI Risk",
+            "cadence": "annual",
+            "description": "One anchor, to see what happens.",
+            "nist_controls": ["Govern 1"],
+            "evidence": ["nothing yet"],
+        }
+    )
+    path = tmp_path / "topics.yaml"
+    path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+
+    report, unadopted = _coverage_for(path)
+    assert len(report.in_scope) == 1105, (
+        "anchoring one AI RMF identifier did not bring the catalog into scope"
+    )
+    assert not unadopted, "the catalog is adopted, so nothing should be reported unadopted"
+    # Govern 1 and its seven subcategories are owned; the rest are honest gaps.
+    assert "Govern 1" not in report.orphaned
+    assert "Map 1" in report.orphaned
+
+
+def test_an_unadopted_catalog_is_named_rather_than_silently_absent(tmp_path):
+    """80's condition on the ruling, and the reason it is a condition.
+
+    **Excluding a catalog from the denominator is right; making it
+    invisible is not** — the exclusion would become somewhere a framework
+    could hide, and a user could not discover an unadopted framework
+    without it first distorting their percentage.
+    """
+    from policyforge.topics.coverage import unadopted_note
+
+    _, unadopted = _coverage_for(_registry_without_ai(tmp_path))
+    note = "\n".join(unadopted_note(unadopted))
+    assert "NIST AI RMF" in note
+    assert "91 requirements" in note
+    assert "anchored by no topic" in note
+    assert unadopted_note([]) == [], "an all-adopted registry prints no section"
+
+
+def test_generation_still_sees_every_anchorable_catalog():
+    """**`documents.py` deliberately keeps the wider set, and that is not an
+    oversight.**
+
+    Generation needs a control to be AVAILABLE, which is a different
+    question from whether it belongs in a denominator. Narrowing the
+    generation path by adoption too would mean a topic anchoring `Govern 1`
+    could not draw on the catalog it anchors.
+    """
+    source = (ROOT / "src" / "policyforge" / "cli" / "documents.py").read_text(encoding="utf-8")
+    assert "anchors_a_topic(c.framework)" in source, (
+        "documents.py no longer uses the wide anchorable set. If that is "
+        "deliberate, check a topic anchoring an AI RMF category can still "
+        "generate — it draws on controls this filter selects."
+    )
+    assert "split_by_adoption" not in source, (
+        "documents.py now scopes generation by adoption. That is the coverage "
+        "question, not the generation one."
+    )
+
+
+def test_adoption_only_ever_narrows(tmp_path):
+    """**A guard has to state what it ALLOWS, not only what it refuses.**
+
+    Narrowing the scope to adopted catalogs must not turn *you have a typo*
+    into *you have no registry*. A registry whose every anchor is a typo
+    adopts nothing, and the informative answer is still the full scope plus
+    `unknown_anchors` — which is the field that exists to say so.
+
+    Found by the suite, not by reasoning: an existing test anchoring `ZZ-9`
+    against a catalog of `AC-2` went red reporting "no topic anchors any
+    catalog on disk".
+
+    The empty registry is **not** a case here, and checking that was worth
+    more than the assertion I first wrote about it: `parse_topics` refuses
+    `topics: []` outright. The product rejects it one layer up, which is a
+    better place than a fallback in the scope rule.
+    """
+    import yaml
+
+    from policyforge.cli._common import load_catalogs
+    from policyforge.topics.coverage import split_by_adoption
+    from policyforge.topics.registry import load_topics
+
+    paths = [str(p) for p in sorted((ROOT / "data" / "frameworks").glob("*/controls.json"))]
+    controls = load_catalogs(paths)
+
+    for label, topic_list in [
+        (
+            "every anchor a typo",
+            [
+                {
+                    "name": "Typos",
+                    "owner": "O",
+                    "cadence": "annual",
+                    "description": "x",
+                    "nist_controls": ["ZZ-9"],
+                    "evidence": ["x"],
+                }
+            ],
+        ),
+        (
+            "anchors that name no catalog here",
+            [
+                {
+                    "name": "Elsewhere",
+                    "owner": "O",
+                    "cadence": "annual",
+                    "description": "x",
+                    "nist_controls": ["A.5.1", "A.5.2"],
+                    "evidence": ["x"],
+                }
+            ],
+        ),
+    ]:
+        path = tmp_path / f"{label.replace(' ', '-')}.yaml"
+        path.write_text(yaml.safe_dump({"topics": topic_list}), encoding="utf-8")
+        in_scope, unadopted, _ = split_by_adoption(load_topics(path), controls)
+        assert in_scope, f"{label}: scope collapsed to nothing instead of staying wide"
+        assert not unadopted, (
+            f"{label}: a catalog was reported unadopted even though nothing was "
+            f"adopted — narrowing fired when there was nothing to narrow to"
+        )
+        frameworks = {c.framework for c in in_scope}
+        assert frameworks == {"NIST 800-53", "NIST AI RMF"}, frameworks
+
+    # The empty registry never reaches the scope rule: the parser refuses it.
+    from policyforge.topics.registry import TopicRegistryError, parse_topics
+
+    with pytest.raises(TopicRegistryError, match="non-empty"):
+        parse_topics({"topics": []})

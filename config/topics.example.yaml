@@ -28,6 +28,23 @@
 # which reports controls no topic claims (orphaned) and controls two topics
 # claim (contested). Roughly 25 topics is the practical ceiling; past that,
 # processes start getting sliced apart and accountability blurs again.
+#
+# THIS FILE IS A MENU, NOT A REGISTRY. It ships more topics than most
+# organisations should keep, so that the common shapes are here to be
+# recognised and cut down rather than invented from nothing. Delete freely:
+# a topic you keep because it was in the example is worse than one you never
+# had, because it owns requirements nobody is actually accountable for.
+#
+# The ceiling above applies to what you KEEP. This file is at it, which is
+# why it cannot grow without something going — and why it is a starting
+# point rather than a target.
+#
+# Most organisations will not need all five AI topics, and many will need
+# none. They are here because the NIST AI RMF is bundled and anchorable, and
+# an anchorable catalog nobody owns is worth showing how to own. If you do
+# no AI, delete all five: `/coverage` then leaves the AI RMF out of your
+# numbers entirely and says so under the report, rather than counting 91
+# requirements against you that you never took on.
 
 topics:
   - name: Security Program Governance

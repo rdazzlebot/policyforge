@@ -220,14 +220,23 @@ def coverage_cmd(
 
     from policyforge.mapping.crosswalk import TOPIC_ANCHORS, anchors_a_topic, build_crosswalk
     from policyforge.ssp.workbook import select_for_baseline
-    from policyforge.topics.coverage import analyze_coverage, format_report
+    from policyforge.topics.coverage import (
+        analyze_coverage,
+        format_report,
+        split_by_adoption,
+        unadopted_note,
+    )
     from policyforge.topics.registry import load_topics
 
     topics = load_topics(topics_path)
 
     all_controls = load_catalogs(controls_paths)
 
-    nist_controls = [c for c in all_controls if anchors_a_topic(c.framework)]
+    # In scope is what the registry anchors, not what it could anchor --
+    # see `adopted_frameworks`. `documents.py` deliberately keeps the
+    # wider set, because generation needs a control to be AVAILABLE,
+    # which is a different question from whether it is in a denominator.
+    nist_controls, unadopted, _unused = split_by_adoption(topics, all_controls)
     if not nist_controls:
         raise click.UsageError(
             # Derived from TOPIC_ANCHORS rather than naming 800-53, so it
@@ -269,6 +278,11 @@ def coverage_cmd(
         click.echo(json_mod.dumps(dataclasses.asdict(report), indent=2))
     else:
         click.echo(format_report(report, show_all=show_all))
+        # Named, not silently absent. A catalog excluded from the
+        # denominator because nobody anchors it is a fact the reader should
+        # be able to act on, not a gap in the report.
+        for line in unadopted_note(unadopted):
+            click.echo(line)
 
     if strict and not report.is_clean:
         raise SystemExit(1)

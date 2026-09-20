@@ -480,6 +480,78 @@ def etl_part2(date: str | None, out: Path):
     )
 
 
+@cli.command("etl-ai-rmf")
+@click.option(
+    "--out",
+    default=Path("data/frameworks/nist-ai-rmf/controls.json"),
+    type=click.Path(path_type=Path),
+    help="Where to write the parsed data.",
+)
+@click.option(
+    "--html",
+    default=None,
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    help="Parse a saved copy of the Core page instead of fetching. For "
+    "reproducing a past run, or working without a network.",
+)
+def etl_ai_rmf(out: Path, html: Path | None):
+    """Fetch the NIST AI Risk Management Framework 1.0 Core and parse it into
+    this project's data schema. A US government work, so safe to bundle.
+
+    Nineteen categories carrying seventy-two subcategories, sourced from
+    AIRC. CPRT does not publish the Core; that was checked rather than
+    assumed.
+
+    THIS CATALOG STATES OUTCOMES, NOT OBLIGATIONS, and that changes what a
+    citation to it proves. Every other catalog here says what an
+    organization must do; the AI RMF Core says what should end up true --
+    NIST puts the actions in the separately versioned, explicitly voluntary
+    Playbook. So a document citing a subcategory can be fully traceable and
+    still commit nobody to anything, and `satisfies` will resolve the
+    citation and then stop, because there is no crosswalk. Mapping an
+    outcome to a control would assert that the control achieves the
+    outcome, which is the claim NIST declined to make. The catalog's README
+    carries the long form.
+    """
+    import dataclasses
+    import json
+
+    from policyforge.ingest.ai_rmf import (
+        SOURCE_URL,
+        fetch_core_html,
+        parse_ai_rmf,
+    )
+    from policyforge.ingest.provenance import record_source_provenance
+
+    if html is not None:
+        page = html.read_text(encoding="utf-8", errors="replace")
+        click.echo(f"Parsing saved page {html} instead of fetching.")
+    else:
+        page = fetch_core_html()
+
+    controls = parse_ai_rmf(page)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
+
+    # The digest is taken over the PARSED output rather than the fetched
+    # bytes, matching every other loader here: AIRC's page carries
+    # navigation and build ids that change without the Framework changing,
+    # so hashing the page would report drift on every deploy and teach
+    # everyone to ignore it.
+    stamp = record_source_provenance(
+        out.parent / "framework.yaml",
+        source_ref=f"AI RMF {controls[0].framework_version}",
+        source_url=SOURCE_URL,
+        content=out.read_bytes(),
+    )
+    if stamp is not None:
+        click.echo(f"Recorded provenance: sha256:{stamp[:16]}… -> {out.parent}")
+    subcategories = sum(len(c.enhancements) for c in controls)
+    click.echo(
+        f"Parsed {len(controls)} AI RMF categories carrying {subcategories} subcategories -> {out}"
+    )
+
+
 def _bundled_catalog_dirs() -> list[Path]:
     """The bundled catalog directories that exist and must never take licensed data.
 

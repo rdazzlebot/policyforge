@@ -93,6 +93,7 @@ def test_no_bundled_catalog_changed_key():
         "hipaa-security-rule": "hipaa",
         "nist-800-171-r3": "nist-800-171",
         "nist-800-53-r5": "nist-800-53",
+        "nist-ai-rmf": "nist-ai-rmf",
     }
     seen = {}
     skipped = set()

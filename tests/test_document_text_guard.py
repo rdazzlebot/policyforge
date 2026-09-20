@@ -52,6 +52,9 @@ NOT_PRODUCERS = {
     "ingest/ecfr.py": "`response.text` here is an HTTP body from eCFR, not a model. "
     "The HIPAA loader used to be listed here; the fetch moved into this shared "
     "module when the second regulation arrived, and this guard caught the stale entry.",
+    "ingest/ai_rmf.py": "`response.text` here is an HTTP body from NIST's AIRC, not a "
+    "model. The AI RMF catalog is fetched, never generated — the framework this project "
+    "cites about AI is not itself written by one.",
     "embed/ollama_provider.py": "HTTP error text, not a model reply",
     "rerank/llamacpp_provider.py": "HTTP error text, not a model reply",
 }

@@ -109,6 +109,28 @@ NOT_CROSSWALK_ANCHORABLE: dict[str, str] = {
         "not map it. See "
         "data/frameworks/cfr-171-information-blocking/README.md."
     ),
+    # Added when the AI RMF catalog landed, because the catalog arrived
+    # already documented as un-crosswalkable -- README, module docstring,
+    # command help and changelog all said so -- and `/coverage` still
+    # printed "no published crosswalk yet, run `crosswalk seed`" against
+    # it. **Every piece of prose we had was right and the one line the
+    # user actually reads was wrong**, which is this dict's whole job.
+    #
+    # Found by running `/coverage` with the new catalog installed rather
+    # than by reading the code: the `reason is None` branch does not omit
+    # a note, it prints the *other* one, so the row stayed well-formed
+    # and confidently said the opposite of the documentation.
+    "NIST AI RMF": (
+        'The NIST AI RMF Core states outcomes, not obligations -- "the risks are '
+        'understood and managed" rather than "the organization shall". NIST puts '
+        "the actions in the separately versioned, explicitly voluntary Playbook. A "
+        "crosswalk entry from a subcategory to an 800-53 control would assert that "
+        "implementing the control ACHIEVES the outcome, which is precisely the claim "
+        "NIST declined to make when it split the Playbook out. Cite it instead -- "
+        "`[NIST AI RMF Govern 1.1]` -- and be aware that a citation here can be "
+        "fully traceable and still commit nobody to anything. See "
+        "data/frameworks/nist-ai-rmf/README.md."
+    ),
 }
 
 

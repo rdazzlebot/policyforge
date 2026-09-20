@@ -145,6 +145,9 @@ packages = [
     "nist-800-53-r5/README.md",
     "nist-800-53-r5/controls.json",
     "nist-800-53-r5/framework.yaml",
+    "nist-ai-rmf/README.md",
+    "nist-ai-rmf/controls.json",
+    "nist-ai-rmf/framework.yaml",
     "govramp/README.md",
     "hitrust-csf/README.md",
 ]

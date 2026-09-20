@@ -98,20 +98,57 @@ def test_a_tag_naming_the_catalog_splits_back_to_it(directory: str, declared: st
     )
 
 
-@pytest.mark.parametrize("directory, declared", _bundled(), ids=lambda v: v)
-def test_the_declared_name_keys_to_the_catalog_directory(directory: str, declared: str):
-    """The key should name the catalog, not its first word.
+#: Catalogs whose declared name begins with a generic word, so the
+#: first-word fallback would hand the next catalog an easy collision:
+#: `Information Sharing`, `Substance Abuse`. **Enumerated on purpose.**
+#: Whether a first word is generic is a judgement — `Information` is,
+#: `FedRAMP` is not — and a judgement is a list with reasons rather than
+#: something to compute. The *population* above is derived from the tree;
+#: the *decisions* here are written down. Those are different, and
+#: treating enumeration as always wrong is what produced the substring
+#: assertion this replaces: it passed vacuously for
+#: `information` ⊂ `cfr-171-information-blocking`, so **either pin could
+#: be deleted with the whole suite green**.
+_MUST_BE_PINNED = {
+    "Information Blocking": "cfr-171-information-blocking",
+    "Substance Use Disorder Records": "cfr-42-part-2-sud-records",
+}
 
-    Without an alias, `Information Blocking` keys to `information` and
-    `Substance Use Disorder Records` to `substance` — the same first-word
-    fallback that merged every NIST catalog into one bucket.
+
+@pytest.mark.parametrize("declared, expected", sorted(_MUST_BE_PINNED.items()))
+def test_a_generic_first_word_is_pinned_to_its_catalog(declared: str, expected: str):
+    """Renaming for citability must not re-create the keying collision.
+
+    `Information Blocking` keys to `information` and
+    `Substance Use Disorder Records` to `substance` without an alias —
+    the same first-word fallback that merged every NIST catalog into one
+    bucket. The rename fixes the citation and leaves that mechanism
+    intact, aimed at new words.
     """
-    key = normalize_framework(declared)
-
-    assert key in directory or directory.endswith(key), (
-        f"{directory} declares {declared!r}, which keys to {key!r} — the first-word "
-        f"fallback. Pin it in FRAMEWORK_ALIASES so the key names the catalog."
+    assert normalize_framework(declared) == expected, (
+        f"{declared!r} keys to {normalize_framework(declared)!r} — the first-word "
+        f"fallback. Pin it in FRAMEWORK_ALIASES as {expected!r}, or the next catalog "
+        f"whose name starts with that word merges into this one."
     )
+
+
+def test_no_two_bundled_catalogs_share_a_key():
+    """Derived from the tree, so a catalog added later is covered.
+
+    This is the collision itself rather than a proxy for it. It does not
+    subsume the pins above: dropping only the two new aliases leaves
+    `information` and `substance` distinct from everything else, because
+    no bundled catalog starts with those words *today*. The harm lives in
+    the fallback, and nothing in the present population exercises it.
+    """
+    keys: dict[str, str] = {}
+    for directory, declared in _bundled():
+        key = normalize_framework(declared)
+        assert key not in keys, (
+            f"{directory} ({declared!r}) and {keys[key]} both key to {key!r}, so their "
+            f"requirement ids share one bucket and a citation can cross between them."
+        )
+        keys[key] = directory
 
 
 def test_renaming_a_catalog_does_not_silently_unrefuse_its_crosswalk():

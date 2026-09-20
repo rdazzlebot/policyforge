@@ -97,14 +97,21 @@ def test_the_shape_matches_nothing_new_in_the_repository_and_drops_only_prose():
     only brackets that were never citations."""
     import re
 
-    # The baseline enumerates the framework names that existed when this
-    # was written. Two more do now: the CFR catalogs were renamed from
-    # `45 CFR 171` and `42 CFR Part 2`, which were not legal tags at all,
-    # so their READMEs can carry a worked example for the first time.
-    old = re.compile(
-        r"\[(?:NIST|HIPAA|FedRAMP|HITRUST|GovRAMP|ARC-AMPE"
-        r"|Information Blocking|Substance Use Disorder Records)\s[^\]]*\]"
-    )
+    # The genuine historical pattern, left as it was. Extending it would
+    # make the variable a misnomer and the assertion slightly untrue of
+    # its own code: the old shape never recognised `Information Blocking`.
+    old = re.compile(r"\[(?:NIST|HIPAA|FedRAMP|HITRUST|GovRAMP|ARC-AMPE)\s[^\]]*\]")
+
+    # What the shape newly captures, and why, kept separate from what the
+    # old one matched. The two CFR catalogs were renamed from `45 CFR 171`
+    # and `42 CFR Part 2` — names beginning with a digit, so not legal
+    # tags at all — and their READMEs can now carry a worked example for
+    # the first time. These are documentation, not citations in documents.
+    expected_new = {
+        "[Information Blocking 171.203(a)]",
+        "[Substance Use Disorder Records 2.16(a)]",
+    }
+
     gained: set[str] = set()
     dropped: set[str] = set()
     for path in [*ROOT.joinpath("docs").rglob("*.md"), *ROOT.joinpath("data").rglob("*")]:
@@ -115,7 +122,10 @@ def test_the_shape_matches_nothing_new_in_the_repository_and_drops_only_prose():
         gained |= after - before
         dropped |= before - after
 
-    assert gained == set()
+    assert gained == expected_new, (
+        f"the shape captures something the old pattern did not and that is not an "
+        f"accounted-for example: {sorted(gained - expected_new)}"
+    )
     assert all(not any(ch.isdigit() for ch in tag.split()[1:2][0]) for tag in dropped), (
         f"dropped a bracket whose second token carries a digit: {dropped}"
     )

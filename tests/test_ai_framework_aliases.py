@@ -63,9 +63,28 @@ def test_a_needle_does_not_swallow_a_catalog_identifier(identifier: str):
     assert normalize_framework(identifier) == identifier
 
 
+#: Catalogs that ship README-only, for a user to bring their own controls.
+#: They carry no `controls.json` and no `framework.yaml`, so there is no
+#: declared name in this tree to key — the guard below cannot reach them,
+#: and says so rather than counting them as covered.
+BYOC_ONLY = {"govramp", "hitrust-csf"}
+
+
 def test_no_bundled_catalog_changed_key():
     """The regression guard, derived from the tree rather than listed, so
-    a catalog added later is covered without anyone remembering this."""
+    a catalog added later is covered without anyone remembering this.
+
+    **Covered: catalogs with a `controls.json`.** Not covered: the
+    README-only ones in `BYOC_ONLY`, which have no declared name in this
+    tree to check. 80 found that gap — `hitrust-ai` will land as BYOC,
+    so the collision this module exists to prevent is outside this
+    test's reach at exactly the moment it matters.
+
+    The second assertion is the answer to that: **the skipped set is
+    pinned, so a new README-only catalog turns this red** and somebody
+    decides whether it needs covering, rather than being skipped in
+    silence. A guard that states its own reach can be wrong out loud.
+    """
     expected = {
         "arc-ampe": "arc-ampe",
         "cfr-171-information-blocking": "cfr-171-information-blocking",
@@ -76,12 +95,23 @@ def test_no_bundled_catalog_changed_key():
         "nist-800-53-r5": "nist-800-53",
     }
     seen = {}
+    skipped = set()
     for directory in sorted(CATALOGS.iterdir()):
         controls = directory / "controls.json"
         if not controls.exists():
+            skipped.add(directory.name)
             continue
         declared = json.loads(controls.read_text(encoding="utf-8"))[0]["framework"]
         seen[directory.name] = normalize_framework(declared)
+
+    assert skipped == BYOC_ONLY, (
+        f"the catalogs this guard cannot see have changed: {sorted(skipped)}. "
+        f"A README-only catalog has no declared name here to key, so it is "
+        f"skipped — which is fine for `govramp` and `hitrust-csf` and is NOT "
+        f"fine silently. If `hitrust-ai` is in that list, the HITRUST collision "
+        f"this module exists to prevent is untested; add it to BYOC_ONLY only "
+        f"after deciding how its key is covered instead."
+    )
 
     assert seen == expected, (
         "a bundled catalog's key moved. The AI needles carry a space and should "

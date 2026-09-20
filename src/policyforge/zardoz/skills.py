@@ -426,6 +426,27 @@ def _addresses(state, args: list[str]) -> str:
     ).render()
 
 
+def _first_sentence(text: str) -> str:
+    """The opening sentence, by the boundary rule this project already has.
+
+    **Neither `split(".")` nor `split(". ")` survives the house citation
+    spelling.** On *"A practice under 45 C.F.R. 171.203(a) qualifies."*
+    the first cuts to `45 C`; b5 caught that and proposed the second,
+    which cuts to `45 C.F.R` — `C.F.R. 171` carries a stop-space of its
+    own, so the one-character fix is still wrong.
+
+    `entail/base.py:_BOUNDARY_RE` requires a capital, quote or bracket
+    after the stop. It exists because full-stop splitting cost 19 of 43
+    findings there. Imported rather than copied, so there is one
+    definition of a sentence boundary — the same reason every reader of a
+    source tag shares `SOURCE_TAG_RE`.
+    """
+    from policyforge.entail.base import _BOUNDARY_RE
+
+    match = _BOUNDARY_RE.search(text)
+    return text[: match.end()] if match else text
+
+
 def _zero_row_reasons(controls, report) -> list[str]:
     """Why each framework reachable through the crosswalk covers nothing.
 
@@ -461,7 +482,7 @@ def _zero_row_reasons(controls, report) -> list[str]:
         reason = _refusal_reason(name)
         if reason is not None:
             notes.append(
-                f"  {framework.framework.upper()}: not mapped by design. {reason.split('.')[0]}."
+                f"  {framework.framework.upper()}: not mapped by design. {_first_sentence(reason)}"
             )
         else:
             notes.append(

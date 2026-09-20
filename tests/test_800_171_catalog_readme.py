@@ -216,8 +216,100 @@ def test_addresses_answers_are_unchanged_by_installing_this_catalog():
         )
 
 
-def test_the_readme_explains_the_coverage_zero_rather_than_leaving_it(readme):
-    """`/coverage` does gain a `0 of 97` section, and a measured zero that
-    nobody explains reads as a 97-requirement gap the reader just opened."""
-    assert "0 of 97" in readme
-    assert "not a gap you have opened" in readme
+def test_the_readme_explains_the_coverage_move_rather_than_leaving_it(readme):
+    """`/coverage` moves, and a falling percentage reads as "you got
+    worse" unless someone says the owned count did not change.
+
+    An earlier draft of this claimed a `0 of 97` section that the shell
+    never emits -- `_coverage` calls `analyze_coverage` without
+    `other_controls` or `crosswalk`, so `framework_coverage` is always
+    empty there. I had run the right function with my own arguments
+    instead of the caller's.
+    """
+    assert "814" in readme, "the unchanged owned count is the reassurance"
+    assert "Nothing that was covered became uncovered" in readme
+    assert "0 of 97" not in readme, "the shell does not emit that section"
+
+
+def _shell_state(paths):
+    """The shell's own state object, so a skill is exercised through the
+    handler rather than through a reconstruction of it.
+
+    **This is the point of these tests.** Four successive claims about
+    what the shell does were made by running the right function with
+    arguments the shell does not pass -- `resolve_framework` against the
+    shell's catalogs when the shell never calls it, then
+    `analyze_coverage` with `other_controls` and `crosswalk` when
+    `_coverage` supplies neither. Both produced well-formed answers to a
+    neighbouring question.
+    """
+    from types import SimpleNamespace
+
+    from policyforge.topics.registry import load_topics
+    from policyforge.zardoz.corpus import DEFAULT_CONTENT_DIR
+
+    root = Path(__file__).parent.parent
+    return SimpleNamespace(
+        controls_paths=[str(p) for p in paths],
+        topics=load_topics(root / "config" / "topics.example.yaml"),
+        config={},
+        content_dir=DEFAULT_CONTENT_DIR,
+        parameters_path=root / "config" / "parameters.yaml",
+    )
+
+
+def _catalog_paths(*, including_800_171: bool):
+    root = Path(__file__).parent.parent / "data" / "frameworks"
+    names = [
+        "nist-800-53-r5",
+        "hipaa-security-rule",
+        "arc-ampe",
+        "fedramp",
+        "cfr-171-information-blocking",
+        "cfr-42-part-2-sud-records",
+    ]
+    if including_800_171:
+        names.append("nist-800-171-r3")
+    return [root / name / "controls.json" for name in names]
+
+
+def test_the_shell_coverage_report_does_not_claim_a_framework_section():
+    """`_coverage` passes neither `other_controls` nor `crosswalk`, so
+    `framework_coverage` is empty and no per-framework section is
+    rendered. Pinned because a README once said otherwise."""
+    from policyforge.zardoz.skills import _coverage
+
+    output = _coverage(_shell_state(_catalog_paths(including_800_171=True)), [])
+
+    assert "reachable via the crosswalk" not in output
+    assert "0 of 97" not in output
+
+
+def test_installing_the_catalog_does_not_reduce_what_the_shell_says_is_owned():
+    """The reassurance the README gives, held to the handler. The scope
+    and the orphan count grow; **the owned count must not move**, because
+    "you got worse" is what a falling percentage reads as."""
+    import re
+
+    from policyforge.zardoz.skills import _coverage
+
+    def owned(paths):
+        output = _coverage(_shell_state(paths), [])
+        found = re.search(r"Owned\s+(\d+)", output)
+        assert found, "coverage report has no Owned line: " + output[:300]
+        return int(found.group(1))
+
+    assert owned(_catalog_paths(including_800_171=False)) == owned(
+        _catalog_paths(including_800_171=True)
+    )
+
+
+def test_a_scoped_coverage_report_is_untouched_because_rev_3_has_no_baselines():
+    """`/coverage moderate` filters all 97 out, so the surprise only
+    reaches someone who runs it bare."""
+    from policyforge.zardoz.skills import _coverage
+
+    without = _coverage(_shell_state(_catalog_paths(including_800_171=False)), ["moderate"])
+    with_171 = _coverage(_shell_state(_catalog_paths(including_800_171=True)), ["moderate"])
+
+    assert without == with_171

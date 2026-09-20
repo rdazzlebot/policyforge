@@ -107,23 +107,24 @@ passes both catalogs in one run — at which point replace it with
 ## What changes in the zardoz shell
 
 The shell loads whatever catalogs are on disk rather than asking you to
-name them, so `/coverage` gains a section as soon as this catalog is
-installed:
+name them, and hands them all to the coverage report as its scope. So
+installing this catalog moves the bare `/coverage` numbers:
 
 ```
-NIST-800-171 reachable via the crosswalk
-  0 of 97 requirements map to an owned NIST control
+In scope   1657 -> 1754      Owned  814 (49%) -> 814 (46%)
+Orphaned    397 ->  494
 ```
 
-**That zero is this catalog shipping without a crosswalk, not a gap you
-have opened.** Nothing that was covered became uncovered. It is the same
-kind of measured zero as the empty `baseline` column above: true, and easy
-to read as a failure if nobody says what it means.
+**Nothing that was covered became uncovered.** The owned count is
+identical at 814; the percentage falls because the denominator grew by 97.
+This is the shell's standing behaviour for *any* bundled catalog, not
+something this one introduced — `171.100` from the information-blocking
+catalog was already in that orphan list.
 
-`/addresses` and the citation-resolving commands are unaffected. Measured
-rather than reasoned: with the catalogs the shell loads, `/addresses AC-2`
-and `/addresses 164.308(a)(1)(i)` are byte-identical before and after this
-catalog is installed.
+`/coverage low`, `moderate` and `high` are unaffected, because rev 3
+carries no baseline tags and a scoped report filters all 97 out. `/drift`
+gains one line reporting no change. `/addresses` answers for existing
+citations are byte-identical, measured through the shell's own handler.
 
 ## Regenerating it
 

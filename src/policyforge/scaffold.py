@@ -36,6 +36,7 @@ BUNDLED_CATALOGS = (
     "cfr-42-part-2-sud-records",
     "fedramp",
     "hipaa-security-rule",
+    "nist-800-171-r3",
     "nist-800-53-r5",
 )
 

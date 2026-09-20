@@ -1298,6 +1298,33 @@
         }
       ]
     },
+    "etl-800-171": {
+      "help": "Fetch NIST's official OSCAL edition of SP 800-171 Rev 3 and parse it\ninto this project's data schema.\n\nPublic domain - a US government work, same basis as 800-53 and the eCFR\nsources.\n\nREV 3, which is the revision NIST publishes machine-readable. CMMC\nLevel 2 currently assesses against R2, a different revision with\ndifferently shaped identifiers - `03.01.01` here against `3.1.1` there.\nA citation to this catalog is a citation to rev 3. See the catalog's\nREADME before using it to prepare for a CMMC assessment.\n\nNo `--no-baselines` flag, because there are no baselines: rev 3\npublishes no Low/Moderate/High profiles, so every control's `baseline`\nis empty. That empty is the source's, not a fetch that came up short.",
+      "name": "etl-800-171",
+      "params": [
+        {
+          "default": "data/frameworks/nist-800-171-r3/controls.json",
+          "help": "Where to write the parsed control data.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
     "etl-arc-ampe": {
       "help": "Fetch CMS's ARC-AMPE Volume II baseline and parse it into this schema.\n\nPublic domain - published by CMS, a federal agency, with no copyright\nnotice or redistribution restriction, same basis as the NIST and eCFR\nsources.\n\nNote which volume this reads. Volume I is the narrative PDF and holds no\ncontrols; Volume II is the System Security and Privacy Plan workbook,\nand its `AE Mandatory Baseline` sheet is the catalog - 402 controls\nrequired of an ACA Administering Entity, with CMS's parameter decisions\nalready written into the control text. The sheet is found by its shape\nrather than its name, so the Direct Enrollment Entity workbook reads the\nsame way via --export. See ingest/arc_ampe.py.",
       "name": "etl-arc-ampe",

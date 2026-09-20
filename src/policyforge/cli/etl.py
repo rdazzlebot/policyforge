@@ -108,6 +108,58 @@ def etl_oscal(out: Path, no_baselines: bool):
             click.echo(f"  {name} baseline: {len(ids)} controls")
 
 
+@cli.command("etl-800-171")
+@click.option(
+    "--out",
+    default=Path("data/frameworks/nist-800-171-r3/controls.json"),
+    type=click.Path(path_type=Path),
+    help="Where to write the parsed control data.",
+)
+def etl_800_171(out: Path):
+    """Fetch NIST's official OSCAL edition of SP 800-171 Rev 3 and parse it
+    into this project's data schema.
+
+    Public domain - a US government work, same basis as 800-53 and the eCFR
+    sources.
+
+    REV 3, which is the revision NIST publishes machine-readable. CMMC
+    Level 2 currently assesses against R2, a different revision with
+    differently shaped identifiers - `03.01.01` here against `3.1.1` there.
+    A citation to this catalog is a citation to rev 3. See the catalog's
+    README before using it to prepare for a CMMC assessment.
+
+    No `--no-baselines` flag, because there are no baselines: rev 3
+    publishes no Low/Moderate/High profiles, so every control's `baseline`
+    is empty. That empty is the source's, not a fetch that came up short.
+    """
+    import dataclasses
+    import json
+
+    from policyforge.ingest.oscal_loader import (
+        NIST_800_171_REV3,
+        fetch_800_171_catalog,
+        parse_oscal_catalog,
+    )
+    from policyforge.ingest.provenance import record_source_provenance
+
+    catalog = fetch_800_171_catalog()
+    controls, withdrawn = parse_oscal_catalog(catalog, dialect=NIST_800_171_REV3)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
+    version = catalog["catalog"]["metadata"]["version"]
+    stamp = record_source_provenance(
+        out.parent / "framework.yaml",
+        source_ref=version,
+        source_url=NIST_800_171_REV3.source_url,
+        content=out.read_bytes(),
+    )
+    if stamp is not None:
+        click.echo(f"Recorded provenance: {version} sha256:{stamp[:16]}… -> {out.parent}")
+    click.echo(f"Parsed {len(controls)} requirements (rev 3, {version}) -> {out}")
+    click.echo(f"Excluded {withdrawn} withdrawn requirements.")
+
+
 def _crosswalk_mappings(catalog: list[dict]) -> int:
     """How many crosswalk mappings a parsed catalog carries.
 

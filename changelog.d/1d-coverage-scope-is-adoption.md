@@ -3,10 +3,10 @@ not the catalogs it could anchor.** A bundled, anchorable catalog that no
 topic anchors is excluded from the numbers and named under the report
 instead.
 
-Without this, bundling the NIST AI RMF cost every user who does no AI six
-points on upgrade: 91 requirements entered their denominator and nothing
-owned them. Measured on the example registry with its AI topics removed —
-1105 in scope and 291 orphaned, against 1014 and 200 before.
+Without this, bundling the NIST AI RMF would have cost every user who does
+no AI six points on upgrade: 91 requirements would have entered their
+denominator with nothing owning them. As shipped, a registry that anchors
+no AI topics sees exactly what it saw before.
 
 **This is not a new principle; it is the existing one stated correctly.**
 Coverage was already meant to scope to "the set the registry anchors to",

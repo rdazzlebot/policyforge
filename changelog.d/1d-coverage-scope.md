@@ -1,8 +1,8 @@
 **`/coverage` in the shell no longer counts every catalog as NIST scope.**
 Installing a catalog used to move the headline percentage without anything
-about the programme changing — 1,657 requirements in scope became 1,754
-when 800-171 was installed, the owned count stayed at 814, and 49% became
-46%. A falling percentage reads as *you got worse*.
+about the programme changing: the denominator grew, the owned count did
+not, and the percentage fell. A falling percentage reads as *you got
+worse*.
 
 The report's scope is the NIST 800-53 set the topic registry anchors to.
 Every other catalog was being handed to it as that scope, so a HIPAA or

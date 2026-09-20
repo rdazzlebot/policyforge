@@ -96,6 +96,11 @@ class TeamBundle:
     requirements: list[OwnedRequirement] = field(default_factory=list)
     #: framework -> requirement ids this owner's topics reach.
     frameworks: dict[str, list[str]] = field(default_factory=dict)
+    #: Every owner the registry does name, for the case where this one is
+    #: not among them. Carried on the bundle rather than looked up by the
+    #: caller so that both callers — the CLI and the shell — answer the
+    #: same way.
+    known_owners: list[str] = field(default_factory=list)
 
     @property
     def exists(self) -> bool:
@@ -127,11 +132,23 @@ class TeamBundle:
 
     def render(self) -> str:
         if not self.exists:
+            # The owners are listed rather than a command named. This
+            # message is rendered by both the CLI's `bundle` and the
+            # shell's `/team`, so any command it named would be wrong in
+            # one of them — and the previous text named `policyforge
+            # topics`, which exists in neither. An answer beats a remedy.
+            if self.known_owners:
+                owners = "\n".join(f"  {name}" for name in self.known_owners)
+                return (
+                    f"No topic in the registry is owned by {self.owner!r}. "
+                    f"The registry names these owners:\n{owners}\n"
+                    f"A freshly discovered registry assigns every topic to "
+                    f"[UNASSIGNED] until somebody edits it."
+                )
             return (
-                f"No topic in the registry is owned by {self.owner!r}. "
-                f"Check the spelling against `policyforge topics`, or the owner "
-                f"may not have been assigned yet — a freshly discovered registry "
-                f"assigns every topic to [UNASSIGNED]."
+                f"No topic in the registry is owned by {self.owner!r}, and the "
+                f"registry names no owners at all — it is empty, or every topic "
+                f"is still [UNASSIGNED]."
             )
 
         direct = [r for r in self.requirements if r.route == DIRECT]
@@ -284,7 +301,11 @@ def team_bundle(
     """
     wanted = owner.strip().casefold()
     mine = [t for t in topics if t.owner.strip().casefold() == wanted]
-    bundle = TeamBundle(owner=owner.strip(), topics=sorted(mine, key=lambda t: t.name))
+    bundle = TeamBundle(
+        owner=owner.strip(),
+        topics=sorted(mine, key=lambda t: t.name),
+        known_owners=sorted({t.owner.strip() for t in topics if t.owner.strip()}),
+    )
     if not mine:
         return bundle
 

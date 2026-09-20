@@ -87,6 +87,7 @@ def test_no_bundled_catalog_changed_key():
     """
     expected = {
         "arc-ampe": "arc-ampe",
+        "cfr-170-315-onc-certification": "cfr-170-315-onc-certification",
         "cfr-171-information-blocking": "cfr-171-information-blocking",
         "cfr-42-part-2-sud-records": "cfr-42-part-2-sud-records",
         "fedramp": "fedramp",

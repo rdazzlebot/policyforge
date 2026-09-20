@@ -1,0 +1,15 @@
+id: cfr-170-315-onc-certification
+name: ONC Certification Criteria (45 CFR 170.315)
+licence: public-domain
+source: eCFR public API, via policyforge etl-onc
+notes: A US government work, so freely redistributable. Bundled with this project and safe
+  to commit to any repository. One criterion is one control, cited as 170.315(g)(10) the way
+  developers and ONC's own programme documents cite them. Reserved criteria are excluded and
+  reported by id on every run - 170.315(i) is reserved in its entirety, and (j)(1) through
+  (j)(19) are a reserved range in a single paragraph. Declared as "ONC Certification Criteria"
+  rather than "45 CFR 170" because a framework name beginning with a digit is not a legal
+  source tag, so a catalog declaring one cannot be cited by any document.
+source_ref: '2026-09-17'
+source_url: https://www.ecfr.gov/api/versioner/v1/full/2026-09-17/title-45.xml?part=170
+content_sha256: e6456bfda190c3fc93137e663b4f92b0e8175b29370b9cc7303ef3ea3fe274f9
+fetched_at: '2026-09-20'

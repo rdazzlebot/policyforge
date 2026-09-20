@@ -16,6 +16,7 @@ catalog rather than an error.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -171,6 +172,185 @@ def test_the_template_saying_there_is_no_guidance_becomes_no_guidance(workbook):
     assert summary.with_guidance == 2
 
 
+@pytest.mark.parametrize(
+    "wording",
+    [
+        "•  There are no supplemental control requirements and guidance for this control.",
+        "•  There are no supplemental control requirements & guidance at this time.",
+        "•  There are no supplemental control requireandents and guidance at this time.",
+        "There is no supplemental control requirement and guidance.",
+        "THERE ARE NO SUPPLEMENTAL CONTROL REQUIREMENTS & GUIDANCE.",
+    ],
+    ids=["and", "ampersand", "corrupted-word", "singular", "shouting"],
+)
+def test_every_spelling_of_the_boilerplate_becomes_no_guidance(wording: str):
+    """**v1.02 shipped nineteen fields that this used to miss.**
+
+    The sentence is retyped per row and drifts. Eighteen write "&" where
+    the pattern wanted "and"; `PE-2` reads "requireandents", a
+    find-and-replace of "&" that ran through the middle of the word. Each
+    one was kept and rendered into documents as if CMS had written it.
+
+    `corrupted-word` is not hypothetical tidiness — it is the exact
+    string in the published workbook.
+    """
+    assert arc_ampe._guidance(wording) == ""
+
+
+def test_guidance_that_merely_mentions_the_phrase_survives():
+    """**The opposite error, which searching the cell invites.**
+
+    A row whose guidance genuinely discusses supplemental control
+    requirements must not be discarded because the sentinel appears
+    inside it. The rule is that every sentence is boilerplate, so one
+    real sentence beside it keeps the whole cell.
+    """
+    cell = (
+        "Agencies must document supplemental control requirements and guidance "
+        "annually. There are no supplemental control requirements and guidance "
+        "for sub-part (b)."
+    )
+
+    assert arc_ampe._guidance(cell) == cell
+
+
+@pytest.mark.parametrize(
+    "cell",
+    [
+        "There are no supplemental control requirements and guidance at this time, "
+        "however agencies shall document exceptions in the SSP.",
+        "There is no supplemental control requirement and guidance - agencies must "
+        "still record the decision.",
+    ],
+    ids=["comma-continuation", "dash-continuation"],
+)
+def test_an_obligation_inside_the_sentinel_sentence_survives(cell: str):
+    """**The version of the test above that is actually hard.**
+
+    Found by policyforge-b5 in review of this PR. The test above passes
+    against a *prefix* match too, because its fixture is two sentences,
+    so `all()` is already False before anchoring matters. These are the
+    same hazard in **one** sentence: the boilerplate opens it and binding
+    guidance finishes it.
+
+    With `re.match` the opening consumed the rest and the obligation was
+    discarded silently and whole — the precise failure `_guidance`'s
+    docstring claims to prevent, reintroduced one level below where the
+    per-sentence split operates.
+
+    Latent, not live: v1.02 has nineteen sentinel-bearing fields and none
+    carries extra content in the same sentence. This pins the property so
+    the next CMS revision cannot introduce one unnoticed.
+    """
+    assert arc_ampe._guidance(cell) == cell
+
+
+def test_a_count_of_requirements_is_not_the_absence_of_them():
+    """**"There are three…" is not "There are no…".**
+
+    The sentinel's own clause with the negation swapped for a count, and
+    it is a sentence CMS could plausibly write. A pattern that accepted
+    any word where `no` belongs would empty it — destroying real
+    guidance — while still emptying both genuine sentinel spellings, so
+    it passes every other test in this file *and* the real-cell fixture.
+
+    Found by policyforge-b5, correcting me. I had measured that mutant
+    surviving and recorded it as "unobservable on v1.02 rather than
+    untested". That was wrong: it is observable by exactly the mechanism
+    I had just established two paragraphs earlier — the corpus cannot
+    guard the destructive direction, hand-written cases can, and this is
+    a destructive-direction mutant. **I documented a hole that one line
+    fills.**
+    """
+    cell = "There are three supplemental control requirements and guidance for this control."
+
+    assert arc_ampe._guidance(cell) == cell
+
+
+def test_a_cell_that_says_it_twice_is_still_empty():
+    """**What the per-sentence split is actually for.**
+
+    Every sentinel cell in v1.02 is a single sentence — 0 of 96 are
+    not — so the split is unexercised by real data, and removing it
+    entirely passed the whole file including the real-cell fixture.
+    Found by re-running the mutant sweep after closing b5's finding,
+    and closed the same way rather than recorded as "unobservable":
+    a corpus cannot guard what it does not contain, so the hand-written
+    case is the guard.
+
+    Two boilerplate sentences still mean no guidance. Treating the cell
+    as one string makes `fullmatch` fail on the pair and keeps it,
+    shipping the boilerplate this function exists to remove.
+    """
+    cell = (
+        "There are no supplemental control requirements and guidance at this time. "
+        "There is no supplemental control requirement and guidance for this control."
+    )
+
+    assert arc_ampe._guidance(cell) == ""
+
+
+GUIDANCE_CELLS = Path(__file__).parent / "fixtures" / "arc_ampe_guidance_cells.json"
+
+
+def test_real_workbook_cells_empty_exactly_the_sentinel_ones():
+    """**The destructive direction, which nothing else guards.**
+
+    Three things were true before this test and only two were checked:
+    the catalog guard proves no sentinel *survived*, and the loader tests
+    prove `_guidance` is right on hand-written strings. **Nothing proved
+    no real guidance was emptied** — and that is the direction this
+    change moves, and the direction whose failure is silent, because a
+    document simply renders without the obligation.
+
+    Designed by policyforge-b5 in review, after I offered a worse
+    version that fetched CMS's workbook over the network: that would be
+    muted the first week the URL moved, which is the failure
+    `test_info_blocking_loader.py`'s docstring warns about. Cells, not
+    the workbook. No network, no URL to rot.
+
+    The fixture is real cells lifted from CMS's published v1.02: every
+    sentinel cell, plus genuine guidance taken on a fixed stride rather
+    than hand-picked — choosing the interesting ones is how the original
+    defect survived review in the first place. The stride caught one
+    that matters more than anything I would have chosen: a cell opening
+    "Note: Ensure that all three bullets of this Supplemental Control
+    Requirements & Guidance are reviewed", which mentions the sentinel's
+    words and is binding guidance.
+
+    **What this catches, measured rather than intended.** Mutating the
+    pattern back to the original `requirements and guidance` takes the
+    count from 96 to 77 and fails here — that is this test's unique
+    contribution, and no other test in this file catches it.
+
+    **What it does not catch, stated because the name suggests
+    otherwise.** It does not independently guard the destructive
+    direction. Broadening the pattern (`any` for `all`, prefix
+    anchoring, a wider trailing slot) leaves every cell here untouched,
+    because no genuine cell in CMS's corpus sits close enough to the
+    sentinel to be swallowed — the "Note:" cell is the nearest and does
+    not open with "there are no". Those mutants are caught by the
+    hand-written one-sentence tests above, and **real data cannot
+    replace them**: a corpus only exercises the failures it happens to
+    contain.
+
+    Nothing in v1.02 distinguishes a pattern that accepts any word where
+    `no` belongs, so that mutant is invisible *here* — and it is caught
+    by `test_a_count_of_requirements_is_not_the_absence_of_them`, a
+    hand-written case, which is this docstring's own point made
+    concrete.
+    """
+    cells = json.loads(GUIDANCE_CELLS.read_text(encoding="utf-8"))
+    emptied = [c["control_id"] for c in cells if arc_ampe._guidance(c["guidance"]) == ""]
+    kept = [c for c in cells if arc_ampe._guidance(c["guidance"]) != ""]
+
+    assert len(emptied) == 96, "the count of cells CMS's v1.02 marks as having no guidance"
+    assert all(c["sentinel"] for c in cells if c["control_id"] in emptied)
+    assert [c["control_id"] for c in kept] == [c["control_id"] for c in cells if not c["sentinel"]]
+    for cell in kept:
+        assert arc_ampe._guidance(cell["guidance"]) == arc_ampe._clean(cell["guidance"])
+
+
 def test_bullets_and_curly_quotes_survive_but_editing_artifacts_do_not():
     """CMS structures normative prose with bullets; Excel leaves NBSPs."""
     assert arc_ampe._clean("•  Text\xa0here  \n\n") == "•  Text here"
@@ -256,3 +436,38 @@ def test_the_committed_catalog_holds_the_baseline_cms_published():
 
     assert items == 402
     assert all(c.baseline == arc_ampe.AE_BASELINE for c in controls)
+
+
+def test_no_shipped_field_says_there_is_no_guidance():
+    """**The artefact half, which the parser tests cannot cover.**
+
+    `_guidance` running correctly says nothing about what was committed:
+    `controls.json` is a static file, and a parser fixed after the
+    catalog was generated leaves the boilerplate sitting in it. Nineteen
+    fields shipped that way — nine control `discussion`s and ten
+    enhancement `additional_requirements`.
+
+    Stated over **every text field of every entry**, not over the one
+    field the defect was found in. I found nine by looking at
+    `discussion`; the fix found nineteen because it operates on the
+    function rather than on the field I happened to check.
+    """
+    controls = load_controls(CATALOG)
+    texts = [
+        (c.control_id, field, getattr(c, field))
+        for c in controls
+        for field in ("control_statement", "discussion", "additional_requirements")
+    ] + [
+        (e.enhancement_id, field, getattr(e, field))
+        for c in controls
+        for e in c.enhancements
+        for field in ("description", "additional_requirements")
+    ]
+    # Asked through the production decision rather than a copy of it, so the
+    # guard cannot drift from the rule it is guarding — and so it asks the
+    # same question: is this field *only* the boilerplate?
+    boilerplate = [
+        (ident, field) for ident, field, text in texts if text and arc_ampe._guidance(text) == ""
+    ]
+
+    assert boilerplate == []

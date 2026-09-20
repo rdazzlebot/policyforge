@@ -130,11 +130,40 @@ REQUIRED_FIELDS = ("control_id", "title", "statement")
 _CONTROL_ID_RE = re.compile(r"^([A-Za-z]{2})-(\d{1,3})(?:\s*\(\s*(\d{1,3})\s*\))?$")
 
 #: The template's way of saying a control has no supplemental guidance.
-#: Matched loosely because the sentence is retyped per row and the wording
-#: wobbles ("requirements and guidance" / "requirement and guidance").
+#: The sentence is retyped per row and the wording wobbles more than a
+#: regex over the raw cell can follow. v1.02 writes "requirements **&**
+#: guidance" in nineteen places, and `PE-2` reads "require**and**ents" —
+#: a find-and-replace of "&" with "and" that ran through the middle of a
+#: word. The trailing clause moves too: "at this time", "for this
+#: control". All nineteen shipped their boilerplate as if it were content.
+#:
+#: **The sentinel must account for the whole sentence, not merely open
+#: it.** Anchoring only at the start reintroduces the failure this is
+#: written to prevent, one level down: "…guidance at this time, however
+#: agencies shall document exceptions in the SSP" is a single sentence
+#: whose opening matches, and a prefix match would discard the binding
+#: half with it. Found by policyforge-b5 in review, latent rather than
+#: live — v1.02 has nineteen sentinel-bearing fields and none carries
+#: extra content in the same sentence.
+#:
+#: The trailing clause moves ("at this time", "for this control"), so it
+#: is admitted as a *shape* — one prepositional phrase — rather than as a
+#: list of endings that would need maintaining. Prepositions are a closed
+#: class; trailing clauses are not.
+#:
+#: **The known trade, named by b5 rather than discovered later.** That
+#: slot cannot tell a closing clause from a pointer: "…and guidance **in
+#: the attached appendix**" is structurally identical to "…at this time"
+#: and would be emptied, though it means the guidance lives elsewhere.
+#: No cell in v1.02 does this. It is the price of admitting a shape
+#: instead of enumerating endings, and the alternative — a list of
+#: permitted endings — was rejected because it silently drops whatever
+#: the next CMS revision spells differently, which is the defect this
+#: whole function exists to undo.
 _NO_GUIDANCE_RE = re.compile(
-    r"there\s+(?:are|is)\s+no\s+supplemental\s+control\s+requirements?\s+and\s+guidance",
-    re.IGNORECASE,
+    r"there\s+(?:are|is)\s+no\s+supplemental\s+control\s+"
+    r"require\w*\s+(?:and\s+)?guidance"
+    r"(?:\s+(?:at|for|in|on|to|under|within)\s+(?:\w+\s+){0,2}\w+)?",
 )
 
 
@@ -194,9 +223,62 @@ def split_related(value: str) -> list[str]:
     return found
 
 
+def _says_no_guidance(sentence: str) -> bool:
+    """Is this one sentence *entirely* CMS's "there is nothing here" boilerplate?
+
+    `fullmatch`, not `match`. A prefix match is satisfied by the opening
+    and lets the sentence continue into real obligation — which is the
+    failure a raw search invites, arriving one level below the per-sentence
+    split that was supposed to stop it.
+
+    Two things here are **deliberately redundant**, and a mutation sweep
+    will report both as surviving. Spelling "&" out is also achieved by
+    stripping punctuation to a space, because the pattern's "and" is
+    optional; and the `bare` guard is unreachable because `_guidance`
+    drops empty fragments and the pattern cannot match "" anyway. No
+    input distinguishes either — they are equivalent mutants rather than
+    coverage gaps, which is a different thing from a survivor the corpus
+    merely fails to exercise. Kept because each states an intent the
+    other only implies.
+    """
+    bare = " ".join(re.sub(r"[^\w\s]", " ", sentence.replace("&", " and ")).split())
+    return bool(bare) and _NO_GUIDANCE_RE.fullmatch(bare.lower()) is not None
+
+
 def _guidance(value: str) -> str:
+    """The cell's guidance, or `""` when it says only that there is none.
+
+    **The test is whether the cell says nothing else, not whether the
+    sentinel appears in it.** Searching the raw text fails in both
+    directions, and ARC-AMPE v1.02 contains one of them: nineteen fields
+    spell the sentinel with "&", did not match, and shipped a sentence
+    meaning "there is nothing here" as content. The opposite failure is
+    the one a search invites — a cell that genuinely discusses
+    supplemental control requirements would be discarded whole.
+
+    Every sentence must be the boilerplate *in full* — see
+    `_says_no_guidance` for why "in full" is the load-bearing half — so
+    one real sentence beside it keeps the cell, and the trailing clause
+    may move without anyone maintaining a list of endings.
+
+    **The splitter is deliberately crude, and its crudeness points the
+    safe way.** `[.;]` over-splits on abbreviations and decimals, which
+    cost `entail/base.py` 19 of 43 findings. Here an over-split produces
+    a fragment that cannot match the sentinel in full, `all()` goes
+    False, and the cell is **kept**. Losing real guidance is silent and
+    unrecoverable in a generated document; keeping boilerplate is
+    visible and caught by the catalog guard. Anyone tempted to make this
+    splitter cleverer should check which way its new failure points.
+
+    A control carrying guidance that says it has no guidance is the
+    failure this project keeps finding rather than a hypothetical one:
+    it counts, it renders into a policy document, and it means nothing.
+    """
     text = _clean(value)
-    return "" if _NO_GUIDANCE_RE.search(text) else text
+    sentences = [s for s in re.split(r"[.;]", text) if s.strip()]
+    if sentences and all(_says_no_guidance(s) for s in sentences):
+        return ""
+    return text
 
 
 def detect_columns(header: list[object]) -> dict[str, int]:

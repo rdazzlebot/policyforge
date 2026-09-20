@@ -13,16 +13,18 @@ for.
 
 **Start here:** [System card](system-card.md) is the one-page version — intended use, prohibited use, limitations, data handling. Everything else expands on it.
 
-| Document                                                 | What it covers                                                                                                                                                      |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [System card](system-card.md)                            | The one-pager, written to be pasted into an AI inventory or a vendor review                                                                                         |
-| [Commitments](commitments.md)                            | Eight promises, each with the test that fails when it stops being true                                                                                              |
-| [Security architecture](security-architecture.md)        | Trust boundaries, data classification, credential handling, the untrusted-input inventory, supply-chain posture, and the residual risks that remain after all of it |
-| [OWASP Top 10 for LLM Applications](owasp-llm-top-10.md) | Each of the ten risks, the controls in this codebase that address it, the evidence for each control, and what is left uncontrolled                                  |
-| [NIST AI RMF alignment](nist-ai-rmf.md)                  | Which parts of your own AI RMF work this tool has already done, plus EU AI Act positioning and ISO/IEC 42001 framing                                                |
-| [Subprocessors and data flow](subprocessors.md)          | Every party that can receive your content, and what you must confirm about each yourself                                                                            |
-| [Responsible AI use](responsible-ai-use.md)              | The case that this is a legitimate use of a language model, the boundaries of that case, and the uses this tool should be refused for                               |
-| [SECURITY.md](../SECURITY.md)                            | How to report a vulnerability                                                                                                                                       |
+| Document                                          | What it covers                                                                                                                                                      |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [System card](system-card.md)                     | The one-pager, written to be pasted into an AI inventory or a vendor review                                                                                         |
+| [Commitments](commitments.md)                     | Eight promises, each with the test that fails when it stops being true                                                                                              |
+| [Security architecture](security-architecture.md) | Trust boundaries, data classification, credential handling, the untrusted-input inventory, supply-chain posture, and the residual risks that remain after all of it |
+
+- [Adding a catalog](adding-a-catalog.md) — the rules every loader here learned the hard way, for whoever adds the next one
+  | [OWASP Top 10 for LLM Applications](owasp-llm-top-10.md) | Each of the ten risks, the controls in this codebase that address it, the evidence for each control, and what is left uncontrolled |
+  | [NIST AI RMF alignment](nist-ai-rmf.md) | Which parts of your own AI RMF work this tool has already done, plus EU AI Act positioning and ISO/IEC 42001 framing |
+  | [Subprocessors and data flow](subprocessors.md) | Every party that can receive your content, and what you must confirm about each yourself |
+  | [Responsible AI use](responsible-ai-use.md) | The case that this is a legitimate use of a language model, the boundaries of that case, and the uses this tool should be refused for |
+  | [SECURITY.md](../SECURITY.md) | How to report a vulnerability |
 
 ## How to read these
 

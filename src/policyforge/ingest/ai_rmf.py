@@ -69,6 +69,17 @@ FUNCTIONS = ("Govern", "Map", "Measure", "Manage")
 #: every other assertion satisfied. policyforge-9b raised this against the
 #: widened row pattern and it was already true of the narrow one.
 #:
+#: **The general rule is in `docs/adding-a-catalog.md`**, because it is
+#: about catalogs rather than about this one: a bundled catalog pinned
+#: to a revision must refuse to ingest a different revision, so the
+#: README, `framework.yaml`, provenance stamp and data go stale
+#: visibly and together rather than one of them silently.
+#:
+#: **A scheduled drift job going red the day NIST revises is that job
+#: succeeding** -- detecting upstream change is its whole purpose. The
+#: defect would be staying green while the upstream moved. Do not
+#: "fix" the red by loosening this.
+#:
 #: Pinned as an exact pair rather than a floor. A page that yields a
 #: different shape is either a restyle or a new revision of the Framework,
 #: and **both need a person**: the first is a parser bug, the second means

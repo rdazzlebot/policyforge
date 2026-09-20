@@ -46,10 +46,19 @@ def test_a_zero_row_never_suggests_a_command_that_would_be_refused():
     from policyforge.zardoz.skills import _coverage
 
     output = _coverage(_coverage_state(), [])
+    seed_lines = [ln for ln in output.splitlines() if "crosswalk seed --framework" in ln]
 
-    for line in output.splitlines():
-        if "crosswalk seed --framework" not in line:
-            continue
+    # Guard the population, or the loop below asserts nothing on an empty
+    # list and this reports green. 80 caught that; it is entry 1 of the
+    # checks-that-cannot-fail catalogue, in a test written about that
+    # class. The test one down already guards its own rows this way.
+    assert seed_lines, (
+        "no zero row suggests `crosswalk seed`, so this test checked nothing. "
+        "If every framework is now mapped that is good news and this guard "
+        "needs rewriting rather than deleting."
+    )
+
+    for line in seed_lines:
         named = line.split("--framework", 1)[1].strip().strip("`").strip().strip("'\"")
         assert _refusal_reason(named) is None, (
             f"the report tells a reader to seed {named!r}, which seed_overlay "

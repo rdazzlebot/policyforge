@@ -313,3 +313,36 @@ def test_a_scoped_coverage_report_is_untouched_because_rev_3_has_no_baselines():
     with_171 = _coverage(_shell_state(_catalog_paths(including_800_171=True)), ["moderate"])
 
     assert without == with_171
+
+
+def test_the_readme_claim_that_the_percentage_moves_is_still_true(readme):
+    """**Pins the README sentence to the behaviour it describes**, so a
+    change to `_coverage` forces the README to be revisited rather than
+    leaving a shipped file describing behaviour that no longer exists.
+
+    The README tells a reader the bare percentage is relative to
+    everything on disk and therefore not comparable across machines or
+    across an install. That is only worth saying while it is true. If the
+    coverage scope stops growing when a catalog is installed, this fails
+    and the sentence has to go.
+    """
+    import re
+
+    from policyforge.zardoz.skills import _coverage
+
+    def in_scope(paths):
+        output = _coverage(_shell_state(paths), [])
+        found = re.search(r"In scope\s+(\d+)", output)
+        assert found, "coverage report has no In scope line: " + output[:300]
+        return int(found.group(1))
+
+    without = in_scope(_catalog_paths(including_800_171=False))
+    with_171 = in_scope(_catalog_paths(including_800_171=True))
+
+    assert with_171 > without, (
+        "installing a catalog no longer enlarges the coverage scope, so the "
+        "catalog README's paragraph on the bare percentage being relative to "
+        "what is on disk is now describing behaviour that does not exist. "
+        "Update data/frameworks/nist-800-171-r3/README.md."
+    )
+    assert "relative to everything on disk" in readme

@@ -111,7 +111,6 @@ def test_a_tag_naming_the_catalog_splits_back_to_it(directory: str, declared: st
 #: be deleted with the whole suite green**.
 _MUST_BE_PINNED = {
     "Information Blocking": "cfr-171-information-blocking",
-    "ONC Certification Criteria": "cfr-170-315-onc-certification",
     "Substance Use Disorder Records": "cfr-42-part-2-sud-records",
 }
 

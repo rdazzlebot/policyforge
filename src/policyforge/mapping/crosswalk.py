@@ -201,9 +201,14 @@ NIST_ANCHOR = "nist-800-53"
 #: assignment: it widens `TOPIC_ANCHORS` and requires that seeding a
 #: crosswalk stays refused.
 #:
-#: Equal to `{NIST_ANCHOR}` today, so this definition changes no
-#: behaviour -- it only makes the two meanings separable.
-TOPIC_ANCHORS: frozenset[str] = frozenset({NIST_ANCHOR})
+#: The AI RMF joined on 2026-09-20, on the user's decision, so a topic can
+#: anchor `Govern 1` and have its documents genuinely cite the framework.
+#: **Adding a catalog here grows `/coverage`'s denominator**, because its
+#: requirements become things a topic could own and therefore things a
+#: topic can fail to own. That is a real report rather than a regression,
+#: but it must be read as one -- the report names the catalogs in scope for
+#: exactly that reason.
+TOPIC_ANCHORS: frozenset[str] = frozenset({NIST_ANCHOR, "nist-ai-rmf"})
 
 
 def anchors_a_topic(framework: str) -> bool:

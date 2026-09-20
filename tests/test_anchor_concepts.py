@@ -70,17 +70,59 @@ DEFINITION_SITE = "mapping/crosswalk.py"
 A_SITE_CONSUMERS = tuple(f for f in A_SITE_FILES if f != DEFINITION_SITE)
 
 
-def test_the_split_changes_no_behaviour_today():
-    """Equal sets today, so this commit is a refactor and nothing else.
+def test_exactly_which_catalogs_a_topic_may_anchor():
+    """Pinned by exact equality, not by membership.
 
-    Stated as a test rather than as a claim in the PR description,
-    because "changes no behaviour" is exactly the kind of assertion that
-    is believed rather than checked.
+    **Adding a catalog here grows `/coverage`'s denominator** — its
+    requirements become things a topic *could* own and therefore things a
+    topic can fail to own. Admitting the AI RMF moved the programme
+    headline from 80.3% to 73.7% with the numerator unchanged at 814.
+    That is a real report, but it is indistinguishable from lost work if
+    it happens without anyone deciding it. So the set is a decision, and
+    this is where the decision is recorded.
+
+    Exact equality rather than `in`, because a subset check would let a
+    catalog be added silently — which is the case that matters.
+
+    The previous version of this test asserted the set equalled
+    `{NIST_ANCHOR}`, which was correct for the commit that split the two
+    constants apart and changed no behaviour. It went red when the AI RMF
+    was admitted, which is the guard working: a deliberate change to a
+    decision should have to be written down twice.
     """
-    assert frozenset({NIST_ANCHOR}) == TOPIC_ANCHORS
+    assert frozenset({NIST_ANCHOR, "nist-ai-rmf"}) == TOPIC_ANCHORS
     assert anchors_a_topic("NIST 800-53") is True
+    assert anchors_a_topic("NIST AI RMF") is True
+    # Reachable only through the crosswalk, and must stay that way.
     assert anchors_a_topic("HIPAA Security Rule") is False
-    assert anchors_a_topic("NIST AI RMF") is False
+    assert anchors_a_topic("Information Blocking") is False
+    assert anchors_a_topic("NIST 800-171") is False
+
+
+def test_a_category_claims_its_subcategories():
+    """`Govern 1` must claim `Govern 1.1`..`Govern 1.7`.
+
+    "Anchoring a control also claims its enhancements" is the registry's
+    documented rule, implemented by `_parent_of`. Before the AI RMF
+    grammar was added, `_parent_of('Govern 1.1')` returned `None`, so a
+    topic anchoring the category claimed **nothing** and seven
+    subcategories reported orphaned — no error, a plausible number, and a
+    topic author would have "fixed" it by anchoring all seven by hand.
+    **The workaround looks like diligence**, which is what makes the
+    silence expensive.
+    """
+    from policyforge.topics.coverage import _parent_of
+
+    assert _parent_of("Govern 1.1") == "Govern 1"
+    assert _parent_of("Manage 4.3") == "Manage 4"
+    assert _parent_of("AC-2(1)") == "AC-2"
+    # A top-level identifier has no parent, in either grammar.
+    assert _parent_of("Govern 1") is None
+    assert _parent_of("AC-2") is None
+    # Catalogs no topic can anchor keep returning None: a grammar listed
+    # for a framework nothing anchors would be untestable.
+    assert _parent_of("03.01.01") is None
+    assert _parent_of("164.308(a)(1)") is None
 
 
 def test_the_two_concepts_are_different_kinds_of_thing():
@@ -236,3 +278,97 @@ def test_the_catalog_count_is_derived_not_remembered():
     }
     assert "NIST AI RMF" in loaded
     assert len(_catalogs()) > 500
+
+
+def test_a_topic_anchoring_ai_rmf_categories_covers_them_end_to_end(tmp_path):
+    """**The user's path, not the helper's.**
+
+    `test_a_category_claims_its_subcategories` exercises `_parent_of`
+    directly, which proves the regex and nothing about whether a topic
+    registry can actually own an AI RMF category. Running the right
+    function with your own arguments is not evidence about the product.
+
+    So: write a real topic registry anchoring the six Govern categories,
+    load it the way the CLI does, and require that all twenty-five Govern
+    identifiers come back owned — six categories and nineteen
+    subcategories — with no unknown anchors.
+    """
+    import yaml
+
+    from policyforge.cli._common import load_catalogs
+    from policyforge.topics.coverage import analyze_coverage, scope_label
+    from policyforge.topics.registry import load_topics
+
+    registry = tmp_path / "topics.yaml"
+    registry.write_text(
+        yaml.safe_dump(
+            {
+                "topics": [
+                    {
+                        "name": "AI Governance",
+                        "owner": "AI Risk / GRC",
+                        "cadence": "annual",
+                        "description": "Governance of AI systems.",
+                        "nist_controls": [f"Govern {n}" for n in range(1, 7)],
+                        "evidence": ["AI system inventory"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    paths = [str(p) for p in sorted((ROOT / "data" / "frameworks").glob("*/controls.json"))]
+    controls = load_catalogs(paths)
+    anchorable = [c for c in controls if anchors_a_topic(c.framework)]
+    report = analyze_coverage(
+        load_topics(registry),
+        anchorable,
+        scope=scope_label(anchorable),
+        other_controls=[c for c in controls if not anchors_a_topic(c.framework)],
+        crosswalk=build_crosswalk(controls),
+    )
+
+    govern = {
+        identifier
+        for control in controls
+        if control.framework == "NIST AI RMF"
+        for identifier in [
+            control.control_id,
+            *(e.enhancement_id for e in control.enhancements),
+        ]
+        if identifier.startswith("Govern")
+    }
+    assert len(govern) == 25, f"expected 6 categories + 19 subcategories, got {len(govern)}"
+
+    assert not report.unknown_anchors, (
+        f"the registry's AI RMF anchors did not resolve: {dict(report.unknown_anchors)}"
+    )
+    assert not (govern & set(report.orphaned)), (
+        f"anchoring the six Govern categories left "
+        f"{sorted(govern & set(report.orphaned))[:5]} unowned — a category is "
+        f"not claiming its subcategories."
+    )
+
+
+def test_the_scope_line_names_the_catalogs_it_counted():
+    """**A percentage whose denominator can change silently is not a
+    measurement.**
+
+    Admitting the AI RMF moved the programme headline 80.3% -> 73.7% with
+    the numerator unchanged at 814. From the number alone that is
+    indistinguishable from work having been lost — and the same arithmetic
+    with the opposite meaning was a real defect once, when every installed
+    catalog was counted as anchorable and installing one lowered the score.
+
+    The reader cannot tell those apart by looking at the percentage, so
+    the scope line names what was counted.
+    """
+    from policyforge.topics.coverage import scope_label
+
+    controls = [c for c in _catalogs() if anchors_a_topic(c.framework)]
+    label = scope_label(controls)
+    assert "NIST 800-53" in label
+    assert "NIST AI RMF" in label
+    assert scope_label(controls, "moderate").startswith("moderate baseline (")
+    assert scope_label([]) == "all controls (no anchorable catalog)"

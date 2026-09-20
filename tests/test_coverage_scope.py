@@ -206,18 +206,38 @@ def test_an_outcome_framework_is_refused_rather_than_suggested():
     it prints the *other* one, so the row stayed well-formed and
     confidently said the opposite of the documentation. Found by running
     `/coverage` with the new catalog installed, not by reading the code.
+    **The premise moved once and the test moved with it, deliberately.**
+    The first version asserted the AI RMF appears as a crosswalk zero row
+    carrying "not mapped by design". It stopped being true the moment the
+    catalog became *anchorable*: an anchorable catalog is counted in the
+    scope, not in the "reachable via the crosswalk" section, so it left
+    that section entirely. The two mechanisms are mutually exclusive.
+
+    The invariant underneath is unchanged and is what is asserted now:
+    **whatever section it lands in, nothing ever tells the reader to seed
+    a crosswalk for it.** Asserted over the whole report rather than one
+    row, because the row is exactly the thing that moved.
     """
+    from policyforge.mapping.crosswalk import anchors_a_topic
     from policyforge.zardoz.skills import _coverage
 
     output = _coverage(_coverage_state(), [])
-    rows = [ln for ln in output.splitlines() if "NIST-AI-RMF:" in ln]
-    assert rows, (
-        "the AI RMF catalog reports no zero row at all. If it is now covered "
-        "this guard needs rewriting rather than deleting."
+
+    seed_lines = [ln for ln in output.splitlines() if "crosswalk seed" in ln]
+    for line in seed_lines:
+        assert "AI RMF" not in line, (
+            "the report tells a reader to seed the AI RMF, which asserts that "
+            "an 800-53 control ACHIEVES an AI RMF outcome — the one claim NIST "
+            "declined to make when it split the Playbook out."
+        )
+
+    # And it is in the report at all, so the assertion above is not
+    # satisfied by the catalog having quietly vanished from it.
+    assert anchors_a_topic("NIST AI RMF"), (
+        "the AI RMF is no longer anchorable, so this test is checking a "
+        "configuration that no longer exists — rewrite it rather than delete it."
     )
-    assert "not mapped by design" in rows[0]
-    assert "crosswalk seed" not in rows[0], (
-        "the report tells a reader to seed the AI RMF, which asserts that an "
-        "800-53 control ACHIEVES an AI RMF outcome — the one claim NIST "
-        "declined to make when it split the Playbook out."
+    assert "NIST AI RMF" in output, (
+        "the AI RMF does not appear in the coverage report at all. A catalog "
+        "that is anchorable but invisible is worse than one that is neither."
     )

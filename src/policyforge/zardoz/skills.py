@@ -142,7 +142,7 @@ def _controls(state):
 
 def _coverage(state, args: list[str]) -> str:
     from policyforge.mapping.crosswalk import build_crosswalk
-    from policyforge.topics.coverage import analyze_coverage, format_report
+    from policyforge.topics.coverage import analyze_coverage, format_report, scope_label
 
     controls = _controls(state)
     if not controls:
@@ -157,10 +157,8 @@ def _coverage(state, args: list[str]) -> str:
     # meaningful relative to a stated scope, so the filtering is the
     # caller's job and the scope has to be named in the report.
     baseline = next((a for a in args if a.lower() in ("low", "moderate", "high")), None)
-    scope = "all controls"
     if baseline:
         controls = [c for c in controls if c.baseline and baseline in c.baseline.lower()]
-        scope = f"{baseline} baseline"
         if not controls:
             return f"No controls tagged for the {baseline} baseline in the loaded catalogs."
 
@@ -175,7 +173,7 @@ def _coverage(state, args: list[str]) -> str:
     report = analyze_coverage(
         state.topics,
         nist,
-        scope=scope,
+        scope=scope_label(nist, baseline),
         other_controls=other,
         crosswalk=build_crosswalk(controls),
     )

@@ -43,7 +43,24 @@ from policyforge.ingest.schema import Control
 from policyforge.mapping.crosswalk import normalize_framework
 from policyforge.topics.registry import Topic
 
-_ENHANCEMENT_RE = re.compile(r"^([A-Za-z]{2}-\d+)\(\d+\)$")
+#: How a child identifier names its parent, per catalog grammar.
+#:
+#: **"Anchoring a control also claims its enhancements" is implemented
+#: here, so a grammar this does not know silently claims nothing.** A
+#: topic anchoring `Govern 1` used to report seven orphans -- no error, a
+#: plausible number, and a topic author would have "fixed" it by anchoring
+#: all seven subcategories, arriving at a correct-looking registry built
+#: around a defect. The workaround looks like diligence, which is what
+#: makes the silence expensive.
+#:
+#: Add a pattern when a catalog becomes anchorable, not before: a grammar
+#: listed here for a framework no topic can anchor is untestable.
+_PARENT_RES = (
+    # 800-53 / FedRAMP / ARC-AMPE: AC-2(1) -> AC-2
+    re.compile(r"^([A-Za-z]{2}-\d+)\(\d+\)$"),
+    # NIST AI RMF: Govern 1.1 -> Govern 1
+    re.compile(r"^([A-Za-z]+ \d+)\.\d+$"),
+)
 
 #: Relationships under which one control covers only part of a requirement.
 PARTIAL_RELATIONSHIPS = frozenset({"superset", "intersects"})
@@ -95,9 +112,37 @@ class CoverageReport:
         return not (self.orphaned or self.contested or self.unknown_anchors)
 
 
+def scope_label(controls, baseline: str | None = None) -> str:
+    """What the coverage denominator actually contained, named.
+
+    **A percentage whose denominator can change without the reader being
+    told is not a measurement.** When the AI RMF became anchorable the
+    programme headline fell 80.3% -> 73.7% with the numerator unchanged
+    at 814: ninety-one requirements arrived that a topic *could* own and
+    none yet does. That is real information and it is indistinguishable,
+    from the number alone, from work having been lost.
+
+    The same arithmetic with the opposite meaning caused a live defect
+    once already -- every installed catalog was being counted as
+    anchorable, so requirements no topic could ever anchor were orphans
+    by construction and installing a catalog lowered the score. That was
+    wrong and was fixed. This is right and still needs saying, because a
+    reader cannot tell the two apart by looking at the percentage.
+
+    So the scope line names the catalogs, and a changed denominator is
+    visible in the report rather than inferred from a number moving.
+    """
+    names = sorted({c.framework for c in controls})
+    listed = ", ".join(names) if names else "no anchorable catalog"
+    return f"{baseline} baseline ({listed})" if baseline else f"all controls ({listed})"
+
+
 def _parent_of(requirement_id: str) -> str | None:
-    match = _ENHANCEMENT_RE.match(requirement_id)
-    return match.group(1) if match else None
+    for pattern in _PARENT_RES:
+        match = pattern.match(requirement_id)
+        if match:
+            return match.group(1)
+    return None
 
 
 def _in_scope_ids(controls: list[Control]) -> list[str]:

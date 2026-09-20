@@ -50,6 +50,12 @@ the gate goes green. None of that establishes that the sentence carrying
 the tag commits anyone to anything — it may simply restate the outcome in
 new words.
 
+**The difference that matters is that this is a property of the source
+rather than of the parse, so it can only be disclosed, not fixed.** A
+miscounted catalog is countable, plausible and wrong, and a better parser
+closes it. This one is citable, resolvable and hollow, and no parser can
+close it — the Framework genuinely does not say who must do what.
+
 For every other catalog here, traceability and substance travel together:
 if a sentence cites `[NIST 800-53 AC-2]` and says something, it says
 something about account management, because AC-2 is an instruction. **Here

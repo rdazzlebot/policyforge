@@ -61,6 +61,21 @@ FRAMEWORK_VERSION = "1.0"
 #: silently skipped by a hard-coded list.
 FUNCTIONS = ("Govern", "Map", "Measure", "Manage")
 
+#: The Core's shape at revision 1.0, which this catalog is pinned to.
+#:
+#: **Parsing MORE than NIST publishes is as much a defect as parsing
+#: fewer**, and the structural checks do not catch it: contiguity accepts
+#: an *extension*, so an invented `Govern 7` yields 20 categories with
+#: every other assertion satisfied. policyforge-9b raised this against the
+#: widened row pattern and it was already true of the narrow one.
+#:
+#: Pinned as an exact pair rather than a floor. A page that yields a
+#: different shape is either a restyle or a new revision of the Framework,
+#: and **both need a person**: the first is a parser bug, the second means
+#: this catalog's pin, its README and its provenance stamp are all stale.
+#: Neither should be absorbed silently by a loader.
+EXPECTED_SHAPE = (19, 72)
+
 #: Abbreviations NIST uses in the Playbook and in its own crosswalks.
 _FUNCTION_ABBR = {"Govern": "GV", "Map": "MP", "Measure": "MS", "Manage": "MG"}
 
@@ -70,9 +85,22 @@ _FUNCTION_ABBR = {"Govern": "GV", "Map": "MP", "Measure": "MS", "Manage": "MG"}
 #: class-keyed parser would return zero rows on a restyle and report
 #: success — the silent-empty failure this project keeps finding. The
 #: structural assertions in `parse_ai_rmf` are what turn that into a crash.
+#: **The function word is captured, not enumerated, and that is the whole
+#: point.** It used to read `(?:Govern|Map|Measure|Manage)`, which made the
+#: `unrecognised AI RMF function` guard below **unreachable** -- the regex
+#: could not produce a name the guard would reject, so a fifth NIST
+#: function did not raise, it **vanished**: the row failed to match at all
+#: and the reader got a confusing complaint about category numbering
+#: instead.
+#:
+#: Found by policyforge-ba, constructively: deleting each guard in turn and
+#: recording which test noticed. Two noticed nothing, and this one could
+#: not have. Enumerating a vocabulary inside a pattern turns "I do not
+#: recognise this" into "this does not exist", which is the failure this
+#: module is otherwise written against.
 _ROW = re.compile(
     r'<span class="[^"]*">\s*'
-    r"(?P<id>(?:Govern|Map|Measure|Manage) \d+(?:\.\d+)?)\s*"
+    r"(?P<id>[A-Z][a-z]+ \d+(?:\.\d+)?)\s*"
     r"</span>\s*:\s*(?P<text>.*?)</th>",
     re.S,
 )
@@ -200,6 +228,17 @@ def parse_ai_rmf(html: str) -> list[Control]:
                 f"{function} categories are not contiguous from 1: {numbers}. "
                 f"A category row is missing."
             )
+
+    shape = (len(categories), len(subcategories))
+    if shape != EXPECTED_SHAPE:
+        raise AiRmfParseError(
+            f"the Core parsed to {shape[0]} categories and {shape[1]} "
+            f"subcategories; revision {FRAMEWORK_VERSION} has "
+            f"{EXPECTED_SHAPE[0]} and {EXPECTED_SHAPE[1]}. Either the page "
+            f"changed shape, or NIST has revised the Framework -- in which "
+            f"case this catalog's pin, README and provenance stamp are all "
+            f"stale and a person has to say so."
+        )
 
     controls = []
     for row in sorted(categories, key=_sort_key):

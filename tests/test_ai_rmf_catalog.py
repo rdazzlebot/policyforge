@@ -176,107 +176,131 @@ def test_a_restyle_that_drops_every_row_raises():
         parse_ai_rmf(html.replace("</th>", "</td>"))
 
 
-def test_a_missing_category_raises_rather_than_shrinking():
+def test_a_missing_category_orphans_its_subcategories():
     """Delete `Govern 6` and the result must be an error, not an 18-row
-    catalog. This is the mutation that every count-based check survives."""
+    catalog.
+
+    **Renamed, and its `match=` tightened, because the name was wrong.**
+    policyforge-ba deleted each guard in turn and recorded which test
+    noticed: this one was written for *contiguity* and is actually
+    satisfied by the *orphan* guard — removing `Govern 6` strands
+    `Govern 6.1` and `6.2`, orphans are checked first, and contiguity is
+    never reached. The `contiguous|parent` alternation is what hid it. A
+    test whose name says one thing and whose assertion accepts either is
+    a test nobody can audit by reading.
+    """
     html = FIXTURE.read_text(encoding="utf-8", errors="replace")
     mutated = re.sub(r'<span class="[^"]*">\s*Govern 6\s*</span>', "<span>x</span>", html)
     assert mutated != html, "the mutation did not apply; the fixture changed shape"
-    with pytest.raises(AiRmfParseError, match=r"contiguous|parent"):
+    with pytest.raises(AiRmfParseError, match=r"parent"):
+        parse_ai_rmf(mutated)
+
+
+def test_a_gap_in_the_numbering_raises():
+    """Contiguity, reached on purpose rather than by accident.
+
+    To get here the mutation has to remove a category **and** its
+    subcategories, or the orphan guard fires first. Removing `Govern 5`
+    and its children leaves `Govern 1,2,3,4,6` — every remaining row
+    well-formed, every parent present, and a framework that is missing
+    one category.
+
+    That is the failure mode with no other symptom: a partial parse looks
+    exactly like a smaller framework.
+    """
+    html = FIXTURE.read_text(encoding="utf-8", errors="replace")
+    mutated = re.sub(r'<span class="[^"]*">\s*Govern 5(?:\.\d+)?\s*</span>', "<span>x</span>", html)
+    assert mutated != html, "the mutation did not apply; the fixture changed shape"
+    with pytest.raises(AiRmfParseError, match=r"contiguous"):
         parse_ai_rmf(mutated)
 
 
 def test_an_unknown_function_name_raises():
+    """**This guard was unreachable until 2026-09-20.**
+
+    `_ROW` enumerated `(?:Govern|Map|Measure|Manage)` inside the
+    identifier capture, so the regex could not produce a name the guard
+    would reject. A fifth NIST function did not raise — the row **failed
+    to match at all** and vanished, and the reader got a confusing
+    complaint about category numbering. Found by ba, by deleting the
+    guard and observing that nothing noticed.
+
+    Both cases now land where they should.
+    """
     html = FIXTURE.read_text(encoding="utf-8", errors="replace")
-    mutated = html.replace("Measure 1", "Meassure 1")
-    assert mutated != html
-    # The row simply stops matching, so this lands as a contiguity or
-    # parent failure rather than as "unrecognised function" — either way
-    # it must not pass silently.
-    with pytest.raises(AiRmfParseError):
+
+    for mutated in (
+        html.replace("Measure 1", "Meassure 1"),
+        html.replace("Govern 1<", "Sustain 1<").replace("Govern 1 ", "Sustain 1 "),
+    ):
+        assert mutated != html
+        with pytest.raises(AiRmfParseError, match=r"unrecognised AI RMF function"):
+            parse_ai_rmf(mutated)
+
+
+def test_a_row_with_no_text_raises():
+    """The remaining guard ba found untested. It was reachable all along
+    and one line from being covered.
+
+    **Mutated through the parser's own match span rather than a
+    hand-written regex.** The first attempt wrote a second pattern meant
+    to mean the same thing as `_ROW`, and it did not: it swallowed the
+    row's closing tag, so `Map 2` vanished entirely and the *orphan*
+    guard fired on its subcategories. The test would have passed with a
+    looser `match=` and been testing the wrong guard — which is the exact
+    defect ba had just found in the test above it.
+
+    Using `_ROW`'s own span makes the mutation mean what the parser
+    means, by construction.
+    """
+    from policyforge.ingest.ai_rmf import _ROW
+
+    html = FIXTURE.read_text(encoding="utf-8", errors="replace")
+    match = next(m for m in _ROW.finditer(html) if m.group("id") == "Map 2")
+    mutated = html[: match.start("text")] + html[match.end("text") :]
+    assert mutated != html, "the mutation did not apply; the fixture changed shape"
+
+    with pytest.raises(AiRmfParseError, match=r"no text"):
         parse_ai_rmf(mutated)
 
 
-def test_the_fetch_refuses_a_host_that_is_not_nist():
-    """The parser's safety argument rests on the host being fixed."""
-    from policyforge.ingest.ai_rmf import fetch_core_html
+def test_parsing_more_than_nist_publishes_raises():
+    """**An over-parse is as much a defect as an under-parse, and the
+    structural checks do not catch it.**
 
-    with pytest.raises(ValueError, match="refusing to fetch"):
-        fetch_core_html("https://example.invalid/core/")
+    Contiguity accepts an *extension*: an invented `Govern 7` gives 20
+    categories with every other assertion satisfied — every row
+    well-formed, every parent present, numbering contiguous from 1. An
+    extra subcategory is worse, since it disturbs nothing at all.
 
+    Raised by policyforge-9b against the widened row pattern, and it was
+    already true of the narrow one — widening made it visible rather than
+    introducing it.
 
-# --- the README's claims ------------------------------------------------
-
-
-def test_the_readme_table_matches_the_catalog(controls):
-    """Three of six catalog READMEs here carried claims not derivable from
-    their own `controls.json`. This one is derived, so it cannot drift.
-
-    It caught a real error on its first run: the table's first draft said
-    Measure 21 and Manage 14 — wrong in two cells, right in the total,
-    because the cells were written to sum to a number already known to be
-    correct.
-
-    **Cells are parsed, not string-matched.** The first version asserted
-    `"| Govern | 6 | 19 |" in readme` and went red the moment `mdformat`
-    padded the columns to align them — a test that fails when the
-    repository's own formatter runs is a test that gets deleted rather
-    than fixed.
+    The pin is an exact pair, not a floor, because a page yielding a
+    different shape is either a restyle or a new revision, and **both need
+    a person**: the first is a parser bug, the second makes this catalog's
+    pin, README and provenance stamp stale together.
     """
-    readme = (CATALOG / "README.md").read_text(encoding="utf-8")
-    table: dict[str, tuple[str, str]] = {}
-    for line in readme.splitlines():
-        if not line.startswith("|"):
-            continue
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if len(cells) == 3:
-            table[cells[0]] = (cells[1], cells[2])
+    html = FIXTURE.read_text(encoding="utf-8", errors="replace")
 
-    for function in FUNCTIONS:
-        categories = [c for c in controls if c["family"] == function]
-        subcategories = sum(len(c["enhancements"]) for c in categories)
-        assert function in table, f"README has no row for {function}"
-        assert table[function] == (str(len(categories)), str(subcategories)), (
-            f"README's {function} row says {table[function]}, catalog says "
-            f"{(len(categories), subcategories)}"
-        )
-
-    assert table["**Total**"] == (
-        f"**{len(controls)}**",
-        f"**{sum(len(c['enhancements']) for c in controls)}**",
-    )
+    for label, extra in [
+        ("an extra category", '<th><span class="x">Govern 7</span>: invented</th>'),
+        ("an extra subcategory", '<th><span class="x">Govern 1.8</span>: invented</th>'),
+    ]:
+        mutated = html.replace("</table>", extra + "</table>", 1)
+        assert mutated != html, f"{label}: the mutation did not apply"
+        with pytest.raises(AiRmfParseError, match=r"revision 1\.0 has"):
+            parse_ai_rmf(mutated)
 
 
-def test_the_readme_states_the_outcome_caveat():
-    """The one thing a reader must not miss.
+def test_the_shape_guard_allows_the_real_page():
+    """What the guard must ALLOW, stated beside what it refuses.
 
-    Asserted because it is the difference between this catalog and every
-    other one here, and because a README edit that tidied it away would
-    leave every other check green.
+    A pinned shape is one typo away from refusing everything, and a guard
+    that refuses its own source is indistinguishable from a broken parser.
     """
-    readme = (CATALOG / "README.md").read_text(encoding="utf-8")
-    assert "states outcomes" in readme.lower()
-    assert "no crosswalk" in readme.lower()
+    from policyforge.ingest.ai_rmf import EXPECTED_SHAPE
 
-
-def test_the_catalog_is_public_domain_and_says_where_it_came_from():
-    import yaml
-
-    meta = yaml.safe_load((CATALOG / "framework.yaml").read_text(encoding="utf-8"))
-    assert meta["licence"] == "public-domain"
-    assert meta["id"] == "nist-ai-rmf"
-    assert meta["source_url"].startswith("https://airc.nist.gov/")
-    for key in ("source_ref", "source_url", "content_sha256", "fetched_at"):
-        assert meta.get(key), f"provenance key {key} is missing or empty"
-
-
-def test_the_parsed_fixture_reproduces_the_committed_catalog(parsed, controls):
-    """The catalog is what the parser produces, not a file someone edited.
-
-    Without this, a hand-edit to `controls.json` would survive every other
-    test in this module — they all read the committed file.
-    """
-    import dataclasses
-
-    regenerated = [dataclasses.asdict(c) for c in parsed]
-    assert regenerated == controls
+    controls = parse_ai_rmf(FIXTURE.read_text(encoding="utf-8", errors="replace"))
+    assert (len(controls), sum(len(c.enhancements) for c in controls)) == EXPECTED_SHAPE

@@ -150,6 +150,16 @@ _CONTROL_ID_RE = re.compile(r"^([A-Za-z]{2})-(\d{1,3})(?:\s*\(\s*(\d{1,3})\s*\))
 #: is admitted as a *shape* — one prepositional phrase — rather than as a
 #: list of endings that would need maintaining. Prepositions are a closed
 #: class; trailing clauses are not.
+#:
+#: **The known trade, named by b5 rather than discovered later.** That
+#: slot cannot tell a closing clause from a pointer: "…and guidance **in
+#: the attached appendix**" is structurally identical to "…at this time"
+#: and would be emptied, though it means the guidance lives elsewhere.
+#: No cell in v1.02 does this. It is the price of admitting a shape
+#: instead of enumerating endings, and the alternative — a list of
+#: permitted endings — was rejected because it silently drops whatever
+#: the next CMS revision spells differently, which is the defect this
+#: whole function exists to undo.
 _NO_GUIDANCE_RE = re.compile(
     r"there\s+(?:are|is)\s+no\s+supplemental\s+control\s+"
     r"require\w*\s+(?:and\s+)?guidance"

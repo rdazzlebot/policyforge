@@ -16,6 +16,7 @@ catalog rather than an error.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -242,6 +243,65 @@ def test_an_obligation_inside_the_sentinel_sentence_survives(cell: str):
     the next CMS revision cannot introduce one unnoticed.
     """
     assert arc_ampe._guidance(cell) == cell
+
+
+GUIDANCE_CELLS = Path(__file__).parent / "fixtures" / "arc_ampe_guidance_cells.json"
+
+
+def test_real_workbook_cells_empty_exactly_the_sentinel_ones():
+    """**The destructive direction, which nothing else guards.**
+
+    Three things were true before this test and only two were checked:
+    the catalog guard proves no sentinel *survived*, and the loader tests
+    prove `_guidance` is right on hand-written strings. **Nothing proved
+    no real guidance was emptied** — and that is the direction this
+    change moves, and the direction whose failure is silent, because a
+    document simply renders without the obligation.
+
+    Designed by policyforge-b5 in review, after I offered a worse
+    version that fetched CMS's workbook over the network: that would be
+    muted the first week the URL moved, which is the failure
+    `test_info_blocking_loader.py`'s docstring warns about. Cells, not
+    the workbook. No network, no URL to rot.
+
+    The fixture is real cells lifted from CMS's published v1.02: every
+    sentinel cell, plus genuine guidance taken on a fixed stride rather
+    than hand-picked — choosing the interesting ones is how the original
+    defect survived review in the first place. The stride caught one
+    that matters more than anything I would have chosen: a cell opening
+    "Note: Ensure that all three bullets of this Supplemental Control
+    Requirements & Guidance are reviewed", which mentions the sentinel's
+    words and is binding guidance.
+
+    **What this catches, measured rather than intended.** Mutating the
+    pattern back to the original `requirements and guidance` takes the
+    count from 96 to 77 and fails here — that is this test's unique
+    contribution, and no other test in this file catches it.
+
+    **What it does not catch, stated because the name suggests
+    otherwise.** It does not independently guard the destructive
+    direction. Broadening the pattern (`any` for `all`, prefix
+    anchoring, a wider trailing slot) leaves every cell here untouched,
+    because no genuine cell in CMS's corpus sits close enough to the
+    sentinel to be swallowed — the "Note:" cell is the nearest and does
+    not open with "there are no". Those mutants are caught by the
+    hand-written one-sentence tests above, and **real data cannot
+    replace them**: a corpus only exercises the failures it happens to
+    contain.
+
+    One mutant survives this whole file: widening the negation so
+    `there are <any word> supplemental…` matches. Nothing in v1.02
+    distinguishes it, so it is unobservable here rather than untested.
+    """
+    cells = json.loads(GUIDANCE_CELLS.read_text(encoding="utf-8"))
+    emptied = [c["control_id"] for c in cells if arc_ampe._guidance(c["guidance"]) == ""]
+    kept = [c for c in cells if arc_ampe._guidance(c["guidance"]) != ""]
+
+    assert len(emptied) == 96, "the count of cells CMS's v1.02 marks as having no guidance"
+    assert all(c["sentinel"] for c in cells if c["control_id"] in emptied)
+    assert [c["control_id"] for c in kept] == [c["control_id"] for c in cells if not c["sentinel"]]
+    for cell in kept:
+        assert arc_ampe._guidance(cell["guidance"]) == arc_ampe._clean(cell["guidance"])
 
 
 def test_bullets_and_curly_quotes_survive_but_editing_artifacts_do_not():

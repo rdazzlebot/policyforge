@@ -48,12 +48,12 @@ Acme Health shall establish and maintain processes and procedures for decommissi
 
 ## 4. Roles and Responsibilities
 
-| Role | Responsibility |
-|------|----------------|
+| Role                  | Responsibility                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------ |
 | [AI Governance Owner] | Overall accountability for this Standard, including risk tolerance determinations and review frequency |
-| Security/IT Staff | Implementation of the processes, procedures, and controls required by this Standard |
-| Compliance Staff | Documentation and management of AI-related legal and regulatory requirements |
-| Internal Audit | Verification of conformance with this Standard |
+| Security/IT Staff     | Implementation of the processes, procedures, and controls required by this Standard                    |
+| Compliance Staff      | Documentation and management of AI-related legal and regulatory requirements                           |
+| Internal Audit        | Verification of conformance with this Standard                                                         |
 
 ## 5. Compliance and Enforcement
 

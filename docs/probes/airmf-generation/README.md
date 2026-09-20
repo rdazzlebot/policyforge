@@ -18,10 +18,10 @@ A seven-item stub built from the real `GOVERN 1.x` subcategory text on
 [AIRC](https://airc.nist.gov/airmf-resources/airmf/5-sec-core/), through
 `synthesize_topic` → `generate_standard`, on two models:
 
-| File | Model | Cost |
-|---|---|---|
-| `synthesis.md` | `qwen3:14b-pf` (local) | $0 |
-| `standard-local-qwen3-14b-pf.md` | `qwen3:14b-pf` (local) | $0 |
+| File                             | Model                           | Cost  |
+| -------------------------------- | ------------------------------- | ----- |
+| `synthesis.md`                   | `qwen3:14b-pf` (local)          | $0    |
+| `standard-local-qwen3-14b-pf.md` | `qwen3:14b-pf` (local)          | $0    |
 | `standard-production-kimi-k3.md` | `openrouter/moonshotai/kimi-k3` | cents |
 
 `stub-controls.json` is **not a catalog**. Its `source_path` is
@@ -36,22 +36,23 @@ it. Verified: 7 catalogs discovered with this directory present.
 **The generated requirement is the outcome with an obligation verb prefixed,
 on both models.**
 
-    SOURCE  GOVERN-1.1  "Legal and regulatory requirements involving AI are
-                         understood, managed, and documented."
+```
+SOURCE  GOVERN-1.1  "Legal and regulatory requirements involving AI are
+                     understood, managed, and documented."
 
-    local   "The organization must ensure that all legal and regulatory
-             requirements involving AI are understood, managed, and
-             documented in accordance with organizational policies."
+local   "The organization must ensure that all legal and regulatory
+         requirements involving AI are understood, managed, and
+         documented in accordance with organizational policies."
 
-    prod    "Acme Health shall ensure that legal and regulatory requirements
-             involving AI are understood, managed, and documented."
+prod    "Acme Health shall ensure that legal and regulatory requirements
+         involving AI are understood, managed, and documented."
+```
 
 Circular: *you must ensure that X is understood*, where the subcategory says
 *X is understood*. A reader cannot act on it.
 
 **And nothing mechanical catches it.** In the local document: 7/7 citations
-resolve, binding share is ~100%, no invented identifiers, and `[Review
-Frequency]` was correctly left undecided rather than fabricated. `satisfies`,
+resolve, binding share is ~100%, no invented identifiers, and `[Review Frequency]` was correctly left undecided rather than fabricated. `satisfies`,
 `check`, `deontic` and `ungrounded_values` all pass. **The failure is
 invisible by construction** — which is why the artefact is worth more than a
 description of it.
@@ -68,11 +69,30 @@ priorities"*. Several sections get no supplementation at all.
 1. **The hollowness is prompt-shaped, not model-shaped** — both models produce
    the same restatement on the same sections. An outcome-framework branch in
    the generation prompt is in scope for 1.6.
-2. **The branch's job is to make supplementation the rule rather than a
+1. **The branch's job is to make supplementation the rule rather than a
    tendency.** That is the spec, and it came from reading both documents.
-3. **This document goes into the reading brief** for whoever reviews the real
+1. **This document goes into the reading brief** for whoever reviews the real
    AI governance documents. *Here is what hollow-but-traceable looks like*
    beats any description of it.
+
+## Why these files are mdformat-normalised
+
+`mdformat` rewrites the two model-generated documents — trailing hard-break
+spaces and blank lines — and the obvious worry is that reformatting a model's
+output edits the artefact you are preserving. **Measured before deciding, and
+it does not:**
+
+```
+BEFORE  source_tags=7  escaped-brackets=0  chars=2135
+AFTER   source_tags=7  escaped-brackets=0  chars=2179
+```
+
+Every citation parses identically through `content.tags.source_tags`, no
+bracket was escaped, and every requirement sentence is verbatim. The evidence
+here is the text — the hollow restatements and the citations that resolve — not
+the whitespace. So these are formatted like every other file in the repo rather
+than carrying an exclusion, which would drop them out of the gate permanently
+for a difference that does not touch what they demonstrate.
 
 ## One note on method
 

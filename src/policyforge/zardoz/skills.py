@@ -422,7 +422,85 @@ def _is_nist_control(control) -> bool:
     return normalize_framework(control.framework) == NIST_ANCHOR
 
 
+def _boundary(state, args: list[str]) -> str:
+    """What may be sent to the configured model, and why.
+
+    **Answered for the provider this shell is talking to**, not for a
+    hypothetical one. A user asking *what does this send anywhere* is
+    sitting inside a model interface at the time, so an answer describing
+    a provider they are not using is worse than no answer: it is
+    confidently about the wrong thing.
+
+    That is why the first line names the provider, the model and the
+    endpoint rather than opening with the table. Same rule as a citation
+    count needing its catalogs — an answer without the configuration it
+    describes cannot be checked by the person reading it.
+    """
+    from policyforge.llm import boundary
+
+    config = state.config or {}
+    llm = config.get("llm") or {}
+    provider = boundary.classify_provider(llm)
+
+    named = llm.get("provider") or "(none configured)"
+    model = llm.get("model") or "(no model set)"
+    endpoint = llm.get("base_url") or llm.get("api_base") or "the provider's default endpoint"
+
+    if str(llm.get("provider", "")).strip().lower() == "cascade":
+        # A cascade has no model of its own, so naming "the" model would be
+        # false where "two, one per half" is true. The classification line
+        # below already names both halves; the header has to agree with it.
+        halves = []
+        for key in ("primary", "escalate_to"):
+            half = llm.get(key) or {}
+            halves.append(
+                f"{key.replace('_', ' ')} {half.get('provider') or '(unset)'}"
+                f"/{half.get('model') or '(no model set)'}"
+                f" via {half.get('base_url') or half.get('api_base') or 'its default endpoint'}"
+            )
+        header = "Answering for this shell's configuration: cascade — " + "; ".join(halves) + "."
+    else:
+        header = (
+            f"Answering for this shell's configuration: {named}, model {model}, via {endpoint}."
+        )
+
+    lines = [
+        header,
+        f"Classified as: {provider}",
+        "",
+        boundary.matrix(config),
+    ]
+
+    tightened = {
+        content_class: ceiling
+        for content_class, ceiling in boundary.ceilings(config).items()
+        if ceiling != boundary.DEFAULT_CEILINGS[content_class]
+    }
+    if tightened:
+        lines += ["", "Tightened by config (llm.boundary):"]
+        lines += [f"  {k} -> at most {v}" for k, v in sorted(tightened.items())]
+    else:
+        # Stated rather than left silent: a reader cannot tell "nothing
+        # tightened" from "the tightening section failed to render".
+        lines += ["", "No ceiling is tightened by config; these are the defaults."]
+
+    return "\n".join(lines)
+
+
 SKILLS: dict[str, Skill] = {
+    "boundary": Skill(
+        name="boundary",
+        summary="What may be sent to the configured model, and why.",
+        answers=(
+            "what does this send to a model; can this run offline; is my "
+            "licensed content safe; what may leave the machine; which provider "
+            "am I configured against; would HITRUST content be sent anywhere; "
+            "what is the content boundary. Answered for the provider this "
+            "shell is configured with, not in general."
+        ),
+        run=_boundary,
+        arguments={},
+    ),
     "bundle": Skill(
         name="bundle",
         summary="Everything one team owns: topics, requirements, documents, cadence.",

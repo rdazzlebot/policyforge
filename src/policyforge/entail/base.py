@@ -150,6 +150,40 @@ class Unsupported:
         return f"{self.verdict.label} by {markers}: {self.sentence!r}{detail}"
 
 
+@dataclass(frozen=True)
+class Conflict:
+    """A sentence whose own cited passages disagree with each other.
+
+    Not an unsupported claim, and deliberately a separate type. One cited
+    passage carries the sentence and another contradicts it, so the answer
+    is supported — by a source that another source it also cites denies.
+    Reporting that through `Unsupported` would state a falsehood about
+    which document said what, and the reader's next question is *which two
+    disagree*, which a claim-level finding cannot answer.
+
+    This is arguably the most useful thing the entailment path can say. It
+    is also the thing it said nothing about until now: `unsupported_claims`
+    skips a sentence the moment anything supports it, so a supported-and-
+    contradicted sentence produced no finding at all — and an absence reads
+    as agreement.
+    """
+
+    sentence: str
+    #: The passage that carries the sentence, and the one that denies it.
+    #: Both, because "they disagree" without naming them sends a reader to
+    #: read every cited passage to find out which.
+    supported_by: int
+    contradicted_by: int
+    verdict: Verdict
+
+    def __str__(self) -> str:
+        detail = f" — {self.verdict.reason}" if self.verdict.reason else ""
+        return (
+            f"[{self.supported_by}] carries it and [{self.contradicted_by}] "
+            f"contradicts it: {self.sentence!r}{detail}"
+        )
+
+
 class Entailer(ABC):
     """Judges whether a premise supports a hypothesis."""
 
@@ -201,7 +235,13 @@ def cited_sentences(text: str, count: int) -> list[tuple[str, list[int]]]:
     ]
 
 
-def unsupported_claims(text: str, passages: list, entailer: Entailer) -> list[Unsupported]:
+def unsupported_claims(
+    text: str,
+    passages: list,
+    entailer: Entailer,
+    *,
+    _judged: list[tuple[str, list[int], list[Verdict]]] | None = None,
+) -> list[Unsupported]:
     """Cited sentences that their own passages do not support.
 
     Only sentences carrying a citation are judged. One with no citation is
@@ -213,9 +253,9 @@ def unsupported_claims(text: str, passages: list, entailer: Entailer) -> list[Un
     carries it, because an answer is allowed to draw one claim from two
     documents and citing both is the behaviour the prompt asks for.
     """
+    judged = _judged if _judged is not None else judge_cited_sentences(text, passages, entailer)
     findings: list[Unsupported] = []
-    for sentence, cited in cited_sentences(text, len(passages)):
-        verdicts = [entailer.entails(passages[n - 1].chunk.text, sentence) for n in cited]
+    for sentence, cited, verdicts in judged:
         if any(v.supports for v in verdicts):
             continue
         # Report the most specific complaint available: a contradiction is
@@ -224,6 +264,74 @@ def unsupported_claims(text: str, passages: list, entailer: Entailer) -> list[Un
         worst = next((v for v in verdicts if v.label == CONTRADICTED), verdicts[0])
         findings.append(Unsupported(sentence=sentence, cited=cited, verdict=worst))
     return findings
+
+
+def judge_cited_sentences(
+    text: str, passages: list, entailer: Entailer
+) -> list[tuple[str, list[int], list[Verdict]]]:
+    """Every cited sentence, its citations, and a verdict for each of them.
+
+    **Eager on purpose, and the reason is a measurement rather than a
+    preference.** Judging only until something supports the sentence would
+    be cheaper and would make `conflicting_passages` below impossible to
+    measure: a conflict would be found when the contradicting passage
+    happened to be cited first and missed when it was cited second, so a
+    conflict rate would track how the answering model orders its citations
+    rather than how often sources disagree. The confound and the signal
+    would be the same number, so no care at analysis time recovers it.
+
+    One pass because both readers want the same verdicts. Asking the judge
+    the same question twice to keep two call sites tidy would double the
+    cost of the one check on this path that is opt-in precisely because it
+    costs a model call per cited sentence.
+    """
+    return [
+        (sentence, cited, [entailer.entails(passages[n - 1].chunk.text, sentence) for n in cited])
+        for sentence, cited in cited_sentences(text, len(passages))
+    ]
+
+
+def conflicting_passages(
+    text: str,
+    passages: list,
+    entailer: Entailer,
+    *,
+    _judged: list[tuple[str, list[int], list[Verdict]]] | None = None,
+) -> list[Conflict]:
+    """Sentences whose own cited passages disagree with each other.
+
+    The sibling of `unsupported_claims`, and not a widening of it: a
+    conflict is not an unsupported claim. The sentence *is* carried — by a
+    passage the answer cites alongside another that denies it. Reporting it
+    as unsupported would state a falsehood about which document said what.
+
+    Nothing reported this before. `unsupported_claims` returns early the
+    moment any passage supports the sentence, so a supported-and-
+    contradicted sentence produced no finding — and it produced that
+    absence in the direction that looks clean, since fewer findings read as
+    the documents agreeing more than they do.
+
+    The first supporting and first contradicting passage are named. Where
+    several of each exist the rest are the same disagreement restated, and
+    a reader who wants them has the citation markers.
+    """
+    judged = _judged if _judged is not None else judge_cited_sentences(text, passages, entailer)
+    conflicts: list[Conflict] = []
+    for sentence, cited, verdicts in judged:
+        pairs = list(zip(cited, verdicts, strict=True))
+        support = next((n for n, v in pairs if v.supports), None)
+        against = next((n for n, v in pairs if v.label == CONTRADICTED), None)
+        if support is None or against is None:
+            continue
+        conflicts.append(
+            Conflict(
+                sentence=sentence,
+                supported_by=support,
+                contradicted_by=against,
+                verdict=next(v for n, v in pairs if n == against),
+            )
+        )
+    return conflicts
 
 
 def get_entailer(config: dict) -> Entailer | None:

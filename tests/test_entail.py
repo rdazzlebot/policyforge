@@ -18,8 +18,10 @@ from policyforge.entail import (
     CONTRADICTED,
     ENTAILED,
     NEUTRAL,
+    Conflict,
     Unsupported,
     Verdict,
+    conflicting_passages,
     get_entailer,
     unsupported_claims,
 )
@@ -162,6 +164,89 @@ def test_the_finding_reads_as_a_sentence():
 
     assert "[1][2]" in str(finding)
     assert "the passage says otherwise" in str(finding)
+
+
+# --------------------------------------------------------------------------
+# When the cited passages disagree with each other
+# --------------------------------------------------------------------------
+
+
+def test_a_claim_one_passage_carries_and_another_denies_is_reported():
+    """The silence this was built to end. `unsupported_claims` stops at the
+    first passage that supports the sentence, so a sentence supported by [1]
+    and contradicted by [2] produced no finding at all — and it produced
+    that absence in the direction that reads as the documents agreeing."""
+    entailer = FakeEntailer({"carries it": ENTAILED, "denies it": CONTRADICTED})
+
+    found = conflicting_passages("A claim. [1][2]", _passages("carries it", "denies it"), entailer)
+
+    assert len(found) == 1
+    assert (found[0].supported_by, found[0].contradicted_by) == (1, 2)
+
+
+def test_a_conflict_is_not_also_an_unsupported_claim():
+    """The two findings are siblings, and a sentence belongs to one of them.
+    Reporting a carried sentence as unsupported would say something false
+    about which document said what."""
+    entailer = FakeEntailer({"carries it": ENTAILED, "denies it": CONTRADICTED})
+
+    assert (
+        unsupported_claims("A claim. [1][2]", _passages("carries it", "denies it"), entailer) == []
+    )
+
+
+def test_passages_that_agree_are_not_a_conflict():
+    """The half that gets skipped. Without it a finding that fires on every
+    sentence passes every other test in this section."""
+    for scripted in (
+        {"first": ENTAILED, "second": ENTAILED},
+        {"first": ENTAILED, "second": NEUTRAL},
+        {"first": NEUTRAL, "second": NEUTRAL},
+    ):
+        found = conflicting_passages(
+            "A claim. [1][2]", _passages("first", "second"), FakeEntailer(scripted)
+        )
+        assert found == [], scripted
+
+
+def test_passages_that_all_deny_the_claim_are_not_a_conflict_either():
+    """Nothing carries it, so the documents are not disagreeing with each
+    other — they agree, about an answer neither of them supports. That is
+    `unsupported_claims`' finding and it already makes it."""
+    entailer = FakeEntailer(default=CONTRADICTED)
+
+    assert conflicting_passages("A claim. [1][2]", _passages("first", "second"), entailer) == []
+
+
+def test_which_passage_is_cited_first_does_not_change_the_finding():
+    """Order-independence, pinned so a later optimisation cannot reintroduce
+    the short-circuit quietly: judging only until something supports the
+    sentence would find this conflict when the contradicting passage happens
+    to be cited second and miss it when it is cited first. A conflict rate
+    measured on that tracks how the answering model orders its citations."""
+    scripted = {"carries it": ENTAILED, "denies it": CONTRADICTED}
+
+    def named(order):
+        passages = _passages(*order)
+        found = conflicting_passages("A claim. [1][2]", passages, FakeEntailer(scripted))
+        assert len(found) == 1
+        return (
+            passages[found[0].supported_by - 1].chunk.text,
+            passages[found[0].contradicted_by - 1].chunk.text,
+            found[0].sentence,
+        )
+
+    assert named(("carries it", "denies it")) == named(("denies it", "carries it"))
+
+
+def test_the_conflict_reads_as_a_sentence_naming_both_passages():
+    """ "they disagree" without saying which two sends the reader to read
+    every cited passage to find out."""
+    conflict = Conflict("A claim.", 1, 3, Verdict(CONTRADICTED, "the standard says annually"))
+
+    assert "[1]" in str(conflict)
+    assert "[3]" in str(conflict)
+    assert "the standard says annually" in str(conflict)
 
 
 # --------------------------------------------------------------------------

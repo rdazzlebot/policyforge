@@ -1606,6 +1606,139 @@ positives, so a claim absent from one run cannot be distinguished between
 scheme fixes that — it needs the harness to emit every judged claim with
 its verdict, which is sequenced after this run.
 
+### 23. Whether the prompt alone stops short-form NIST citations — 2026-09-20
+
+**Pre-registered before the data existed** (design, thresholds and the
+blocking prerequisite fixed 2026-09-18, held by 1d), and run once 800-171
+landed as #143 gave the tree its second NIST-family catalog. Arm A is the
+generation prompts before #117, restored from `75dc61e`; arm B is the
+prompts at #117. One variable: `git status` showed exactly two modified
+files in arm A and zero in arm B, and `tests/test_prompt_citation_form.py`
+was run against both — green on arm B, failing on exactly the two files in
+arm A. **A check that can fail in both directions, run in both
+directions**, so each arm is confirmed to be the prompt it claims.
+
+Seven catalogs **pinned by name, never globbed**, one crosswalk built from
+exactly those seven, one model (`openrouter/z-ai/glm-5.3-flash`) named in
+one config both arms read, one sitting, in a worktree pinned to `17fd4c6`.
+
+|                               | arm A (pre-#117) | arm B (#117) |
+| ----------------------------- | ---------------- | ------------ |
+| documents                     | 20               | 20           |
+| NIST-family citations (N)     | 1058             | 1041         |
+| **short-form**                | **413**          | **0**        |
+| qualified                     | 645              | 1041         |
+| documents with any short-form | 9/20             | 0/20         |
+| unknown to the pinned set     | 431              | 6            |
+| citations per document        | 118.40           | 118.65       |
+
+**Primary criterion: PASS.** Zero short-form out of N=1041, against arm A's
+1058\.
+
+**Independent N criterion: MET, ruled by the registration's holder rather
+than by the measurer.** N fell 1058 → 1041, −1.6%. The registration says *a
+fall in N against arm A fails independently* and sets no tolerance, so by
+the letter it read as tripped, and it was reported as tripped and referred.
+The ruling rests on the clause's own stated purpose, which was fixed before
+any data: it guards against *"zero short-form is also what you get if arm B
+emits no NIST-family citations at all"* — **collapse, not drift.** 1041 is
+not a collapse; the thing under test did not disappear.
+
+**Recorded because the escalation is the reason the pass is worth
+anything.** 17 citations on ~1050, with the criterion's stated reason
+plainly unthreatened, was easy to call noise — and **calling it noise is
+inventing a tolerance after seeing the number.** A verdict the measurer
+reached about their own measurement would not have been evidence, whichever
+way it went.
+
+**One limitation in the ruling, measured rather than argued.** The obvious
+support — that the registration *did* fix a 10% tolerance for "citation
+density (citations per document)" — does not apply as read. That line is
+**total** citations across every framework, which is not N divided by a
+constant, and the two moved in opposite directions:
+
+|                              | arm A  | arm B  | change |
+| ---------------------------- | ------ | ------ | ------ |
+| total citations per document | 118.40 | 118.65 | +0.21% |
+| NIST-family per document     | 52.90  | 52.05  | −1.61% |
+| non-NIST citations           | 1310   | 1332   | +1.68% |
+
+The quantity the 10% was fixed against **rose**, partly because non-NIST
+citations rose while NIST-family fell. Extending that threshold to N would
+be an inference made after seeing the data, which is what the document
+exists to prevent — so the verdict rests on collapse-versus-drift and not
+on the 10%.
+
+**The real gap is in the registration, not in the run.** It fixed a
+*direction* with no tolerance and **nobody characterised the variance
+before data existed** — which matters more than the 1.6%, because arm A
+turns out to be **bimodal at the document level**: 9 documents short-form,
+11 qualified, and *not one mixed document in either arm*. The old prompt
+did not waver within a document; it flipped a coin per document. So
+document-level variance is large and the counts are not 20 independent
+draws. **This is recorded as a fact and deliberately not used as a reason**
+— excusing a delta by variance discovered afterwards is the same move as
+inventing a tolerance. The lesson belongs to the next pre-registration, not
+retrofitted into this one: **an arm-A-versus-arm-A re-run gives the null
+distribution for about $0.28**, and it is worth that even when no criterion
+is in dispute, because it is the only way anyone gets a first number for
+document-level variance on this corpus.
+
+**Secondary guardrails, as registered.** Citation density rose 118.40 →
+118.65 (+0.2%; the threshold was a fall of no more than 10%). Truncation:
+no length-stop in either arm. Per-document consistency was registered to be
+*reported with no threshold* — both arms are 20/20 internally consistent,
+which is the number that turned out to carry the bimodality above.
+
+**The trap came out in the registered direction.** Unknowns fell 431 → 6
+**with two NIST catalogs loaded** — the configuration is stated because
+this is the measurement where the direction inverts, and an unknown count
+quoted without its catalog configuration means nothing.
+
+#### Two disclosures that cost nothing to smooth and were not smoothed
+
+**Arm B contains one retried document; arm A contains none.** One topic's
+first attempt returned empty content — `stop_reason 'stop'`, the
+reasoning-model empty-reply case — and the guard refused to write rather
+than shipping a short document. The retry is disclosed rather than folded
+in, because *one arm has a resampled document and the other does not* is a
+fact about the comparison.
+
+**An arm A document was written into arm B's output directory, and
+caught.** The retry above was first run while the worktree still held arm
+A's reverted prompts. Quarantined, prompts restored, the pinned-prompt test
+re-run green, then retried properly. It would not have moved the primary
+criterion — that document used the qualified form anyway, as 61% of arm A's
+citations do — but it would have put an arm A sample in arm B's
+denominator. Recorded because **disclosing the one that did not matter is
+how the one that does gets disclosed.**
+
+#### The near-miss is worth more than the measurement
+
+**This was first built on the eval harness's `generation` suite, and that
+instrument would have reported arm B failing outright.** A one-call smoke
+test showed its document carrying seven short-form `[NIST AC-2]` tags.
+Those are not a prompt result: `run_generation` grades a document on
+*preserving* the tags in its fixture, and `evals/cases.yaml`'s generation
+syntheses are written short-form, so **both arms would have copied them**
+and the arm that fixed the problem would have scored 7 and failed.
+
+Chasing that produced the finding that outlives this epoch: **no eval suite
+exercises `synthesis/merge.py`.** `SUITES` has twelve entries and none is
+synthesis. The generation path never loads a catalog at all, which is why
+`policyforge synthesize` — where `--controls` is required — is the only
+instrument that can measure this, and why #117 shipped verifiable through
+the CLI and through no suite. **A 189-case harness does not touch the file
+whose prompt authors every citation tag in the product.** That is a
+standing coverage hole, not a footnote to this run.
+
+**Arm B's residual 6 unknowns are a different and worse class.** Not one is
+a form problem. They are invented identifiers — `NIST 800-53 SA-3(2)(a)`
+and `SA-3(2)(b)` are sub-paragraphs of a control rather than control ids,
+and `FedRAMP CM-2` attributes an 800-53 id to a framework that is not
+800-53. **Fabrication is not mis-formation**, six is small enough to
+characterise exactly, and nothing here was designed to detect it.
+
 ______________________________________________________________________
 
 ## Two ways a run can lie, found the hard way

@@ -119,7 +119,16 @@ Orphaned    397 ->  494
 identical at 814; the percentage falls because the denominator grew by 97.
 This is the shell's standing behaviour for *any* bundled catalog, not
 something this one introduced — `171.100` from the information-blocking
-catalog was already in that orphan list.
+catalog, `2.16` from Part 2 and `164.306(a)` from HIPAA were all already
+in that orphan list. 800-171 is the fourth catalog to do it; it drew
+attention only because it added a round hundred to a number someone
+happened to be watching.
+
+**The bare percentage is relative to everything on disk**, so it is not
+comparable between two machines with different catalogs installed, or
+between one machine before and after an install. Use a scoped
+`/coverage moderate`, or `policyforge coverage --controls` naming the
+catalogs you mean, when you need a number that holds still.
 
 `/coverage low`, `moderate` and `high` are unaffected, because rev 3
 carries no baseline tags and a scoped report filters all 97 out. `/drift`

@@ -167,3 +167,182 @@ def test_citation_resolution_requires_the_user_to_name_the_catalogs():
     for name in ("satisfies", "coverage", "ssp", "addresses"):
         param = next(p for p in cli.commands[name].params if p.name == "controls_paths")
         assert param.required, f"{name} no longer requires --controls"
+
+
+def test_addresses_answers_are_unchanged_by_installing_this_catalog():
+    """**The claim the README makes, measured rather than reasoned.**
+
+    Three people reasoned about this paragraph and all three were wrong
+    in a different way: the first draft said upgrading broke documents
+    (it does not), the correction said the shell resolves no citations so
+    nothing changes there (true, and incomplete), and the hold said the
+    shell's citations go ambiguous (it never calls that resolver).
+
+    What settles it is running the shell's own view with and without the
+    catalog. `/addresses` answers for existing citations must not move.
+    """
+    from policyforge.ingest.schema import load_controls
+    from policyforge.mapping.crosswalk import NIST_ANCHOR, build_crosswalk, normalize_framework
+    from policyforge.topics.bundles import requirement_view
+    from policyforge.topics.registry import load_topics
+
+    root = Path(__file__).parent.parent
+    topics = load_topics(root / "config" / "topics.example.yaml")
+
+    def load(names):
+        controls = []
+        for name in names:
+            controls.extend(load_controls(root / "data" / "frameworks" / name / "controls.json"))
+        return controls
+
+    without = load(["nist-800-53-r5", "hipaa-security-rule", "arc-ampe"])
+    with_171 = without + load(["nist-800-171-r3"])
+
+    def view(controls, requirement):
+        anchored = [c for c in controls if normalize_framework(c.framework) == NIST_ANCHOR]
+        other = [c for c in controls if normalize_framework(c.framework) != NIST_ANCHOR]
+        return requirement_view(
+            topics,
+            anchored,
+            requirement,
+            other_controls=other,
+            crosswalk=build_crosswalk(controls),
+        ).render()
+
+    for citation in ("AC-2", "164.308(a)(1)(i)"):
+        assert view(without, citation) == view(with_171, citation), (
+            f"installing 800-171 changed the answer for {citation}. The catalog "
+            f"README tells users existing citations are unaffected; that is now false."
+        )
+
+
+def test_the_readme_explains_the_coverage_move_rather_than_leaving_it(readme):
+    """`/coverage` moves, and a falling percentage reads as "you got
+    worse" unless someone says the owned count did not change.
+
+    An earlier draft of this claimed a `0 of 97` section that the shell
+    never emits -- `_coverage` calls `analyze_coverage` without
+    `other_controls` or `crosswalk`, so `framework_coverage` is always
+    empty there. I had run the right function with my own arguments
+    instead of the caller's.
+    """
+    assert "814" in readme, "the unchanged owned count is the reassurance"
+    assert "Nothing that was covered became uncovered" in readme
+    assert "0 of 97" not in readme, "the shell does not emit that section"
+
+
+def _shell_state(paths):
+    """The shell's own state object, so a skill is exercised through the
+    handler rather than through a reconstruction of it.
+
+    **This is the point of these tests.** Four successive claims about
+    what the shell does were made by running the right function with
+    arguments the shell does not pass -- `resolve_framework` against the
+    shell's catalogs when the shell never calls it, then
+    `analyze_coverage` with `other_controls` and `crosswalk` when
+    `_coverage` supplies neither. Both produced well-formed answers to a
+    neighbouring question.
+    """
+    from types import SimpleNamespace
+
+    from policyforge.topics.registry import load_topics
+    from policyforge.zardoz.corpus import DEFAULT_CONTENT_DIR
+
+    root = Path(__file__).parent.parent
+    return SimpleNamespace(
+        controls_paths=[str(p) for p in paths],
+        topics=load_topics(root / "config" / "topics.example.yaml"),
+        config={},
+        content_dir=DEFAULT_CONTENT_DIR,
+        parameters_path=root / "config" / "parameters.yaml",
+    )
+
+
+def _catalog_paths(*, including_800_171: bool):
+    root = Path(__file__).parent.parent / "data" / "frameworks"
+    names = [
+        "nist-800-53-r5",
+        "hipaa-security-rule",
+        "arc-ampe",
+        "fedramp",
+        "cfr-171-information-blocking",
+        "cfr-42-part-2-sud-records",
+    ]
+    if including_800_171:
+        names.append("nist-800-171-r3")
+    return [root / name / "controls.json" for name in names]
+
+
+def test_the_shell_coverage_report_does_not_claim_a_framework_section():
+    """`_coverage` passes neither `other_controls` nor `crosswalk`, so
+    `framework_coverage` is empty and no per-framework section is
+    rendered. Pinned because a README once said otherwise."""
+    from policyforge.zardoz.skills import _coverage
+
+    output = _coverage(_shell_state(_catalog_paths(including_800_171=True)), [])
+
+    assert "reachable via the crosswalk" not in output
+    assert "0 of 97" not in output
+
+
+def test_installing_the_catalog_does_not_reduce_what_the_shell_says_is_owned():
+    """The reassurance the README gives, held to the handler. The scope
+    and the orphan count grow; **the owned count must not move**, because
+    "you got worse" is what a falling percentage reads as."""
+    import re
+
+    from policyforge.zardoz.skills import _coverage
+
+    def owned(paths):
+        output = _coverage(_shell_state(paths), [])
+        found = re.search(r"Owned\s+(\d+)", output)
+        assert found, "coverage report has no Owned line: " + output[:300]
+        return int(found.group(1))
+
+    assert owned(_catalog_paths(including_800_171=False)) == owned(
+        _catalog_paths(including_800_171=True)
+    )
+
+
+def test_a_scoped_coverage_report_is_untouched_because_rev_3_has_no_baselines():
+    """`/coverage moderate` filters all 97 out, so the surprise only
+    reaches someone who runs it bare."""
+    from policyforge.zardoz.skills import _coverage
+
+    without = _coverage(_shell_state(_catalog_paths(including_800_171=False)), ["moderate"])
+    with_171 = _coverage(_shell_state(_catalog_paths(including_800_171=True)), ["moderate"])
+
+    assert without == with_171
+
+
+def test_the_readme_claim_that_the_percentage_moves_is_still_true(readme):
+    """**Pins the README sentence to the behaviour it describes**, so a
+    change to `_coverage` forces the README to be revisited rather than
+    leaving a shipped file describing behaviour that no longer exists.
+
+    The README tells a reader the bare percentage is relative to
+    everything on disk and therefore not comparable across machines or
+    across an install. That is only worth saying while it is true. If the
+    coverage scope stops growing when a catalog is installed, this fails
+    and the sentence has to go.
+    """
+    import re
+
+    from policyforge.zardoz.skills import _coverage
+
+    def in_scope(paths):
+        output = _coverage(_shell_state(paths), [])
+        found = re.search(r"In scope\s+(\d+)", output)
+        assert found, "coverage report has no In scope line: " + output[:300]
+        return int(found.group(1))
+
+    without = in_scope(_catalog_paths(including_800_171=False))
+    with_171 = in_scope(_catalog_paths(including_800_171=True))
+
+    assert with_171 > without, (
+        "installing a catalog no longer enlarges the coverage scope, so the "
+        "catalog README's paragraph on the bare percentage being relative to "
+        "what is on disk is now describing behaviour that does not exist. "
+        "Update data/frameworks/nist-800-171-r3/README.md."
+    )
+    assert "relative to everything on disk" in readme

@@ -1775,6 +1775,56 @@ ______________________________________________________________________
 
 ## Findings that outlived the numbers
 
+**A generated document can assert a requirement that exists nowhere in its
+synthesis, and every check passes.** Found 2026-09-20 while pre-registering a
+different measurement; independent of that measurement and of the framework
+that exposed it.
+
+`evals/runner._tags` compares **control references**, not content. So the
+grader asks *"does this document cite what the synthesis cited, and nothing
+more?"* and never asks *"does this document say what the synthesis said?"*
+A requirement invented under a tag the synthesis genuinely cites is
+indistinguishable from one the synthesis wrote.
+
+Demonstrated against the two artefacts on #164, a real synthesis and the
+document generated from it:
+
+```
+tags in synthesis   7      dropped   []      harness verdict on tags: PASS
+tags in document    7      invented  []
+
+"The inventory mechanism shall be resourced according to organizational
+ risk priorities."          in the document: yes      in the synthesis: no
+```
+
+A binding obligation, cited to `[NIST AI RMF GOVERN-1.6]`, which the
+synthesis never stated. `satisfies`, `check`, `deontic` and
+`ungrounded_values` pass it too — it is well-formed, it binds, its citation
+resolves, and it is unfounded.
+
+**This is the inverse of the probe's finding and it is worse.** #164 recorded
+*hollow but traceable*: a requirement that restates its source and commits
+nobody to anything. This is **substantive but unfounded**: a requirement that
+commits the organization to something its source never said, wearing a
+citation that checks out. Hollowness is visible to a careful reader, who can
+see the sentence says nothing. Fabrication is invisible to everyone without
+the synthesis open beside the document.
+
+**`generate/policy_writer.py` already forbids it** — *"do not add requirements
+that weren't in the input"* — which is the right rule and is currently true.
+Nothing enforces it. The gap is not a missing rule but a missing check, and
+the shape is one this project keeps meeting: **the check that exists measures
+the neighbouring property.** Citations are the thing that is easy to compare,
+so citations are what got compared, and "cites correctly" quietly stood in
+for "says what it was given".
+
+**What would close it** is a content-level comparison between synthesis
+requirements and document requirements — not a similarity score, which an
+earlier attempt on #164 showed fragments on markdown, but an accounting: every
+binding sentence in the document tracing to a requirement in the synthesis, and
+anything that does not being reported as an addition. Untried, and named here
+so the absence is a decision rather than an oversight.
+
 **Terse scores do not predict answering scores.** `deepseek-v4-flash` went
 92 on routing and 96 on answering; `gpt-oss-120b` went 89 on routing and 80
 on answering. Measure the suite you care about.

@@ -106,34 +106,29 @@ passes both catalogs in one run — at which point replace it with
 
 ## What changes in the zardoz shell
 
-The shell loads whatever catalogs are on disk rather than asking you to
-name them, and hands them all to the coverage report as its scope. So
-installing this catalog moves the bare `/coverage` numbers:
+**Nothing, now.** Installing this catalog does not move the bare
+`/coverage` numbers, and it used to.
+
+The shell hands the catalogs on disk to the coverage report, and that
+report's scope is the NIST 800-53 set the topic registry anchors to.
+Until recently every catalog went in as that scope, so a HIPAA or CFR
+requirement was an orphan the moment its catalog was installed — no topic
+anchors to its identifiers — and the denominator grew while the numerator
+did not. Installing 800-171 moved the headline from 49% to 46% with
+nothing about the programme changing.
+
+Now the non-NIST catalogs are reported where they belong, through the
+crosswalk:
 
 ```
-In scope   1657 -> 1754      Owned  814 (49%) -> 814 (46%)
-Orphaned    397 ->  494
+NIST-800-171 reachable via the crosswalk
+  0 of 97 requirements map to an owned NIST control
 ```
 
-**Nothing that was covered became uncovered.** The owned count is
-identical at 814; the percentage falls because the denominator grew by 97.
-This is the shell's standing behaviour for *any* bundled catalog, not
-something this one introduced — `171.100` from the information-blocking
-catalog, `2.16` from Part 2 and `164.306(a)` from HIPAA were all already
-in that orphan list. 800-171 is the fourth catalog to do it; it drew
-attention only because it added a round hundred to a number someone
-happened to be watching.
-
-**The bare percentage is relative to everything on disk**, so it is not
-comparable between two machines with different catalogs installed, or
-between one machine before and after an install. Use a scoped
-`/coverage moderate`, or `policyforge coverage --controls` naming the
-catalogs you mean, when you need a number that holds still.
-
-`/coverage low`, `moderate` and `high` are unaffected, because rev 3
-carries no baseline tags and a scoped report filters all 97 out. `/drift`
-gains one line reporting no change. `/addresses` answers for existing
-citations are byte-identical, measured through the shell's own handler.
+**Zero here means nobody has published a rev 3 to 800-53 mapping**, not
+that 97 requirements are unaddressed. The report says which of those two
+it means for every framework that reports zero, because they want
+opposite responses — *go and map it* against *mapping it would be wrong*.
 
 ## Regenerating it
 

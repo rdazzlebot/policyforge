@@ -86,3 +86,14 @@ jobs:
           policyforge drift \
             --controls data/frameworks/cfr-42-part-2-sud-records/controls.json \
             --detail --fail-on-change
+
+      - name: Fetch the current SP 800-171 rev 3
+        if: always()
+        run: policyforge etl-800-171
+
+      - name: What changed in NIST SP 800-171
+        if: always()
+        run: |
+          policyforge drift \
+            --controls data/frameworks/nist-800-171-r3/controls.json \
+            --detail --fail-on-change

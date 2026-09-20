@@ -37,11 +37,27 @@ OSCAL shapes that need translating into this project's flatter schema:
   any more, they appear in no baseline, and listing them in an SSP would
   invite implementation narratives for controls that no longer exist. The
   count is reported by `parse_oscal_catalog` rather than silently dropped.
+
+**This module reads more than one NIST catalog, and they do not agree with
+each other.** See `OscalDialect`: the bullet above about unclassed `label`
+props is true of 800-53 and false of 800-171, where the unclassed label is
+the control's *title* with the citation in brackets. Everything catalog-
+specific lives in a dialect, and `parse_oscal_catalog` defaults to 800-53
+so callers that predate this keep their behaviour exactly.
+
+One visible consequence, stated so nobody "fixes" it: **800-53 statements
+render `a.` and 800-171's render `a`.** That is NIST's difference, not
+ours — 800-53's label prop literally contains the dot and 800-171's
+segment does not. Adding one would put a character on the page that NIST
+did not, in a catalog whose whole pitch is that a citation can be traced
+back. The awkward line is the honest one.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from .schema import Control, ControlEnhancement
 
@@ -78,6 +94,114 @@ BASELINE_URLS = {
 BASELINE_ORDER = ("Low", "Moderate", "High")
 
 _PARAM_INSERT_RE = re.compile(r"\{\{\s*insert:\s*param,\s*([^\s}]+)\s*\}\}")
+
+#: 800-171 rev 3's OSCAL, for contrast with everything above.
+_SP800_171_REV3_JSON = "/nist.gov/SP800-171/rev3/json"
+CATALOG_URL_800_171 = f"{_OSCAL_ROOT}{_SP800_171_REV3_JSON}/NIST_SP800-171_rev3_catalog.json"
+#: Written out rather than templated from the framework name. NIST spells
+#: the two files differently — `NIST_SP-800-53_rev5_catalog.json` against
+#: `NIST_SP800-171_rev3_catalog.json`, note where the hyphen goes — so a
+#: URL built by substitution 404s. `tests/test_oscal_loader.py` pins both
+#: as literals for the same reason `test_ecfr_fetch.py` does: a change of
+#: behaviour should fail, not a change of shape.
+
+#: 800-171 rev 3 publishes **no baseline profiles**. 800-53 ships Low,
+#: Moderate and High; `nist.gov/SP800-171/rev3/json/` contains the catalog
+#: and a `-min` variant and nothing else. So `baseline` is empty on every
+#: 800-171 control, and that empty is a property of the source rather than
+#: a parse that came up short.
+
+
+@dataclass(frozen=True)
+class OscalDialect:
+    """How one NIST catalog spells the things every NIST catalog has.
+
+    **NIST's own catalogs disagree about what an unclassed `label` prop
+    holds**, and that is the whole reason this type exists. The next person
+    will assume it is uniform, because the brief for 800-171 did:
+
+        800-53 rev 5   labels: AC-01 (zero-padded), AC-1 (unclassed),
+                               AC-01 (sp800-53a);  group label: "AC"
+        800-171 rev 3  labels: "Account Management (03.01.01)" — the only
+                               one;  group label: "Access Control (03.01)"
+
+    So on 800-53 the unclassed label *is* the citation, and on 800-171 it
+    is the title with the citation in brackets. Reading it the 800-53 way
+    does not fail: it yields 97 well-formed controls whose `control_id` is
+    a sentence, with zero empty statements and zero unresolved parameters.
+    Every count check passes. That is the failure this type prevents.
+    """
+
+    #: `Control.framework`, and the key `mapping/crosswalk.py` resolves.
+    framework: str
+    #: Formats `Control.framework_version` from the catalog's own metadata
+    #: version, so the published revision travels with the parse.
+    version_label: Callable[[str], str]
+    #: Where the catalog was read from, recorded as `source_path`.
+    source_url: str
+    #: The citation for one control or enhancement, from its OSCAL node.
+    identifier: Callable[[dict], str]
+    #: The short family name, from the OSCAL group node.
+    family_abbr: Callable[[dict], str]
+    #: A part's rendered label. Returning "" drops it.
+    part_label: Callable[[str, str], str] = lambda label, _identifier: label
+
+
+def _prop(item: dict, name: str) -> str | None:
+    """The first value of `name` in `item`'s props, or None."""
+    for prop in item.get("props", []):
+        if prop.get("name") == name:
+            return prop.get("value")
+    return None
+
+
+def _sort_id(item: dict) -> str:
+    """The `sort-id` prop, which is 800-171's actual citation.
+
+    `03.01.01` on a control, `03.01` on a group. Verified present on every
+    one of the 130 controls in rev 3, so it is a strategy rather than a
+    lucky sample.
+    """
+    return _prop(item, "sort-id") or item.get("id", "").upper()
+
+
+def _strip_control_id_from_label(label: str, identifier: str) -> str:
+    """`SR-03.01.01.a` -> `a`, keeping anything that does not fit.
+
+    800-171 labels its sub-items with the control's own id followed by the
+    position: the reader already has the id, so what the label adds is the
+    `a`. 800-53 renders `a.` and the catalogs should read alike.
+
+    **Measured before it was relied on**, across every live control in rev
+    3: 252 part labels, 252 matching `<prefix><identifier>.<segment>`, one
+    distinct prefix (`SR-`), zero exceptions. A label that does not fit is
+    returned untouched rather than mangled, so if NIST ever puts something
+    else there it survives and is visible.
+    """
+    match = re.fullmatch(rf".*?{re.escape(identifier)}\.(.+)", label)
+    return match.group(1) if match else label
+
+
+#: 800-53 rev 5, spelled out so it is a dialect like any other rather than
+#: the one the module is secretly about. **Every value here reproduces what
+#: this module did before dialects existed**, which is the property
+#: `test_the_800_53_dialect_reproduces_the_previous_behaviour` holds.
+NIST_800_53_REV5 = OscalDialect(
+    framework="NIST 800-53",
+    version_label=lambda version: f"Rev 5 ({version})",
+    source_url=CATALOG_URL,
+    identifier=lambda item: _plain_label(item) or item["id"].upper(),
+    family_abbr=lambda group: group.get("id", "").upper(),
+)
+
+NIST_800_171_REV3 = OscalDialect(
+    framework="NIST 800-171",
+    version_label=lambda version: f"Rev 3 ({version})",
+    source_url=CATALOG_URL_800_171,
+    identifier=_sort_id,
+    family_abbr=_sort_id,
+    part_label=_strip_control_id_from_label,
+)
 
 
 def _plain_label(item: dict) -> str | None:
@@ -144,27 +268,49 @@ def _resolve_params(prose: str, params: dict[str, dict], seen: frozenset[str] = 
     return _PARAM_INSERT_RE.sub(replace, prose)
 
 
-def _render_parts(parts: list[dict], params: dict[str, dict], depth: int = 0) -> list[str]:
+def _render_parts(
+    parts: list[dict],
+    params: dict[str, dict],
+    depth: int = 0,
+    *,
+    dialect: OscalDialect | None = None,
+    identifier: str = "",
+) -> list[str]:
     """Flatten a `statement`/`guidance` parts tree into labelled lines."""
     lines: list[str] = []
     for part in parts:
         label = _plain_label(part)
+        if label and dialect is not None:
+            label = dialect.part_label(label, identifier)
         prose = _resolve_params(part.get("prose", ""), params).strip()
         if prose:
             indent = "  " * depth
             lines.append(f"{indent}{label} {prose}" if label else f"{indent}{prose}")
         if part.get("parts"):
-            lines.extend(_render_parts(part["parts"], params, depth + 1))
+            lines.extend(
+                _render_parts(
+                    part["parts"], params, depth + 1, dialect=dialect, identifier=identifier
+                )
+            )
     return lines
 
 
-def _part_text(item: dict, name: str, params: dict[str, dict]) -> str:
+def _part_text(
+    item: dict,
+    name: str,
+    params: dict[str, dict],
+    *,
+    dialect: OscalDialect | None = None,
+    identifier: str = "",
+) -> str:
     """Rendered text of the named top-level part (`statement`, `guidance`)."""
     for part in item.get("parts", []):
         if part.get("name") != name:
             continue
         if part.get("parts"):
-            return "\n".join(_render_parts(part["parts"], params))
+            return "\n".join(
+                _render_parts(part["parts"], params, dialect=dialect, identifier=identifier)
+            )
         return _resolve_params(part.get("prose", ""), params).strip()
     return ""
 
@@ -214,13 +360,21 @@ def _baseline_label(oscal_id: str, baselines: dict[str, set[str]]) -> str:
 
 
 def parse_oscal_catalog(
-    catalog_json: dict, baselines: dict[str, set[str]] | None = None
+    catalog_json: dict,
+    baselines: dict[str, set[str]] | None = None,
+    *,
+    dialect: OscalDialect = NIST_800_53_REV5,
 ) -> tuple[list[Control], int]:
-    """Parse an OSCAL 800-53 catalog into Controls.
+    """Parse an OSCAL catalog into Controls.
 
     Returns `(controls, withdrawn_count)` — the withdrawn tally is returned
     rather than logged so the caller can report it (see `etl-oscal` in
     cli/etl.py) instead of the exclusion being invisible.
+
+    `dialect` defaults to 800-53 rev 5, so every existing caller keeps the
+    behaviour it had. See `OscalDialect` for why one is needed at all:
+    reading 800-171 with 800-53's rules does not fail, it produces a
+    well-formed catalog whose identifiers are sentences.
     """
     catalog = catalog_json["catalog"]
     version = catalog["metadata"]["version"]
@@ -231,7 +385,7 @@ def parse_oscal_catalog(
 
     for group in catalog.get("groups", []):
         family = group.get("title", "")
-        family_abbr = group.get("id", "").upper()
+        family_abbr = dialect.family_abbr(group)
 
         for raw_control in group.get("controls", []):
             if _is_withdrawn(raw_control):
@@ -249,20 +403,26 @@ def parse_oscal_catalog(
             params = {p["id"]: p for p in raw_control.get("params", [])}
             for raw_enhancement in raw_control.get("controls", []):
                 params.update({p["id"]: p for p in raw_enhancement.get("params", [])})
-            control_id = _plain_label(raw_control) or raw_control["id"].upper()
+            control_id = dialect.identifier(raw_control)
 
             enhancements: list[ControlEnhancement] = []
             for raw_enhancement in raw_control.get("controls", []):
                 if _is_withdrawn(raw_enhancement):
                     withdrawn += 1
                     continue
+                enhancement_id = dialect.identifier(raw_enhancement)
                 enhancements.append(
                     ControlEnhancement(
-                        enhancement_id=_plain_label(raw_enhancement)
-                        or raw_enhancement["id"].upper(),
+                        enhancement_id=enhancement_id,
                         title=raw_enhancement.get("title", ""),
                         baseline=_baseline_label(raw_enhancement["id"], baselines),
-                        description=_part_text(raw_enhancement, "statement", params),
+                        description=_part_text(
+                            raw_enhancement,
+                            "statement",
+                            params,
+                            dialect=dialect,
+                            identifier=enhancement_id,
+                        ),
                     )
                 )
 
@@ -270,16 +430,20 @@ def parse_oscal_catalog(
                 Control(
                     control_id=control_id,
                     title=raw_control.get("title", ""),
-                    framework="NIST 800-53",
-                    framework_version=f"Rev 5 ({version})",
+                    framework=dialect.framework,
+                    framework_version=dialect.version_label(version),
                     family=family,
                     family_abbr=family_abbr,
                     baseline=_baseline_label(raw_control["id"], baselines),
-                    control_statement=_part_text(raw_control, "statement", params),
-                    discussion=_part_text(raw_control, "guidance", params),
+                    control_statement=_part_text(
+                        raw_control, "statement", params, dialect=dialect, identifier=control_id
+                    ),
+                    discussion=_part_text(
+                        raw_control, "guidance", params, dialect=dialect, identifier=control_id
+                    ),
                     enhancements=enhancements,
                     related_controls=_related_controls(raw_control),
-                    source_path=CATALOG_URL,
+                    source_path=dialect.source_url,
                 )
             )
 
@@ -292,6 +456,24 @@ def fetch_oscal_catalog(*, url: str = CATALOG_URL) -> dict:
     Kept separate from `parse_oscal_catalog` — network access lives only in
     the `fetch_*` functions here — so the parser stays pure and testable
     offline against a fixture.
+    """
+    import requests
+
+    response = requests.get(url, timeout=120)
+    response.raise_for_status()
+    return response.json()
+
+
+def fetch_800_171_catalog(*, url: str = CATALOG_URL_800_171) -> dict:
+    """Fetch NIST's OSCAL edition of SP 800-171 rev 3.
+
+    A separate wrapper rather than a parameter on `fetch_oscal_catalog`,
+    for the reason `ingest/ecfr.py` keeps its per-regulation wrappers:
+    "which URL is 800-171" is a property of the publication, not a choice
+    an ETL command should be making at the call site.
+
+    **There is no baseline counterpart.** 800-171 rev 3 publishes no
+    profiles, so there is nothing for `fetch_oscal_baselines` to read.
     """
     import requests
 

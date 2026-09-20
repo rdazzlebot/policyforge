@@ -274,7 +274,42 @@ def parse_information_blocking(xml_text: str) -> list[Control]:
 
         controls.append(control)
 
+    _drop_reserved_enhancements(controls)
+
     return controls
+
+
+def _drop_reserved_enhancements(controls: list[Control]) -> None:
+    """Drop conditions whose whole body is `[Reserved]`.
+
+    The module docstring already says reserved text is dropped, but the
+    check above it reads `<HEAD>` and so only ever sees a reserved
+    *section* — `171.402`. A reserved *paragraph* inside a live section
+    is a different shape and slipped through: `171.1001(b)` is the only
+    one in the part today, and it shipped as a condition whose entire
+    obligation is the word `[Reserved]`.
+
+    That is the failure the docstring names, one level down — countable,
+    plausible and empty, passing every check except "is this real".
+
+    **Applied after the section is parsed, not while parsing it** — as a
+    precaution, and said plainly because the distinction is not currently
+    observable. Deeper paragraphs and continuation prose append to
+    whichever condition is open, so declining to *create* a reserved one
+    would redirect whatever follows it onto the previous condition
+    instead of dropping it. `hipaa_loader._drop_empty_enhancements` is
+    ordered this way, and learned it from exactly that.
+
+    Part 171 cannot show it today: `171.1001(b)` is the last paragraph in
+    its section, so nothing follows it to be misplaced. Implementing this
+    the other way passes the whole suite. The ordering is kept because the
+    next reserved paragraph need not be last, and the failure it would
+    cause is a silent wrong-text one that no count check can see.
+    """
+    for control in controls:
+        control.enhancements = [
+            e for e in control.enhancements if not _RESERVED_RE.fullmatch(e.description.strip())
+        ]
 
 
 def current_ecfr_date() -> str:

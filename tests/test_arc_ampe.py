@@ -245,6 +245,51 @@ def test_an_obligation_inside_the_sentinel_sentence_survives(cell: str):
     assert arc_ampe._guidance(cell) == cell
 
 
+def test_a_count_of_requirements_is_not_the_absence_of_them():
+    """**"There are three…" is not "There are no…".**
+
+    The sentinel's own clause with the negation swapped for a count, and
+    it is a sentence CMS could plausibly write. A pattern that accepted
+    any word where `no` belongs would empty it — destroying real
+    guidance — while still emptying both genuine sentinel spellings, so
+    it passes every other test in this file *and* the real-cell fixture.
+
+    Found by policyforge-b5, correcting me. I had measured that mutant
+    surviving and recorded it as "unobservable on v1.02 rather than
+    untested". That was wrong: it is observable by exactly the mechanism
+    I had just established two paragraphs earlier — the corpus cannot
+    guard the destructive direction, hand-written cases can, and this is
+    a destructive-direction mutant. **I documented a hole that one line
+    fills.**
+    """
+    cell = "There are three supplemental control requirements and guidance for this control."
+
+    assert arc_ampe._guidance(cell) == cell
+
+
+def test_a_cell_that_says_it_twice_is_still_empty():
+    """**What the per-sentence split is actually for.**
+
+    Every sentinel cell in v1.02 is a single sentence — 0 of 96 are
+    not — so the split is unexercised by real data, and removing it
+    entirely passed the whole file including the real-cell fixture.
+    Found by re-running the mutant sweep after closing b5's finding,
+    and closed the same way rather than recorded as "unobservable":
+    a corpus cannot guard what it does not contain, so the hand-written
+    case is the guard.
+
+    Two boilerplate sentences still mean no guidance. Treating the cell
+    as one string makes `fullmatch` fail on the pair and keeps it,
+    shipping the boilerplate this function exists to remove.
+    """
+    cell = (
+        "There are no supplemental control requirements and guidance at this time. "
+        "There is no supplemental control requirement and guidance for this control."
+    )
+
+    assert arc_ampe._guidance(cell) == ""
+
+
 GUIDANCE_CELLS = Path(__file__).parent / "fixtures" / "arc_ampe_guidance_cells.json"
 
 
@@ -289,9 +334,11 @@ def test_real_workbook_cells_empty_exactly_the_sentinel_ones():
     replace them**: a corpus only exercises the failures it happens to
     contain.
 
-    One mutant survives this whole file: widening the negation so
-    `there are <any word> supplemental…` matches. Nothing in v1.02
-    distinguishes it, so it is unobservable here rather than untested.
+    Nothing in v1.02 distinguishes a pattern that accepts any word where
+    `no` belongs, so that mutant is invisible *here* — and it is caught
+    by `test_a_count_of_requirements_is_not_the_absence_of_them`, a
+    hand-written case, which is this docstring's own point made
+    concrete.
     """
     cells = json.loads(GUIDANCE_CELLS.read_text(encoding="utf-8"))
     emptied = [c["control_id"] for c in cells if arc_ampe._guidance(c["guidance"]) == ""]

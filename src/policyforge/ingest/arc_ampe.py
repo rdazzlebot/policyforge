@@ -230,6 +230,16 @@ def _says_no_guidance(sentence: str) -> bool:
     and lets the sentence continue into real obligation — which is the
     failure a raw search invites, arriving one level below the per-sentence
     split that was supposed to stop it.
+
+    Two things here are **deliberately redundant**, and a mutation sweep
+    will report both as surviving. Spelling "&" out is also achieved by
+    stripping punctuation to a space, because the pattern's "and" is
+    optional; and the `bare` guard is unreachable because `_guidance`
+    drops empty fragments and the pattern cannot match "" anyway. No
+    input distinguishes either — they are equivalent mutants rather than
+    coverage gaps, which is a different thing from a survivor the corpus
+    merely fails to exercise. Kept because each states an intent the
+    other only implies.
     """
     bare = " ".join(re.sub(r"[^\w\s]", " ", sentence.replace("&", " and ")).split())
     return bool(bare) and _NO_GUIDANCE_RE.fullmatch(bare.lower()) is not None

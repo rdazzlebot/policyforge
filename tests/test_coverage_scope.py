@@ -12,6 +12,26 @@ from __future__ import annotations
 # ---- the coverage skill's zero rows -----------------------------------------
 
 
+def _framework_argument(line: str) -> str:
+    """The value of `--framework` in a printed remedy, and only that.
+
+    **Parsed rather than split to end-of-line.** The first version read
+    `line.split("--framework", 1)[1]`, which was exact while the flag was
+    last on the line. When `--controls` was appended the same expression
+    kept returning a string and started returning the wrong one — the
+    name plus the rest of the command — so `_refusal_reason` looked up
+    something that matches nothing and returned `None`, and the assertion
+    below passed for a reason unrelated to what it tests.
+
+    A test does not have to fail to stop working.
+    """
+    import shlex
+
+    command = line.split("`")[1] if "`" in line else line
+    tokens = shlex.split(command)
+    return tokens[tokens.index("--framework") + 1]
+
+
 def _coverage_state():
     from pathlib import Path
     from types import SimpleNamespace
@@ -59,7 +79,7 @@ def test_a_zero_row_never_suggests_a_command_that_would_be_refused():
     )
 
     for line in seed_lines:
-        named = line.split("--framework", 1)[1].strip().strip("`").strip().strip("'\"")
+        named = _framework_argument(line)
         assert _refusal_reason(named) is None, (
             f"the report tells a reader to seed {named!r}, which seed_overlay "
             f"refuses with NotAnchorableError. That is the product instructing "
@@ -104,3 +124,100 @@ def test_the_shell_shares_the_one_sentence_boundary_rule():
     from policyforge.zardoz.skills import _first_sentence
 
     assert "_BOUNDARY_RE" in inspect.getsource(_first_sentence)
+
+
+# ---- the remedy has to be performable, not merely well-formed ---------------
+
+
+def test_the_suggested_command_names_the_catalogs_it_needs():
+    """**80's finding: the printed remedy exited 1 when run.**
+
+    `/coverage` answers from `discover()`, which finds every catalog on
+    disk. The `crosswalk` CLI's own default context holds far fewer. So
+    `crosswalk seed --framework 'NIST 800-171'` — copied exactly as the
+    report printed it — failed with *"No catalog here declares the
+    framework"*, while the same line run inside the shell worked.
+
+    80 got exit 1, 9b got a clean run, from the same text. **Neither run
+    was wrong; the disagreement between them was the finding.** A command
+    that works only in the context that printed it is a remedy in the same
+    sense that a check which cannot fail is a check.
+    """
+    import shlex
+    from pathlib import Path
+
+    from policyforge.zardoz.skills import _coverage
+
+    root = Path(__file__).resolve().parent.parent
+    output = _coverage(_coverage_state(), [])
+    seed_lines = [ln for ln in output.splitlines() if "crosswalk seed --framework" in ln]
+    assert seed_lines, "no zero row suggests `crosswalk seed`, so this test checked nothing."
+
+    for line in seed_lines:
+        tokens = shlex.split(line.split("`")[1])
+        controls = [tokens[i + 1] for i, t in enumerate(tokens) if t == "--controls"]
+        assert controls, (
+            f"the remedy names no catalogs, so it is not runnable outside the "
+            f"shell that printed it: {line.strip()}"
+        )
+        for path in controls:
+            assert (root / path).is_file(), (
+                f"the remedy points at {path!r}, which does not exist. A "
+                f"suggestion naming a missing file is worse than one naming none."
+            )
+
+
+def test_the_suggested_paths_survive_a_posix_shell():
+    r"""Forward slashes, because a backslash is an escape character.
+
+    **This is the same defect as the test above, one level down, and it
+    was in the fix for it.** `discover()` returns `data\frameworks\...`
+    on Windows; pasted into bash the backslashes are eaten and the path
+    arrives as `dataframeworks...`, exit 2. The first fix made the command
+    context-independent and left it platform-dependent.
+
+    Caught by running the printed text through a shell rather than reading
+    it — **a remedy inherits the credibility of the finding that prompted
+    it**, and gets looked at less hard for exactly that reason.
+    """
+    import shlex
+
+    from policyforge.zardoz.skills import _coverage
+
+    output = _coverage(_coverage_state(), [])
+    for line in output.splitlines():
+        if "crosswalk seed --framework" not in line:
+            continue
+        tokens = shlex.split(line.split("`")[1])
+        for path in [tokens[i + 1] for i, t in enumerate(tokens) if t == "--controls"]:
+            assert "\\" not in path, (
+                f"the remedy contains a backslash path ({path!r}), which a POSIX "
+                f"shell eats. Emit `Path(...).as_posix()`."
+            )
+
+
+def test_an_outcome_framework_is_refused_rather_than_suggested():
+    """The AI RMF arrived documented as un-crosswalkable in four places —
+    README, module docstring, command help, changelog — and `/coverage`
+    still told the reader to run `crosswalk seed` against it.
+
+    **Every piece of prose was right and the one line a user actually
+    reads was wrong.** The `reason is None` branch does not omit a note,
+    it prints the *other* one, so the row stayed well-formed and
+    confidently said the opposite of the documentation. Found by running
+    `/coverage` with the new catalog installed, not by reading the code.
+    """
+    from policyforge.zardoz.skills import _coverage
+
+    output = _coverage(_coverage_state(), [])
+    rows = [ln for ln in output.splitlines() if "NIST-AI-RMF:" in ln]
+    assert rows, (
+        "the AI RMF catalog reports no zero row at all. If it is now covered "
+        "this guard needs rewriting rather than deleting."
+    )
+    assert "not mapped by design" in rows[0]
+    assert "crosswalk seed" not in rows[0], (
+        "the report tells a reader to seed the AI RMF, which asserts that an "
+        "800-53 control ACHIEVES an AI RMF outcome — the one claim NIST "
+        "declined to make when it split the Playbook out."
+    )

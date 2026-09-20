@@ -99,6 +99,20 @@ class Skill:
         return words
 
 
+def _catalog_paths(state) -> list[str]:
+    """The catalog files this shell is answering from.
+
+    Split out of `_controls` so a report can name them. A suggested
+    command that does not say which catalogs to load is not performable
+    from the CLI's own default context — see `_zero_row_reasons`.
+    """
+    from policyforge.frameworks.registry import discover
+
+    if state.controls_paths:
+        return [str(p) for p in state.controls_paths]
+    return [str(f.controls_path) for f in discover(state.config) if f.has_controls]
+
+
 def _controls(state):
     """The control catalogs on disk, discovered rather than configured.
 
@@ -107,13 +121,9 @@ def _controls(state):
     knows what is on disk, and using it means the shell answers with whatever
     the repository actually holds.
     """
-    from policyforge.frameworks.registry import discover
     from policyforge.ingest.schema import load_controls
 
-    if state.controls_paths:
-        paths = list(state.controls_paths)
-    else:
-        paths = [f.controls_path for f in discover(state.config) if f.has_controls]
+    paths = _catalog_paths(state)
 
     controls = []
     for path in paths:
@@ -169,7 +179,9 @@ def _coverage(state, args: list[str]) -> str:
         other_controls=other,
         crosswalk=build_crosswalk(controls),
     )
-    return "\n".join([format_report(report), *_zero_row_reasons(controls, report)])
+    return "\n".join(
+        [format_report(report), *_zero_row_reasons(controls, report, _catalog_paths(state))]
+    )
 
 
 def _parameters(state, args: list[str]) -> str:
@@ -547,7 +559,7 @@ def _first_sentence(text: str) -> str:
     return text[: match.end()] if match else text
 
 
-def _zero_row_reasons(controls, report) -> list[str]:
+def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
     """Why each framework reachable through the crosswalk covers nothing.
 
     **A zero under a heading that reads as a gap is not a finding until it
@@ -566,6 +578,20 @@ def _zero_row_reasons(controls, report) -> list[str]:
     it* — and the report prints the same number for both. The reasons are
     looked up from the declared framework name, which is reliable since
     the two CFR catalogs were renamed to be citable.
+
+    **`catalog_paths` is what makes the remedy performable.** Without it
+    this printed `crosswalk seed --framework 'NIST 800-171'`, which the
+    shell can run because `discover()` loaded nine catalogs, and which
+    exits 1 from the CLI's own default context because that context holds
+    two. policyforge-80 got exit 1 and policyforge-9b got a clean run from
+    the same printed line — **the disagreement between two runs was the
+    finding**, and neither run was wrong. A command that works only in the
+    context that printed it is a remedy in the same sense that a check
+    which cannot fail is a check.
+
+    So the flags are emitted, and they name the catalog that declared the
+    framework plus the 800-53 anchor a crosswalk is built against. Both,
+    because seeding needs the thing being mapped and the thing it maps to.
     """
     from policyforge.crosswalk.overlay import _refusal_reason
 
@@ -573,6 +599,9 @@ def _zero_row_reasons(controls, report) -> list[str]:
     for control in controls:
         key = _framework_key(control.framework)
         declared.setdefault(key, control.framework)
+
+    path_for = _paths_by_framework(catalog_paths or [])
+    anchor_path = path_for.get(_framework_key("NIST 800-53"))
 
     notes = []
     for framework in report.framework_coverage:
@@ -585,9 +614,14 @@ def _zero_row_reasons(controls, report) -> list[str]:
                 f"  {framework.framework.upper()}: not mapped by design. {_first_sentence(reason)}"
             )
         else:
+            flags = ""
+            own_path = path_for.get(_framework_key(framework.framework))
+            for path in (own_path, anchor_path):
+                if path and path not in flags:
+                    flags += f" --controls {path}"
             notes.append(
                 f"  {framework.framework.upper()}: no published crosswalk yet — "
-                f"`policyforge crosswalk seed --framework {name!r}` starts one."
+                f"`policyforge crosswalk seed --framework {name!r}{flags}` starts one."
             )
     if not notes:
         return []
@@ -599,6 +633,44 @@ def _zero_row_reasons(controls, report) -> list[str]:
         "  wrong to make. They are not the same and they want opposite responses.",
         *notes,
     ]
+
+
+def _paths_by_framework(catalog_paths) -> dict[str, str]:
+    """`{framework key: the catalog file that declares it}`.
+
+    Read from each file's first entry rather than from the directory
+    name, because the declared name is what `crosswalk seed --framework`
+    matches against and a directory is only a convention. Unreadable
+    files are skipped in silence here for the same reason `_controls`
+    skips them: this builds a *suggestion*, and a report that failed
+    because one catalog was malformed would be worse than one whose
+    suggestion is missing a flag.
+    """
+    import json
+
+    paths: dict[str, str] = {}
+    for path in catalog_paths:
+        try:
+            entries = json.loads(Path(path).read_text(encoding="utf-8"))
+            declared = entries[0]["framework"]
+        except (OSError, ValueError, LookupError, TypeError):
+            continue
+        # **Forward slashes, always.** `discover()` hands back
+        # `data\frameworks\...` on Windows, and a printed command carrying
+        # backslashes is not copy-pasteable into bash, git-bash or any
+        # POSIX shell — the backslashes are eaten as escapes and the path
+        # arrives as `dataframeworks...`, which exits 2.
+        #
+        # This was found by running the printed line through a shell rather
+        # than reading it, and it is the *same defect this function was
+        # being fixed for*, one level down: the first version printed a
+        # command that only ran in the context that printed it, and the fix
+        # printed one that only ran on the platform that printed it. A
+        # remedy inherits the credibility of the finding that prompted it
+        # and gets checked less carefully. Click accepts forward slashes on
+        # Windows, so this costs nothing.
+        paths.setdefault(_framework_key(declared), Path(path).as_posix())
+    return paths
 
 
 def _framework_key(name: str) -> str:

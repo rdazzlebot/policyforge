@@ -261,6 +261,106 @@ def _check(state, args: list[str]) -> str:
     return check_tree(root).format_report()
 
 
+def _catalogs_used(controls) -> str:
+    """One line naming the catalogs the answer was computed against.
+
+    **The answer to "does this satisfy HIPAA" depends on which catalogs
+    are loaded, and the shell and the CLI load different ones.** A shell
+    session falls back to `discover()` and sees every bundled catalog,
+    including both NIST ones — the configuration in which a bare
+    `[NIST AC-2]` is *correctly* unresolvable. Someone running
+    `policyforge satisfies --controls ...` names a narrower set and gets a
+    different count of citations resolving to nothing, for the same
+    documents. Neither is wrong and it reads as a bug.
+
+    Naming the configuration is what turns that into information. It is
+    this project's own rule from the prompt-comparison pre-registration —
+    *an unknown count quoted without its catalog configuration means
+    nothing* — arriving where a user meets it first.
+
+    Derived from the controls actually loaded rather than from the paths
+    asked for, because `_controls` skips a catalog it cannot read and
+    carries on. Listing what was requested would name a catalog that
+    contributed nothing.
+    """
+    from policyforge.mapping.crosswalk import normalize_framework
+
+    counted: dict[str, int] = {}
+    for control in controls:
+        counted[control.framework] = counted.get(control.framework, 0) + 1
+    if not counted:
+        return "Answered against no catalogs."
+    named = ", ".join(
+        f"{name} ({count})" for name, count in sorted(counted.items(), key=lambda kv: kv[0])
+    )
+    keys = {normalize_framework(name) for name in counted}
+    line = f"Answered against {len(counted)} catalog(s): {named}."
+    if len(keys) < len(counted):
+        line += " Some share a framework key, so their requirement ids are pooled."
+    return line
+
+
+def _satisfies(state, args: list[str]) -> str:
+    """Which requirements a document cites, and which resolve to nothing.
+
+    The assessor's direction of travel, and the opposite of `addresses`:
+    that one starts from a requirement and finds the document, this one
+    starts from the documents and finds what they can prove.
+    """
+    from policyforge.content.tree import load_content_tree
+    from policyforge.crosswalk.overlay import accepted_rows, load_overlays
+    from policyforge.mapping.crosswalk import build_crosswalk
+    from policyforge.topics.satisfies import build_report, format_report
+
+    from .corpus import DEFAULT_CONTENT_DIR, slugify
+
+    root = Path(state.content_dir or DEFAULT_CONTENT_DIR)
+    if not root.exists():
+        return f"No content tree at {root}, so there is nothing to check citations in."
+
+    controls = _controls(state)
+    if not controls:
+        return "No control catalogs on disk. Run `policyforge etl-oscal` first."
+
+    documents, _problems = load_content_tree(root)
+    if not documents:
+        return f"No documents in {root}, so there is nothing to check."
+
+    wanted = " ".join(args).strip()
+    if wanted:
+        # By frontmatter topic or by filename slug, as the CLI matches:
+        # `generate` names a file for the topic's slug and adds the
+        # frontmatter `topic:` only when the document is published, so
+        # matching frontmatter alone finds nothing in a freshly generated
+        # tree -- which is when this report is most worth running.
+        slug = slugify(wanted)
+        selected = [d for d in documents if slugify(d.topic) == slug or slugify(d.slug) == slug]
+        if not selected:
+            return (
+                f"No document in {root} belongs to {wanted!r}. Documents are matched "
+                f"on their frontmatter topic or their filename slug."
+            )
+    else:
+        selected = list(documents)
+
+    evidences = build_report(
+        selected,
+        controls=controls,
+        crosswalk=build_crosswalk(controls),
+        provenance=accepted_rows(load_overlays()),
+        topics=state.topics or (),
+    )
+
+    unknown = sum(len(e.unknown) for e in evidences)
+    header = [_catalogs_used(controls)]
+    if unknown:
+        header.append(
+            f"{unknown} citation(s) resolve to nothing in those catalogs — "
+            f"`satisfies --strict` would exit non-zero."
+        )
+    return "\n".join([*header, "", format_report(evidences)])
+
+
 def _frameworks(state, args: list[str]) -> str:
     from policyforge.frameworks.registry import check_licences
 
@@ -537,6 +637,32 @@ SKILLS: dict[str, Skill] = {
             }
         },
     ),
+    "satisfies": Skill(
+        name="satisfies",
+        summary="What a document cites, and which citations resolve to nothing.",
+        answers=(
+            "does this document satisfy a framework; what does our access "
+            "review policy cite; which citations in a document resolve to "
+            "nothing; is what we have written traceable to a requirement; can "
+            "we evidence HIPAA from our documents; what would an assessor find "
+            "if they read this page. Starts from a document and asks what it "
+            "proves. Not for finding the document that answers a named "
+            'requirement — "where do we address AC-2" starts from the '
+            "requirement, which is addresses. Not for how much of a baseline "
+            "is owned, which is coverage."
+        ),
+        run=_satisfies,
+        needs="a content tree and at least one control catalog",
+        arguments={
+            "topic": {
+                "type": "string",
+                "description": (
+                    "One topic or document slug to narrow to, e.g. access-control. "
+                    "Omit to report on the whole tree."
+                ),
+            }
+        },
+    ),
     "addresses": Skill(
         name="addresses",
         summary="Who answers for one requirement, and which document says so.",
@@ -741,6 +867,14 @@ _ROUTING_HINTS: dict[str, tuple[str, ...]] = {
         "who owns nothing",
     ),
     "parameters": ("undecided", "organization-defined", "odp", "parameter"),
+    # Only the unambiguous phrasings. The tempting stems were measured
+    # against ordinary document questions and rejected: "traceable" hijacks
+    # "is the encryption section traceable to a decision log?", and
+    # "satisfy the" hijacks "does the standard satisfy the auditor's
+    # expectations for evidence?". Both are questions for the documents.
+    # A missed route costs a fallback to the documents; a hijacked one
+    # answers a question nobody asked.
+    "satisfies": ("resolve to nothing", "resolves to nothing", "resolving to nothing"),
     "drift": (
         "changed in the catalog",
         "catalog change",

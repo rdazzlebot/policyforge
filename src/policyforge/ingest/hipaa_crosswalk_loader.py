@@ -301,15 +301,40 @@ def _require_nothing_dropped(
     dropped `append` turns a reported gap into a silent one, in compliance
     mappings.
 
-    Three statements, each derived in its own pass **from the inputs**
-    rather than from the loop's own bookkeeping. A check that reads the
-    counters the loop wrote agrees with the loop by construction; an
-    earlier version of this idea in `arc_ampe` did exactly that and could
-    not fail.
+    Three statements, and **they are not all the same kind of check.**
+    An earlier draft of this docstring said all three were derived from
+    the inputs rather than from the loop's own bookkeeping, warned in the
+    next sentence that a check reading the loop's counters "agrees with
+    the loop by construction", and named `arc_ampe` for having done
+    exactly that — while statement 3's arithmetic was doing it. The
+    paragraph carried both the rule and an instance of it and identified
+    only the first, which is worse than saying nothing, because the next
+    reader takes the rule as satisfied. Caught by 80 and 9b re-running it
+    rather than reading it.
 
     1. every citation is unmatched or resolves to a target, never both;
     2. under a resolved citation, every NIST ID is attached or reported;
     3. every target is mapped or listed as uncovered, never both.
+
+    **1 and 2 are derived from `mapping` and `targets` and can disagree
+    with what the loop recorded.** Two independent derivations of the
+    same fact, which is what lets them contradict each other. Deleting
+    either `append` makes them disagree.
+
+    **3 is two checks with different reach.** Its disjointness half
+    (`uncovered & resolved`) is a genuine partition and fails on
+    constructed state, which is why it has a test. Its arithmetic half is
+    an identity that holds for every possible input: `mapped_controls +
+    mapped_enhancements` is one increment per resolved target, and
+    `uncovered` is `targets - resolved` by construction, so the sum is
+    `len(targets)` whatever goes in — measured across an empty mapping,
+    an all-unmatched mapping, an all-unparsed mapping, a clean ID under
+    an unmatched citation, and two aliases colliding on one target. It is
+    kept as a **regression guard on the counting loop**, not as a
+    statement about conservation: changing `mapped_controls += 1` to
+    `+= 2` raises *"74 HIPAA requirement(s) went in; 90 were mapped and 9
+    reported uncovered, accounting for 99"*. That is what it is for, and
+    it is all it is for.
 
     Statement 2 is scoped to resolved citations on purpose. A clean NIST
     ID under an *unmatched* citation is dropped without appearing in

@@ -8,8 +8,6 @@ model's **opinion** and may not. Nothing in this file consults a model.
 
 from __future__ import annotations
 
-import pytest
-
 from policyforge.content.grounding import (
     Claim,
     claims,
@@ -257,21 +255,21 @@ def test_an_uncited_obligation_costs_nothing_and_is_not_an_opinion():
 
 
 # --------------------------------------------------------------------------
-# Blocked on #205
+# Dotted identifiers — the defect that used to suppress this gate
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    reason="#205: content.deontic splits sentences on [.!?], cutting through a "
-    "dotted identifier like 164.308(a)(3)(i). The fragments land on the SAME "
-    "line as the cited sentence, so an uncited obligation beside it inherits "
-    "that line's tag and reads as anchored. The gate then reports nothing — "
-    "it fails toward silence on exactly the frameworks that need it. Measured "
-    "on the #164 probe: 0 unanchored today, 2 with the splitter fixed. "
-    "Expected to XPASS when ba/deontic-dotted-citations lands.",
-    strict=False,
-)
 def test_a_dotted_citation_does_not_lend_its_tag_to_the_sentence_after_it():
+    """Regression for #205/#206, and the reason this gate reported nothing
+    on HIPAA, 800-171, both CFRs and the AI RMF — the four catalogue
+    families whose identifiers all contain a dot.
+
+    `deontic` split sentences on `[.!?]`, cutting through `164.308(a)(3)(i)`,
+    so the fragments landed on the same line as the cited sentence and an
+    uncited obligation beside it inherited that line's tag. The gate then
+    reported **nothing**, which is indistinguishable from a clean document.
+    Measured on the #164 probe: 0 unanchored before the fix, 2 after —
+    predicted by simulation before the fix existed and confirmed against it."""
     body = _document(
         "## 1. Workforce",
         "Access shall be reviewed quarterly. [HIPAA Security Rule 164.308(a)(3)(i)]",

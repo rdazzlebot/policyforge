@@ -941,8 +941,22 @@ def run_synthesis(case: dict, provider, corpora: dict | None = None) -> Outcome:
     topic = build_synthesis_topic(
         case["topic"], list(case["anchors"]), loaded["controls"], loaded["crosswalk"]
     )
-    if not topic.controls:
-        return Outcome(False, f"no controls resolved for anchors {case['anchors']}", "")
+    # **Checked against the case, not against what the builder returned.**
+    # Deriving the expected set from `topic.controls` would agree with
+    # `build_synthesis_topic` by construction: a builder that silently
+    # dropped a framework would shrink the expectation with it and the
+    # assertion would still pass. ba hit that exact shape in `arc_ampe`,
+    # where a conservation guard read the loop's own bookkeeping. The case
+    # states what its anchors must supply, written from the inputs.
+    supplied = {normalize_framework(c.framework) for c in topic.controls}
+    expected = set(case["expect_frameworks"])
+    if supplied != expected:
+        return Outcome(
+            False,
+            f"the topic supplied {sorted(supplied)}, the case expects {sorted(expected)} "
+            f"-- an anchor or crosswalk change, not a prompt result",
+            "",
+        )
 
     text = synthesize_topic(topic, provider)
 
@@ -981,8 +995,7 @@ def run_synthesis(case: dict, provider, corpora: dict | None = None) -> Outcome:
             text,
         )
 
-    available = {normalize_framework(c.framework) for c in topic.controls}
-    missing = sorted(available - cited_frameworks)
+    missing = sorted(expected - cited_frameworks)
     if missing:
         return Outcome(False, f"no requirement cites {missing}, which the topic supplied", text)
 

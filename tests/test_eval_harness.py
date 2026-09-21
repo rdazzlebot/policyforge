@@ -373,6 +373,12 @@ def test_the_shipped_cases_load_and_are_well_formed():
                 # being tested.
                 assert case.get("anchors"), f"{case['name']} anchors nothing"
                 assert case.get("topic"), f"{case['name']} names no topic"
+                # Without this the suite would derive its expectation from
+                # the topic the builder returned, and so agree with the
+                # builder by construction.
+                assert case.get("expect_frameworks"), (
+                    f"{case['name']} declares no expected frameworks"
+                )
             elif suite == "crosswalk":
                 # A case with neither expectation passes on any answer at all.
                 assert case.get("must_map") or case.get("expect_none"), case["name"]

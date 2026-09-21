@@ -216,6 +216,24 @@
           "type": {
             "name": "boolean"
           }
+        },
+        {
+          "default": false,
+          "help": "Also ask a model whether each cited obligation is actually carried by the synthesis requirements it cites. Costs one call per cited obligation, printed before anything runs. Reported only -- never changes the exit code.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "entail",
+          "nargs": 1,
+          "opts": [
+            "--entail"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
         }
       ]
     },

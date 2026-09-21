@@ -40,26 +40,29 @@ origin/1d/coverage-scope            ancestor-of-main = NO   (#149, merged)
 origin/1d/citable-framework-names   ancestor-of-main = NO   (#146, merged)
 ```
 
-**And the count from `git branch -r --merged` is not a property of the
-repository at all — it is a property of your clone.** Three readings of one
-question, hours apart, against the same remote:
+**And the flag answers a question you did not ask.** `git branch -r --merged` with no argument means *merged into whatever this clone's HEAD is
+standing on* — not into main. Measured on one clone at one instant:
 
 ```
-4 of 26      an earlier draft of this document
-2 of 25      another session, its own clone
-3 of 25      this clone, immediately after `git fetch --prune`
+git branch -r --merged                 6
+git branch -r --merged origin/main     3
+git fetch --prune; both again          6 and 3, UNCHANGED
 ```
 
-Remote-tracking refs linger until someone prunes, and every clone prunes on
-its own schedule. **An instrument whose answer depends on when you last
-fetched is reporting your housekeeping, not the branches.** That is the
-sharpest form of this document's subject, and three people measuring and
-disagreeing is what found it.
+**Prune changes nothing.** Sessions stand on different branches, so the
+same command gives each of them a different number, and every one of those
+numbers is correct about a question nobody meant to ask.
+
+**And the 3 is not three merged branches.** It is `origin/HEAD` (a symref),
+`origin/main` itself, and `origin/passages-as-data`. **Not one is a merged
+feature branch: the real count is zero**, which is a stronger statement
+than any of the readings.
 
 **The durable statement, which does not drift:** every squash-merged branch
 reports unmerged, so **the flag's count is a lower bound and never the
-answer.** Sampled across ten merged PRs: nine are genuinely ancestors of
-main; the flag names three branches. Prefer that sentence to any count.
+answer.** Sampled across ten merged PRs, nine are genuinely ancestors of
+main and the flag names **none of them.** Prefer that sentence to any
+count.
 
 `git merge-base --is-ancestor <reviewed-sha> origin/main` agrees with the
 flag and is wrong for the same reason. **Both fail toward alarm**, so a

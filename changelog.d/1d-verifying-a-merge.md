@@ -3,10 +3,11 @@
 rather than in four people's memories.
 
 `git branch --merged` and `merge-base --is-ancestor <branch>` are blind to
-squash merges, and two long-since-merged branches report `NO`. **The count
-itself is a property of your clone rather than of the repository** — three
-sessions measured it hours apart and got 4 of 26, 2 of 25 and 3 of 25,
-because remote-tracking refs linger until someone prunes.
+squash merges, and two long-since-merged branches report `NO`. **And the flag answers a question you did not ask** — with no argument it
+means *merged into this clone's current HEAD*, not into main. On one clone
+at one instant that is 6 against 3, unchanged by pruning; and the 3 are
+`origin/HEAD`, `origin/main` and an unrelated branch, so the real count of
+merged feature branches is **zero**.
 
 **The content check that was proposed as the remedy does not work either**,
 which is measured here rather than assumed: diffing a merged branch's own

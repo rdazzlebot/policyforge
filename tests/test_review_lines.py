@@ -138,6 +138,78 @@ def test_malformed_is_a_shape_not_a_location(commits):
     assert review_lines.shape_of(commits["head"], "approved").well_formed
 
 
+# --- a well-formed SHA naming nothing splits THREE ways ------------------
+#
+# **The single most common verdict-line defect on this train**, produced by
+# three different sessions in one day. All three were 40 hex, syntactically
+# perfect, and named no object -- because the visible prefix of an
+# abbreviated display was extended with invented characters.
+#
+# The three differ in whether the REVIEW survives, which is the whole value
+# of splitting them.
+
+
+def test_the_property_has_no_length_in_it(commits):
+    """**policyforge-80's spec keyed on 'exactly 8 common characters' and
+    that was the enumerate-the-instance trap in a detector spec.**
+
+    Measured: `git log --oneline` abbreviates to SEVEN here, so the eighth
+    character of the instance that prompted the rule matched at one chance
+    in sixteen. A detector keyed on 8 classifies that instance correctly by
+    coincidence and misses the next seven-character case fifteen times out
+    of sixteen.
+
+    The walk finds whatever length is there, and this test uses a length
+    the spec never mentioned.
+    """
+    extended = commits["head"][:9] + "0" * 31
+    length, target = review_lines.longest_resolving_prefix(extended)
+    assert target == commits["head"], "the walk must find the commit the prefix names"
+    assert length >= 9, f"found {length}; the walk must not be pinned to one length"
+
+
+def test_reconstructed_preserves_the_review(commits):
+    """Longest resolving prefix IS the reviewed head.
+
+    **The prefix is evidence the reviewer read the right commit** — a
+    correct review with a broken anchor. Recoverable, and it must not be
+    reported as though nobody read anything.
+    """
+    extended = commits["head"][:7] + "0" * 33
+    location = review_lines.location_of(extended, commits["head"])
+    assert location.label == "RECONSTRUCTED"
+    assert "the head of this PR" in location.diagnosis
+
+
+def test_misanchored_does_not_preserve_it(commits):
+    """Longest resolving prefix is a DIFFERENT commit, so what was read is
+    unknown. **Not recoverable, and the worse of the two** — a two-state
+    classification collapses this into the recoverable case."""
+    extended = commits["ancestor"][:7] + "f" * 33
+    location = review_lines.location_of(extended, commits["head"])
+    assert location.label == "MISANCHORED"
+    assert "DIFFERENT commit" in location.diagnosis
+
+
+def test_fabricated_is_only_when_no_prefix_resolves():
+    """A verdict on a commit nobody read. Distinct from the two above,
+    which both have a real commit behind them."""
+    location = review_lines.location_of("deadbee" + "f" * 33, "HEAD")
+    assert location.label == "FABRICATED"
+    assert location.diagnosis == "", "there is nothing to diagnose; no prefix resolves"
+
+
+def test_the_message_is_a_diagnosis_not_an_accusation(commits):
+    """It must name WHERE the SHA came from, because **the remedy is in the
+    display, not in the discipline.** The rule *never lengthen an
+    abbreviated SHA* has now failed three times: it asks a person to resist
+    something the tooling hands them."""
+    extended = commits["head"][:7] + "0" * 33
+    diagnosis = review_lines.location_of(extended, commits["head"]).diagnosis
+    assert commits["head"][:12] in diagnosis, "name the object the prefix resolves to"
+    assert "abbreviated display" in diagnosis
+
+
 # --- the defect this file exists to avoid --------------------------------
 
 

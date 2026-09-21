@@ -173,6 +173,30 @@ class Shape:
         return found
 
 
+def longest_resolving_prefix(sha: str) -> tuple[int, str]:
+    """Walk back until a prefix of `sha` names a real commit.
+
+    Returns `(length, full_sha)`, or `(0, "")` if none does.
+
+    **This is the property, and it deliberately has no length in it.**
+    The first version of this requirement keyed on *exactly eight common
+    characters*, because the instance that prompted it had eight. Measured:
+    `git log --oneline` in this repository abbreviates to **seven**, so the
+    eighth character matched at one chance in sixteen. A detector keyed on
+    8 would have classified that instance correctly by coincidence and
+    misclassified the next seven-character case fifteen times out of
+    sixteen. policyforge-80 caught its own spec doing it.
+
+    Walking down from 39 terminates: every prefix of a real SHA resolves,
+    and a prefix shorter than 4 is refused by git anyway.
+    """
+    for length in range(min(len(sha), 39), 3, -1):
+        resolved = _git("rev-parse", "--verify", f"{sha[:length]}^{{commit}}")
+        if resolved.returncode == 0:
+            return length, resolved.stdout.strip()
+    return 0, ""
+
+
 @dataclass(frozen=True)
 class Location:
     """Where the SHA sits. Asked without reference to the line's shape.
@@ -185,16 +209,49 @@ class Location:
     resolves: bool
     at_head: bool
     ancestor_of_head: bool
+    #: When the SHA itself resolves to nothing: how much of it does, and to
+    #: what. Zero and "" when no prefix resolves either.
+    prefix_length: int = 0
+    prefix_target: str = ""
+    prefix_is_head: bool = False
 
     @property
     def label(self) -> str:
-        if not self.resolves:
+        if self.resolves:
+            if self.at_head:
+                return "AT HEAD"
+            return "STALE" if self.ancestor_of_head else "ELSEWHERE"
+        # A well-formed SHA naming no object splits three ways, and the
+        # three differ in whether the REVIEW survives.
+        if not self.prefix_target:
             return "FABRICATED"
-        if self.at_head:
-            return "AT HEAD"
-        if self.ancestor_of_head:
-            return "STALE"
-        return "ELSEWHERE"
+        if self.prefix_is_head:
+            # The prefix is EVIDENCE the reviewer read the right commit:
+            # a correct review with a broken anchor. Recoverable.
+            return "RECONSTRUCTED"
+        # The prefix names something else, so what was read is unknown.
+        # Not recoverable, and the worse of the two.
+        return "MISANCHORED"
+
+    @property
+    def diagnosis(self) -> str:
+        """Why the SHA names nothing, in terms that point at the tooling.
+
+        *"names no commit; `504994f4` is the head of this PR, so this was
+        probably extended from an abbreviated display"* is a diagnosis. **An
+        accusation would be "fabricated".** Three sessions produced one of
+        these in a day; the remedy is in the display, not in the discipline,
+        because the old rule -- never lengthen an abbreviated SHA -- asks a
+        person to resist something the tooling hands them.
+        """
+        if self.resolves or not self.prefix_target:
+            return ""
+        what = "the head of this PR" if self.prefix_is_head else "a DIFFERENT commit"
+        return (
+            f"names no commit, but its first {self.prefix_length} characters do: "
+            f"{self.prefix_target[:12]} ({what}). Probably extended from an "
+            f"abbreviated display."
+        )
 
 
 @dataclass(frozen=True)
@@ -232,7 +289,15 @@ def location_of(sha: str, head: str) -> Location:
     sha, _ = clean(sha)
     resolved = _git("rev-parse", "--verify", f"{sha}^{{commit}}")
     if resolved.returncode != 0:
-        return Location(resolves=False, at_head=False, ancestor_of_head=False)
+        length, target = longest_resolving_prefix(sha)
+        return Location(
+            resolves=False,
+            at_head=False,
+            ancestor_of_head=False,
+            prefix_length=length,
+            prefix_target=target,
+            prefix_is_head=bool(target) and target == head,
+        )
     full = resolved.stdout.strip()
     return Location(
         resolves=True,

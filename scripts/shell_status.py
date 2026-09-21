@@ -287,6 +287,24 @@ def census() -> dict[str, int]:
     committed `*.sh` files, so a bare "no kind may be zero" rule would be
     wrong on arrival. Hence a census: a kind may be zero only when nothing
     of that kind looks like it should have produced anything.
+
+    **What this defends against is an EDITED PATHSPEC, not a renamed
+    directory** — policyforge-9b's correction, and the distinction is not
+    pedantic. GitHub reads workflows only from `.github/workflows/`, so
+    renaming that directory means those files stop being workflows and
+    reporting zero is *right* rather than blind. The plausible event is
+    someone editing `population()` and not `_SIGNALS`, which is exactly
+    what was measured.
+
+    **The residual, so it is a known floor rather than a surprise.** The
+    two derivations are independent in *method* but share a *pathspec
+    prefix*, and they sit about forty lines apart. Point both at
+    `.github/ci/*` and this reports `clean across 26 source(s)` and exits
+    0, with five workflow files still tracked and unexamined — measured,
+    not supposed. That takes two coordinated edits rather than one, so it
+    is narrower than what the census catches, but it is not zero.
+    **A second derivation raises the cost of going blind; it does not make
+    it impossible.**
     """
     counts: dict[str, int] = {}
     for kind, (pattern, signal) in _SIGNALS.items():
@@ -436,7 +454,10 @@ def main(argv: list[str]) -> int:
     # `0 script` is today's CORRECT state (no committed *.sh), so the rule
     # cannot be "no kind may be zero". The census is an independent, cruder
     # derivation of "should this kind have produced anything", which is what
-    # separates *nothing to find* from *stopped looking*.
+    # separates *nothing to find* from *stopped looking*. See `census()` for
+    # what this does and does not defend against -- notably that a renamed
+    # `.github/workflows/` is a legitimate zero, and that two coordinated
+    # edits still defeat both derivations.
     counted = {kind: sum(1 for s in sources if s.kind == kind) for kind in _SIGNALS}
     signalled = census()
     blind = [k for k, n in signalled.items() if n and not counted[k]]
@@ -445,8 +466,8 @@ def main(argv: list[str]) -> int:
             print(
                 f"shell_status: {signalled[kind]} {kind} file(s) look like they "
                 f"contain shell, and the {kind} derivation produced ZERO sources.\n"
-                f"  That is not 'no problems'; it is a broken derivation -- a "
-                f"renamed directory, or a pathspec that stopped matching.",
+                f"  That is not 'no problems'; it is a broken derivation -- "
+                f"most likely a pathspec in this file that stopped matching.",
                 file=sys.stderr,
             )
         return 2

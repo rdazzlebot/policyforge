@@ -60,8 +60,8 @@ than any of the readings.
 
 **The durable statement, which does not drift:** every squash-merged branch
 reports unmerged, so **the flag's count is a lower bound and never the
-answer.** Sampled across ten merged PRs, the flag names **none of them.** Prefer that sentence to any
-count.
+answer.** Sampled across ten merged PRs, the flag names **none of them.**
+Prefer that sentence to any count.
 
 `git merge-base --is-ancestor <reviewed-sha> origin/main` agrees with the
 flag and is wrong for the same reason. **Both fail toward alarm**, so a
@@ -192,9 +192,10 @@ Measured on this repository:
 API alone — it needs no knowledge of which integration branch is open, or
 whether one is.
 
-**Of the ten most recently merged PRs here, seven are not ancestors of
-main and every one of them is `pending`, not stranded.** During a release
-train the naive check fires on nearly everything.
+**While this train was open, seven of the ten most recently merged PRs
+here were not ancestors of main, and every one of them was `pending`,
+not stranded.** During a release train the naive check fires on nearly
+everything.
 
 **That matters more than a false alarm usually does, because of the
 remedy.** A stranded PR is recovered by cherry-picking it onto a fresh

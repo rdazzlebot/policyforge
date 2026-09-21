@@ -3,7 +3,8 @@
 rather than in four people's memories.
 
 `git branch --merged` and `merge-base --is-ancestor <branch>` are blind to
-squash merges, and two long-since-merged branches report `NO`. **And the flag answers a question you did not ask** — with no argument it
+squash merges, and two long-since-merged branches report `NO`. **And the
+flag answers a question you did not ask** — with no argument it
 means *merged into this clone's current HEAD*, not into main. On one clone
 at one instant that is 6 against 3, unchanged by pruning; and the 3 are
 `origin/HEAD`, `origin/main` and an unrelated branch, so the real count of
@@ -25,5 +26,5 @@ both. The reviewed SHA survives nowhere except the review that recorded it.
 **And "not an ancestor of main" is two different facts**, so the document
 answers in three states rather than a boolean: *landed*, *pending* (the
 base has not merged yet — says nothing), and *stranded* (the base merged
-and did not carry it). During a release train seven of the ten most
-recently merged PRs are not ancestors of main and every one is healthy.
+and did not carry it). During a release train, recently merged PRs are
+not yet ancestors of main at all, and every one of them is healthy.

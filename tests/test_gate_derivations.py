@@ -184,3 +184,43 @@ def test_the_guard_cannot_be_silenced_by_allow_skip():
     assert "EmptyDerivation" not in str(check.SKIP_FLAGS)
     for label in check.SKIP_FLAGS:
         assert "derivation" not in label.lower()
+
+
+def test_a_gate_with_no_checks_is_not_a_passing_gate():
+    """**The same failure one level up, in the function that produces the
+    answer everyone conditions their push on.**
+
+    `summarise({}, set())` returned 0 and printed `0 ran, 0 failed, 0
+    skipped`. Found by policyforge-ba, who argued it was categorically
+    different because `results` is a dict literal whose keys cannot shrink
+    without a visible diff.
+
+    **That is true of the code as it stands and it is an argument from the
+    current shape rather than from a guard.** It stops holding the moment
+    anyone builds `results` conditionally, which is a two-line change
+    nobody would flag in review. And this file's own title is *refuse a
+    gate result derived from nothing* — a gate with no checks is one.
+    """
+    assert check.summarise({}, set()) == 2
+
+
+def test_a_gate_with_checks_still_summarises_normally():
+    """What it must ALLOW, beside what it refuses."""
+    assert check.summarise({"ruff (lint)": True}, set()) == 0
+    assert check.summarise({"ruff (lint)": False}, set()) == 1
+
+
+def test_no_assertion_in_the_gate_restates_its_own_construction():
+    """**policyforge-ba's other finding, and it was in this PR.**
+
+    `assert len(corpus) == tracked + others` where `corpus` *is*
+    `tracked_files + other_files` and the two numbers are `len()` of those
+    same lists. No input can make it differ — **a line that reads as a
+    check and is not one**, in the change whose whole subject is that
+    shape. It was also a bare `assert`, which `python -O` strips.
+
+    Pinned by the specific text rather than by banning `assert`, which has
+    legitimate uses: what is forbidden is this one coming back.
+    """
+    source = GATE.read_text(encoding="utf-8")
+    assert "assert len(corpus) == tracked + others" not in source

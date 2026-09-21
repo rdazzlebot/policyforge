@@ -325,13 +325,20 @@ def check_conflict_markers(root: Path | None = None) -> bool | None:
     # `tracked` and `others` below are measurements OF this list, so they
     # cannot disagree with it -- the earlier version called `ls-files`
     # twice and counted one of them separately.
-    corpus = derived(
+    # Called for the refusal, not for a value: `tracked` and `others`
+    # below are measurements of the same two lists.
+    derived(
         label,
         tracked_files + other_files,
         "files to scan -- `git ls-files` returned no corpus",
     )
+    # `tracked` and `others` are measurements OF `corpus`, so they cannot
+    # disagree with it. An earlier version asserted that they summed to
+    # `len(corpus)`; policyforge-ba pointed out that restates the
+    # construction and no input can make it differ -- **a line that reads
+    # as a check and is not one**, in the file that now exists to catch
+    # exactly that. It was also a bare `assert`, which `python -O` strips.
     tracked, others = len(tracked_files), len(other_files)
-    assert len(corpus) == tracked + others
     print(
         f"{tracked} tracked + {others} untracked files scanned, "
         f"{len(hits)} conflict marker(s) found"
@@ -472,6 +479,28 @@ def _main(argv: list[str] | None = None) -> int:
 
 
 def summarise(results: dict[str, bool | None], allow_skip: set[str]) -> int:
+    """Print the summary and return the exit code.
+
+    **A gate with no checks is not a passing gate.** `summarise({}, set())`
+    returned 0 and printed `0 ran, 0 failed, 0 skipped` -- the same failure
+    this file's `derived()` guard exists to refuse, one level up, in the
+    function that produces the answer everyone conditions their push on.
+
+    policyforge-ba found it and argued it was categorically different,
+    because `results` is a dict literal whose keys cannot shrink without a
+    visible diff. That is true of the code as it stands today and it is an
+    argument from the current shape rather than from a guard -- it stops
+    holding the moment anyone builds `results` conditionally, which is a
+    two-line change nobody would flag. So it is refused here instead.
+    """
+    if not results:
+        print(
+            "check.py: ZERO checks ran.\n"
+            "  That is not a clean tree; it is a gate that did not assemble.",
+            file=sys.stderr,
+        )
+        return 2
+
     """Print the summary and return the exit code.
 
     Separate from `main` so the exit rule can be tested without installing

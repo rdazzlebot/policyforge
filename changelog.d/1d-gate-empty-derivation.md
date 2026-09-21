@@ -29,4 +29,12 @@ against the source, so an entry for something that no longer exists
 fails rather than silently pre-exempting the next thing to take that
 name.
 
+**And the same failure one level up: `summarise({}, set())` returned 0**,
+printing `0 ran, 0 failed, 0 skipped`. A gate with no checks is not a
+passing gate, and it now exits 2. It was argued to be categorically
+different because the check table is a dict literal whose keys cannot
+shrink without a visible diff — true of the code as it stands, and an
+argument from the current shape rather than from a guard, which stops
+holding the moment anyone builds that table conditionally.
+
 Closes #224.

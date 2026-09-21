@@ -38,10 +38,39 @@ def etl_vault(controls_dir: Path, out: Path):
 
     from policyforge.ingest.nist_vault_loader import load_vault_controls
 
-    controls = load_vault_controls(controls_dir)
+    report = load_vault_controls(controls_dir)
+
+    # **Every refusal happens before the write, and the ordering is the
+    # whole point.** The first version of this checked after writing, so a
+    # mistyped `--controls-dir` replaced a good catalog with `[]` and
+    # *then* exited 1. An exit code after the damage is a report, not a
+    # refusal: the only moment the check could have helped had already
+    # passed. Found by policyforge-80 on #225 — and it is the same family
+    # as a guard whose argument is fetched at the moment of use, with the
+    # ordering inverted rather than the source.
+    if not report.attempted:
+        raise click.ClickException(
+            f"no *.md control notes found in {controls_dir}. An empty directory is "
+            f"not an empty vault — check the path points at Controls/. Nothing was "
+            f"written; {out} is unchanged."
+        )
+    if report.unreadable:
+        for path, why in report.unreadable:
+            click.echo(f"  unreadable: {path}: {why}", err=True)
+        raise click.ClickException(
+            f"{len(report.unreadable)} of {report.attempted} control note(s) could not "
+            f"be parsed. Nothing was written; {out} is unchanged. A short catalog "
+            f"written over a good one loses the same controls as an empty one and "
+            f"looks healthier, so the partial result is discarded rather than "
+            f"committed — fix the notes named above and run again."
+        )
+
     out.parent.mkdir(parents=True, exist_ok=True)
-    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
-    click.echo(f"Parsed {len(controls)} controls -> {out}")
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in report.controls], indent=2))
+    # Says what was attempted, not only what survived. The old line read
+    # `Parsed {len(controls)} controls` and exited 0 whatever happened, so
+    # five good notes and two empty files reported "Parsed 7 controls".
+    click.echo(f"Parsed {len(report.controls)} of {report.attempted} control note(s) -> {out}")
 
 
 @cli.command("etl-oscal")

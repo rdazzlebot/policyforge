@@ -67,9 +67,17 @@ def test_the_population_is_not_empty():
 #: The printed commands that are examples rather than invocations, named
 #: rather than counted. Both are doing their job — `skills.py` prints a
 #: literal ellipsis and `shell.py` a `<placeholder>`.
-ILLUSTRATIVE_SITES = {
-    "policyforge/zardoz/shell.py:552",
-    "policyforge/zardoz/skills.py:305",
+#:
+#: **Keyed by the command, not by `path:line`.** The first version keyed
+#: on the site, which is not an identity: the train moved `skills.py`'s
+#: line from 305 to 321 and this went red on a merge that touched
+#: nothing it checks. A guard that fires on unrelated edits, in a file
+#: nobody working on the feature would open, gets muted by the third
+#: person who hits it. The command string is what is actually being
+#: exempted and is stable under every reformatting.
+ILLUSTRATIVE_COMMANDS = {
+    "zardoz sync --content-dir <your markdown tree>",
+    "satisfies --controls ...",
 }
 
 
@@ -82,25 +90,31 @@ def test_exactly_the_known_commands_are_exempt():
     written for, and it means a *third* one added later would be excluded
     silently — the check would keep passing while covering less.
 
-    Pinned by site rather than by count, so the failure message names
-    which string stopped being checked. Adding a genuinely illustrative
-    command should turn this red once and be resolved by editing this
-    set, which is a person deciding; a real command that happens to
-    contain `<` should be caught here rather than skipped forever.
+    Pinned by the command string rather than by count, so the failure
+    message names which string stopped being checked. Adding a genuinely
+    illustrative command should turn this red once and be resolved by
+    editing this set, which is a person deciding; a real command that
+    happens to contain `<` should be caught here rather than skipped
+    forever.
 
     Same shape as the catalog-key guard: derive the population from the
     code, enumerate the exemptions by hand.
     """
-    exempt = {
-        where
+    # The path is kept out of the comparison and put in the message, so a
+    # failure still locates the command without a line number deciding
+    # whether the test passes.
+    located = {
+        printed: where
         for where, printed in _printed_commands()
         if any(marker in printed for marker in _ILLUSTRATIVE)
     }
+    exempt = set(located)
 
-    assert exempt == ILLUSTRATIVE_SITES, (
+    assert exempt == ILLUSTRATIVE_COMMANDS, (
         "the set of printed commands treated as examples has changed. Anything "
         "added here stops being checked against the CLI, so it wants a decision "
-        "rather than a silent skip."
+        "rather than a silent skip. Found:\n  "
+        + "\n  ".join(f"{located[c]}: {c!r}" for c in sorted(exempt))
     )
 
 

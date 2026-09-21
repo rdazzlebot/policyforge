@@ -255,7 +255,7 @@ def test_a_kind_with_nothing_to_find_stays_silent():
     arrival, and would have been switched off rather than obeyed. The census
     is what separates *nothing to find* from *stopped looking*.
     """
-    assert shell_status.census()["script"] == set(), (
+    assert shell_status.census()["script"] == {}, (
         "a committed *.sh now exists; this test's premise is gone and the "
         "script kind should be asserted non-empty instead"
     )
@@ -290,18 +290,55 @@ def test_the_census_is_a_second_derivation_not_the_parser_again():
     """
     signalled = shell_status.census()
     sources = shell_status.population()
-    produced = {kind: {s.path for s in sources if s.kind == kind} for kind in shell_status._SIGNALS}
+    produced: dict[str, dict[str, int]] = {k: {} for k in shell_status._SIGNALS}
+    for source in sources:
+        produced[source.kind][source.path] = produced[source.kind].get(source.path, 0) + 1
 
-    for kind, paths in signalled.items():
-        assert not (paths - produced[kind]), (
-            f"{kind}: the census signalled {sorted(paths - produced[kind])} and the "
-            f"parser produced nothing for them"
-        )
+    # Every block the census sees must have been produced. Per file and in
+    # blocks, which is the unit change #228 is about.
+    for kind, counts in signalled.items():
+        for path, blocks in counts.items():
+            assert produced[kind].get(path, 0) >= blocks, (
+                f"{kind}: {path} signalled {blocks} block(s), parser produced "
+                f"{produced[kind].get(path, 0)}"
+            )
 
+    # **Independence is no longer "the two numbers differ" and asserting
+    # that now would be WRONG.** The earlier version required
+    # `census != parser` -- 3 files against 34 run-blocks -- and called the
+    # difference evidence of independence. It was evidence of the unit
+    # mismatch that made extent unreachable (#228). Both sides now count
+    # blocks and agree exactly, 34 and 34, which is the point.
+    #
+    # So independence is asserted where it actually lives: the census is a
+    # crude regex over raw text, the parser is a structural walk, and a
+    # census that returned everything it globbed would be a list rather
+    # than a detection.
     tracked_workflows = set(shell_status.tracked(".github/workflows/*.yml"))
-    assert signalled["workflow"] < tracked_workflows, (
+    assert set(signalled["workflow"]) < tracked_workflows, (
         "the census returned every workflow it globbed, so it is a list rather "
         "than a detection and cannot disagree with anything"
+    )
+
+
+def test_the_census_does_not_follow_the_parser(monkeypatch):
+    """**The independence property, tested by breaking one side.**
+
+    Two derivations are only independent if one can move while the other
+    stays put. Asserting that their numbers differ does not show that --
+    it shows they are measuring different things, which is what caused
+    #228 in the first place.
+
+    So: break the parser and require the census to hold its ground. If the
+    census tracked the parser, this is the test that would notice, and it
+    is the one the earlier "they must differ" assertion was reaching for.
+    """
+    before = shell_status.census()
+    monkeypatch.setattr(shell_status, "_workflow_run_blocks", lambda path, text: [])
+    after = shell_status.census()
+    assert after == before, "the census changed when only the parser was broken"
+    assert sum(after["workflow"].values()) > 0, (
+        "the census reports no workflow blocks, so holding steady proves nothing"
     )
 
 

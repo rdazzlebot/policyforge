@@ -13,7 +13,11 @@ content flags every shipped fragment as lost work.
 
 And the method that survives both traps is written as four steps: find the
 PR whose head the commit was, take its merge commit, diff over the commit's
-own files, read deletions only. Not by subject — squash rewrites it — and
+own files, read the deletions, and **classify each one** — a line absent
+from the merge is lost work *or* a removal a reviewer asked for, and those
+are indistinguishable in a diff and opposite in consequence. Measured on
+#204, the PR that shipped this document: 17 deletions, every one requested
+during review. Not by subject — squash rewrites it — and
 not against `origin/main`, which has moved. **Both wrong methods were tried
 first and both gave confident false answers**, including 165 "unlanded"
 lines in a commit that had been reviewed and approved into a merged PR.

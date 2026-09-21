@@ -42,7 +42,7 @@ Two things about the text are worth expecting:
   CMS's decisions are in the prose rather than in a parameter table, so
   unlike a profile there is nothing in `parameter_values` — the values are
   in `control_statement`, where CMS put them.
-- **95 of the 402 guidance cells say there is no guidance**, in words
+- **96 of the 402 guidance cells say there is no guidance**, in words
   ("There are no supplemental control requirements and guidance for this
   control"). That is the template speaking, not CMS, so it is dropped rather
   than carried into a generated document as though CMS had written it.

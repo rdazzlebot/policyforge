@@ -46,7 +46,7 @@ Two details of the text are load-bearing:
   parameter table — so unlike a profile there is nothing to put in
   `parameter_values`, and folding the statements into anything else would
   lose the decided values.
-* **95 of the 402 guidance cells are a placeholder**, reading "There are no
+* **96 of the 402 guidance cells are a placeholder**, reading "There are no
   supplemental control requirements and guidance for this control". That is
   the template saying nothing, not CMS saying something, so it is dropped to
   an empty `discussion` rather than carried into a generated document as if

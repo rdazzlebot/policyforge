@@ -21,3 +21,9 @@ branch head.** `git diff <reviewed-sha> <merge-commit>` over the reviewed
 files comes back empty when what was approved is what landed. **Ancestry
 says *something* landed; the content diff says *what* landed**, so use
 both. The reviewed SHA survives nowhere except the review that recorded it.
+
+**And "not an ancestor of main" is two different facts**, so the document
+answers in three states rather than a boolean: *landed*, *pending* (the
+base has not merged yet — says nothing), and *stranded* (the base merged
+and did not carry it). During a release train seven of the ten most
+recently merged PRs are not ancestors of main and every one is healthy.

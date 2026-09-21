@@ -60,8 +60,7 @@ than any of the readings.
 
 **The durable statement, which does not drift:** every squash-merged branch
 reports unmerged, so **the flag's count is a lower bound and never the
-answer.** Sampled across ten merged PRs, nine are genuinely ancestors of
-main and the flag names **none of them.** Prefer that sentence to any
+answer.** Sampled across ten merged PRs, the flag names **none of them.** Prefer that sentence to any
 count.
 
 `git merge-base --is-ancestor <reviewed-sha> origin/main` agrees with the
@@ -167,7 +166,55 @@ reached nothing. `state=MERGED` was true the whole time. It had to be
 recovered by cherry-picking onto a fresh branch as #169.
 
 > **`MERGED` is a fact about a pull request. Being an ancestor of main is a
-> fact about the release.** Check both.
+> fact about the release.**
+
+### "Not an ancestor of main" is two different facts
+
+**Never answer this with a boolean.** A boolean has to pick one of the two
+to be wrong about:
+
+```
+landed      the merge commit is an ancestor of main
+pending     its base has not merged yet — says nothing either way
+stranded    its base HAS merged, and did not carry it
+```
+
+Measured on this repository:
+
+```
+#149   base main                  ancestor of main              LANDED
+#200   base release/1.6.1         base still open               PENDING
+#168   base 1d/airmf-loader-wip   base merged as #167 (72bdbb6)
+                                  which does not contain it     STRANDED
+```
+
+**Ask what the base did afterwards.** That is derivable from git and the
+API alone — it needs no knowledge of which integration branch is open, or
+whether one is.
+
+**Of the ten most recently merged PRs here, seven are not ancestors of
+main and every one of them is `pending`, not stranded.** During a release
+train the naive check fires on nearly everything.
+
+**That matters more than a false alarm usually does, because of the
+remedy.** A stranded PR is recovered by cherry-picking it onto a fresh
+branch — which is what #168 actually required. **An alarm whose remedy
+duplicates work that already landed has to be right.**
+
+### Two shortcuts that look equivalent and are not
+
+**Comparing against the PR's own base.** `ANC-OWN-BASE` is `YES` for
+#168 — that is what merging into a base *means* — so it reads identically
+for the defect and the healthy case.
+
+**Comparing against the open train.** This does separate them, but only if
+you already know a train is open and what it is called, and nothing about
+a merged PR tells you that.
+
+**And #168's branch looks alive.** `origin/1d/airmf-loader-wip` exists,
+and its tip **is** `6b7a295` — the merge commit that went nowhere. Nothing
+about the branch is visibly wrong. You have to ask what its base did next,
+which is why it survived a day.
 
 Locally, without the API, the squash subject carries the number:
 

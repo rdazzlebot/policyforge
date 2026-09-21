@@ -16,6 +16,7 @@ here executes, so nothing here notices when it stops being true.
 
 from __future__ import annotations
 
+import ast
 import re
 import shlex
 import subprocess
@@ -297,27 +298,248 @@ def test_the_history_command_survives_a_hostile_document_name(name: str):
         )
 
 
-def test_every_interpolating_site_quotes_its_values():
-    """Interpolation inside hand-written quotes, across all of `src/`.
+#: A printed command runs from `policyforge ` to the first backtick,
+#: newline, or end of the string. Prose on either side is not the command.
+_COMMAND_SPAN = re.compile(r"policyforge [^`\n]*")
 
-    **Not the whole class.** A bare `--title {value}` is equally unquoted
-    and is not matched — see #218. Source-level because the values are
-    runtime data: the behavioural test above reaches only the sites it
-    knows about, this one reaches the shape it knows about wherever it
-    occurs.
+#: Interpolated expressions that are safe without `shlex.quote`, pinned by
+#: the expression's own text and each with a reason. **Not by `path:line`**
+#: — that moved under a merge once already and turned this file red for an
+#: edit it does not check.
+#:
+#: A reason is required: an exemption with no reason cannot be told from an
+#: oversight, and the next reader cannot know whether removing it is safe.
+SAFE_INTERPOLATIONS = {
+    "CLI_TARGET": "a module constant naming the wiki backend, never user data",
+    "quoted_flags": (
+        "a pre-assembled `--controls <path>` fragment whose every value is "
+        "shlex.quote'd where it is appended. It cannot be quoted again here "
+        "without collapsing the whole fragment into one argument. **This is "
+        "the one place the provenance rule does not reach** — that the parts "
+        "were quoted upstream is not visible at this site, so it is held by "
+        "test_the_crosswalk_seed_hint_survives_a_path_with_a_space instead."
+    ),
+}
+
+
+def _quotes_its_value(expression: str) -> bool:
+    """Is this interpolated expression quoted for a shell?
+
+    **The property, not a list of shapes.** The previous version of this
+    guard enumerated *punctuation*: an interpolation inside hand-written
+    `"{x}"` or `'{x}'`. That is one shape of the defect, and a bare `{x}`
+    — the shape that injects argv tokens rather than truncating a title —
+    was not matched. Adding bare would have made it enumerate three
+    shapes, and the fourth would have arrived unannounced. It is the same
+    trap as a list of tool names standing in for "treats no input as
+    success".
+
+    So the question asked here is about the value's **provenance**: did it
+    go through `shlex.quote`? That covers every punctuation shape
+    including ones nobody has written yet.
     """
-    offenders = []
+    try:
+        node = ast.parse(expression, mode="eval").body
+    except SyntaxError:  # pragma: no cover - unparseable expressions don't occur
+        return False
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "quote"
+    )
+
+
+def _interpolations_in_printed_commands() -> list[tuple[str, str, str]]:
+    """Every value interpolated **inside** a printed command: (site, expr, command).
+
+    **Derived by parsing, because the population is not lines.** Every
+    real printed command in this repo is built from adjacent f-string
+    literals across several lines, and the dangerous ones are on the
+    continuation lines:
+
+        f"policyforge pull --space {shlex.quote(doc.space)} "
+        f"--title {shlex.quote(doc.page_title)} "      <- no `policyforge`
+        f"--tier {shlex.quote(doc.tier or 'standard')} --apply"
+
+    A line-scoped scan cannot see lines two and three at all. Measured
+    before this was written: of the eight lines in `src/` that a
+    line-scoped rule matches, **five interpolate outside any command** —
+    `f"No overlay at {path}. Run \\`policyforge crosswalk propose\\` first."`
+    is prose with a command in it, not a command with a value in it — and
+    the continuation lines that carry the real risk match nothing.
+
+    Python concatenates adjacent f-strings into one `JoinedStr`, so the
+    whole command is one node. Each interpolation is replaced by a marker,
+    the command spans are located in the reconstructed text, and an
+    interpolation counts only if its marker lands inside one.
+    """
+    found = []
     for path in sorted(SRC.rglob("*.py")):
-        for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if "policyforge " not in line or "{" not in line:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.JoinedStr):
                 continue
-            if "--" not in line:
-                continue
-            # An interpolated value inside hand-written quotes is the defect.
-            if re.search(r'"\{[^}]+\}"', line) or re.search(r"'\{[^}]+\}'", line):
-                offenders.append(f"{path.relative_to(SRC.parent)}:{line_no}: {line.strip()}")
+            text, exprs = "", []
+            for part in node.values:
+                if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                    text += part.value
+                elif isinstance(part, ast.FormattedValue):
+                    text += f"\x00{len(exprs)}\x00"
+                    # `!r` is recorded, not treated as quoting: Python repr
+                    # survives spaces and both quote characters and then
+                    # fails on a backslash — `C:\\path` comes back doubled —
+                    # so a Windows path formatted with `!r` is wrong.
+                    suffix = f"!{chr(part.conversion)}" if part.conversion > 0 else ""
+                    exprs.append(ast.unparse(part.value) + suffix)
+            for match in _COMMAND_SPAN.finditer(text):
+                command = match.group(0)
+                if "--" not in command:
+                    # A bare name in prose — "see `policyforge generate`" —
+                    # is a reference, and `policyforge mcp:{note}` is a log
+                    # prefix. Neither is an invocation. Same rule the
+                    # population above uses.
+                    continue
+                site = f"{path.relative_to(SRC.parent).as_posix()}:{node.lineno}"
+                # Put the expressions back before anything prints this. The
+                # markers are NUL bytes, and a failure message carrying them
+                # is unreadable in a terminal and makes `grep` report CI's
+                # log as a binary file. Found by running the mutation
+                # battery, where the harness could not say which arms fired.
+                readable = command
+                for index, expression in enumerate(exprs):
+                    readable = readable.replace(f"\x00{index}\x00", "{" + expression + "}")
+                for index, expression in enumerate(exprs):
+                    if f"\x00{index}\x00" in command:
+                        found.append((site, expression, readable))
+    return found
+
+
+def test_the_interpolation_population_is_not_empty():
+    """Guard the population, or the check below passes vacuously.
+
+    It is derived by parsing, so it goes to zero if `ast.walk` stops
+    finding what it expects — and zero offenders out of zero sites is
+    indistinguishable from a clean repo.
+    """
+    assert _interpolations_in_printed_commands(), (
+        "no interpolation was found inside any printed command anywhere in src/. "
+        "Either they all went away or the parse stopped seeing them; check which."
+    )
+
+
+def test_every_value_interpolated_into_a_printed_command_is_quoted():
+    """**The class, by provenance rather than by punctuation.**
+
+    A value interpolated into a command printed for a person to copy must
+    go through `shlex.quote`, or be named in `SAFE_INTERPOLATIONS` with a
+    reason. Both failure directions are real and they differ:
+
+        --title "{title}"   a quote in the value TRUNCATES the command,
+                            naming the wrong document, silently
+        --tier {tier}       a space in the value ADDS ARGV TOKENS, so
+                            `standard --apply --force /etc` injects flags
+
+    Writing this guard found two live instances of the second, neither of
+    which the punctuation-shaped predecessor could match — both on
+    continuation lines:
+
+        etl.py     --sample {export_path}     a HITRUST export is normally
+                                              named "MyCSF Assessment
+                                              Export.xlsx"; the shell saw
+                                              three arguments
+        skills.py  --controls {path}          and `--framework {name!r}`,
+                                              where repr doubles the
+                                              backslashes in a Windows path
+    """
+    offenders = [
+        f"{site}: {expression}  in  {command.strip()}"
+        for site, expression, command in _interpolations_in_printed_commands()
+        if not _quotes_its_value(expression) and expression not in SAFE_INTERPOLATIONS
+    ]
     assert not offenders, (
-        "a printed command interpolates a value inside hand-written quotes. Use "
-        "`shlex.quote`, which handles the quote characters the value may itself "
-        "contain:\n  " + "\n  ".join(offenders)
+        "a value is interpolated into a printed command without `shlex.quote`. A "
+        "space in it adds arguments and a quote character truncates it, and either "
+        "way the command a person copies is not the one that was meant. Quote it, "
+        "or add the expression to SAFE_INTERPOLATIONS with a reason:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_the_safe_list_names_only_expressions_that_are_really_there():
+    """An exemption for an expression nobody writes any more is a stale
+    permission: it stops describing the code and starts describing its
+    history, and the next reader cannot tell which."""
+    live = {expression for _site, expression, _cmd in _interpolations_in_printed_commands()}
+    stale = sorted(set(SAFE_INTERPOLATIONS) - live)
+    assert not stale, (
+        f"SAFE_INTERPOLATIONS exempts {stale}, which no printed command "
+        "interpolates any more. Remove the entry rather than leaving a "
+        "permission nothing uses."
+    )
+
+
+def test_the_crosswalk_seed_hint_survives_a_path_with_a_space():
+    """**The behavioural half of `quoted_flags`' exemption.**
+
+    The source scan cannot see that a pre-assembled fragment was quoted
+    where its parts were added, so that claim is held here instead — by
+    running the real function and putting the command it prints through a
+    shell parser.
+
+    Both hostile values at once and each distinct, so a value that is
+    dropped or merged into its neighbour is visible rather than masked:
+    a framework name with a space, which is ordinary (`NIST 800-171`),
+    and a catalog path with one, which on Windows is ordinary too.
+    """
+    from policyforge.ingest.schema import Control
+    from policyforge.zardoz import skills
+
+    framework = "NIST 800-171"
+    catalog = Path("data/my catalogs/171.json")
+
+    class _Coverage:
+        def __init__(self, name):
+            self.framework = name
+            self.covered = 0
+
+    class _Report:
+        framework_coverage = [_Coverage(framework)]
+
+    controls = [
+        Control(
+            control_id="3.1.1",
+            title="t",
+            framework=framework,
+            framework_version="Rev 2",
+            control_statement="s",
+        ),
+        Control(
+            control_id="AC-1",
+            title="t",
+            framework="NIST 800-53",
+            framework_version="Rev 5",
+            control_statement="s",
+        ),
+    ]
+    monkeyed = skills._paths_by_framework
+    try:
+        skills._paths_by_framework = lambda _paths: {
+            skills._framework_key(framework): catalog,
+            skills._framework_key("NIST 800-53"): Path("data/nist 800-53/controls.json"),
+        }
+        notes = skills._zero_row_reasons(controls, _Report(), [catalog])
+    finally:
+        skills._paths_by_framework = monkeyed
+
+    printed = "\n".join(notes)
+    command = re.search(r"`(policyforge [^`]*)`", printed)
+    assert command, f"no printed command in the hint: {printed!r}"
+
+    parsed = shlex.split(command.group(1))
+    assert framework in parsed, (
+        f"the framework name did not survive as one argument — a shell would see "
+        f"{parsed}: {command.group(1)}"
+    )
+    assert str(catalog) in parsed, (
+        f"the catalog path did not survive as one argument — a shell would see "
+        f"{parsed}: {command.group(1)}"
     )

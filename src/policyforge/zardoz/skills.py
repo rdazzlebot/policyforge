@@ -30,6 +30,7 @@ to publish could not be written in this file.
 
 from __future__ import annotations
 
+import shlex
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -651,14 +652,19 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
                 f"  {framework.framework.upper()}: not mapped by design. {_first_sentence(reason)}"
             )
         else:
-            flags = ""
+            # Named for its contract, because the name is what the source
+            # scan sees at the interpolation site: a pre-assembled fragment
+            # cannot be quoted again there without collapsing it into one
+            # argument, so the quoting has to happen here, per value.
+            quoted_flags = ""
             own_path = path_for.get(_framework_key(framework.framework))
             for path in (own_path, anchor_path):
-                if path and path not in flags:
-                    flags += f" --controls {path}"
+                if path and shlex.quote(str(path)) not in quoted_flags:
+                    quoted_flags += f" --controls {shlex.quote(str(path))}"
             notes.append(
                 f"  {framework.framework.upper()}: no published crosswalk yet — "
-                f"`policyforge crosswalk seed --framework {name!r}{flags}` starts one."
+                f"`policyforge crosswalk seed --framework {shlex.quote(name)}"
+                f"{quoted_flags}` starts one."
             )
     if not notes:
         return []

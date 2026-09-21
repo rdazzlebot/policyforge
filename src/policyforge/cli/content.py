@@ -36,7 +36,7 @@ def history_hint(*, tier: str, name: str, previous: str, current: str) -> str:
     return (
         f"Run `policyforge history "
         f"--tier {shlex.quote(tier)} --name {shlex.quote(name)} "
-        f"--diff {previous}:{current}` to see what changed."
+        f"--diff {shlex.quote(previous)}:{shlex.quote(current)}` to see what changed."
     )
 
 

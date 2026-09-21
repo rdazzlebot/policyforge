@@ -241,3 +241,99 @@ def test_an_outcome_framework_is_refused_rather_than_suggested():
         "the AI RMF does not appear in the coverage report at all. A catalog "
         "that is anchorable but invisible is worse than one that is neither."
     )
+
+
+# ---- the shell and the CLI must answer one question one way ----------------
+
+
+def test_the_shell_passes_the_relationships_the_cli_passes():
+    """**Two views of one registry disagreed about the organisation's own
+    reviewed decision.**
+
+    `cli/programme.py` passes `relationships=accepted_relationships(...)`;
+    the shell passed nothing. Every lookup then returned `None`, `None` is
+    not in `PARTIAL_RELATIONSHIPS`, and a mapping recorded as `superset`
+    or `intersects` counted as **full** coverage in the shell and
+    **partial** in the CLI.
+
+    Measured before the fix, with every HIPAA mapping recorded as
+    `superset`: the shell said 65 of 74 covered, the CLI said 0.
+
+    Asserted on the call rather than on a number, because the numbers move
+    with the catalogs and the property does not: **whatever the CLI reads
+    for this, the shell reads too.**
+    """
+    import inspect
+
+    from policyforge.cli import programme
+    from policyforge.zardoz import skills
+
+    cli_source = inspect.getsource(programme)
+    shell_source = inspect.getsource(skills._coverage)
+
+    assert "relationships=accepted_relationships" in cli_source, (
+        "the CLI no longer passes relationships; this test's premise is gone"
+    )
+    assert "relationships=accepted_relationships" in shell_source, (
+        "the shell does not pass relationships, so a reviewed `superset` "
+        "mapping counts as full coverage here and partial in the CLI"
+    )
+
+
+def test_a_partial_relationship_is_not_counted_as_full():
+    """The behaviour underneath, so the check above is not the only guard.
+
+    Built directly rather than through either caller: a crosswalk with one
+    mapping, recorded as `superset`, must not report that requirement
+    covered.
+    """
+    from policyforge.topics.coverage import PARTIAL_RELATIONSHIPS, analyze_coverage
+    from policyforge.topics.registry import Topic
+
+    controls = _nist_control("AC-2")
+    other = _hipaa_control("164.308(a)(3)(i)")
+    crosswalk = {"AC-2": {"hipaa": ["164.308(a)(3)(i)"]}}
+    topics = [Topic(name="T", owner="O", nist_controls=["AC-2"])]
+
+    assert "superset" in PARTIAL_RELATIONSHIPS
+
+    full = analyze_coverage(
+        topics, controls, other_controls=other, crosswalk=crosswalk, relationships={}
+    )
+    partial = analyze_coverage(
+        topics,
+        controls,
+        other_controls=other,
+        crosswalk=crosswalk,
+        relationships={("hipaa", "164.308(a)(3)(i)", "AC-2"): "superset"},
+    )
+
+    covered = {f.framework: len(f.covered) for f in full.framework_coverage}
+    with_rel = {f.framework: len(f.covered) for f in partial.framework_coverage}
+    assert covered.get("hipaa") == 1, "the unqualified mapping should read as covered"
+    assert with_rel.get("hipaa") == 0, (
+        "a mapping the organisation reviewed as `superset` still reads as full coverage"
+    )
+
+
+def _nist_control(control_id):
+    from policyforge.ingest.schema import Control
+
+    return [
+        Control(
+            control_id=control_id, title="t", framework="NIST 800-53", framework_version="Rev 5"
+        )
+    ]
+
+
+def _hipaa_control(control_id):
+    from policyforge.ingest.schema import Control
+
+    return [
+        Control(
+            control_id=control_id,
+            title="t",
+            framework="HIPAA Security Rule",
+            framework_version="45 CFR 164",
+        )
+    ]

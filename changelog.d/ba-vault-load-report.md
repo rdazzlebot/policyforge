@@ -27,3 +27,12 @@ names it prints are the notes to fix.
 **An empty `Controls/` directory is now an error rather than a success.**
 `--controls-dir` pointing one level too high, or at a vault that stores
 notes under another extension, produced `Parsed 0 controls` and exit 0.
+
+**Nothing is written unless every note parsed, and this is the part that
+protects a file you already have.** `--out` defaults to a path inside
+`data/frameworks/`, so a mistyped `--controls-dir` used to overwrite a
+good catalog with `[]` before reporting the problem. A run that cannot
+read the whole vault now leaves the previous file exactly as it was and
+names the notes to fix. **A catalog short by ten controls loses the same
+ten as an empty one and looks healthier doing it**, so a partial result
+is discarded rather than committed.

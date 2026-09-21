@@ -216,23 +216,33 @@ def test_a_healthy_vault_exits_zero_and_says_what_it_attempted(tmp_path):
     assert len(json.loads(out.read_text(encoding="utf-8"))) == 2
 
 
-def test_a_vault_with_a_bad_note_exits_non_zero(tmp_path):
+def test_a_vault_with_a_bad_note_exits_non_zero_and_writes_nothing(tmp_path):
     """**The measured defect: this exited 0.** A CLI that writes a short
     catalog and reports success is how an incomplete compliance dataset
-    gets committed."""
+    gets committed.
+
+    **And the first fix wrote the short catalog anyway, then exited 1.**
+    The comment here used to read *"the good notes are still written: a
+    bad note is not a reason to lose the rest"* — which has the reasoning
+    backwards once there is an existing file. The loader keeps going so
+    it can report *every* failure in one run, not so the CLI can commit a
+    partial result over a good one. A catalog short by ten controls loses
+    exactly what an empty one loses and looks healthier doing it.
+    """
     for cid in ("AC-2", "AC-3"):
         _note(tmp_path, cid)
     (tmp_path / "AC-9.md").write_text("", encoding="utf-8")
     out = tmp_path / "out.json"
+    out.write_text('["a good catalog that was already here"]', encoding="utf-8")
 
     result = _run(tmp_path, out)
 
     assert result.exit_code != 0
-    assert "Parsed 2 of 3 control note(s)" in result.output
-    assert "short by that many controls" in result.output
-    # The good notes are still written: a bad note is not a reason to lose
-    # the rest, which is why the loader keeps going.
-    assert len(json.loads(out.read_text(encoding="utf-8"))) == 2
+    assert "Nothing was written" in result.output
+    assert "AC-9.md" in result.output, "the failing note must be named"
+    assert out.read_text(encoding="utf-8") == '["a good catalog that was already here"]', (
+        "the existing catalog was overwritten by a run that then refused"
+    )
 
 
 def test_an_empty_directory_exits_non_zero(tmp_path):
@@ -240,11 +250,18 @@ def test_an_empty_directory_exits_non_zero(tmp_path):
     same defect as `mdformat --check` with no paths exiting 0 — the
     absence of input reported as the absence of problems."""
     out = tmp_path / "out.json"
+    out.write_text('["a good catalog that was already here"]', encoding="utf-8")
 
     result = _run(tmp_path, out)
 
     assert result.exit_code != 0
     assert "not an empty vault" in result.output
+    # **The serious one.** A mistyped `--controls-dir` replaced a good
+    # catalog with `[]` and then exited 1. Exit 1 after the damage is a
+    # report, not a refusal.
+    assert out.read_text(encoding="utf-8") == '["a good catalog that was already here"]', (
+        "a mistyped --controls-dir destroyed the catalog it was pointed at"
+    )
 
 
 def test_a_directory_whose_notes_the_glob_no_longer_matches_exits_non_zero(tmp_path):
@@ -271,8 +288,12 @@ def test_a_directory_whose_notes_the_glob_no_longer_matches_exits_non_zero(tmp_p
 
     result = _run(tmp_path, out)
 
+    out.write_text('["a good catalog that was already here"]', encoding="utf-8")
+    result = _run(tmp_path, out)
+
     assert result.exit_code != 0, (
         "two real notes were present and none were seen, and the run reported "
         f"success: {result.output}"
     )
     assert "not an empty vault" in result.output
+    assert out.read_text(encoding="utf-8") == '["a good catalog that was already here"]'

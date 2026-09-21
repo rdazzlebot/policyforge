@@ -95,7 +95,48 @@ _MODALITY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 #: sentence that got it right.
 _MARKUP_RE = re.compile(r"\*\*|__|\*|`")
 
-_SENTENCE_RE = re.compile(r"[^.!?]+(?:[.!?]+|$)")
+
+def _sentences(text: str) -> list[tuple[int, str]]:
+    """`(offset, piece)` for each sentence, using the project's boundary rule.
+
+    **This split every citation containing a dot until 2026-09-21.** The
+    rule was `[^.!?]+(?:[.!?]+|$)`, which breaks at every full stop —
+    including the ones *inside* an identifier. `[HIPAA Security Rule
+    164.308(a)(3)(i)]` became three fragments, none of which is a
+    citation, so `cited` was False on every statement and
+    `weakened_citations` reported nothing.
+
+    **The direction of that failure is silence.** A document whose
+    requirements were all correctly cited and all written as "should
+    consider" read as clean. Counted over the shipped catalogs, 324 of
+    1,844 identifiers contain a dot and four catalogs are **entirely**
+    dotted — `cfr-171-information-blocking`, `hipaa-security-rule`,
+    `cfr-42-part-2-sud-records` and `nist-800-171-r3`. The check worked
+    for 800-53, FedRAMP and ARC-AMPE, and not for the framework this
+    product exists to serve.
+
+    `entail/base.py` replaced the same pattern for the same reason and
+    its docstring carries the argument, including why a rule that
+    special-cased digit-dot-digit would leave `45 C.F.R. 164.312`
+    broken. Imported rather than restated: two copies of one rule, one of
+    them fixed, is how this defect existed at all. Found by
+    policyforge-b5, who wrote that fix and then found its sibling still
+    carrying the bug.
+
+    Returns offsets because a `Statement` carries the line it came from
+    and `entail`'s `_segments` does not need them.
+    """
+    from policyforge.entail.base import _BOUNDARY_RE, _ends_an_initial, _starts_with_a_capital
+
+    pieces: list[tuple[int, str]] = []
+    start = 0
+    for match in _BOUNDARY_RE.finditer(text):
+        if _ends_an_initial(text, match.start()) and _starts_with_a_capital(text, match.end()):
+            continue
+        pieces.append((start, text[start : match.end()]))
+        start = match.end()
+    pieces.append((start, text[start:]))
+    return [(offset, piece) for offset, piece in pieces if piece.strip()]
 
 
 @dataclass(frozen=True)
@@ -161,9 +202,8 @@ def analyze(text: str) -> list[Statement]:
     text = _HEADING_LINE_RE.sub(lambda m: " " * len(m.group(0)), text)
 
     statements: list[Statement] = []
-    for match in _SENTENCE_RE.finditer(text):
-        raw = match.group(0)
-        offset = match.start() + (len(raw) - len(raw.lstrip()))
+    for piece_start, raw in _sentences(text):
+        offset = piece_start + (len(raw) - len(raw.lstrip()))
         sentence = raw.strip()
         if not sentence:
             continue

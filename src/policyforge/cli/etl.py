@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
 import click
@@ -748,7 +749,7 @@ def etl_hitrust(export_path: Path, version: str, out: Path | None, force: bool):
         raise click.ClickException(
             f"{exc}\n\nIf this export's layout is one this project has not seen, "
             "run:\n  policyforge generate-parser --framework hitrust --sample "
-            f"{export_path}"
+            f"{shlex.quote(str(export_path))}"
         ) from exc
 
     click.echo(summarize(controls).format_report())
@@ -850,7 +851,7 @@ def etl_govramp(export_path: Path, impact_level: str | None, version: str, out: 
         raise click.ClickException(
             f"{exc}\n\nIf this workbook's layout is one this project has not seen, "
             "run:\n  policyforge generate-parser --framework govramp --sample "
-            f"{export_path}"
+            f"{shlex.quote(str(export_path))}"
         ) from exc
 
     click.echo(summarize(controls, rows=rows).format_report())

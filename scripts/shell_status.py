@@ -480,6 +480,26 @@ def main(argv: list[str]) -> int:
     # same unit, and it needs no pinned bound: the population may grow
     # freely, and a file that stops being examined is named rather than
     # absorbed into a smaller total.
+    #
+    # **What this does NOT close, measured rather than reasoned about.**
+    # policyforge-b5's formulation of #228 is that a shrink is invisible
+    # *because* a check was made more specific -- so the same question
+    # has to be asked of this fix. Asked and answered:
+    #
+    #     edit the parser pathspec only     before: exit 0, silent
+    #                                        after: exit 2, names both files
+    #     edit census AND parser pathspecs  before: exit 0
+    #                                        after: exit 0      <- unchanged
+    #
+    # The one-edit case is closed; the coordinated two-edit case is not,
+    # and is the residual `census()` already discloses. It is unchanged
+    # by this, not introduced by it. Both derivations reach the tree
+    # through a pathspec, so narrowing both in step defeats them both --
+    # which is an argument for deriving from the whole tracked set and
+    # classifying, so a narrowed spec moves files to "unclassified"
+    # rather than out of existence. Not done here: one edit is the
+    # accident-shaped case, two coordinated edits in the same direction
+    # forty lines apart is not.
     produced = {kind: {s.path for s in sources if s.kind == kind} for kind in _SIGNALS}
     silent = {
         kind: sorted(paths - produced[kind])

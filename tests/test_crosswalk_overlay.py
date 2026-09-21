@@ -22,6 +22,7 @@ from policyforge.crosswalk.overlay import (
     dump_overlay,
     load_overlay,
     load_overlays,
+    overlay_digests,
     parse_overlay,
     seed_overlay,
 )
@@ -644,3 +645,51 @@ def test_the_token_match_is_gated_on_the_loaded_catalog(name):
     with pytest.raises(OverlayError) as excinfo:
         seed_overlay(_catalogs(), name)
     assert not isinstance(excinfo.value, NotAnchorableError)
+
+
+def test_an_overlays_digest_survives_a_line_ending_change(tmp_path):
+    """**The same overlay, checked out on two platforms, must record the
+    same digest.**
+
+    `.gitattributes` pins only `*.md` to LF, so a
+    `config/crosswalks/*.yaml` gets whatever `core.autocrlf` decides. A
+    team that commits its overlays *and* the provenance file beside the
+    crosswalk therefore writes one digest on Windows and computes another
+    on Linux.
+
+    This hashed raw bytes until 2026-09-21, and the consequence is a
+    **hard failure** rather than a warning: `synthesize` raises *"was not
+    built from the crosswalk overlays now in config/crosswalks/"* and
+    tells the operator to rebuild — blaming the overlays for a checkout
+    difference, on a crosswalk that is correct.
+
+    Measured before fixing rather than assumed: the same overlay gave
+    `edba2eba…` with LF and `154707dc…` with CRLF.
+    """
+    overlay = b"- source: NIST 800-53 AC-2\n  target: HIPAA 164.308(a)(3)(i)\n"
+
+    lf = tmp_path / "lf"
+    lf.mkdir()
+    (lf / "hipaa.yaml").write_bytes(overlay)
+
+    crlf = tmp_path / "crlf"
+    crlf.mkdir()
+    (crlf / "hipaa.yaml").write_bytes(overlay.replace(b"\n", b"\r\n"))
+
+    assert overlay_digests(lf) == overlay_digests(crlf)
+
+
+def test_a_real_content_change_still_moves_the_digest(tmp_path):
+    """The other half, and the one that makes the test above meaningful:
+    normalising line endings must not normalise away an edit. A guard
+    that made every overlay hash alike would pass the test above and
+    report nothing stale, ever."""
+    first = tmp_path / "a"
+    first.mkdir()
+    (first / "hipaa.yaml").write_bytes(b"- source: NIST 800-53 AC-2\n")
+
+    second = tmp_path / "b"
+    second.mkdir()
+    (second / "hipaa.yaml").write_bytes(b"- source: NIST 800-53 AC-3\n")
+
+    assert overlay_digests(first) != overlay_digests(second)

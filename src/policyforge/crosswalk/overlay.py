@@ -388,16 +388,33 @@ def overlay_files(directory: Path = DEFAULT_OVERLAY_DIR) -> list[Path]:
 
 
 def overlay_digests(directory: Path = DEFAULT_OVERLAY_DIR) -> dict[str, str]:
-    """{file name: sha256 of its bytes} for every overlay in `directory`.
+    """{file name: digest} for every overlay in `directory`.
 
     What `map` records beside the crosswalk it builds, and what `synthesize`
     compares against, so a crosswalk built before an overlay was added,
     edited or deleted is recognised as stale. Content, not modification time:
     a timestamp can tie, and a deleted file has none.
-    """
-    import hashlib
 
-    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in overlay_files(directory)}
+    **Line endings are normalised first, and this hashed raw bytes until
+    2026-09-21.** `ingest/provenance.content_digest` exists because raw
+    hashing made every stamp recorded on Windows a mismatch in CI — the
+    same file, byte for byte apart from `\\r\\n`. This site bypassed it.
+
+    `.gitattributes` pins only `*.md` to LF, so a `config/crosswalks/*.yaml`
+    gets whatever `core.autocrlf` decides. A team that commits its overlays
+    **and** the provenance file beside the crosswalk therefore records one
+    digest on Windows and computes another on Linux — measured, not
+    inferred: the same overlay gives `edba2eba…` with LF and `154707dc…`
+    with CRLF, while `content_digest` gives `edba2eba…` for both.
+
+    **The consequence is a hard failure, not a warning.** `synthesize`
+    raises `"<path> was not built from the crosswalk overlays now in
+    config/crosswalks/"` and tells the operator to rebuild — blaming the
+    overlays for a checkout difference, on a crosswalk that is correct.
+    """
+    from policyforge.ingest.provenance import content_digest
+
+    return {p.name: content_digest(p.read_bytes()) for p in overlay_files(directory)}
 
 
 def provenance_path(crosswalk_path: Path) -> Path:

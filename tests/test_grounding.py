@@ -17,6 +17,7 @@ from policyforge.content.grounding import (
     parse_synthesis,
     premises_for,
     unanchored,
+    ungrounded,
 )
 
 SYNTHESIS = """\
@@ -158,6 +159,101 @@ def test_a_cited_claim_with_no_premise_costs_nothing_and_is_not_judged():
     )
 
     assert judgeable(body, SYNTHESIS) == []
+
+
+# --------------------------------------------------------------------------
+# Ungrounded: the opinion, and the half that must never gate
+# --------------------------------------------------------------------------
+
+
+class ScriptedEntailer:
+    """Answers by premise text, and counts the asking."""
+
+    def __init__(self, supports=True):
+        self.supports = supports
+        self.calls: list[tuple[str, str]] = []
+
+    def entails(self, premise, hypothesis):
+        from policyforge.entail import ENTAILED, NEUTRAL, Verdict
+
+        self.calls.append((premise, hypothesis))
+        label = ENTAILED if self.supports else NEUTRAL
+        return Verdict(label=label, reason="scripted")
+
+
+def test_a_carried_obligation_produces_no_finding():
+    body = _document(
+        "## 1. Access",
+        "Accounts shall be reviewed quarterly. [NIST 800-53 AC-2]",
+    )
+
+    assert ungrounded(body, SYNTHESIS, ScriptedEntailer(supports=True)) == []
+
+
+def test_an_uncarried_obligation_is_reported_with_what_it_was_judged_against():
+    body = _document(
+        "## 1. Access",
+        "Accounts shall be reviewed daily by the CISO. [NIST 800-53 AC-2]",
+    )
+
+    found = ungrounded(body, SYNTHESIS, ScriptedEntailer(supports=False))
+
+    assert len(found) == 1
+    assert found[0].reason == "scripted"
+    assert found[0].premises, "the finding must carry the premises, not just a verdict"
+    assert "[NIST 800-53 AC-2]" in found[0].premises[0].tags
+
+
+def test_premises_are_judged_together_not_one_at_a_time():
+    """A generated sentence may merge two requirements and cite both — the
+    generator is told to. Judging each premise alone would report a faithful
+    merge as ungrounded, which is the direction that gets a check ignored."""
+    body = _document(
+        "## 1. Access",
+        "Accounts shall be reviewed quarterly and privileged access separately "
+        "approved. [NIST 800-53 AC-2] [NIST 800-53 AC-6]",
+    )
+    entailer = ScriptedEntailer(supports=True)
+
+    ungrounded(body, SYNTHESIS, entailer)
+
+    assert len(entailer.calls) == 1, "one call for the claim, not one per premise"
+    premise = entailer.calls[0][0]
+    assert "reviewed quarterly" in premise and "separately approved" in premise
+
+
+def test_the_judge_is_asked_once_per_cited_claim_and_not_once_per_premise():
+    """The cost the caller was shown must be the cost incurred. A refactor
+    that judges per premise multiplies the bill by the crosswalk's width and
+    every other test here still passes."""
+    body = _document(
+        "## 1. Access",
+        "Accounts shall be reviewed quarterly. [NIST 800-53 AC-2]",
+        "Privileged access shall be separately approved. [NIST 800-53 AC-6]",
+        "Reviewers shall retain evidence of each review.",
+    )
+    entailer = ScriptedEntailer(supports=True)
+
+    ungrounded(body, SYNTHESIS, entailer)
+
+    assert len(entailer.calls) == len(judgeable(body, SYNTHESIS)) == 2
+
+
+def test_an_uncited_obligation_costs_nothing_and_is_not_an_opinion():
+    """It is reported by `unanchored` as a fact. Asking a model about a
+    sentence with no premise would be asking about the empty set, and would
+    turn a free deterministic finding into a paid uncertain one."""
+    body = _document(
+        "## 1. Access",
+        "Accounts shall be reviewed quarterly. [NIST 800-53 AC-2]",
+        "Reviewers shall retain evidence of each review.",
+    )
+    entailer = ScriptedEntailer(supports=True)
+
+    ungrounded(body, SYNTHESIS, entailer)
+
+    assert len(entailer.calls) == 1, "the uncited obligation was never judged"
+    assert len(unanchored(body)) == 1, "and it is reported as a fact instead"
 
 
 # --------------------------------------------------------------------------

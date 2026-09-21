@@ -214,3 +214,39 @@ def judgeable(body: str, synthesis: str) -> list[tuple[Claim, list[Requirement]]
         if premises:
             pairs.append((claim, premises))
     return pairs
+
+
+def ungrounded(body: str, synthesis: str, entailer) -> list[Ungrounded]:
+    """Cited obligations their own synthesis requirements do not carry.
+
+    **Opinions, and never a gate.** Each is one model call, and a model's
+    verdict can differ between runs on identical input — so these are
+    reported beside the facts and labelled, never folded into them and never
+    behind an exit code.
+
+    **The premises are judged together, not one at a time.** A generated
+    sentence legitimately merges two synthesis requirements and cites both,
+    so asking *"does requirement A alone carry this?"* would report a
+    faithful merge as ungrounded. The answering path judges per passage and
+    accepts one supporting passage, because there a citation points at a
+    passage that stands alone; here a citation points at requirements the
+    generator was told to combine. Same machinery, different question, and
+    the difference is why this does not simply call `unsupported_claims`.
+
+    It also makes the cost exactly one call per cited claim, which is what
+    `judgeable` counts and what the caller is shown before anything runs.
+    """
+    findings: list[Ungrounded] = []
+    for claim, premises in judgeable(body, synthesis):
+        premise = "\n".join(r.text for r in premises)
+        verdict = entailer.entails(premise, claim.text)
+        if verdict.supports:
+            continue
+        findings.append(
+            Ungrounded(
+                claim=claim,
+                premises=tuple(premises),
+                reason=verdict.reason,
+            )
+        )
+    return findings

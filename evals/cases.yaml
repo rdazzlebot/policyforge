@@ -1295,12 +1295,15 @@ synthesis:
   - name: a-merged-requirement-resolves-every-framework-it-names
     topic: Identity Lifecycle & Access Review
     anchors: [AC-2, AC-6]
+    expect_controls: 6
     expect_frameworks: [nist-800-53, hipaa, fedramp]
   - name: credentials-span-three-frameworks-and-a-baseline
     topic: Authentication & Credential Management
     anchors: [IA-5, IA-2]
+    expect_controls: 6
     expect_frameworks: [nist-800-53, hipaa, fedramp]
   - name: an-outcome-framework-still-produces-citable-requirements
     topic: AI Governance
     anchors: [Govern 1]
+    expect_controls: 1
     expect_frameworks: [nist-ai-rmf]

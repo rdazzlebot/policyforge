@@ -379,6 +379,10 @@ def test_the_shipped_cases_load_and_are_well_formed():
                 assert case.get("expect_frameworks"), (
                     f"{case['name']} declares no expected frameworks"
                 )
+                # The framework set catches a catalog disappearing; only the
+                # count catches the topic shrinking while still covering
+                # every framework.
+                assert case.get("expect_controls"), f"{case['name']} pins no control count"
             elif suite == "crosswalk":
                 # A case with neither expectation passes on any answer at all.
                 assert case.get("must_map") or case.get("expect_none"), case["name"]

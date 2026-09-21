@@ -948,6 +948,21 @@ def run_synthesis(case: dict, provider, corpora: dict | None = None) -> Outcome:
     # assertion would still pass. ba hit that exact shape in `arc_ampe`,
     # where a conservation guard read the loop's own bookkeeping. The case
     # states what its anchors must supply, written from the inputs.
+    # **Extent, not just population.** The framework set alone is the
+    # zero-case guard: it catches a catalog vanishing and misses a topic
+    # shrinking from six controls to three, because the surviving three
+    # still cover every framework. Measured on this suite before the count
+    # was pinned -- a 6 -> 3 loss passed and went on to call the model,
+    # grading the prompt on half its input. "Non-empty" is the special case
+    # where the expected bound is "more than zero", and it is almost never
+    # the interesting one.
+    if len(topic.controls) != case["expect_controls"]:
+        return Outcome(
+            False,
+            f"the topic supplied {len(topic.controls)} controls, the case expects "
+            f"{case['expect_controls']} -- an anchor or crosswalk change, not a prompt result",
+            "",
+        )
     supplied = {normalize_framework(c.framework) for c in topic.controls}
     expected = set(case["expect_frameworks"])
     if supplied != expected:

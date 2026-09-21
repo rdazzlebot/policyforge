@@ -1791,7 +1791,11 @@ correction is the instructive part.** This first went in claiming the #164
 document contained a fabricated requirement, citing *"The inventory
 mechanism shall be resourced according to organizational risk priorities"*
 as present in the document and absent from the synthesis — **tested with a
-literal substring match.** The synthesis bullet for `GOVERN-1.6` reads
+literal substring match.** Measured on the `docs/probes/airmf-generation`
+stub, whose identifiers and shape differ from the shipped catalog — `GOVERN-1.6`
+here, `Govern 1.6` there; see that probe's README, which states the
+difference and why the conclusions still hold. The synthesis bullet for `GOVERN-1.6`
+reads
 *"Mechanisms are in place to inventory AI systems **and are resourced
 according to organizational risk priorities**."* The sentence is a
 decomposition of its premise, not an invention. **The test answered "is this

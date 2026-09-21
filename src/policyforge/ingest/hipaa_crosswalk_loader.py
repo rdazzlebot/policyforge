@@ -271,4 +271,95 @@ def apply_crosswalk(controls: list[Control], mapping: dict[str, list[str]]) -> C
     report.unmatched_citations.sort()
     report.unparsed_nist_ids.sort()
     report.unmapped_requirements = sorted(set(targets) - set(resolved))
+    _require_nothing_dropped(mapping, targets, resolved, report)
     return report
+
+
+def _require_nothing_dropped(
+    mapping: dict[str, list[str]],
+    targets: dict[str, object],
+    resolved: dict[str, set[str]],
+    report: CrosswalkReport,
+) -> None:
+    """Refuse a report that lost something it was handed.
+
+    **The property here is conservation, not extent.** Extent — "how many
+    rows should there be" — is already settled upstream: the CPRT join is
+    exact, 279 elements to 279 pairs, asserted in `parse_cprt_crosswalk`.
+    What that says nothing about is whether everything that survived the
+    parse survives *this* function.
+
+    `apply_crosswalk` has two skip paths, and both are deliberate: a
+    citation with no counterpart in the eCFR-derived data, and a NIST ID
+    that did not normalize. **Every skip is recorded** — that is the real
+    invariant, and it was not held by anything. `unmatched_citations` and
+    `unparsed_nist_ids` are both empty against the published crosswalk, so
+    a test asserting they are empty stays green when the line that appends
+    to them is deleted. The bookkeeping and the behaviour are
+    indistinguishable while the data is clean, which is the whole failure
+    mode: the day CPRT publishes a citation this data does not carry, a
+    dropped `append` turns a reported gap into a silent one, in compliance
+    mappings.
+
+    Three statements, each derived in its own pass **from the inputs**
+    rather than from the loop's own bookkeeping. A check that reads the
+    counters the loop wrote agrees with the loop by construction; an
+    earlier version of this idea in `arc_ampe` did exactly that and could
+    not fail.
+
+    1. every citation is unmatched or resolves to a target, never both;
+    2. under a resolved citation, every NIST ID is attached or reported;
+    3. every target is mapped or listed as uncovered, never both.
+
+    Statement 2 is scoped to resolved citations on purpose. A clean NIST
+    ID under an *unmatched* citation is dropped without appearing in
+    `unparsed_nist_ids`, and that is correct: the loss is already
+    accounted for one level up, by the citation itself being reported.
+    Stating it unscoped would be a stronger-sounding invariant that is
+    simply false.
+    """
+    unmatched = set(report.unmatched_citations)
+    unparsed = set(report.unparsed_nist_ids)
+
+    for citation in mapping:
+        target_id = CITATION_ALIASES.get(citation, citation)
+        known = target_id in targets
+        if known == (citation in unmatched):
+            raise ValueError(
+                f"citation {citation!r} is "
+                + (
+                    "both resolved and reported unmatched"
+                    if known
+                    else "neither resolved nor reported unmatched"
+                )
+                + " — a crosswalk gap must be visible, not inferred from an "
+                "absence"
+            )
+        if not known:
+            continue
+        for nist_id in mapping[citation]:
+            if nist_id.startswith("?"):
+                if nist_id[1:] not in unparsed:
+                    raise ValueError(
+                        f"{citation}: NIST ID {nist_id[1:]!r} did not normalize and "
+                        f"was not reported in unparsed_nist_ids"
+                    )
+            elif nist_id not in resolved.get(target_id, ()):
+                raise ValueError(
+                    f"{citation}: NIST ID {nist_id!r} was neither attached to "
+                    f"{target_id} nor reported as unparsed"
+                )
+
+    uncovered = set(report.unmapped_requirements)
+    if uncovered & set(resolved):
+        raise ValueError(
+            "requirement(s) reported as uncovered while also carrying a mapping: "
+            f"{sorted(uncovered & set(resolved))}"
+        )
+    accounted = report.mapped_controls + report.mapped_enhancements + len(uncovered)
+    if accounted != len(targets):
+        raise ValueError(
+            f"{len(targets)} HIPAA requirement(s) went in; "
+            f"{report.mapped_controls + report.mapped_enhancements} were mapped and "
+            f"{len(uncovered)} reported uncovered, accounting for {accounted}"
+        )

@@ -245,3 +245,114 @@ def test_the_committed_catalog_is_anchored_on_800_53():
     """Every control carries the crosswalk that makes it reachable by `map`."""
     raw = json.loads(CATALOG.read_text(encoding="utf-8"))
     assert all(c["source_crosswalk"] == {fedramp.NIST_SOURCE: c["control_id"]} for c in raw)
+
+
+def test_every_declared_rule_is_tailored_or_not_a_mapping():
+    """**External extent: the question no other test here asks.**
+
+    Every assertion around this one asks whether a tailored control is
+    right. None asks whether they are *all here*, and a parse that drops
+    entries returns a **shorter** tailoring — internally consistent,
+    every entry well-formed, missing controls FedRAMP requires.
+
+    FedRAMP publishes no machine-readable baseline any more, so this
+    dataset is the whole of what the catalog can know. There is nothing
+    else to notice the shortfall against.
+
+    `unparsed` and `unresolved` are deliberately absent from the
+    invariant: they are **annotations**, not exclusions. An entry with an
+    odd key or a control missing from 800-53 is still emitted and still
+    counted as tailored. Reading them as exclusions gives an invariant
+    that is wrong in a way the published dataset cannot reveal, because
+    both lists are empty against it.
+    """
+    nist = [
+        Control(
+            control_id="AC-6",
+            title="Least privilege",
+            framework="NIST 800-53",
+            framework_version="Rev 5",
+        )
+    ]
+    rules = {
+        "info": {"version": "x"},
+        "CTL": {"AC": {"AC-06-01": {"guidance": ["g"]}, "AC-06-02": {"guidance": ["h"]}}},
+    }
+
+    _, summary = fedramp.parse_fedramp_rules(rules, nist)
+
+    assert summary.tailored == 2
+
+
+def test_an_entry_that_is_not_a_mapping_is_counted_rather_than_dropped():
+    """A non-dict entry is the one thing skipped, and it was skipped
+    **uncounted** — so a dataset that turned half its entries into
+    strings would parse short and say nothing. Now it is accounted for
+    and the invariant still closes."""
+    nist = [
+        Control(
+            control_id="AC-6",
+            title="Least privilege",
+            framework="NIST 800-53",
+            framework_version="Rev 5",
+        )
+    ]
+    rules = {
+        "info": {"version": "x"},
+        "CTL": {"AC": {"AC-06-01": {"guidance": ["g"]}, "AC-06-02": "not a mapping"}},
+    }
+
+    controls, summary = fedramp.parse_fedramp_rules(rules, nist)
+
+    assert summary.tailored == 1
+    assert controls, "the well-formed entry must still be emitted"
+
+
+def test_a_rule_neither_tailored_nor_rejected_raises():
+    """The guard's contract, asserted directly.
+
+    No current input reaches it — the loop consumes every entry — so this
+    is a guard against a future shape change rather than a live defect,
+    which is worth saying because "no test exercises it end to end" and
+    "it cannot happen" are different claims.
+    """
+    summary = fedramp.Summary()
+    summary.tailored = 5
+
+    with pytest.raises(ValueError, match=r"unaccounted for"):
+        fedramp._require_every_rule(summary, declared=9, not_a_mapping=1)
+
+    # And it must ALLOW a parse that reconciles, or it refuses everything.
+    fedramp._require_every_rule(summary, declared=6, not_a_mapping=1)
+
+
+def test_the_extent_guard_is_actually_called(monkeypatch):
+    """**A correct guard nobody calls is not a guard.**
+
+    The test above proves the contract and passes with the call site
+    deleted — I confirmed that by deleting it. This is the third loader
+    where the same gap appeared, and the lesson from the first two is
+    that "the function is right" and "the function runs" want separate
+    tests.
+    """
+    called: list[tuple[int, int]] = []
+    real = fedramp._require_every_rule
+
+    def spy(summary, *, declared, not_a_mapping):
+        called.append((declared, not_a_mapping))
+        return real(summary, declared=declared, not_a_mapping=not_a_mapping)
+
+    monkeypatch.setattr(fedramp, "_require_every_rule", spy)
+    nist = [
+        Control(
+            control_id="AC-6",
+            title="Least privilege",
+            framework="NIST 800-53",
+            framework_version="Rev 5",
+        )
+    ]
+    fedramp.parse_fedramp_rules(
+        {"info": {"version": "x"}, "CTL": {"AC": {"AC-06-01": {"guidance": ["g"]}}}}, nist
+    )
+
+    assert called, "parse_fedramp_rules returned without checking extent"

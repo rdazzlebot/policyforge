@@ -295,9 +295,16 @@ def parse_fedramp_rules(rules: dict, nist_controls: list[Control]) -> tuple[list
     # parent land on one object however the source happens to order them.
     assembled: dict[str, Control] = {}
 
+    # Counted in a pass of its own, before the loop that consumes them.
+    # Incrementing alongside the parse would make the comparison below a
+    # tautology: a loop that stopped early would move both sides together.
+    declared = sum(len(family) for family in (rules.get("CTL") or {}).values())
+    not_a_mapping = 0
+
     for family_controls in (rules.get("CTL") or {}).values():
         for key, entry in sorted(family_controls.items()):
             if not isinstance(entry, dict):
+                not_a_mapping += 1
                 continue
             base_id, enhancement_id = normalize_control_id(key)
             if not _CTL_KEY_RE.match((key or "").strip()):
@@ -366,7 +373,43 @@ def parse_fedramp_rules(rules: dict, nist_controls: list[Control]) -> tuple[list
     controls = sorted(assembled.values(), key=sort_key)
     for control in controls:
         control.enhancements.sort(key=lambda e: _enhancement_number(e.enhancement_id))
+
+    _require_every_rule(summary, declared=declared, not_a_mapping=not_a_mapping)
     return controls, summary
+
+
+def _require_every_rule(summary: Summary, *, declared: int, not_a_mapping: int) -> None:
+    """Refuse a parse that dropped a rule the dataset declares.
+
+    **Every `CTL` entry is tailored or is not a mapping. There is no third
+    outcome**, and the one this makes impossible is *silently absent*.
+
+    `summary.unparsed` and `summary.unresolved` are **annotations, not
+    exclusions** — an entry whose key does not match `_CTL_KEY_RE`, or
+    whose control is missing from 800-53, is still emitted and still
+    counted as tailored. So they do not appear here. Reading them as
+    exclusions gives an invariant that is wrong in a way no current data
+    reveals, because both lists are empty against the published dataset.
+
+    Counted against the dataset: `declared` is summed in its own pass
+    before the loop, so a loop that stopped early moves one side and not
+    the other. An earlier version of this check in `arc_ampe` incremented
+    both counters inside the parse loop and could not fail — truncating
+    that scan dropped a catalog from 215 controls to 103 in silence.
+
+    FedRAMP publishes no machine-readable baseline any more, so this
+    dataset is the whole of what the catalog can know. A short parse
+    produces a tailoring that is internally consistent and missing
+    controls FedRAMP requires.
+    """
+    if summary.tailored + not_a_mapping != declared:
+        raise ValueError(
+            f"the rules dataset declares {declared} CTL entr(ies); "
+            f"{summary.tailored} were tailored and {not_a_mapping} were not "
+            f"mappings, leaving {declared - summary.tailored - not_a_mapping} "
+            f"unaccounted for. An entry was neither read nor rejected, which "
+            f"usually means the dataset changed shape."
+        )
 
 
 def _enhancement_number(enhancement_id: str) -> int:

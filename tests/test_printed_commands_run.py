@@ -185,10 +185,19 @@ def test_a_reconcile_command_survives_a_hostile_title(publisher, title: str):
     issue about exactly that.
     """
 
+    # A distinct hostile value per field, so a field that is dropped or
+    # merged into its neighbour is visible rather than masked by another
+    # field carrying the same string.
+    fields = {
+        "space": f"space {title}",
+        "page_title": f"page_title {title}",
+        "tier": f"tier {title}",
+    }
+
     class _Doc:
-        space = "SEC"
-        page_title = title
-        tier = "standard"
+        space = fields["space"]
+        page_title = fields["page_title"]
+        tier = fields["tier"]
 
     class _Self:
         """Enough of a publisher for `reconcile_command`.
@@ -201,11 +210,48 @@ def test_a_reconcile_command_survives_a_hostile_title(publisher, title: str):
         def title(self, doc):
             return doc.page_title
 
+    class _Benign:
+        space = "space benign"
+        page_title = "page_title benign"
+        tier = "tier benign"
+
+    benign = publisher.reconcile_command(_Self(), _Benign())
     printed = publisher.reconcile_command(_Self(), _Doc())
     parsed = shlex.split(printed)
-    assert parsed[parsed.index("--title") + 1] == title, (
-        f"{publisher.__name__} does not round-trip {title!r}: {printed}"
-    )
+
+    # **Every field the document supplies, not the one the author was
+    # thinking about.** The first version set only `page_title` hostile
+    # and asserted only `--title`. Reverting
+    # `shlex.quote(doc.tier or "standard")` on both publishers then left
+    # the whole suite green — 2913 passed — and `tier` is declared
+    # `tier: str` with no enum and no validator, so
+    # `standard --apply --force /etc` injects flags into a command
+    # printed for a person to copy. policyforge-80 found it: the fix had
+    # derived *which sites* to walk and still hand-fixed *which field*
+    # was hostile, which is the original finding one axis over.
+    #
+    # Asserted as "each value survives as one argv element" rather than
+    # "each flag's next word matches", because a publisher may print a
+    # constant (`--target`) or a valueless flag (`--apply`), and indexing
+    # past the last one raises rather than failing.
+    #
+    # Which fields a publisher uses is derived from a BENIGN run, not
+    # from `value in printed` — `shlex.quote` escapes the value, so a
+    # title containing an apostrophe never appears literally in the
+    # printed string. Asking the benign run also means a field that the
+    # hostile run *drops entirely* is a failure rather than silently
+    # dropping out of the population.
+    expected = {
+        name: marker
+        for name, marker in (("space", "space "), ("page_title", "page_title "), ("tier", "tier "))
+        if any(word.startswith(marker) for word in shlex.split(benign))
+    }
+    assert expected, f"{publisher.__name__} interpolated no document field: {benign}"
+    for name in expected:
+        assert parsed.count(fields[name]) == 1, (
+            f"{publisher.__name__} does not round-trip {name} as one argument "
+            f"— a shell would see {parsed}: {printed}"
+        )
 
 
 @pytest.mark.parametrize("name", _INTERPOLATED)
@@ -220,12 +266,21 @@ def test_the_history_command_survives_a_hostile_document_name(name: str):
     """
     from policyforge.cli import content
 
-    printed = content.history_hint(tier="standard", name=name, previous="v1", current="v2")
+    # **Both interpolated fields, not the one in the test's name.** The
+    # first version set only `name` hostile, and reverting
+    # `shlex.quote(tier)` left the suite green — the same axis error as
+    # the publishers, committed one file over in the commit fixing it.
+    values = {"--tier": f"tier {name}", "--name": f"name {name}"}
+    printed = content.history_hint(
+        tier=values["--tier"], name=values["--name"], previous="v1", current="v2"
+    )
     parsed = shlex.split(printed)
 
-    assert parsed[parsed.index("--name") + 1] == name, (
-        f"the history hint does not round-trip {name!r}: {printed}"
-    )
+    for flag, value in values.items():
+        assert parsed[parsed.index(flag) + 1] == value, (
+            f"the history hint does not round-trip {flag} {value!r} — a shell "
+            f"would see {parsed}: {printed}"
+        )
 
 
 def test_every_interpolating_site_quotes_its_values():

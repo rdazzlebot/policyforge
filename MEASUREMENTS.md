@@ -1775,55 +1775,63 @@ ______________________________________________________________________
 
 ## Findings that outlived the numbers
 
-**A generated document can assert a requirement that exists nowhere in its
-synthesis, and every check passes.** Found 2026-09-20 while pre-registering a
-different measurement; independent of that measurement and of the framework
-that exposed it.
+**Nothing compares what a generated document SAYS against what its synthesis
+said — only which controls each cites.** Found 2026-09-20 while
+pre-registering a different measurement; independent of that measurement and
+of the framework that exposed it.
 
-`evals/runner._tags` compares **control references**, not content. So the
-grader asks *"does this document cite what the synthesis cited, and nothing
-more?"* and never asks *"does this document say what the synthesis said?"*
-A requirement invented under a tag the synthesis genuinely cites is
+`evals/runner._tags` compares **control references**. So the grader asks
+*"does this document cite what the synthesis cited, and nothing more?"* and
+never asks *"does this document say what the synthesis said?"* A requirement
+invented under a tag the synthesis genuinely cites would be
 indistinguishable from one the synthesis wrote.
 
-Demonstrated against the two artefacts on #164, a real synthesis and the
-document generated from it:
+**Stated as a missing check rather than as an observed defect, and the
+correction is the instructive part.** This first went in claiming the #164
+document contained a fabricated requirement, citing *"The inventory
+mechanism shall be resourced according to organizational risk priorities"*
+as present in the document and absent from the synthesis — **tested with a
+literal substring match.** The synthesis bullet for `GOVERN-1.6` reads
+*"Mechanisms are in place to inventory AI systems **and are resourced
+according to organizational risk priorities**."* The sentence is a
+decomposition of its premise, not an invention. **The test answered "is this
+string present" while the question was "does the synthesis support this
+claim"** — a neighbouring question, inside a finding about checks that
+answer neighbouring questions.
 
-```
-tags in synthesis   7      dropped   []      harness verdict on tags: PASS
-tags in document    7      invented  []
+Measured properly, by joining each cited sentence to the synthesis
+requirements its tag indexes, every cited obligation in that document is
+43–100% lexically grounded in its own premise, and the words that are new
+are `acme`, `health`, `ensure`, `establish`, `maintain` — the organisation's
+name and obligation verbs, which generation is supposed to supply.
 
-"The inventory mechanism shall be resourced according to organizational
- risk priorities."          in the document: yes      in the synthesis: no
-```
+**What is demonstrably present is the untagged case.** *"The inventory shall
+be maintained in [Asset Inventory System] and shall cover all AI systems
+within the scope of this Standard"* binds, introduces scope language the
+synthesis never states, and **carries no citation at all**, so there is no
+premise to judge it against. `content/check.py:_check_uncited` only fires on
+a document citing *nothing*, so a document with seven good tags and three
+untagged obligations passes it whole.
 
-A binding obligation, cited to `[NIST AI RMF GOVERN-1.6]`, which the
-synthesis never stated. `satisfies`, `check`, `deontic` and
-`ungrounded_values` pass it too — it is well-formed, it binds, its citation
-resolves, and it is unfounded.
+**The two halves are different kinds of claim and that is the whole design.**
+An obligation with no citation is a **fact** — deterministic, free, and
+checkable twice with the same answer. An obligation whose cited requirements
+do not carry it is a model's **opinion**. Only the first may gate an exit
+code; the ruling on #196 is that an exit code carries facts, not opinions.
 
-**This is the inverse of the probe's finding and it is worse.** #164 recorded
-*hollow but traceable*: a requirement that restates its source and commits
-nobody to anything. This is **substantive but unfounded**: a requirement that
-commits the organization to something its source never said, wearing a
-citation that checks out. Hollowness is visible to a careful reader, who can
-see the sentence says nothing. Fabrication is invisible to everyone without
-the synthesis open beside the document.
+**`generate/policy_writer.py` already forbids the invention** — *"do not add
+requirements that weren't in the input"* — which is the right rule and is
+currently true. Nothing enforces it. The gap is a missing check, not a
+missing rule, and the shape is one this project keeps meeting: **the check
+that exists measures the neighbouring property.** Citations are easy to
+compare, so citations are what got compared, and *"cites correctly"* quietly
+stood in for *"says what it was given"*.
 
-**`generate/policy_writer.py` already forbids it** — *"do not add requirements
-that weren't in the input"* — which is the right rule and is currently true.
-Nothing enforces it. The gap is not a missing rule but a missing check, and
-the shape is one this project keeps meeting: **the check that exists measures
-the neighbouring property.** Citations are the thing that is easy to compare,
-so citations are what got compared, and "cites correctly" quietly stood in
-for "says what it was given".
-
-**What would close it** is a content-level comparison between synthesis
-requirements and document requirements — not a similarity score, which an
-earlier attempt on #164 showed fragments on markdown, but an accounting: every
-binding sentence in the document tracing to a requirement in the synthesis, and
-anything that does not being reported as an addition. Untried, and named here
-so the absence is a decision rather than an oversight.
+**What would close it** is that content-level accounting — not a similarity
+score, which an earlier attempt on #164 showed fragments on markdown, but
+every binding sentence in the document tracing to a requirement in the
+synthesis, and anything that does not being reported as an addition. Named
+here so the absence is a decision rather than an oversight.
 
 **Terse scores do not predict answering scores.** `deepseek-v4-flash` went
 92 on routing and 96 on answering; `gpt-oss-120b` went 89 on routing and 80

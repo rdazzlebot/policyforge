@@ -46,7 +46,13 @@ def _printed_commands() -> list[tuple[str, str]]:
     for path in sorted(SRC.rglob("*.py")):
         for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             for match in _PRINTED.finditer(line):
-                found.append((f"{path.relative_to(SRC.parent)}:{line_no}", match.group(1)))
+                # `as_posix`, so the site string is the same on every
+                # platform. `relative_to` gives backslashes on Windows, and
+                # anything comparing these — the exemption set below, a
+                # failure message someone pastes into an issue — would then
+                # hold on one runner and not the other.
+                where = f"{path.relative_to(SRC.parent).as_posix()}:{line_no}"
+                found.append((where, match.group(1)))
     return found
 
 
@@ -55,6 +61,46 @@ def test_the_population_is_not_empty():
     assert _printed_commands(), (
         "no printed command with a flag was found anywhere in src/. Either the "
         "pattern stopped matching or they all went away; check which."
+    )
+
+
+#: The printed commands that are examples rather than invocations, named
+#: rather than counted. Both are doing their job — `skills.py` prints a
+#: literal ellipsis and `shell.py` a `<placeholder>`.
+ILLUSTRATIVE_SITES = {
+    "policyforge/zardoz/shell.py:552",
+    "policyforge/zardoz/skills.py:305",
+}
+
+
+def test_exactly_the_known_commands_are_exempt():
+    """**A skip is how a site leaves this check, so the set of skips is a
+    decision and not a side effect.**
+
+    `_ILLUSTRATIVE` is a marker rule: any printed command containing
+    `...` or `<` is skipped. That is right for the two sites it was
+    written for, and it means a *third* one added later would be excluded
+    silently — the check would keep passing while covering less.
+
+    Pinned by site rather than by count, so the failure message names
+    which string stopped being checked. Adding a genuinely illustrative
+    command should turn this red once and be resolved by editing this
+    set, which is a person deciding; a real command that happens to
+    contain `<` should be caught here rather than skipped forever.
+
+    Same shape as the catalog-key guard: derive the population from the
+    code, enumerate the exemptions by hand.
+    """
+    exempt = {
+        where
+        for where, printed in _printed_commands()
+        if any(marker in printed for marker in _ILLUSTRATIVE)
+    }
+
+    assert exempt == ILLUSTRATIVE_SITES, (
+        "the set of printed commands treated as examples has changed. Anything "
+        "added here stops being checked against the CLI, so it wants a decision "
+        "rather than a silent skip."
     )
 
 

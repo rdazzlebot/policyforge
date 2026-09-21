@@ -120,3 +120,97 @@ def test_names_are_compared_case_and_separator_insensitively():
     on case or on `_` versus `-`, and a false mismatch there would block a
     release for a naming convention."""
     assert release_check.lock_pins("Typing_Extensions==4.16.0\n") == {"typing-extensions": "4.16.0"}
+
+
+# ---- assertion 4: the cheap check may no longer stand in for the real one ----
+
+
+def test_the_install_steps_are_the_corrected_ones():
+    """**A smoke test that is wrong is indistinguishable from a release
+    that is broken, until somebody checks which.**
+
+    The 1.6.0 container run used `policyforge --version` — a flag that
+    does not exist, so click exits 2 — and ran `policyforge frameworks`
+    in an empty directory, which exits 1 by design because every command
+    reads `data/frameworks/` relative to where it runs. Both read as
+    release defects. Neither was one.
+
+    Pinned here so the sequence is not retyped from memory at each cut.
+    """
+    from release_check import INSTALL_STEPS
+
+    names = [name for name, _ in INSTALL_STEPS]
+    commands = " ; ".join(command for _, command in INSTALL_STEPS)
+
+    assert "--version" not in commands, (
+        "`policyforge --version` does not exist; click exits 2 and it reads as a broken release"
+    )
+    assert names.index("init") < names.index("frameworks"), (
+        "`frameworks` must run after `init`: in an empty directory it exits 1 "
+        "by design, which is the product working as documented"
+    )
+    assert "--build-from-source" in commands, (
+        "installing a bottle does not exercise the formula being released"
+    )
+
+
+def test_a_check_that_did_not_run_does_not_pass(monkeypatch, capsys):
+    """**The whole point of the issue.** A skipped step leaves a gap; a
+    substituted step leaves a false assurance, and this script *was* the
+    substitution — it compares values and never installs anything.
+
+    So "docker is unavailable" must not read as "the install is fine".
+    Same contract `scripts/check.py` uses for gitleaks: a check nobody ran
+    fails until somebody says otherwise, out loud.
+    """
+    import shutil
+
+    import release_check
+
+    # Patched on `shutil` itself, because `run_install_check` imports it
+    # inside the function -- so there is no module attribute to replace.
+    # Worth stating: the first version patched `release_check.shutil` and
+    # failed with AttributeError rather than silently passing, which is
+    # the good kind of wrong.
+    monkeypatch.setattr(shutil, "which", lambda _: None)
+    ran, lines = release_check.run_install_check()
+
+    assert ran is False, "no docker must report DID NOT RUN, not a result"
+    assert any("docker" in line for line in lines)
+
+
+def test_did_not_run_is_a_different_answer_from_failed():
+    """Two states that must not collapse into one.
+
+    `run_install_check` returns `(ran, lines)` rather than a bool,
+    precisely so the caller can tell *nothing happened* from *the install
+    is broken*. A single boolean would force one of them to masquerade as
+    the other, and the one that would masquerade is the dangerous one.
+    """
+    import inspect
+
+    from release_check import run_install_check
+
+    signature = inspect.signature(run_install_check)
+    assert signature.return_annotation != "bool"
+    source = inspect.getsource(run_install_check)
+    assert "return False" in source and "return True" in source
+
+
+def test_each_step_failure_stops_the_run():
+    """The defect this file's own header records: a Homebrew build failed
+    while its harness reported success, because a shell returns the status
+    of the LAST command and that was `tail`.
+
+    `&&` propagates the first failure; `;` does not. This is also #182 on
+    the same milestone, which is why it is asserted rather than assumed.
+    """
+    import inspect
+
+    from release_check import run_install_check
+
+    source = inspect.getsource(run_install_check)
+    assert '" && ".join' in source, (
+        "steps joined with `;` would report the status of the last one, so a "
+        "failed install followed by a successful command reads as success"
+    )

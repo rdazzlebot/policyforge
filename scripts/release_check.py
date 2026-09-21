@@ -14,7 +14,7 @@ rewrote their catalog from 65 crosswalk mappings to 0 and reported nothing
 wrong. The tag is not the deliverable. For anyone following the README, the
 tap is.
 
-Three assertions, in the order they fail:
+Four assertions, in the order they fail:
 
 1. The published formula's `url` names the tag just cut.
 1b. ...and its `sha256` matches the archive that URL actually serves. A
@@ -22,6 +22,25 @@ Three assertions, in the order they fail:
     install fails at verification while assertion 1 reports it correct.
 2. The formula's pinned resource versions match the lock at that tag.
 3. `changelog.d/` is empty — no fragment survived the release.
+4. A user can actually install it — `brew install --build-from-source` in
+   a clean container, then the CLI runs.
+
+**Assertion 4 exists because this script was the substitution.** The
+recorded procedure was: verify in a container BEFORE pushing the formula.
+What happened at 1.6.0 was push → run this script → call it done, and the
+formula was live and unverified for the whole gap. The container run
+afterwards passed, which is not the point: it ran because the user asked
+*"don't you usually run a docker test after cutting a release?"*
+
+This script reads the formula and compares values. **It never installed
+anything.** Those are different questions, and the cheap one stood in for
+the one that matters — so the fix is that the cheap one can no longer
+report success on its own. A skipped step leaves a gap; a substituted step
+leaves a false assurance, which is worse.
+
+Assertion 4 is SKIPPABLE and skipping it FAILS unless you say so, the same
+contract `scripts/check.py` uses for gitleaks: a check nobody ran must not
+look like a check that passed.
 
 **Every one compares values and prints them, and none reads an exit
 status.** That is not stylistic. On the same night a Homebrew build failed
@@ -146,11 +165,81 @@ def lock_pins(text: str) -> dict[str, str]:
     return {name.lower().replace("_", "-"): version for name, version in _PIN_RE.findall(text)}
 
 
+#: The container steps, in order, each run as its own process so its exit
+#: status is read rather than inherited.
+#:
+#: **The smoke tests here are the corrected ones.** The 1.6.0 run used
+#: `policyforge --version`, which does not exist — the flag was invented,
+#: click exits 2, and that reads as a broken release to anyone skimming.
+#: And it ran `policyforge frameworks` in an empty directory, which exits 1
+#: by design: every command reads `data/frameworks/` relative to where it
+#: runs, and the install's own caveats say so three lines above. **A smoke
+#: test that is wrong is indistinguishable from a release that is broken
+#: until somebody checks which**, so the correct sequence is pinned here
+#: rather than retyped from memory each time.
+INSTALL_STEPS: tuple[tuple[str, str], ...] = (
+    ("tap", "brew tap rdazzlebot/tap"),
+    ("install", "brew install --build-from-source rdazzlebot/tap/policyforge"),
+    ("audit", "brew audit --strict --online rdazzlebot/tap/policyforge"),
+    ("init", "cd /tmp/pf && policyforge init"),
+    ("frameworks", "cd /tmp/pf && policyforge frameworks"),
+)
+
+CONTAINER_IMAGE = "homebrew/brew"
+
+
+def run_install_check(image: str = CONTAINER_IMAGE) -> tuple[bool, list[str]]:
+    """Install the published formula in a clean container and run the CLI.
+
+    Returns `(ran, lines)`. **`ran` is False when the container could not
+    be started at all** — no docker, no daemon, no image — which is a
+    different answer from "the install failed" and must not be collapsed
+    into it. The caller turns *did not run* into a failure unless the
+    operator said otherwise; it does not turn it into a pass.
+
+    Each step is a separate `docker run`, so each exit status is its own.
+    Chaining them into one shell would return the status of the LAST
+    command, which is the defect this file's header already records: a
+    Homebrew build failed while its harness reported success because the
+    final command in the sequence was `tail`.
+    """
+    import shutil
+    import subprocess
+
+    lines: list[str] = []
+    if shutil.which("docker") is None:
+        return False, ["docker is not on PATH"]
+
+    script = " && ".join(command for _, command in INSTALL_STEPS)
+    # One container, but the steps are joined with `&&` so the FIRST
+    # failure stops the run and its status propagates. `;` would not --
+    # that is the `cmd; echo; tail` shape the header warns about, and it
+    # is also issue #182 on this milestone.
+    proc = subprocess.run(
+        ["docker", "run", "--rm", image, "bash", "-lc", f"mkdir -p /tmp/pf && {script}"],
+        capture_output=True,
+        text=True,
+        timeout=3600,
+    )
+    tail = (proc.stdout + proc.stderr).strip().splitlines()[-12:]
+    lines.extend(tail)
+    lines.append(f"docker exit status: {proc.returncode}")
+    return True, lines
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--version", required=True, help="the version just cut, e.g. 1.4.0")
     parser.add_argument(
         "--formula-url", default=FORMULA_URL, help="override the published formula location"
+    )
+    parser.add_argument(
+        "--allow-skip",
+        action="append",
+        default=[],
+        choices=["install"],
+        help="acknowledge that a check did not run. Without this, a check that "
+        "did not run fails -- the same contract scripts/check.py uses.",
     )
     args = parser.parse_args(argv or [])
 
@@ -287,6 +376,34 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print("  -> empty")
 
+    # ---------------------------------------------------------------- 4
+    print()
+    print("=" * 62)
+    print("4. A user can actually install it")
+    print("=" * 62)
+    ran, lines = run_install_check()
+    for line in lines:
+        print(f"    {line}")
+    if not ran:
+        if "install" in args.allow_skip:
+            print("  -> DID NOT RUN, acknowledged with --allow-skip install")
+            print("     Nothing here has installed anything. The formula is unverified.")
+        else:
+            failures.append(
+                "the install check did not run, and nothing else in this script "
+                "installs anything -- run it where docker is available, or accept "
+                "the gap explicitly with --allow-skip install"
+            )
+            print("  -> DID NOT RUN")
+    elif lines and lines[-1].endswith(" 0"):
+        print("  -> installed and ran")
+    else:
+        failures.append(
+            "the published formula did not install in a clean container -- this is "
+            "what a user following the README gets"
+        )
+        print("  -> FAILED")
+
     # ----------------------------------------------------------------
     print()
     print("=" * 62)
@@ -299,7 +416,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  FAILED: {line}")
         print("=" * 62)
         return 1
-    print(f"  All three hold for {expected_tag}.")
+    print(f"  All four hold for {expected_tag}.")
     print("=" * 62)
     return 0
 

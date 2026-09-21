@@ -140,6 +140,7 @@ def test_load_all_registers_every_prompt_it_claims_to():
         "zardoz.route",
         "zardoz.route.arguments",
         "zardoz.route.also",
+        "synthesis.merge",
     } <= names
 
 

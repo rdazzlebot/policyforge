@@ -105,7 +105,12 @@ def read_synthesis(text: str) -> tuple[dict, str]:
 _SYSTEM_PROMPT = register(
     Prompt(
         name="synthesis.merge",
-        version=2,
+        # 1 because this is the first REGISTERED version, not the first text.
+        # The prompt predates the registry and git shows three earlier
+        # revisions; the fingerprint identifies the text, version only
+        # orders. Calling it 2 would invite a search for a v1 that was
+        # never recorded.
+        version=1,
         text="""You are a compliance content synthesis engine. Merge \
 overlapping control requirements from multiple frameworks, for one topic, \
 into a deduplicated set of plain-English requirement statements.

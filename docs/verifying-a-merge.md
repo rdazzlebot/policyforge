@@ -1,8 +1,11 @@
 # Verifying a merge
 
 Shell and git idioms used for verification here that **answer correctly and
-are read as answering something else.** Every one below caused a real error,
-and the figures are measured on this repository rather than quoted.
+are read as answering something else.** Every one below caused a real error.
+
+**Every figure here is a fact about a moment**, measured at `origin/main` =
+`599bb8b`. Some are facts about a *clone* rather than about the repository,
+which is said where it applies. **Re-derive before quoting.**
 
 ## `A && B` is not a gate when A is a question
 
@@ -33,12 +36,25 @@ Squash merges rewrite the commit, so **a merged branch's tip is never an
 ancestor of main.** Measured here:
 
 ```
-branches reported merged by `git branch -r --merged origin/main`     4
-remote branches                                                     26
-
 origin/1d/coverage-scope            ancestor-of-main = NO   (#149, merged)
 origin/1d/citable-framework-names   ancestor-of-main = NO   (#146, merged)
 ```
+
+**And the count from `git branch -r --merged` is not a property of the
+repository at all — it is a property of your clone.** Three readings of one
+question, hours apart, against the same remote:
+
+```
+4 of 26      an earlier draft of this document
+2 of 25      another session, its own clone
+3 of 25      this clone, immediately after `git fetch --prune`
+```
+
+Remote-tracking refs linger until someone prunes, and every clone prunes on
+its own schedule. **An instrument whose answer depends on when you last
+fetched is reporting your housekeeping, not the branches.** That is the
+sharpest form of this document's subject, and three people measuring and
+disagreeing is what found it.
 
 `git merge-base --is-ancestor <reviewed-sha> origin/main` agrees with the
 flag and is wrong for the same reason. **Both fail toward alarm**, so a
@@ -52,9 +68,12 @@ empty diff *landed* — **does not survive main moving.** Measured on the two
 branches above, both long since merged:
 
 ```
-git diff --stat origin/1d/coverage-scope origin/main -- <its files>
-  -> 459 insertions, 47 deletions     reads as NOT LANDED
+git diff --shortstat origin/1d/coverage-scope origin/main -- <its own files>
+  -> 3 files changed, 459 insertions(+), 47 deletions(-)   reads as NOT LANDED
 ```
+
+Measured at `origin/main` = `599bb8b`. **The figure moves as main moves; the
+sign does not.** Re-derive rather than quoting this one.
 
 Later work touched the same files. The check is sound only when nothing else
 has, which in an active repository is rarely true and never checkable from

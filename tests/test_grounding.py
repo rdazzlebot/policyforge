@@ -282,3 +282,68 @@ def test_a_dotted_citation_does_not_lend_its_tag_to_the_sentence_after_it():
 
     assert len(found) == 1, "the second obligation cites nothing and must be reported"
     assert "seven years" in found[0].claim.text
+
+
+# --------------------------------------------------------------------------
+# The exit code carries facts, not opinions
+# --------------------------------------------------------------------------
+
+
+def _tree(tmp_path, body: str, synthesis: str):
+    """A minimal content tree and its synthesis, as `check` reads them."""
+    content = tmp_path / "docs"
+    content.mkdir()
+    (content / "access-control-standard.md").write_text(
+        "---\ntitle: Access Control Standard\ntier: standard\nowner: IAM Engineering\n---\n\n"
+        + body,
+        encoding="utf-8",
+        newline="\n",
+    )
+    out = tmp_path / "synthesis"
+    out.mkdir()
+    (out / "access-control-standard.md").write_text(synthesis, encoding="utf-8", newline="\n")
+    return content, out
+
+
+def test_an_ungrounded_verdict_cannot_change_the_exit_code(tmp_path, monkeypatch):
+    """**The product ruling on #196, held to the command.** A model's verdict
+    can differ between runs on identical input; a malformed document cannot.
+    `--strict` promotes warnings to a failing exit, so an opinion recorded as
+    a warning would reach the exit code by that route — which is why
+    `ungrounded` findings are not `Finding`s at all.
+
+    Asserted with a judge that calls **everything** ungrounded, so if the
+    verdict could move the exit code, this is the run where it would.
+    """
+    from click.testing import CliRunner
+
+    from policyforge.cli import cli
+
+    body = "## 1. Access\n\nAccounts shall be reviewed quarterly. [NIST 800-53 AC-2]\n"
+    # Exactly the requirement the document cites: a synthesis carrying more
+    # would make `_check_citations` fire a real warning, which `--strict`
+    # promotes -- and this test would then pass or fail for that reason
+    # rather than for the verdict it is about.
+    one = "- Accounts shall be reviewed quarterly. [NIST 800-53 AC-2]\n"
+    content, synthesis = _tree(tmp_path, body, one)
+
+    monkeypatch.setattr(
+        "policyforge.entail.get_entailer", lambda config: ScriptedEntailer(supports=False)
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "check",
+            "--content-dir",
+            str(content),
+            "--synthesis-dir",
+            str(synthesis),
+            "--entail",
+            "--strict",
+        ],
+    )
+
+    assert "1 cited obligation(s) to judge" in result.output, "the cost is stated first"
+    assert "do not affect the exit code" in result.output
+    assert result.exit_code == 0, "an opinion must not fail the build, even under --strict"

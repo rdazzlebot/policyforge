@@ -907,7 +907,14 @@ def import_confluence_cmd(
     is_flag=True,
     help="Treat warnings as failures too. For a repo that has finished migrating.",
 )
-def check_cmd(content_dir: Path | None, synthesis_dir: Path, strict: bool):
+@click.option(
+    "--entail",
+    is_flag=True,
+    help="Also ask a model whether each cited obligation is actually carried by "
+    "the synthesis requirements it cites. Costs one call per cited obligation, "
+    "printed before anything runs. Reported only -- never changes the exit code.",
+)
+def check_cmd(content_dir: Path | None, synthesis_dir: Path, strict: bool, entail: bool):
     """Check the content tree before anything is published.
 
     Entirely offline, so it runs on a pull request from a fork with no
@@ -943,8 +950,68 @@ def check_cmd(content_dir: Path | None, synthesis_dir: Path, strict: bool):
             mark = "ERROR" if finding.severity == "error" else "warn "
             click.echo(f"  {mark}  {finding.framework.id}: {finding.message}")
 
+    if entail:
+        _report_entailment(root, synthesis_dir)
+
+    # Deliberately after the entailment report and deliberately ignoring it.
+    # A model's verdict can differ between runs on identical input; a
+    # malformed document cannot. Putting the first behind this number would
+    # change what a non-zero exit means for every caller already relying on
+    # it -- including `--strict`, which promotes warnings to a failure and so
+    # would promote an opinion too.
     if not report.ok or not licences.ok or (strict and report.warnings):
         raise SystemExit(1)
+
+
+def _report_entailment(root: Path, synthesis_dir: Path) -> None:
+    """Judge cited obligations against their premises, and say what it costs first.
+
+    **The count is exact rather than estimated**: it is the number of cited
+    obligations that have a premise to judge, computed without calling
+    anything. A price per call would be a guess -- it depends on the model
+    and on how long each requirement is -- and a number nobody can stand
+    behind is worse than the count itself.
+    """
+    from policyforge.content.grounding import judgeable, ungrounded
+    from policyforge.content.tree import load_content_tree
+    from policyforge.entail import get_entailer
+
+    config = load_config_or_empty()
+    entailer = get_entailer(config)
+    if entailer is None:
+        click.echo("")
+        click.echo("Entailment: no judge configured — set `entail.provider` and `entail.model`.")
+        return
+    if not synthesis_dir.exists():
+        click.echo("")
+        click.echo(f"Entailment: no synthesis at {synthesis_dir}, so nothing to judge against.")
+        return
+
+    documents, _ = load_content_tree(root)
+    work = []
+    for doc in documents:
+        source = synthesis_dir / f"{doc.slug}.md"
+        if not source.exists():
+            continue
+        synthesis = source.read_text(encoding="utf-8")
+        work.append((doc, synthesis, len(judgeable(doc.body, synthesis))))
+
+    total = sum(count for _, _, count in work)
+    click.echo("")
+    click.echo(f"Entailment: {total} cited obligation(s) to judge, one model call each.")
+    if not total:
+        return
+
+    findings = 0
+    for doc, synthesis, count in work:
+        if not count:
+            continue
+        for finding in ungrounded(doc.body, synthesis, entailer):
+            findings += 1
+            click.echo(f"  {doc.relative_path}: {finding}")
+    if not findings:
+        click.echo("  Every cited obligation is carried by what it cites.")
+    click.echo("  These are opinions, and do not affect the exit code.")
 
 
 #: The two stores `publish`, `wiki-drift` and `pull` can talk to. Spelled

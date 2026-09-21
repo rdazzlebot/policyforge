@@ -337,6 +337,45 @@ def _check_requirement_strength(documents: list[ContentDocument]) -> list[Findin
     return findings
 
 
+def _check_unanchored(documents: list[ContentDocument]) -> list[Finding]:
+    """An obligation that binds while citing nothing, beside ones that cite.
+
+    **A fact, and the half of #196 that may reach an exit code.** No model is
+    consulted: either the sentence carries a tag or it does not, and the
+    answer is the same twice. The companion judgement — whether a *cited*
+    obligation is actually carried by the requirements it cites — is a
+    model's opinion and is deliberately **not** a `Finding`, because
+    `--strict` promotes warnings to a failing exit and that would put a
+    verdict which can differ between runs behind the same number as a
+    malformed document.
+
+    Scoped by section rather than by document: a Standard's own enforcement
+    clause binds, cites nothing, and is correct. See
+    `content/grounding.unanchored` for why that scoping is the whole check.
+
+    A warning rather than an error, matching `_check_uncited` and
+    `_check_requirement_strength`: a tree mid-migration legitimately has
+    documents whose citations are not all in place yet, and a gate that
+    cannot be satisfied gets turned off rather than fixed.
+    """
+    from .grounding import unanchored
+
+    findings: list[Finding] = []
+    for doc in documents:
+        if doc.tier not in _BINDING_TIERS:
+            continue
+        for finding in unanchored(doc.body):
+            findings.append(
+                Finding(
+                    doc.relative_path,
+                    f"line {finding.claim.line}: binds but cites nothing, in a section "
+                    f'that cites — "{finding.claim.text[:70]}"',
+                    WARNING,
+                )
+            )
+    return findings
+
+
 def check_tree(root: Path, *, synthesis_dir: Path | None = None) -> CheckReport:
     """Run every local check over a content tree."""
     documents, problems = load_content_tree(root)
@@ -348,6 +387,7 @@ def check_tree(root: Path, *, synthesis_dir: Path | None = None) -> CheckReport:
     report.findings.extend(_check_references(documents, root))
     report.findings.extend(_check_publishable(documents))
     report.findings.extend(_check_uncited(documents))
+    report.findings.extend(_check_unanchored(documents))
     report.findings.extend(_check_requirement_strength(documents))
     if synthesis_dir is not None:
         report.findings.extend(_check_citations(documents, synthesis_dir))

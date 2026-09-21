@@ -447,7 +447,56 @@ def parse_oscal_catalog(
                 )
             )
 
+    _require_every_control(catalog, controls, withdrawn)
     return controls, withdrawn
+
+
+def _declared_controls(node: dict) -> int:
+    """Every control node in the OSCAL tree, at any nesting depth.
+
+    Counted **without** consulting the dialect, the identifier rules or
+    the withdrawal predicate — so it is what the document says it holds,
+    independent of anything this parser believes about it.
+    """
+    total = 0
+    for control in node.get("controls", []) or []:
+        total += 1 + _declared_controls(control)
+    for group in node.get("groups", []) or []:
+        total += _declared_controls(group)
+    return total
+
+
+def _require_every_control(catalog: dict, controls: list[Control], withdrawn: int) -> None:
+    """Refuse a parse that dropped a control the catalog declares.
+
+    **Emitted plus withdrawn must equal declared.** Every control in the
+    source is either published or deliberately excluded, and a third
+    outcome — silently absent — is the one this exists to make
+    impossible.
+
+    The hazard is specific here rather than hypothetical. A dialect
+    decides how identifiers and families are read, and reading 800-171
+    with 800-53's rules *does not fail*: it produces a well-formed
+    catalog whose identifiers are sentences. `OscalDialect` was added
+    because of that. A dialect mismatch that instead caused controls to
+    be skipped would produce a **short** catalog, and nothing in this
+    module would notice — every entry in it would still be well-formed.
+
+    Both sides come from the document: `_declared_controls` walks the
+    JSON tree knowing nothing about identifiers. So there is no count to
+    maintain and nothing that can go stale, which is the same argument
+    `part2_loader._require_sections` makes for eCFR.
+    """
+    declared = _declared_controls(catalog)
+    emitted = len(controls) + sum(len(control.enhancements) for control in controls)
+    if emitted + withdrawn != declared:
+        raise ValueError(
+            f"the catalog declares {declared} control(s); {emitted} were emitted "
+            f"and {withdrawn} recorded withdrawn, leaving "
+            f"{declared - emitted - withdrawn} unaccounted for. A control was "
+            f"neither published nor deliberately excluded, which usually means "
+            f"the dialect does not match the catalog being read."
+        )
 
 
 def fetch_oscal_catalog(*, url: str = CATALOG_URL) -> dict:

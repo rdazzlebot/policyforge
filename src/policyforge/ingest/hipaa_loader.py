@@ -284,6 +284,48 @@ def parse_hipaa_security_rule(xml_text: str) -> list[Control]:
     subpart_text = xml_text[subpart_start : subpart_end if subpart_end != -1 else None]
 
     controls: list[Control] = []
+    recognised: list[str] = []
     for match in _SECTION_RE.finditer(subpart_text):
+        recognised.append(match.group("id"))
         controls.extend(_parse_section(match.group("id"), match.group("head"), match.group("body")))
+
+    _require_every_section(recognised, in_subpart=_ANY_SECTION_RE.findall(subpart_text))
     return controls
+
+
+#: Every section-level node in the subpart, counted **without** consulting
+#: `_SECTION_RE`'s `164\.\d+` identifier. The two are compared below, so
+#: the check tests the pattern against the document rather than against a
+#: number someone typed.
+_ANY_SECTION_RE = re.compile(r'<DIV8 N="([^"]+)" TYPE="SECTION"')
+
+
+def _require_every_section(recognised: list[str], *, in_subpart: list[str]) -> None:
+    """Refuse a parse that skipped a section Subpart C contains.
+
+    **The failure this guards does not raise on its own.** `_SECTION_RE`
+    pins the identifier as `164\\.\\d+`; if eCFR renumbers, adds a suffix,
+    or changes the attribute order, the pattern matches *fewer* sections
+    and returns a smaller catalog. Not an error — a catalog that is
+    internally consistent, well-formed, and short.
+
+    Every other check in this module asks whether an entry is right. This
+    is the only one that asks whether they are **all here**, and those are
+    different questions. The ONC catalog shipped twelve fabricated
+    criteria through a loader that asked only the first.
+
+    Compared against the **document**, never a constant: `in_subpart` is
+    counted with a pattern that does not know what a section identifier
+    looks like, so both sides come from the XML being parsed and neither
+    can go stale. `part2_loader._require_sections` and
+    `info_blocking._require_every_section` are the same check with
+    different anchors.
+    """
+    missed = [n for n in in_subpart if n not in recognised]
+    if missed:
+        raise ValueError(
+            f"Subpart C contains {len(in_subpart)} section(s) and only "
+            f"{len(recognised)} were recognised; missed {missed}. Either eCFR "
+            f"changed how it numbers the Security Rule, or _SECTION_RE no longer "
+            f"matches it — and the catalog returned would be short, not wrong."
+        )

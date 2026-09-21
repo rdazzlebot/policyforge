@@ -432,8 +432,23 @@ def parse_arc_ampe(
             return ""
         return _clean(row[index])
 
+    # Counted in a pass of its own, deliberately. The first version of this
+    # incremented alongside the parse loop below, which made the comparison
+    # a tautology: a loop that stopped early decremented both sides and the
+    # identity still held. Truncating the scan dropped the catalog from 215
+    # controls to 103 in silence. An independent pass is what makes the
+    # check capable of failing.
+    rows_with_content = sum(
+        1
+        for row in sheet.iter_rows(min_row=data_start, values_only=True)
+        if any(_clean(value) for value in row)
+    )
+
+    rows_consumed = 0
     for row in sheet.iter_rows(min_row=data_start, values_only=True):
         raw_id = cell(row, "control_id")
+        if raw_id:
+            rows_consumed += 1
         if not raw_id:
             # Only rows carrying something are worth reporting. The sheet is
             # padded with blanks and broken up by section bands, and counting
@@ -498,7 +513,50 @@ def parse_arc_ampe(
         )
         summary.enhancements += 1
 
-    return [assembled[key] for key in order], summary
+    controls = [assembled[key] for key in order]
+    _require_every_row(summary, consumed=rows_consumed, with_content=rows_with_content)
+    return controls, summary
+
+
+def _require_every_row(summary: Summary, *, consumed: int, with_content: int) -> None:
+    """Refuse a parse that lost a row the sheet contains.
+
+    **Rows read plus rows skipped must equal rows carrying content.**
+    Every row in the baseline is either consumed or reported as skipped;
+    silently absent is the outcome this makes impossible.
+
+    **Counted in rows, not in emitted items**, and the difference is not
+    cosmetic. A control stated only as an enhancement gets a parent
+    synthesised for it, and that parent has no row — so emitted items can
+    legitimately exceed rows read. The first version of this check
+    compared against emitted items; it reconciled exactly against CMS's
+    published workbook, where every parent happens to have its own row,
+    and broke six tests built on sheets where one does not. A
+    relationship that holds on the shipped data and not in general is
+    the kind of thing a real corpus cannot tell you is wrong.
+
+    **The failure it guards is the one this loader has already had.** A
+    caption-matched header can select the wrong sheet — the
+    `Instructional Guidance` decoy matches every caption and matches
+    *earlier* in the workbook — and the result is a plausible
+    three-control catalog rather than an error. That case is caught by
+    name today; this catches the general form, including a row scan that
+    stops early or a column that moves.
+
+    Counted against the **sheet**, not a constant. `rows_with_content` is
+    gathered without consulting the control-id column, so both sides come
+    from the workbook being read and CMS may publish a longer baseline
+    without anyone editing a number here. The same argument
+    `part2_loader._require_sections` makes for eCFR.
+    """
+    if consumed + summary.rows_skipped != with_content:
+        raise ValueError(
+            f"the sheet has {with_content} row(s) carrying content; {consumed} "
+            f"were read and {summary.rows_skipped} reported skipped, leaving "
+            f"{with_content - consumed - summary.rows_skipped} unaccounted for. "
+            f"A row was neither read nor reported, which usually means the header "
+            f"matched the wrong sheet or a column moved."
+        )
 
 
 def load_workbook_from_bytes(content: bytes):

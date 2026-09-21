@@ -197,6 +197,33 @@ def test_the_identically_titled_specification_that_does_state_something_is_kept(
     assert len(kept.description) > 500
 
 
+def test_a_section_the_pattern_no_longer_matches_raises():
+    """**External extent — the question no other test in this file asks.**
+
+    Everything else here asks whether an entry is right. None asks
+    whether they are *all here*. `_SECTION_RE` pins the identifier as
+    `164\\.\\d+`, so a renumbering makes it match fewer sections and
+    return a shorter catalog — internally consistent, well-formed, and
+    missing a Standard.
+
+    Checked against the document rather than a count: the comparison
+    population is gathered by a pattern that does not know what a section
+    identifier looks like, so neither side can go stale.
+    """
+    import pytest
+
+    from policyforge.ingest.hipaa_loader import parse_hipaa_security_rule
+
+    xml = FIXTURE.read_text(encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"were recognised"):
+        parse_hipaa_security_rule(xml.replace('N="164.312"', 'N="164.312a"'))
+
+    # The guard must still ALLOW the real document, or it is just
+    # refusing everything — which looks identical to a broken parser.
+    assert parse_hipaa_security_rule(xml)
+
+
 def test_no_implementation_specification_is_empty():
     """The general rule rather than the one instance, so the next
     run-in heading is caught without anyone noticing it."""

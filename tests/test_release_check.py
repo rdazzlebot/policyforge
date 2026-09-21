@@ -240,25 +240,68 @@ def _code_of(func) -> str:
     return "\n".join(ast.unparse(node) for node in body)
 
 
-def test_a_container_that_cannot_start_is_not_an_install_failure():
-    """**policyforge-ba's finding.** A bad image returns docker's own 125,
-    and the first version reported `ran=True` — so the caller printed *"the
-    published formula did not install in a clean container"* about a
-    container the formula never reached.
+def test_every_did_not_run_reason_says_why_and_none_reads_as_a_failure():
+    """**policyforge-ba's finding, and policyforge-9b's correction of my
+    test for it.**
 
-    Worse, `--allow-skip install` is consulted only on the `not ran`
-    branch, so an operator whose daemon is down or who is offline was told
-    their formula was broken **with no way to acknowledge it.**
+    ba found that a bad image returned docker's own 125 while this
+    reported `ran=True`, so the caller printed *"the published formula did
+    not install in a clean container"* about a container the formula never
+    reached — and `--allow-skip install`, consulted only on the `not ran`
+    branch, could not help an offline operator.
+
+    **My test for that asserted one reason's spelling.** There are two
+    ways not to run — no docker, and docker refusing the image — and it
+    asserted the message from the second. Written on a machine with
+    docker; the macOS runner has neither, took the first branch, and the
+    test failed while the code was correct.
+
+    *The test for the finding about a check misattributing why it did not
+    run, collapsing two reasons for not running into each other.*
+
+    So: **both reasons are constructed here rather than hoped for**, and
+    what is asserted is the property — it did not run, and it said why —
+    rather than which sentence came back.
     """
+    import shutil
+    import subprocess
+
     import release_check
 
-    ran, lines = release_check.run_install_check(image="this-image-does-not-exist-xyz")
+    class _Refused:
+        returncode = 125
+        stdout = ""
+        stderr = "docker: pull access denied for nope"
 
-    assert ran is False, (
-        "docker failing to start the container is not the formula failing to "
-        "install; sending it down the failed branch states something false"
-    )
-    assert any("could not start" in line for line in lines)
+    reasons = {}
+
+    # 1. docker is absent.
+    real_which = shutil.which
+    shutil.which = lambda _name: None
+    try:
+        reasons["no docker"] = release_check.run_install_check()
+    finally:
+        shutil.which = real_which
+
+    # 2. docker is present and refuses the image. Constructed, so it holds
+    #    on a runner with no docker at all.
+    real_run = subprocess.run
+    shutil_which = shutil.which
+    shutil.which = lambda _name: "/usr/bin/docker"
+    subprocess.run = lambda *a, **k: _Refused()
+    try:
+        reasons["image refused"] = release_check.run_install_check(image="nope")
+    finally:
+        subprocess.run = real_run
+        shutil.which = shutil_which
+
+    assert set(reasons) == {"no docker", "image refused"}, "a reason was not exercised"
+    for label, (ran, lines) in reasons.items():
+        assert ran is False, (
+            f"{label!r} reported ran=True, so the caller states that the formula "
+            f"did not install — about a container it never reached"
+        )
+        assert lines and lines[0].strip(), f"{label!r} gives no reason at all"
 
 
 def test_the_probe_is_what_separates_did_not_run_from_failed():

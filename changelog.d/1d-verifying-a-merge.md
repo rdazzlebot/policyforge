@@ -14,3 +14,9 @@ files against main reports 459 insertions, because later work touched the
 same files. What works is asking GitHub for the merge commit and testing
 *that* for ancestry — which correctly reports #168 as merged and **not** in
 main, the stranding that had to be recovered as #169.
+
+**And content-checking works too — from the reviewed SHA rather than the
+branch head.** `git diff <reviewed-sha> <merge-commit>` over the reviewed
+files comes back empty when what was approved is what landed. **Ancestry
+says *something* landed; the content diff says *what* landed**, so use
+both. The reviewed SHA survives nowhere except the review that recorded it.

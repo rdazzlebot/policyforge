@@ -16,10 +16,10 @@ identifiers contain a dot, and four catalogs are entirely dotted** —
 800-53, FedRAMP and ARC-AMPE.
 
 **`nist-ai-rmf` was neither, and it is the case worth understanding**:
-72 of its 91 identifiers contain a dot. Its four top-level functions —
-`Govern 1`, `Map 2`, `Measure 3`, `Manage 4` and their siblings — the
-check could always read; every subcategory beneath them, `Govern 1.1`
-through `Manage 4.3`, it could not. **A catalog where the check fires
+72 of its 91 identifiers contain a dot. Its nineteen categories —
+`Govern 1` through `Manage 4` — the check could always read; all
+seventy-two subcategories beneath them, `Govern 1.1` through
+`Manage 4.3`, it could not. **A catalog where the check fires
 for some citations and not others is the hardest kind to notice**,
 because the check was visibly working the whole time.
 

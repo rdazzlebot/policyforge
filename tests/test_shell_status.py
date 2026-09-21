@@ -225,6 +225,66 @@ def test_the_population_is_not_empty_and_covers_every_kind():
     assert sum(1 for s in sources if s.kind == "workflow") >= 5
 
 
+def test_one_kind_going_quiet_fails_even_when_the_others_are_healthy(monkeypatch):
+    """**policyforge-9b's finding, and it is the whole reason this rule is
+    per-kind rather than over the union.**
+
+    `main` originally asked only `if not sources`. A derivation over three
+    kinds has three ways to go vacuous and a union has one, so breaking a
+    single pathspec left the other kinds intact, printed `clean`, and
+    exited 0 — **with `ci.yml`, this lint's one real finding, unexamined.**
+    Confirmed by running it: the tool reported clean on a tree that still
+    contained the violation.
+
+    Parametrised over every kind that has a signal today, so a fourth kind
+    added later is covered by the test that exists.
+    """
+    real = shell_status.population()
+    for quiet in ("workflow", "doc"):
+        monkeypatch.setattr(
+            shell_status, "population", lambda quiet=quiet: [s for s in real if s.kind != quiet]
+        )
+        assert shell_status.main([]) == 2, f"{quiet} went to zero and the tool passed"
+
+
+def test_a_kind_with_nothing_to_find_stays_silent():
+    """**What the rule must ALLOW, and it is not hypothetical.**
+
+    `0 script` is today's *correct* state — the repository has no committed
+    `*.sh`. A bare "no kind may be zero" rule would have been wrong on
+    arrival, and would have been switched off rather than obeyed. The census
+    is what separates *nothing to find* from *stopped looking*.
+    """
+    assert shell_status.census()["script"] == 0, (
+        "a committed *.sh now exists; this test's premise is gone and the "
+        "script kind should be asserted non-empty instead"
+    )
+    assert shell_status.main([]) == 0
+
+
+def test_the_census_is_a_second_derivation_not_the_parser_again():
+    """A census computed by the block parser would agree with it by
+    construction — which is the `arc_ampe` defect, and the thing that makes
+    a check unable to fail. These are crude independent regexes over the
+    raw file text, so the two counts are free to disagree.
+
+    Asserted as a relationship rather than as two magic numbers: every kind
+    the census sees must have produced sources, and the counts are not
+    required to be equal — 5 workflow files yield 3 with `run:` and 34
+    run-blocks.
+    """
+    counts = shell_status.census()
+    sources = shell_status.population()
+    for kind, signalled in counts.items():
+        produced = sum(1 for s in sources if s.kind == kind)
+        if signalled:
+            assert produced, f"{kind}: census saw {signalled} file(s), parser produced none"
+    assert counts["workflow"] != sum(1 for s in sources if s.kind == "workflow"), (
+        "census and parser returned the same number; if they cannot differ, "
+        "one is not an independent derivation of the other"
+    )
+
+
 def test_an_empty_population_fails_rather_than_passes(monkeypatch):
     """Run through `main`, not through `population`.
 

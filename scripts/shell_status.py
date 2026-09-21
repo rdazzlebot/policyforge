@@ -263,6 +263,42 @@ def _doc_shell_blocks(path: str, text: str) -> list[Source]:
     return sources
 
 
+#: A crude, independent signal that a kind OUGHT to yield sources, used only
+#: to decide whether zero is suspicious. Deliberately not the block parsers
+#: above: two derivations of one fact are what let them disagree, and a
+#: census computed by the parser would agree with the parser by construction.
+_SIGNALS = {
+    "script": ("*.sh", re.compile(r"\S", re.S)),
+    "workflow": (".github/workflows/*.yml", re.compile(r"^\s*-?\s*run:", re.M)),
+    "doc": ("*.md", re.compile(r"^```[ \t]*(?:bash|sh|shell|console)[ \t]*$", re.M)),
+}
+
+
+def census() -> dict[str, int]:
+    """How many files of each kind *look like* they should yield sources.
+
+    **This is the second derivation, and it exists because of a real hole.**
+    `main` originally refused only an entirely empty population, so breaking
+    a single pathspec left the other kinds intact and the tool printed
+    `clean` — while `ci.yml`, this lint's one real finding, went unexamined
+    and exit was 0. Found by policyforge-9b by mutating one pathspec.
+
+    **`0 script` is today's correct state**, since the repository has no
+    committed `*.sh` files, so a bare "no kind may be zero" rule would be
+    wrong on arrival. Hence a census: a kind may be zero only when nothing
+    of that kind looks like it should have produced anything.
+    """
+    counts: dict[str, int] = {}
+    for kind, (pattern, signal) in _SIGNALS.items():
+        found = 0
+        for path in tracked(pattern):
+            text = (REPO_ROOT / path).read_text(encoding="utf-8", errors="replace")
+            if signal.search(text):
+                found += 1
+        counts[kind] = found
+    return counts
+
+
 def population() -> list[Source]:
     """Derive what a shell will execute, from the repository rather than a list.
 
@@ -387,16 +423,37 @@ def main(argv: list[str]) -> int:
 
     sources = population()
 
-    # The assertion that keeps every other assertion meaningful. If the
-    # derivation stops matching -- a renamed directory, a changed pathspec --
-    # this check would otherwise pass by examining nothing, which is the
-    # exact defect it exists to find in other people's pipelines.
+    # The assertion that keeps every other assertion meaningful, and it is
+    # **per kind, not over the union.**
+    #
+    # The first version asked only `if not sources`. A derivation over three
+    # kinds has three ways to go vacuous and a union has one, so breaking a
+    # single pathspec left the other kinds intact, printed `clean`, and
+    # exited 0 -- with `ci.yml`, this lint's one real finding, unexamined.
+    # Measured by policyforge-9b, confirmed here: the tool reported clean on
+    # a tree that still contained the violation.
+    #
+    # `0 script` is today's CORRECT state (no committed *.sh), so the rule
+    # cannot be "no kind may be zero". The census is an independent, cruder
+    # derivation of "should this kind have produced anything", which is what
+    # separates *nothing to find* from *stopped looking*.
+    counted = {kind: sum(1 for s in sources if s.kind == kind) for kind in _SIGNALS}
+    signalled = census()
+    blind = [k for k, n in signalled.items() if n and not counted[k]]
+    if blind:
+        for kind in blind:
+            print(
+                f"shell_status: {signalled[kind]} {kind} file(s) look like they "
+                f"contain shell, and the {kind} derivation produced ZERO sources.\n"
+                f"  That is not 'no problems'; it is a broken derivation -- a "
+                f"renamed directory, or a pathspec that stopped matching.",
+                file=sys.stderr,
+            )
+        return 2
     if not sources:
         print(
             "shell_status: derived ZERO shell sources from this repository.\n"
-            "  That is not 'no problems'; it is a broken derivation. Committed\n"
-            "  workflows exist, so `git ls-files` or the pathspecs above have\n"
-            "  stopped matching.",
+            "  That is not 'no problems'; it is a broken derivation.",
             file=sys.stderr,
         )
         return 2

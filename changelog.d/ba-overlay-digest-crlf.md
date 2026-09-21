@@ -9,7 +9,7 @@ refused to run — *"was not built from the crosswalk overlays now in
 config/crosswalks/"* — and told you to rebuild a crosswalk that was
 correct.
 
-## Whether this changes anything for you
+**Whether this changes anything for you:**
 
 **If your overlays are stored with LF — Linux, macOS, and Windows
 checkouts configured for it — nothing changes and there is nothing to

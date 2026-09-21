@@ -11,6 +11,13 @@ that stops matching still reads as all-clean — and pipefail never fires,
 because nothing failed. The step now asserts the file list is non-empty
 before believing a clean result, and says how many files it checked.
 
+The empty-input rule is keyed on the **shell construct**, not on a list of
+tool names: `xargs` without `-r` runs its command once on empty input,
+whatever that command is. An earlier version enumerated four tools, and
+measuring the venv found `semgrep`, `pip-audit` and `pytest` share the
+property and were missing — so the list was already incomplete the day it
+was written. `xargs -r` is accepted as the other legitimate fix.
+
 **`scripts/shell_status.py` is the new check that finds both**, in the
 pre-push gate and in CI. It derives what a shell will execute from
 `git ls-files` rather than from a list, so a script added tomorrow is

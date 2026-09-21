@@ -100,10 +100,33 @@ STREAM_CONSUMERS = (
     "xargs",
 )
 
-#: Tools that treat "no input" as success. Piping a file list into one of
-#: these needs the list asserted non-empty, because pipefail cannot help:
-#: nothing failed. See the module docstring.
-EMPTY_INPUT_TOOLS = ("mdformat", "ruff", "black", "shellcheck")
+#: Tools KNOWN to treat "no input" as success, used only to sharpen the
+#: failure message. **Not the rule.**
+#:
+#: The first version of this file made the list the rule, and
+#: policyforge-ba asked the right question: the property belongs to tools,
+#: the set of tools with it is larger than any list, and it grows whenever
+#: someone adds a linter to CI. Measured in this venv rather than argued:
+#:
+#:     mdformat   exit 0      ruff       exit 0
+#:     semgrep    exit 0      pip-audit  exit 0
+#:     pytest     exit 0      bandit     exit 2
+#:
+#: **Three of those were missing from the list**, so the enumeration was
+#: already incomplete on the day it was written -- the class-versus-instance
+#: failure, in the file whose job is to catch that shape.
+#:
+#: So the rule below is keyed on the CONSTRUCT instead, which is derivable:
+#: `xargs` without `-r` runs its command once on empty input. That is a
+#: property of `xargs`, true for every tool it will ever be handed, and it
+#: is the actual mechanism. This tuple only lets the message say which tool
+#: is known to exit 0, and being absent from it changes nothing.
+EMPTY_INPUT_TOOLS = ("mdformat", "ruff", "black", "shellcheck", "semgrep", "pip-audit", "pytest")
+
+#: `xargs` with no `-r`/`--no-run-if-empty`: runs the command even when the
+#: incoming list is empty. This is the derivable half of the empty-input
+#: rule and does not depend on knowing the tool.
+_XARGS_RUNS_ON_EMPTY = re.compile(r"\|\s*xargs\b(?![^|]*(?:-r\b|--no-run-if-empty))")
 
 _CONSUMERS = "|".join(STREAM_CONSUMERS)
 
@@ -329,20 +352,31 @@ def findings(sources: list[Source]) -> list[Finding]:
             # mistake it exists to prevent: the two failures are
             # independent, and the empty-input one survives the fix for the
             # other. The test that caught it is named after the property.
-            if not _asserts_non_empty(text):
-                for tool in EMPTY_INPUT_TOOLS:
-                    if re.search(rf"\b{tool}\b", line):
-                        results.append(
-                            Finding(
-                                source.path,
-                                number,
-                                raw,
-                                "empty-input-passes",
-                                f"`{tool}` exits 0 when given no paths, so an empty "
-                                f"list reads as 'all clean'. pipefail does not fire "
-                                f"here -- nothing failed. Assert the list is non-empty.",
-                            )
-                        )
+            # Keyed on the construct, not on a list of tool names: `xargs`
+            # without `-r` runs its command once on empty input, whatever
+            # that command is. Naming the tool only sharpens the message.
+            if _XARGS_RUNS_ON_EMPTY.search(line) and not _asserts_non_empty(text):
+                known = next(
+                    (t for t in EMPTY_INPUT_TOOLS if re.search(rf"\b{re.escape(t)}\b", line)),
+                    "",
+                )
+                because = (
+                    f"`{known}` is known to exit 0 when given no paths, so "
+                    if known
+                    else "the command then runs with no paths, so "
+                )
+                results.append(
+                    Finding(
+                        source.path,
+                        number,
+                        raw,
+                        "empty-input-passes",
+                        "`xargs` without `-r` runs its command even when the list "
+                        f"is empty. {because}an empty list reads as 'all clean'. "
+                        "pipefail does not fire here -- nothing failed. Assert the "
+                        "list is non-empty, or pass `xargs -r`.",
+                    )
+                )
     return results
 
 

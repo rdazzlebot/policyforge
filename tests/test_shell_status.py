@@ -9,6 +9,7 @@ because a check that fires on correct code gets switched off within a day.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -85,6 +86,56 @@ def test_the_empty_input_path_is_reported_separately_from_pipefail():
     assert "no-pipefail" not in _rules(with_pipefail), "pipefail should satisfy that rule"
     assert "empty-input-passes" in _rules(with_pipefail), (
         "pipefail must NOT silence the empty-input rule -- that is the whole finding"
+    )
+
+
+def test_a_tool_nobody_enumerated_is_still_caught():
+    """**policyforge-ba's question, and it found a real gap.**
+
+    The first version keyed this rule on a list of four tool names. The
+    property belongs to tools, the set of tools with it is larger than any
+    list, and it grows whenever someone adds a linter to CI. Measured in
+    the project venv:
+
+        mdformat 0   ruff 0   semgrep 0   pip-audit 0   pytest 0   bandit 2
+
+    **Three of those were missing from the list on the day it was
+    written** — the class-versus-instance failure, inside the file whose
+    job is to catch that shape.
+
+    So the rule is keyed on the construct: `xargs` without `-r` runs its
+    command once on empty input, whatever the command is. This test uses a
+    tool that is deliberately **not** in `EMPTY_INPUT_TOOLS`, so it fails
+    if anyone puts the list back in charge.
+    """
+    line = "git ls-files -z '*.tf' | xargs -0 some-future-linter --check"
+    assert not any(
+        re.search(rf"\b{re.escape(tool)}\b", line) for tool in shell_status.EMPTY_INPUT_TOOLS
+    ), "pick a tool that is not enumerated, or this test proves nothing"
+    assert "empty-input-passes" in _rules(_scan("workflow", line))
+
+
+def test_xargs_dash_r_is_the_other_legitimate_fix():
+    """What the rule must ALLOW, stated beside what it refuses.
+
+    `xargs -r` declines to run the command at all on empty input, so the
+    tool cannot report "nothing to do" as success. That is a real fix and
+    a shorter one than asserting a count, and a rule that refused it would
+    be demanding a specific spelling rather than the property.
+    """
+    line = "set -o pipefail; git ls-files -z '*.md' | xargs -0 -r mdformat --check"
+    assert "empty-input-passes" not in _rules(_scan("workflow", "set -o pipefail", line))
+
+
+def test_a_pipeline_that_is_not_xargs_is_not_an_empty_input_finding():
+    """The rule is about `xargs`, not about the word `mdformat`.
+
+    Piping into a tool directly does not run it on an empty list — the
+    tool simply reads an empty stream. Flagging this would fire on correct
+    code, which is how a check gets muted.
+    """
+    assert "empty-input-passes" not in _rules(
+        _scan("workflow", "set -o pipefail", "cat files.txt | mdformat --check -")
     )
 
 

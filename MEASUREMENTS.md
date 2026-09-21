@@ -1739,6 +1739,78 @@ and `FedRAMP CM-2` attributes an 800-53 id to a framework that is not
 800-53. **Fabrication is not mis-formation**, six is small enough to
 characterise exactly, and nothing here was designed to detect it.
 
+### 24. What a document set costs, one provider — 2026-09-21
+
+**Authorised in advance at ~$8.70 and 25 topics**, one provider, Standard
+tier only. The full three-tier matrix and a second provider were **not**
+authorised. Run from a worktree pinned to `6244fb1`, against
+`openrouter/anthropic/claude-sonnet-4.5`.
+
+|            |                                                           |
+| ---------- | --------------------------------------------------------- |
+| topics     | **25 of 25**                                              |
+| calls      | 50 — a synthesis per *topic*, a generation per *document* |
+| **actual** | **$6.1487**                                               |
+| estimate   | $8.70                                                     |
+| difference | **−$2.5513 (−29%)**                                       |
+| wall clock | 1.26 h against ~2.3 h                                     |
+| hard stop  | did not fire                                              |
+
+Per topic: mean **$0.2459**, median $0.2444, range $0.0747–$0.4227 over 3–45
+controls.
+
+#### The first pass came in 34% under, and the underspend WAS the defect
+
+It covered **20 of 25**. The five missing were every AI topic — they anchor
+on `Govern 1`, `Map 1`, `Measure 1`, `Manage 1`, and the catalog set I chose
+omitted `nist-ai-rmf`, so each resolved zero controls and was skipped.
+
+**A 20% population loss presenting as a 34% cost saving**, and the lost
+topics were 1.6's headline feature. The number was right for what ran; the
+population was wrong — and *under* is the direction nobody investigates,
+because an underspend harms no one and reads as efficiency.
+
+It surfaced only because the run printed **requested beside completed**. A
+report of "$5.74 spent, 20 documents written" is true, complete-looking, and
+says nothing about the five. **The completion pass cost $0.4113.**
+
+#### A rate from one topic is a rate for that topic
+
+The estimate came from a single probe topic at $0.3477 — *Identity Lifecycle
+& Access Review*, 28 controls. That topic sits at the **72nd percentile** of
+the 25, against a median of 18 controls:
+
+```
+25 x $0.3477 (one topic)   =  $8.69      the estimate
+actual across 25 topics    =  $6.1487    −29%
+```
+
+The probe was not wrong about itself. It was **unrepresentative in a
+direction nothing in it could show**, because a single measurement has no
+spread. This is the same shape as the earlier fixture error one level in:
+that probe under-stated by 13x by measuring a 647-character synthesis; this
+one over-stated by 29% by measuring an above-median topic. **Both are "the
+population is one".**
+
+#### What could not be measured, and why
+
+**Claude-direct was not authorised for this release.** It is the most
+informative cell in the matrix — direct against via-OpenRouter differ by
+*code path*, so a difference between them is a finding about this project
+rather than about a model — and it is absent by decision rather than by
+oversight.
+
+**Stated because a missing row has no incoherence to notice.** The totals
+are correct, every figure present is true, and nothing inside the artefact
+contradicts anything else. A reader cannot detect it by reading; only the
+person who knew what was requested can record what did not happen, at the
+time of the run.
+
+**Not "absent because no key exists"** — that phrasing is false and invites
+the wrong remedy. A reader who goes looking may find an `ANTHROPIC_API_KEY`
+in some environment and conclude the row can simply be re-run; a credential
+that happens to be reachable is not an authorisation to spend against it.
+
 ______________________________________________________________________
 
 ## Two ways a run can lie, found the hard way

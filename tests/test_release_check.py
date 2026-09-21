@@ -120,3 +120,238 @@ def test_names_are_compared_case_and_separator_insensitively():
     on case or on `_` versus `-`, and a false mismatch there would block a
     release for a naming convention."""
     assert release_check.lock_pins("Typing_Extensions==4.16.0\n") == {"typing-extensions": "4.16.0"}
+
+
+# ---- assertion 4: the cheap check may no longer stand in for the real one ----
+
+
+def test_the_install_steps_are_the_corrected_ones():
+    """**A smoke test that is wrong is indistinguishable from a release
+    that is broken, until somebody checks which.**
+
+    The 1.6.0 container run used `policyforge --version` — a flag that
+    does not exist, so click exits 2 — and ran `policyforge frameworks`
+    in an empty directory, which exits 1 by design because every command
+    reads `data/frameworks/` relative to where it runs. Both read as
+    release defects. Neither was one.
+
+    Pinned here so the sequence is not retyped from memory at each cut.
+    """
+    from release_check import INSTALL_STEPS
+
+    names = [name for name, _ in INSTALL_STEPS]
+    commands = " ; ".join(command for _, command in INSTALL_STEPS)
+
+    assert "--version" not in commands, (
+        "`policyforge --version` does not exist; click exits 2 and it reads as a broken release"
+    )
+    assert names.index("init") < names.index("frameworks"), (
+        "`frameworks` must run after `init`: in an empty directory it exits 1 "
+        "by design, which is the product working as documented"
+    )
+    assert "--build-from-source" in commands, (
+        "installing a bottle does not exercise the formula being released"
+    )
+
+
+def test_a_check_that_did_not_run_does_not_pass(monkeypatch, capsys):
+    """**The whole point of the issue.** A skipped step leaves a gap; a
+    substituted step leaves a false assurance, and this script *was* the
+    substitution — it compares values and never installs anything.
+
+    So "docker is unavailable" must not read as "the install is fine".
+    Same contract `scripts/check.py` uses for gitleaks: a check nobody ran
+    fails until somebody says otherwise, out loud.
+    """
+    import shutil
+
+    import release_check
+
+    # Patched on `shutil` itself, because `run_install_check` imports it
+    # inside the function -- so there is no module attribute to replace.
+    # Worth stating: the first version patched `release_check.shutil` and
+    # failed with AttributeError rather than silently passing, which is
+    # the good kind of wrong.
+    monkeypatch.setattr(shutil, "which", lambda _: None)
+    ran, lines = release_check.run_install_check()
+
+    assert ran is False, "no docker must report DID NOT RUN, not a result"
+    assert any("docker" in line for line in lines)
+
+
+def test_did_not_run_is_a_different_answer_from_failed():
+    """Two states that must not collapse into one.
+
+    `run_install_check` returns `(ran, lines)` rather than a bool,
+    precisely so the caller can tell *nothing happened* from *the install
+    is broken*. A single boolean would force one of them to masquerade as
+    the other, and the one that would masquerade is the dangerous one.
+    """
+    import inspect
+
+    from release_check import run_install_check
+
+    signature = inspect.signature(run_install_check)
+    assert signature.return_annotation != "bool"
+    source = inspect.getsource(run_install_check)
+    assert "return False" in source and "return True" in source
+
+
+def test_each_step_failure_stops_the_run():
+    """The defect this file's own header records: a Homebrew build failed
+    while its harness reported success, because a shell returns the status
+    of the LAST command and that was `tail`.
+
+    `&&` propagates the first failure; `;` does not. This is also #182 on
+    the same milestone, which is why it is asserted rather than assumed.
+    """
+    import inspect
+
+    from release_check import run_install_check
+
+    source = inspect.getsource(run_install_check)
+    assert '" && ".join' in source, (
+        "steps joined with `;` would report the status of the last one, so a "
+        "failed install followed by a successful command reads as success"
+    )
+
+
+def _code_of(func) -> str:
+    """A function's executable source, with the docstring removed.
+
+    **Both tests below failed on their own explanation first.** They read
+    `inspect.getsource`, which includes the docstring — and the docstring
+    names the very strings they assert are absent, because it explains why
+    those strings are not used.
+
+    A rule that penalises its own reasoning loses to the reasoning being
+    deleted. That is the third instance of this shape today and the second
+    written by the same hand, which is why it is a helper rather than a
+    care-taken-once.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+    body = tree.body[0].body
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+        body = body[1:]
+    return "\n".join(ast.unparse(node) for node in body)
+
+
+def test_every_did_not_run_reason_says_why_and_none_reads_as_a_failure():
+    """**policyforge-ba's finding, and policyforge-9b's correction of my
+    test for it.**
+
+    ba found that a bad image returned docker's own 125 while this
+    reported `ran=True`, so the caller printed *"the published formula did
+    not install in a clean container"* about a container the formula never
+    reached — and `--allow-skip install`, consulted only on the `not ran`
+    branch, could not help an offline operator.
+
+    **My test for that asserted one reason's spelling.** There are two
+    ways not to run — no docker, and docker refusing the image — and it
+    asserted the message from the second. Written on a machine with
+    docker; the macOS runner has neither, took the first branch, and the
+    test failed while the code was correct.
+
+    *The test for the finding about a check misattributing why it did not
+    run, collapsing two reasons for not running into each other.*
+
+    So: **both reasons are constructed here rather than hoped for**, and
+    what is asserted is the property — it did not run, and it said why —
+    rather than which sentence came back.
+    """
+    import shutil
+    import subprocess
+
+    import release_check
+
+    class _Refused:
+        returncode = 125
+        stdout = ""
+        stderr = "docker: pull access denied for nope"
+
+    reasons = {}
+
+    # 1. docker is absent.
+    real_which = shutil.which
+    shutil.which = lambda _name: None
+    try:
+        reasons["no docker"] = release_check.run_install_check()
+    finally:
+        shutil.which = real_which
+
+    # 2. docker is present and refuses the image. Constructed, so it holds
+    #    on a runner with no docker at all.
+    real_run = subprocess.run
+    shutil_which = shutil.which
+    shutil.which = lambda _name: "/usr/bin/docker"
+    subprocess.run = lambda *a, **k: _Refused()
+    try:
+        reasons["image refused"] = release_check.run_install_check(image="nope")
+    finally:
+        subprocess.run = real_run
+        shutil.which = shutil_which
+
+    assert set(reasons) == {"no docker", "image refused"}, "a reason was not exercised"
+    for label, (ran, lines) in reasons.items():
+        assert ran is False, (
+            f"{label!r} reported ran=True, so the caller states that the formula "
+            f"did not install — about a container it never reached"
+        )
+        assert lines and lines[0].strip(), f"{label!r} gives no reason at all"
+
+
+def test_the_probe_is_what_separates_did_not_run_from_failed():
+    """**Why a probe rather than an exit-code allowlist.**
+
+    The suggested remedy was to treat 125, 126 and 127 as did-not-run.
+    That masks a real failure: **127 is also what
+    `policyforge: command not found` gives inside the container after a
+    broken install** — precisely what assertion 4 exists to catch.
+
+    Probing makes *did not run* a fact about docker, and leaves the real
+    run's exit status unambiguously about what happened inside.
+    """
+    from release_check import run_install_check
+
+    code = _code_of(run_install_check)
+    assert '"true"' in code or "'true'" in code, (
+        "no probe run: did-not-run is being inferred from an exit status"
+    )
+    for masking in ("125", "126", "127"):
+        assert masking not in code, (
+            f"{masking} is treated as did-not-run in code. Inside the container "
+            f"it can mean the install produced no working CLI, which is the "
+            f"failure this check is for."
+        )
+
+
+def test_the_docstring_describes_the_mechanism_the_code_uses():
+    """It claimed each step was a separate `docker run`, two lines above
+    code joining them into one with `&&`.
+
+    Both propagate correctly, so nothing misbehaved — but this is the file
+    whose header records a harness reporting success because the last
+    command was `tail`. **A false claim about exit-status mechanics belongs
+    here least of anywhere.**
+
+    Asserted as a positive claim rather than the absence of a phrase: the
+    docstring now recounts the old wording while correcting it, so *"this
+    phrase must not appear"* would fail on the correction itself.
+    """
+    import inspect
+
+    from release_check import run_install_check
+
+    doc = inspect.getdoc(run_install_check) or ""
+    assert "ONE container" in doc, "the docstring no longer states the mechanism used"
+    # Quote-agnostic: `ast.unparse` normalises `" && "` to `' && '`, so
+    # matching the source spelling fails against the reconstructed code.
+    # The assertion is about the join, not about which quote was typed.
+    code = _code_of(run_install_check)
+    assert " && " in code and ".join" in code, (
+        "the code no longer joins the steps, so the docstring is wrong again"
+    )

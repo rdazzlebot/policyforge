@@ -1775,6 +1775,68 @@ ______________________________________________________________________
 
 ## Findings that outlived the numbers
 
+**Nothing compares what a generated document SAYS against what its synthesis
+said — only which controls each cites.** Found 2026-09-20 while
+pre-registering a different measurement; independent of that measurement and
+of the framework that exposed it.
+
+`evals/runner._tags` compares **control references**. So the grader asks
+*"does this document cite what the synthesis cited, and nothing more?"* and
+never asks *"does this document say what the synthesis said?"* A requirement
+invented under a tag the synthesis genuinely cites would be
+indistinguishable from one the synthesis wrote.
+
+**Stated as a missing check rather than as an observed defect, and the
+correction is the instructive part.** This first went in claiming the #164
+document contained a fabricated requirement, citing *"The inventory
+mechanism shall be resourced according to organizational risk priorities"*
+as present in the document and absent from the synthesis — **tested with a
+literal substring match.** Measured on the `docs/probes/airmf-generation`
+stub, whose identifiers and shape differ from the shipped catalog — `GOVERN-1.6`
+here, `Govern 1.6` there; see that probe's README, which states the
+difference and why the conclusions still hold. The synthesis bullet for `GOVERN-1.6`
+reads
+*"Mechanisms are in place to inventory AI systems **and are resourced
+according to organizational risk priorities**."* The sentence is a
+decomposition of its premise, not an invention. **The test answered "is this
+string present" while the question was "does the synthesis support this
+claim"** — a neighbouring question, inside a finding about checks that
+answer neighbouring questions.
+
+Measured properly, by joining each cited sentence to the synthesis
+requirements its tag indexes, every cited obligation in that document is
+43–100% lexically grounded in its own premise, and the words that are new
+are `acme`, `health`, `ensure`, `establish`, `maintain` — the organisation's
+name and obligation verbs, which generation is supposed to supply.
+
+**What is demonstrably present is the untagged case.** *"The inventory shall
+be maintained in [Asset Inventory System] and shall cover all AI systems
+within the scope of this Standard"* binds, introduces scope language the
+synthesis never states, and **carries no citation at all**, so there is no
+premise to judge it against. `content/check.py:_check_uncited` only fires on
+a document citing *nothing*, so a document with seven good tags and three
+untagged obligations passes it whole.
+
+**The two halves are different kinds of claim and that is the whole design.**
+An obligation with no citation is a **fact** — deterministic, free, and
+checkable twice with the same answer. An obligation whose cited requirements
+do not carry it is a model's **opinion**. Only the first may gate an exit
+code; the ruling on #196 is that an exit code carries facts, not opinions.
+
+**`generate/policy_writer.py` already forbids the invention** — *"do not add
+requirements that weren't in the input"* — which is the right rule and is
+currently true. Nothing enforces it. The gap is a missing check, not a
+missing rule, and the shape is one this project keeps meeting: **the check
+that exists measures the neighbouring property.** Citations are easy to
+compare, so citations are what got compared, and *"cites correctly"* quietly
+stood in for *"says what it was given"*.
+
+**What would close it** is that content-level accounting — not a similarity
+score, which an earlier attempt on #164 showed fragments on markdown, but
+every binding sentence in the document tracing to a requirement in the
+synthesis, and anything that does not being reported as an addition. Named
+here so the absence is a decision rather than an oversight.
+
 **Terse scores do not predict answering scores.** `deepseek-v4-flash` went
 92 on routing and 96 on answering; `gpt-oss-120b` went 89 on routing and 80
 on answering. Measure the suite you care about.

@@ -268,13 +268,20 @@ def _doc_shell_blocks(path: str, text: str) -> list[Source]:
 #: above: two derivations of one fact are what let them disagree, and a
 #: census computed by the parser would agree with the parser by construction.
 _SIGNALS = {
-    "script": ("*.sh", re.compile(r"\S", re.S)),
-    "workflow": (".github/workflows/*.yml", re.compile(r"^\s*-?\s*run:", re.M)),
-    "doc": ("*.md", re.compile(r"^```[ \t]*(?:bash|sh|shell|console)[ \t]*$", re.M)),
+    "script": (("*.sh",), re.compile(r"\S", re.S)),
+    # Both extensions, matching `population()`. With only `*.yml` a
+    # `.yaml` workflow is read by the parser and invisible to the census,
+    # so the one file the census exists to notice could be the one it
+    # cannot see.
+    "workflow": (
+        (".github/workflows/*.yml", ".github/workflows/*.yaml"),
+        re.compile(r"^\s*-?\s*run:", re.M),
+    ),
+    "doc": (("*.md",), re.compile(r"^```[ \t]*(?:bash|sh|shell|console)[ \t]*$", re.M)),
 }
 
 
-def census() -> dict[str, int]:
+def census() -> dict[str, set[str]]:
     """How many files of each kind *look like* they should yield sources.
 
     **This is the second derivation, and it exists because of a real hole.**
@@ -306,15 +313,16 @@ def census() -> dict[str, int]:
     **A second derivation raises the cost of going blind; it does not make
     it impossible.**
     """
-    counts: dict[str, int] = {}
-    for kind, (pattern, signal) in _SIGNALS.items():
-        found = 0
-        for path in tracked(pattern):
-            text = (REPO_ROOT / path).read_text(encoding="utf-8", errors="replace")
-            if signal.search(text):
-                found += 1
-        counts[kind] = found
-    return counts
+    found: dict[str, set[str]] = {}
+    for kind, (patterns, signal) in _SIGNALS.items():
+        hits = set()
+        for pattern in patterns:
+            for path in tracked(pattern):
+                text = (REPO_ROOT / path).read_text(encoding="utf-8", errors="replace")
+                if signal.search(text):
+                    hits.add(path)
+        found[kind] = hits
+    return found
 
 
 def population() -> list[Source]:
@@ -458,16 +466,54 @@ def main(argv: list[str]) -> int:
     # what this does and does not defend against -- notably that a renamed
     # `.github/workflows/` is a legitimate zero, and that two coordinated
     # edits still defeat both derivations.
-    counted = {kind: sum(1 for s in sources if s.kind == kind) for kind in _SIGNALS}
-    signalled = census()
-    blind = [k for k, n in signalled.items() if n and not counted[k]]
-    if blind:
-        for kind in blind:
+    # **Compared as SETS OF FILES, not as counts per kind.** The first
+    # version compared `census()` against the parser per kind and fired
+    # only when the parser produced zero of a kind, so a 56% loss of the
+    # workflow population reported `clean` and exited 0 -- measured on the
+    # train. The cause was not the comparison but the UNITS: the census
+    # counted files (3 workflows) and the parser counted run-blocks (34),
+    # and the only question answerable across those two numbers is whether
+    # both are zero. Extent was unreachable by construction, not by
+    # oversight. See #228.
+    #
+    # Naming the files rather than counting them puts both sides in the
+    # same unit, and it needs no pinned bound: the population may grow
+    # freely, and a file that stops being examined is named rather than
+    # absorbed into a smaller total.
+    #
+    # **What this does NOT close, measured rather than reasoned about.**
+    # policyforge-b5's formulation of #228 is that a shrink is invisible
+    # *because* a check was made more specific -- so the same question
+    # has to be asked of this fix. Asked and answered:
+    #
+    #     edit the parser pathspec only     before: exit 0, silent
+    #                                        after: exit 2, names both files
+    #     edit census AND parser pathspecs  before: exit 0
+    #                                        after: exit 0      <- unchanged
+    #
+    # The one-edit case is closed; the coordinated two-edit case is not,
+    # and is the residual `census()` already discloses. It is unchanged
+    # by this, not introduced by it. Both derivations reach the tree
+    # through a pathspec, so narrowing both in step defeats them both --
+    # which is an argument for deriving from the whole tracked set and
+    # classifying, so a narrowed spec moves files to "unclassified"
+    # rather than out of existence. Not done here: one edit is the
+    # accident-shaped case, two coordinated edits in the same direction
+    # forty lines apart is not.
+    produced = {kind: {s.path for s in sources if s.kind == kind} for kind in _SIGNALS}
+    silent = {
+        kind: sorted(paths - produced[kind])
+        for kind, paths in census().items()
+        if paths - produced[kind]
+    }
+    if silent:
+        for kind, paths in silent.items():
             print(
-                f"shell_status: {signalled[kind]} {kind} file(s) look like they "
-                f"contain shell, and the {kind} derivation produced ZERO sources.\n"
-                f"  That is not 'no problems'; it is a broken derivation -- "
-                f"most likely a pathspec in this file that stopped matching.",
+                f"shell_status: {len(paths)} {kind} file(s) look like they contain "
+                f"shell and the {kind} derivation produced nothing for them.\n"
+                f"  That is not 'no problems'; it is a broken derivation -- most "
+                f"likely a pathspec in this file that stopped matching:\n"
+                + "\n".join(f"    {path}" for path in paths),
                 file=sys.stderr,
             )
         return 2

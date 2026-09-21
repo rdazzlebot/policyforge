@@ -21,6 +21,7 @@ import re
 import shlex
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -414,16 +415,81 @@ def _interpolations_in_printed_commands() -> list[tuple[str, str, str]]:
     return found
 
 
-def test_the_interpolation_population_is_not_empty():
-    """Guard the population, or the check below passes vacuously.
+#: Every interpolation the scan must find, by module and expression, with
+#: how many times. **Members, not a count** — see the test below for why.
+EXPECTED_INTERPOLATIONS = {
+    ("policyforge/cli/content.py", "shlex.quote(current)"): 1,
+    ("policyforge/cli/content.py", "shlex.quote(name)"): 1,
+    ("policyforge/cli/content.py", "shlex.quote(previous)"): 1,
+    ("policyforge/cli/content.py", "shlex.quote(tier)"): 1,
+    ("policyforge/cli/etl.py", "shlex.quote(str(export_path))"): 2,
+    ("policyforge/export/github_wiki.py", "CLI_TARGET"): 1,
+    ("policyforge/export/github_wiki.py", "shlex.quote(doc.tier or 'standard')"): 1,
+    ("policyforge/export/github_wiki.py", "shlex.quote(self.title(doc))"): 1,
+    ("policyforge/export/publisher.py", "shlex.quote(doc.page_title)"): 1,
+    ("policyforge/export/publisher.py", "shlex.quote(doc.space)"): 1,
+    ("policyforge/export/publisher.py", "shlex.quote(doc.tier or 'standard')"): 1,
+    ("policyforge/zardoz/skills.py", "quoted_flags"): 1,
+    ("policyforge/zardoz/skills.py", "shlex.quote(name)"): 1,
+}
 
-    It is derived by parsing, so it goes to zero if `ast.walk` stops
-    finding what it expects — and zero offenders out of zero sites is
-    indistinguishable from a clean repo.
+
+def test_the_scan_finds_exactly_the_interpolations_that_are_there():
+    """**Non-empty accepts a shrink; this does not.**
+
+    The first version of this asserted only that the population was not
+    empty. Measured on the merged code: narrowing `_COMMAND_SPAN` to
+    `[^`\\n]{0,40}` takes the population from 14 to 11, **the suite stays
+    green, and a real bare interpolation placed beyond the narrowed span
+    is not caught.** A guard reporting `clean` over a population it
+    quietly halved is worse than no guard, because it is the sentence
+    that stops the next person looking. #228.
+
+    **Pinned by members rather than by cardinality, and that is the part
+    that matters.** `assert len(found) == 14` is edited to `== 11` in one
+    keystroke and the diff shows a number changing, which reviews as
+    nothing. A wrong edit *here* deletes a line naming a module and an
+    expression, so the diff says which command stopped being checked —
+    the same reason `ILLUSTRATIVE_COMMANDS` above is keyed by the command
+    and not by `path:line`.
+
+    **Why a pin at all, when `shell_status.py` needs none.** That guard
+    has a second derivation — files signalled by a cruder scan — in the
+    *same unit* as its parser, so the two can be compared directly and
+    the population may grow freely. Here there is no such second
+    derivation: 9b measured that a text census finds 3 modules where the
+    AST finds 5, **missing exactly the two whose commands span
+    continuation lines** — the two the AST exists for. A cruder second
+    derivation in the same dimension is not independent, it is just
+    wrong in the direction that hides the shrink. So this is pinned, and
+    the cost is that a legitimate new printed command turns it red once.
+
+    **Module *and* expression, because the module alone is not enough.**
+    Measured: dropping one interpolation from `cli/content.py`, which has
+    four, takes the population 14 -> 13 and leaves the set of modules at
+    five. A module-level check misses that; this names
+    `policyforge/cli/content.py: shlex.quote(tier)`.
+
+    The module is used rather than `path:line`: a line number moves under
+    an edit above it, and this file has already gone red once on a merge
+    that touched nothing it checks.
     """
-    assert _interpolations_in_printed_commands(), (
-        "no interpolation was found inside any printed command anywhere in src/. "
-        "Either they all went away or the parse stopped seeing them; check which."
+    found = Counter(
+        (site.rsplit(":", 1)[0], expression)
+        for site, expression, _command in _interpolations_in_printed_commands()
+    )
+    expected = Counter(EXPECTED_INTERPOLATIONS)
+
+    gone = expected - found
+    extra = found - expected
+    assert not gone and not extra, (
+        "the set of interpolations the scan finds has changed. Every one of these "
+        "is a value going into a command printed for a person to copy, so one that "
+        "stops being found stops being checked:\n"
+        + "".join(f"  NO LONGER FOUND  {m}: {e}  (x{n})\n" for (m, e), n in sorted(gone.items()))
+        + "".join(f"  NEWLY FOUND      {m}: {e}  (x{n})\n" for (m, e), n in sorted(extra.items()))
+        + "If the change is intended, edit EXPECTED_INTERPOLATIONS — which is a "
+        "person deciding, and leaves a diff naming what changed."
     )
 
 

@@ -40,6 +40,7 @@ The three guards, stated once so an adapter cannot half-implement them:
 
 from __future__ import annotations
 
+import shlex
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -810,7 +811,13 @@ class ConfluencePublisher(Publisher):
         )
 
     def reconcile_command(self, doc) -> str:
+        # **Quoted with `shlex.quote`, because this line is printed for a
+        # person to copy.** A document title is user-authored prose: the
+        # title `Vendor "Bring Your Own" Policy` inside a hand-written
+        # `"..."` produces `--title "Vendor Bring"`, which is a valid
+        # command naming the wrong document, silently. #187.
         return (
-            f'policyforge pull --space {doc.space} --title "{doc.page_title}" '
-            f"--tier {doc.tier or 'standard'} --apply"
+            f"policyforge pull --space {shlex.quote(doc.space)} "
+            f"--title {shlex.quote(doc.page_title)} "
+            f"--tier {shlex.quote(doc.tier or 'standard')} --apply"
         )

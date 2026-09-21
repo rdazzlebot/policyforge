@@ -636,7 +636,12 @@ def test_a_page_edited_on_the_wiki_is_reported_with_how_to_reconcile_it(tmp_path
     assert moved.title == "Access Control Standard"
     assert "version 5" in moved.reason
     assert moved.reconcile == (
-        'policyforge pull --space SEC --title "Access Control Standard" --tier standard --apply'
+        # Single-quoted because the command is now built with `shlex.quote`,
+        # which quotes only what needs it and handles a value containing a
+        # quote character -- see #187. The old hand-written `"..."` turned
+        # `Vendor "Bring Your Own" Policy` into a command naming the wrong
+        # document.
+        "policyforge pull --space SEC --title 'Access Control Standard' --tier standard --apply"
     )
     text = report.format_report()
     assert "reconcile: policyforge pull" in text

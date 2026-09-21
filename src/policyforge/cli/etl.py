@@ -38,10 +38,29 @@ def etl_vault(controls_dir: Path, out: Path):
 
     from policyforge.ingest.nist_vault_loader import load_vault_controls
 
-    controls = load_vault_controls(controls_dir)
+    report = load_vault_controls(controls_dir)
     out.parent.mkdir(parents=True, exist_ok=True)
-    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
-    click.echo(f"Parsed {len(controls)} controls -> {out}")
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in report.controls], indent=2))
+
+    # Say what was attempted, not only what survived. The old line read
+    # `Parsed {len(controls)} controls` and exited 0 whatever happened, so
+    # five good notes and two empty files reported as "Parsed 7 controls",
+    # and ten notes of which ten failed reported the same as no notes at
+    # all. See #220.
+    click.echo(f"Parsed {len(report.controls)} of {report.attempted} control note(s) -> {out}")
+    if not report.attempted:
+        raise click.ClickException(
+            f"no *.md control notes found in {controls_dir}. An empty directory is "
+            f"not an empty vault — check the path points at Controls/."
+        )
+    if report.unreadable:
+        for path, why in report.unreadable:
+            click.echo(f"  unreadable: {path}: {why}", err=True)
+        raise click.ClickException(
+            f"{len(report.unreadable)} of {report.attempted} control note(s) could not "
+            f"be parsed. {out} was written from the {len(report.controls)} that could, "
+            f"and is short by that many controls."
+        )
 
 
 @cli.command("etl-oscal")

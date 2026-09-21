@@ -22,6 +22,7 @@ strips non-public-domain crosswalk columns by default (see
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import frontmatter
@@ -131,6 +132,14 @@ def parse_control_file(
     control_statement = sections.get("control statement", "").strip("> \n")
     discussion = sections.get("discussion", "")
 
+    _require_some_control_content(
+        path,
+        title=fm.get("title", ""),
+        control_statement=control_statement,
+        discussion=discussion,
+        enhancements=enhancements,
+    )
+
     return Control(
         control_id=fm.get("control_id", path.stem),
         title=fm.get("title", ""),
@@ -148,18 +157,115 @@ def parse_control_file(
     )
 
 
+def _require_some_control_content(
+    path: Path,
+    *,
+    title: str,
+    control_statement: str,
+    discussion: str,
+    enhancements: list,
+) -> None:
+    """Refuse a note that carries nothing a control could be built from.
+
+    **Every field in `parse_control_file` has a default, so before this
+    the function could not fail.** An empty `.md` file produced a valid
+    `Control` whose ID was the *filename*, with an empty title and an
+    empty statement, and `load_vault_controls`'s broad `except` had
+    nothing to catch — its comment promised a reported failure on a path
+    that was never taken. `etl-vault` then printed `Parsed 7 controls`
+    and exited 0 for five real notes and two empty files. See #220.
+
+    **Emptiness, never thinness.** The refusal is that *all four* carry
+    nothing; any one of them is enough to pass. A length or
+    well-formedness threshold would be wrong, and this is measured rather
+    than assumed: the thinnest control statement in the four catalogs
+    this project ships is ten characters — HIPAA § 164.308(a)(5)(ii)
+    reads exactly `Implement:`, a real control whose substance lives in
+    its children. A guard that refuses emptiness tends to refuse thinness
+    too, and thin-but-real is common.
+
+    **The gap this leaves, stated rather than left to be discovered.** A
+    note with a title and no control statement still parses. That is a
+    weaker malformation — the note says *something* — and refusing it
+    would rest on an inference this function cannot support: no control
+    in the shipped catalogs has an empty statement, but those catalogs
+    come from OSCAL and the eCFR, not from a vault, so they are evidence
+    about a different parser. If vault notes do lose statements in
+    practice, that is a second finding with its own measurement, not an
+    argument for widening this one today.
+    """
+    if title.strip() or control_statement.strip() or discussion.strip() or enhancements:
+        return
+    raise ValueError(
+        "carries no title, control statement, discussion or enhancements — "
+        "an empty or unparseable note, not a control"
+    )
+
+
+@dataclass
+class VaultLoadReport:
+    """What `load_vault_controls` **attempted**, not only what it produced.
+
+    The old signature returned `list[Control]`, so ten notes parsed and
+    twenty notes with ten failures were the same value. The failures went
+    to stdout as `WARN:` lines that nothing read and no exit code
+    reflected.
+
+    **A returned count is the fix, not a louder warning.** `mdformat
+    --check` with no paths exits 0 saying *"No files have been passed
+    in"* — the same defect one layer out, found by 1d on #221: the
+    absence of input and the absence of a problem sharing one value. A
+    caller that cannot tell them apart reports the wrong one however
+    loud the log is.
+    """
+
+    controls: list[Control] = field(default_factory=list)
+    #: (path, why) for every note that did not become a control.
+    unreadable: list[tuple[str, str]] = field(default_factory=list)
+    #: Every *.md file found, whatever became of it.
+    attempted: int = 0
+
+
 def load_vault_controls(
     controls_dir: Path,
     *,
     keep_crosswalk_columns: set[str] = _DEFAULT_SAFE_CROSSWALK_COLUMNS,
-) -> list[Control]:
-    """Parse every *.md control note in a directory (non-recursive)."""
-    controls = []
+) -> VaultLoadReport:
+    """Parse every *.md control note in a directory (non-recursive).
+
+    Returns a `VaultLoadReport` rather than a bare list — see that class
+    for why what was *attempted* is part of the answer.
+    """
+    report = VaultLoadReport()
     for path in sorted(controls_dir.glob("*.md")):
+        report.attempted += 1
         try:
-            controls.append(parse_control_file(path, keep_crosswalk_columns=keep_crosswalk_columns))
+            report.controls.append(
+                parse_control_file(path, keep_crosswalk_columns=keep_crosswalk_columns)
+            )
         # Deliberately broad: one malformed note must not abort the whole
         # batch, so the failure is reported and parsing continues.
         except Exception as exc:  # noqa: BLE001
+            report.unreadable.append((str(path), str(exc)))
             print(f"WARN: failed to parse {path}: {exc}")
-    return controls
+    _require_every_note_accounted(report)
+    return report
+
+
+def _require_every_note_accounted(report: VaultLoadReport) -> None:
+    """Every note found became a control or was reported unreadable.
+
+    The same conservation shape as `hipaa_crosswalk_loader`'s
+    `_require_nothing_dropped`, and here for the same reason: `unreadable`
+    is empty for a healthy vault, so a test asserting it is empty stays
+    green if the line that appends to it is deleted. This one cannot —
+    `attempted` is incremented before the `try`, independently of what
+    the body then does with the note.
+    """
+    accounted = len(report.controls) + len(report.unreadable)
+    if accounted != report.attempted:
+        raise ValueError(
+            f"{report.attempted} control note(s) were found; {len(report.controls)} "
+            f"parsed and {len(report.unreadable)} were reported unreadable, "
+            f"accounting for {accounted}"
+        )

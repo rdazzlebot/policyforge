@@ -298,11 +298,13 @@ def test_the_history_command_survives_a_hostile_document_name(name: str):
 
 
 def test_every_interpolating_site_quotes_its_values():
-    """The class, so a fourth site cannot be added unquoted.
+    """Interpolation inside hand-written quotes, across all of `src/`.
 
-    Source-level because the values are runtime data — the behavioural
-    test above can only reach the sites it knows about, and this one
-    reaches the sites that exist.
+    **Not the whole class.** A bare `--title {value}` is equally unquoted
+    and is not matched — see #218. Source-level because the values are
+    runtime data: the behavioural test above reaches only the sites it
+    knows about, this one reaches the shape it knows about wherever it
+    occurs.
     """
     offenders = []
     for path in sorted(SRC.rglob("*.py")):

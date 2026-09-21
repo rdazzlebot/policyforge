@@ -141,6 +141,7 @@ def _controls(state):
 
 
 def _coverage(state, args: list[str]) -> str:
+    from policyforge.crosswalk.overlay import accepted_relationships, load_overlays
     from policyforge.mapping.crosswalk import build_crosswalk
     from policyforge.topics.coverage import (
         analyze_coverage,
@@ -195,6 +196,21 @@ def _coverage(state, args: list[str]) -> str:
         scope=scope_label(nist, baseline),
         other_controls=other,
         crosswalk=build_crosswalk(controls),
+        # **Passed, because the CLI passes it and they answer one question.**
+        # Without it every lookup returns None, None is not in
+        # PARTIAL_RELATIONSHIPS, and a mapping an organisation reviewed and
+        # recorded as `superset` or `intersects` counts as FULL coverage
+        # here while counting as partial in `policyforge coverage`.
+        #
+        # Measured before fixing, with every HIPAA mapping recorded as
+        # superset: the shell said 65 of 74 covered and the CLI said 0.
+        # Two views of one registry, disagreeing about what the
+        # organisation's own reviewed decision means.
+        #
+        # `_controls` already applies the overlays to the controls; this is
+        # the same overlays read for their relationships rather than their
+        # pairs, so the shell is not reading anything the CLI does not.
+        relationships=accepted_relationships(load_overlays()),
     )
     return "\n".join(
         [

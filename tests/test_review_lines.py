@@ -181,14 +181,92 @@ def test_reconstructed_preserves_the_review(commits):
     assert "the head of this PR" in location.diagnosis
 
 
-def test_misanchored_does_not_preserve_it(commits):
-    """Longest resolving prefix is a DIFFERENT commit, so what was read is
-    unknown. **Not recoverable, and the worse of the two** — a two-state
-    classification collapses this into the recoverable case."""
+def test_an_earlier_commit_of_this_pr_is_still_RECONSTRUCTED(commits):
+    """**The state is a property of the line PLUS what you compare it to.**
+
+    This test asserted `MISANCHORED` for a prefix naming an ANCESTOR of
+    head, because the first version compared `prefix_target == head`. That
+    is wrong and it drifts: a line correctly classified `RECONSTRUCTED`
+    silently becomes the serious state the moment its author pushes again
+    — no event, no diff, nothing about the line changed.
+
+    Measured on a real line on #230: prefix `504994f4` names the commit
+    that WAS the head when the line was written. Head-equality called it
+    `MISANCHORED`; it is a real commit of this PR and the review is real.
+    policyforge-80 found it by **running** its classifier rather than by
+    reviewing the spec.
+
+    Staleness is a second, independent axis and is reported as such rather
+    than replacing this one.
+    """
     extended = commits["ancestor"][:7] + "f" * 33
     location = review_lines.location_of(extended, commits["head"])
+    assert location.label == "RECONSTRUCTED"
+    assert "STALE" in location.diagnosis, "the second axis must still be reported"
+
+
+def test_the_same_line_keeps_its_state_when_the_head_MOVES(commits):
+    """**The axis the defect actually lived on, and the one my other tests
+    could not reach.**
+
+    policyforge-ba's diagnosis: every case here fixes the head and varies
+    the prefix. Nothing varied the head with the prefix held fixed — and
+    that is the direction reality moves in, because **a verdict line is
+    written once and the head moves afterwards.**
+
+    So the defect was invisible to a suite that looked thorough. A line
+    correctly classified `RECONSTRUCTED` silently became `MISANCHORED` —
+    the serious state — the moment its author pushed again. Drift toward
+    the state that loses a real review, with no event and no diff.
+
+    This test writes the line once and then advances the head, which is
+    the sequence that happens.
+    """
+    line_written_against = commits["head"]
+    extended = line_written_against[:7] + "0" * 33
+
+    before = review_lines.location_of(extended, line_written_against)
+    assert before.label == "RECONSTRUCTED"
+
+    # the author pushes; nothing about the line changes
+    moved = _git(
+        *_IDENTITY,
+        "commit-tree",
+        _git("rev-parse", "HEAD^{tree}"),
+        "-p",
+        line_written_against,
+        "-m",
+        "a later push",
+    )
+    after = review_lines.location_of(extended, moved)
+
+    assert after.label == "RECONSTRUCTED", (
+        "the same line changed state because someone else pushed -- the "
+        "classification must be a property of the line and the BRANCH, "
+        "not of the line and today's head"
+    )
+    assert "STALE" in after.diagnosis, (
+        "staleness is a second axis and must now be reported, not swallowed"
+    )
+
+
+def test_misanchored_is_a_commit_not_on_this_branch(commits):
+    """The serious case: what was reviewed is unknown, because the prefix
+    names nothing this PR ever carried. **Not recoverable**, and a
+    two-state classification collapses the recoverable case into it."""
+    off_branch = _git(*_IDENTITY, "commit-tree", _git("rev-parse", "HEAD^{tree}"), "-m", "off")
+    assert (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", off_branch, commits["head"]],
+            cwd=ROOT,
+            capture_output=True,
+        ).returncode
+        != 0
+    ), "the fixture's off-branch commit IS on the branch; it is not testing MISANCHORED"
+
+    location = review_lines.location_of(off_branch[:7] + "0" * 33, commits["head"])
     assert location.label == "MISANCHORED"
-    assert "DIFFERENT commit" in location.diagnosis
+    assert "NOT on this branch" in location.diagnosis
 
 
 def test_fabricated_is_only_when_no_prefix_resolves():
@@ -472,3 +550,40 @@ def test_it_does_not_compute_consent():
     )
     for forbidden in ("is_approved", "may_merge", "can_merge", "sys.exit(1) if"):
         assert forbidden not in code, f"{forbidden!r} turns a report into an authorisation"
+
+
+def test_the_docstring_lists_every_state_the_code_can_return():
+    """**A partition that does not add up, in the file about those.**
+
+    The docstring said *THE FIVE STATES* while `Location.label` returned
+    six — omitting `RECONSTRUCTED` and `MISANCHORED`, the two that were the
+    point of the push that added them, and including `MALFORMED`, which the
+    next paragraph establishes is a different axis. Found by policyforge-ba.
+
+    Derived from the code rather than typed, so a seventh state added later
+    is covered by the test that exists. Walks ternaries too: my own first
+    count found four, because `return "STALE" if x else "ELSEWHERE"` is not
+    a `Return(Constant)` — **an incomplete probe agreeing with an incomplete
+    docstring.**
+    """
+    import ast
+
+    # Scoped to `Location.label`. The first version walked every function
+    # named `label` and picked up `Shape.label`'s "well-formed" too --
+    # **a probe broader than its subject**, which is the other half of the
+    # same mistake as the incomplete one below it.
+    tree = ast.parse((ROOT / "scripts" / "review_lines.py").read_text(encoding="utf-8"))
+    location = next(
+        n for n in ast.walk(tree) if isinstance(n, ast.ClassDef) and n.name == "Location"
+    )
+    label = next(n for n in location.body if isinstance(n, ast.FunctionDef) and n.name == "label")
+    returned = {
+        inner.value
+        for inner in ast.walk(label)
+        if isinstance(inner, ast.Constant) and isinstance(inner.value, str)
+    }
+    assert len(returned) >= 6, f"expected at least six states, found {sorted(returned)}"
+
+    doc = review_lines.__doc__ or ""
+    missing = [state for state in returned if state not in doc]
+    assert not missing, f"states the code returns and the module docstring does not list: {missing}"

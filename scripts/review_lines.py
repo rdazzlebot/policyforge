@@ -18,15 +18,30 @@ mechanism exists here — branch protection does not distinguish these sessions
 from the user. A reader reports; a person decides. If you find yourself adding
 `--is-approved`, that is the line.
 
-THE FIVE STATES, which are the point of the file:
+THE SIX LOCATION STATES. **`MALFORMED` is not among them** -- it is a
+property of the line's SHAPE, asked on its own axis, and listing it here
+was how the first version of this docstring came to say FIVE while
+`Location.label` returned six. Found by policyforge-ba, and it is the same
+partition-that-does-not-add-up as #229.
 
-    AT HEAD      the SHA is the PR's current head. The only state that counts.
+The SHA resolves:
+
+    AT HEAD      the PR's current head. The only state that counts.
     STALE        a real commit, an ancestor of head, but not head.
-    FABRICATED   well-formed 40-hex, names no object in this repository.
-    MALFORMED    not 40 hex. Report separately whether it RESOLVES.
-    ELSEWHERE    a real commit that is NOT an ancestor of this head --
-                 reviewed against a pre-rebase history. Neither valid nor
-                 stale, and the state no reader here had before #204.
+    ELSEWHERE    a real commit NOT an ancestor of this head -- reviewed
+                 against a pre-rebase history. Neither valid nor stale,
+                 and the state no reader here had before #204.
+
+The SHA resolves to nothing, and then what matters is whether the REVIEW
+survives:
+
+    RECONSTRUCTED  some prefix names a commit ON THIS BRANCH. The prefix is
+                   evidence the reviewer read this PR: a correct review
+                   with a broken anchor. Recoverable, and possibly also
+                   stale -- a second axis, reported alongside.
+    MISANCHORED    some prefix names a commit NOT on this branch. What was
+                   reviewed is unknown. Not recoverable.
+    FABRICATED     no prefix resolves. Nobody read anything identifiable.
 
 **SHAPE AND LOCATION ARE INDEPENDENT QUESTIONS AND ARE ASKED INDEPENDENTLY.**
 policyforge-9b's version chained them as `if`/`elif`, so a line that failed
@@ -213,6 +228,20 @@ class Location:
     #: what. Zero and "" when no prefix resolves either.
     prefix_length: int = 0
     prefix_target: str = ""
+    #: Is the commit the prefix names ON THIS PR'S BRANCH -- not merely
+    #: equal to its current head. **The state is a property of the line
+    #: PLUS what you compare it against**, and comparing to the head makes
+    #: it drift: a line classified RECONSTRUCTED silently becomes the
+    #: serious state the moment its author pushes again, with no event,
+    #: no diff, and nothing about the line having changed.
+    #:
+    #: Measured on a real line on #230: prefix `504994f4` names
+    #: 504994f480d9, which WAS the head when the line was written and is
+    #: now an ancestor of 5938199. Head-equality called it MISANCHORED.
+    #: policyforge-80 found it by RUNNING its classifier rather than by
+    #: reviewing the spec -- the third correction to this spec, and the
+    #: only one that needed the thing to exist first.
+    prefix_on_branch: bool = False
     prefix_is_head: bool = False
 
     @property
@@ -225,9 +254,11 @@ class Location:
         # three differ in whether the REVIEW survives.
         if not self.prefix_target:
             return "FABRICATED"
-        if self.prefix_is_head:
-            # The prefix is EVIDENCE the reviewer read the right commit:
-            # a correct review with a broken anchor. Recoverable.
+        if self.prefix_on_branch:
+            # The prefix names a real commit OF THIS PR: evidence the
+            # reviewer read this branch. A correct review with a broken
+            # anchor. Recoverable -- and possibly ALSO stale, which is a
+            # second independent axis, not a replacement for this one.
             return "RECONSTRUCTED"
         # The prefix names something else, so what was read is unknown.
         # Not recoverable, and the worse of the two.
@@ -246,7 +277,12 @@ class Location:
         """
         if self.resolves or not self.prefix_target:
             return ""
-        what = "the head of this PR" if self.prefix_is_head else "a DIFFERENT commit"
+        if self.prefix_is_head:
+            what = "the head of this PR"
+        elif self.prefix_on_branch:
+            what = "an earlier commit of this PR, so the review is also STALE"
+        else:
+            what = "a commit NOT on this branch"
         return (
             f"names no commit, but its first {self.prefix_length} characters do: "
             f"{self.prefix_target[:12]} ({what}). Probably extended from an "
@@ -296,6 +332,8 @@ def location_of(sha: str, head: str) -> Location:
             ancestor_of_head=False,
             prefix_length=length,
             prefix_target=target,
+            prefix_on_branch=bool(target)
+            and _git("merge-base", "--is-ancestor", target, head).returncode == 0,
             prefix_is_head=bool(target) and target == head,
         )
     full = resolved.stdout.strip()

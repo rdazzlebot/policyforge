@@ -35,6 +35,7 @@ cosmetic reflow on Confluence's side is not read as an edit.
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -272,7 +273,15 @@ class _OldDriftResult:
     @property
     def reconcile(self) -> str:
         return (
-            f'policyforge pull --space {self.space} --title "{self.title}" '
+            # **This frozen copy moved with the live one, deliberately.**
+            # Both sides interpolated a title inside hand-written quotes,
+            # so `Vendor "Bring Your Own" Policy` produced a command naming
+            # the wrong document. The equivalence test exists to catch
+            # UNINTENDED divergence between the two implementations; a
+            # defect present in both and fixed in both is not that. The fix
+            # itself is covered by tests/test_printed_commands_run.py. #187.
+            f"policyforge pull --space {shlex.quote(self.space)} "
+            f"--title {shlex.quote(self.title)} "
             f"--tier {self.tier or 'standard'} --apply"
         )
 

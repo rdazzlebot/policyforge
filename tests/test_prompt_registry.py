@@ -149,7 +149,6 @@ def test_load_all_registers_every_prompt_it_claims_to():
 _UNGRADED = {
     "ingest/parser_codegen.py:_SYSTEM_PROMPT": "generate-parser; output is reviewed code, no suite",
     "ssp/narrative.py:_SYSTEM_PROMPT": "SSP narrative drafting; no suite",
-    "synthesis/merge.py:_SYSTEM_PROMPT": "cross-framework merge; no suite",
     "zardoz/shell.py:PROMPT": "the terminal's input prompt, never sent to a model",
 }
 

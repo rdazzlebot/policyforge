@@ -22,6 +22,7 @@ from dataclasses import dataclass
 
 from policyforge.ingest.schema import Control
 from policyforge.llm.base import LLMProvider
+from policyforge.llm.prompts import Prompt, register
 from policyforge.mapping.crosswalk import TOPIC_ANCHORS, normalize_framework
 
 
@@ -101,7 +102,11 @@ def read_synthesis(text: str) -> tuple[dict, str]:
     return dict(parsed.metadata), parsed.content
 
 
-_SYSTEM_PROMPT = """You are a compliance content synthesis engine. Merge \
+_SYSTEM_PROMPT = register(
+    Prompt(
+        name="synthesis.merge",
+        version=2,
+        text="""You are a compliance content synthesis engine. Merge \
 overlapping control requirements from multiple frameworks, for one topic, \
 into a deduplicated set of plain-English requirement statements.
 
@@ -130,7 +135,9 @@ Rules:
   citation still resolves when a second NIST-family catalog is loaded.
   Include the baseline in the tag when the source control specifies one,
   e.g. `[GovRAMP IA-5 Moderate]`.
-"""
+""",
+    )
+)
 
 
 def _render_profile_additions(item, prefix: str = "") -> list[str]:

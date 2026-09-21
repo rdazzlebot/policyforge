@@ -1280,3 +1280,24 @@ crosswalk:
   - name: authenticating-a-person-is-identification-and-authentication
     requirement: 164.312(d)
     must_map: [[IA-2, IA-8]]
+
+# The synthesis prompt (`synthesis/merge.py`), which had no suite at all
+# until #184. Cases name ANCHOR IDS rather than carrying a synthesis, so the
+# suite runs the production path -- `build_synthesis_topic` then
+# `synthesize_topic` -- and a change to either is visible here.
+#
+# The catalog set is fixed in `runner._synthesis_catalogs` and includes TWO
+# NIST-family catalogs deliberately: the prompt rule under test says to name
+# `NIST 800-53` rather than `NIST` so a citation still resolves when a second
+# NIST catalog loads. With one loaded, bare `NIST` resolves by prefix
+# uniqueness and no case here could fail.
+synthesis:
+  - name: a-merged-requirement-resolves-every-framework-it-names
+    topic: Identity Lifecycle & Access Review
+    anchors: [AC-2, AC-6]
+  - name: credentials-span-three-frameworks-and-a-baseline
+    topic: Authentication & Credential Management
+    anchors: [IA-5, IA-2]
+  - name: an-outcome-framework-still-produces-citable-requirements
+    topic: AI Governance
+    anchors: [Govern 1]

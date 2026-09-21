@@ -875,6 +875,122 @@ def run_generation(case: dict, provider, corpora: dict | None = None) -> Outcome
     return grade_text(document, case)
 
 
+_SYNTHESIS_CATALOGS: dict = {}
+
+
+def _synthesis_catalogs() -> dict:
+    """Catalogs and crosswalk for the synthesis suite, loaded once per run.
+
+    **Two NIST-family catalogs, and that is not incidental.** The prompt rule
+    under test says to name a framework as its catalog declares it — `NIST
+    800-53`, not `NIST` — *"so a citation still resolves when a second
+    NIST-family catalog is loaded"*. With one NIST catalog loaded, bare
+    `NIST` resolves by prefix uniqueness and the grader cannot fail. A suite
+    that loads one catalog would pass whatever the prompt said, which is the
+    condition #117 shipped under.
+    """
+    if not _SYNTHESIS_CATALOGS:
+        from policyforge.ingest.schema import load_controls
+        from policyforge.mapping.crosswalk import build_crosswalk
+
+        root = Path(__file__).resolve().parents[1] / "data" / "frameworks"
+        controls: list = []
+        for name in (
+            "nist-800-53-r5",
+            "nist-800-171-r3",
+            "nist-ai-rmf",
+            "hipaa-security-rule",
+            "fedramp",
+        ):
+            controls += load_controls(root / name / "controls.json")
+        _SYNTHESIS_CATALOGS.update(controls=controls, crosswalk=build_crosswalk(controls))
+    return _SYNTHESIS_CATALOGS
+
+
+def run_synthesis(case: dict, provider, corpora: dict | None = None) -> Outcome:
+    """Does the synthesis prompt produce requirements an assessor can follow?
+
+    **The prompt in `synthesis/merge.py` had no suite until this one**, which
+    is how #117 shipped verifiable only through `policyforge synthesize`
+    (#184). The anchor logic around it is well covered by
+    `tests/test_anchor_concepts.py`; what nothing graded is whether a model
+    follows the prompt's own rules.
+
+    Graded on the rules the prompt actually states, not on where a defect
+    seemed likely:
+
+    1. a markdown bullet list and nothing else — no preamble, no closing
+    2. every bullet ends in a source tag
+    3. **every framework named resolves to a loaded catalog** — the rule
+       #117 added, checked by resolution rather than by spelling
+    4. nothing cited that was not in the topic
+    5. nothing silently dropped: every source framework reaches a tag
+
+    **What it must allow, stated because a guard with no passing case is a
+    guard nobody can satisfy:** a single bullet naming two frameworks is a
+    *merge*, which the prompt asks for and this must never penalise; a
+    placeholder with no framework-defined value stays as it is; and a
+    baseline qualifier inside a tag is part of the citation, not noise.
+    """
+    from policyforge.content.tags import source_tags
+    from policyforge.mapping.crosswalk import normalize_framework
+    from policyforge.synthesis.merge import build_synthesis_topic, synthesize_topic
+    from policyforge.topics.satisfies import _catalog_index, parse_citations, resolve_framework
+
+    loaded = _synthesis_catalogs()
+    topic = build_synthesis_topic(
+        case["topic"], list(case["anchors"]), loaded["controls"], loaded["crosswalk"]
+    )
+    if not topic.controls:
+        return Outcome(False, f"no controls resolved for anchors {case['anchors']}", "")
+
+    text = synthesize_topic(topic, provider)
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    bullets = [line for line in lines if line.startswith(("-", "*"))]
+    if not bullets:
+        return Outcome(False, "produced no bullet list", text)
+    stray = [line for line in lines if not line.startswith(("-", "*"))]
+    if stray:
+        return Outcome(
+            False, f"{len(stray)} line(s) outside the bullet list: {stray[0][:60]!r}", text
+        )
+
+    untagged = [b for b in bullets if not source_tags(b)]
+    if untagged:
+        return Outcome(False, f"{len(untagged)} bullet(s) carry no source tag", text)
+
+    # Resolution, not spelling. `"NIST 800-53" in bullet` would be satisfied
+    # by the string appearing anywhere, including inside prose -- evidence
+    # that a string exists rather than that a citation resolves.
+    index = _catalog_index(loaded["controls"])
+    names = {c.framework for c in loaded["controls"]}
+    unresolved = []
+    cited_frameworks = set()
+    for framework, requirement_id, _qualifier, _section in parse_citations(text, names, index):
+        key = resolve_framework(framework, index)
+        if not key:
+            unresolved.append(f"{framework} {requirement_id}")
+        else:
+            cited_frameworks.add(key)
+    if unresolved:
+        return Outcome(
+            False,
+            f"{len(unresolved)} citation(s) name a framework that resolves to nothing: "
+            f"{unresolved[0]!r}",
+            text,
+        )
+
+    available = {normalize_framework(c.framework) for c in topic.controls}
+    missing = sorted(available - cited_frameworks)
+    if missing:
+        return Outcome(False, f"no requirement cites {missing}, which the topic supplied", text)
+
+    return Outcome(
+        True, f"{len(bullets)} requirement(s) across {len(cited_frameworks)} framework(s)", text
+    )
+
+
 _CROSSWALK_CATALOGS: dict = {}
 
 
@@ -986,6 +1102,9 @@ SUITES = {
     # the floor only: what plainly addresses the requirement is mapped, and
     # a control that merely shares its words is not.
     "crosswalk": run_crosswalk,
+    # The synthesis prompt, which had no suite at all until #184 -- which
+    # is how #117 shipped verifiable only through `policyforge synthesize`.
+    "synthesis": run_synthesis,
 }
 
 

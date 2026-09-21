@@ -88,7 +88,32 @@ jobs:
         # something CI called clean. git ls-files is the same set CI has
         # checked out, and output/ and local_content/ are gitignored, so they
         # stay excluded without naming them.
-        run: git ls-files -z '*.md' | xargs -0 mdformat --check
+        # `set -o pipefail` because GitHub's default shell is `bash -e` with
+        # pipefail OFF: measured, `false | xargs -0 mdformat --check` exits 0
+        # under `bash -e` and 1 with pipefail. Without it, `git ls-files`
+        # failing made this step pass having examined nothing.
+        #
+        # The count assertion closes the half pipefail cannot: `mdformat
+        # --check` with no paths prints "No files have been passed in" and
+        # exits 0, so a pathspec that stops matching reads as "all clean".
+        # Nothing failed, so pipefail never fires.
+        shell: bash
+        run: |
+          set -o pipefail
+          mapfile -t -d '' files < <(git ls-files -z '*.md')
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::git ls-files matched no *.md -- the pathspec stopped matching" >&2
+            exit 1
+          fi
+          echo "checking ${#files[@]} markdown file(s)"
+          mdformat --check "${files[@]}"
+
+      # In `scan-and-test` rather than the pull-request job because it reads
+      # committed files, not the diff: a workflow edited directly on main
+      # must fail here too. The finding that prompted it was in THIS file,
+      # four lines above -- see scripts/shell_status.py.
+      - name: committed shell reports real exit status
+        run: python scripts/shell_status.py
 
       - name: pytest
         run: pytest -q

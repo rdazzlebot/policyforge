@@ -1,0 +1,81 @@
+"""The pre-push gate must run every check CI requires.
+
+**The charge names `scripts/check.py` as *the* pre-push gate.** A gate that
+a required CI check can fail behind is not a gate — it is a subset someone
+has to remember is a subset, and nobody does.
+
+Observed live on #211: `check.py` reported 2,921 tests passing and every
+check green while CI was red on `changelog`.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+CI = ROOT / ".github" / "workflows" / "ci.yml"
+GATE = ROOT / "scripts" / "check.py"
+
+#: Scripts CI runs that the gate is NOT expected to run, each with a reason.
+#:
+#: **Empty on purpose.** A name here is a decision that the gate may be
+#: weaker than CI in one place, and it should cost someone an argument.
+GATE_NEED_NOT_RUN: dict[str, str] = {
+    "changelog_guard": (
+        "needs two facts that do not exist before a pull request does: "
+        "`--base origin/<base-ref>`, the branch point, and `--body-file`, the "
+        "PR body it reads an exemption from. A local pre-push run has neither. "
+        "Found by this test rather than named in #212 -- deriving the "
+        "population from ci.yml surfaced a second instance of the same class, "
+        "and this one is a genuine exception rather than an omission."
+    ),
+}
+
+
+def _ci_scripts() -> set[str]:
+    text = CI.read_text(encoding="utf-8")
+    return set(re.findall(r"python scripts/(\w+)\.py", text))
+
+
+def test_the_population_is_not_empty():
+    """Guard the population: a regex that stops matching would make every
+    assertion below vacuous and green."""
+    assert _ci_scripts(), (
+        "no `python scripts/*.py` invocation found in ci.yml — either CI "
+        "changed shape or the pattern stopped matching; check which"
+    )
+
+
+def test_the_gate_runs_every_script_ci_runs():
+    """**#212.** `changelog_fragments.py` was required by CI and absent from
+    the gate, so a fragment CI rejects passed the gate green.
+
+    Derived from `ci.yml` rather than listed here, so a script added to CI
+    later is covered without anyone remembering this file exists.
+    """
+    gate = GATE.read_text(encoding="utf-8")
+    missing = sorted(
+        name
+        for name in _ci_scripts()
+        if name not in GATE_NEED_NOT_RUN and f"scripts/{name}.py" not in gate
+    )
+    assert not missing, (
+        f"CI runs {missing} and the pre-push gate does not. A gate a required "
+        f"check can fail behind is a subset someone has to remember is a "
+        f"subset. Add it to check.py, or name it in GATE_NEED_NOT_RUN with a "
+        f"reason so the weakening is a decision."
+    )
+
+
+def test_the_fragment_check_is_not_skippable():
+    """The other skips exist because a tool may be absent — semgrep,
+    gitleaks, git. **This one is a script in this repository**, so *"it did
+    not run"* has no honest cause and must not be acknowledgeable.
+    """
+    gate = GATE.read_text(encoding="utf-8")
+    skip_block = gate[gate.index("SKIP_FLAGS") : gate.index("SKIP_FLAGS") + 400]
+    assert "changelog" not in skip_block, (
+        "the changelog-fragment check is skippable. A check whose tool ships "
+        "in this repository cannot honestly be unavailable."
+    )

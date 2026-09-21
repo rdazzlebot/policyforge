@@ -368,6 +368,19 @@ def main(argv: list[str] | None = None) -> int:
         "mdformat (markdown quality)": run(
             "mdformat --check", ["mdformat", "--check", *md_targets]
         ),
+        # **CI requires this and the gate did not run it.** Observed live on
+        # #211: this script reported 2,921 tests passing and every check
+        # green while CI was red on `changelog`. A pre-push gate that a
+        # required check can fail behind is not a gate -- it is a subset
+        # someone has to remember is a subset.
+        #
+        # Not skippable. The other four skips exist because a tool may be
+        # absent; this one is a script in this repository, so "it did not
+        # run" has no honest cause.
+        "changelog fragments (shape)": run(
+            "changelog_fragments --check",
+            [sys.executable, "scripts/changelog_fragments.py", "--check"],
+        ),
         "gitleaks (secrets scan)": check_gitleaks(),
         # Tree hygiene last: both are fast, and both catch a class the rest
         # of the gate only ever caught by accident.

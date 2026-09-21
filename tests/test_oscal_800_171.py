@@ -233,3 +233,79 @@ def test_the_framework_key_is_the_one_the_crosswalk_already_knows(parsed):
 
 def test_the_version_carries_the_published_revision(parsed):
     assert {c.framework_version for c in parsed} == {"Rev 3 (1.1.0)"}
+
+
+def test_every_declared_control_is_emitted_or_recorded_withdrawn():
+    """**External extent: emitted + withdrawn must equal declared.**
+
+    Every other assertion in this file asks whether a control is
+    well-formed. None asks whether they are all here, and a parse that
+    drops controls produces a *short* catalog rather than an error — one
+    whose every entry still matches `CONTROL_ID_RE` and whose families
+    still resolve.
+
+    The hazard is specific to this loader. A dialect mismatch does not
+    fail: reading 800-171 with 800-53's rules yields a well-formed
+    catalog whose identifiers are sentences, which is why `OscalDialect`
+    exists at all. A mismatch that *skipped* instead of mangling would be
+    invisible to everything else here.
+
+    Both sides come from the document — `_declared_controls` walks the
+    JSON knowing nothing about identifiers — so there is no count to
+    maintain.
+    """
+    from policyforge.ingest.oscal_loader import _declared_controls
+
+    catalog = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    controls, withdrawn = parse_oscal_catalog(catalog, dialect=NIST_800_171_REV3)
+    emitted = len(controls) + sum(len(c.enhancements) for c in controls)
+
+    assert emitted + withdrawn == _declared_controls(catalog["catalog"])
+
+
+def test_a_control_neither_emitted_nor_withdrawn_raises():
+    """The guard's own contract, asserted at the unit level **because no
+    current input reaches it behaviourally**.
+
+    A dialect mismatch today mangles identifiers rather than dropping
+    controls, so parsing the fixture with the wrong dialect does not
+    produce a short list. That makes this a guard against a failure mode
+    that is reachable in principle and not by any input we ship — which
+    is worth saying plainly, because "no test exercises it end to end"
+    and "it cannot happen" are different claims and only the first is
+    true.
+    """
+    from policyforge.ingest.oscal_loader import _require_every_control
+
+    catalog = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    controls, withdrawn = parse_oscal_catalog(catalog, dialect=NIST_800_171_REV3)
+
+    with pytest.raises(ValueError, match=r"unaccounted for"):
+        _require_every_control(catalog["catalog"], controls[:-1], withdrawn)
+
+    # And it must ALLOW the real parse, or it is refusing everything.
+    _require_every_control(catalog["catalog"], controls, withdrawn)
+
+
+def test_the_extent_guard_is_actually_called(monkeypatch):
+    """**A correct guard nobody calls is not a guard.**
+
+    `test_a_control_neither_emitted_nor_withdrawn_raises` proves the
+    contract and passes with the call site deleted — found by removing
+    each of the four new guards in turn and recording which test
+    noticed. Two noticed nothing, both for this reason.
+    """
+    from policyforge.ingest import oscal_loader
+
+    called: list[int] = []
+    real = oscal_loader._require_every_control
+
+    def spy(catalog, controls, withdrawn):
+        called.append(withdrawn)
+        return real(catalog, controls, withdrawn)
+
+    monkeypatch.setattr(oscal_loader, "_require_every_control", spy)
+    catalog = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    oscal_loader.parse_oscal_catalog(catalog, dialect=NIST_800_171_REV3)
+
+    assert called, "parse_oscal_catalog returned without checking extent"

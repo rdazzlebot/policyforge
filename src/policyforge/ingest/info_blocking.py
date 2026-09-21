@@ -216,14 +216,19 @@ def parse_information_blocking(xml_text: str) -> list[Control]:
     One Control per section that carries obligations, each with its
     lettered conditions as enhancements. Reserved and definitions sections
     are dropped; see the module docstring for why each.
+
+    **Every section the document contains is accounted for**, either as a
+    control or as a named exclusion — see `_require_every_section`.
     """
     root = ET.fromstring(xml_text)  # nosec B314 — see the import.
     controls: list[Control] = []
+    unaccounted: list[str] = []
 
     for section in root.iter("DIV8"):
         head = _text(section.find("HEAD")) if section.find("HEAD") is not None else ""
         number = _section_number(head) or (section.get("N") or "")
         if not SECTION_ID_RE.match(number):
+            unaccounted.append(number or "<no number>")
             continue
         if _RESERVED_RE.search(head):
             continue
@@ -275,8 +280,44 @@ def parse_information_blocking(xml_text: str) -> list[Control]:
         controls.append(control)
 
     _drop_reserved_enhancements(controls)
+    _require_every_section(unaccounted)
 
     return controls
+
+
+def _require_every_section(unaccounted: list[str]) -> None:
+    """Refuse a parse that silently skipped a section the document has.
+
+    **This asks the document, not a constant.** `unaccounted` holds every
+    section-level node eCFR emitted that `SECTION_ID_RE` did not
+    recognise, so the comparison tests the pattern against the source
+    rather than against a number someone typed. A hand-written expected
+    count is correct on the day it is written and unverifiable
+    afterwards; both sides of this one come from the document being
+    parsed, so it cannot go stale.
+
+    `part2_loader._require_sections` is the same check with a different
+    anchor, and its docstring carries the longer argument.
+
+    **The failure it guards does not raise on its own.** A pattern that
+    stops matching — eCFR renumbers, a subpart gains a prefix — yields a
+    *smaller* catalog, not an error, and a smaller catalog passes every
+    check that asks whether its entries are well-formed. Every count the
+    README states would still be internally consistent. That is the shape
+    that cost this project twelve fabricated ONC criteria, one catalog
+    over.
+
+    Reserved and definitions sections are **not** unaccounted: they are
+    recognised and then excluded on purpose, which is the distinction
+    between a decision and an omission.
+    """
+    if unaccounted:
+        raise ValueError(
+            f"{len(unaccounted)} section-level node(s) in the document were not "
+            f"recognised as sections: {unaccounted}. Either eCFR changed how it "
+            f"numbers Part 171, or SECTION_ID_RE no longer matches it — and the "
+            f"catalog that would have been returned is smaller than the part."
+        )
 
 
 def _drop_reserved_enhancements(controls: list[Control]) -> None:

@@ -43,6 +43,45 @@ def by_id(controls):
     return {c.control_id: c for c in controls}
 
 
+def test_a_section_the_pattern_no_longer_recognises_raises(controls):
+    """**External extent, which every other check here is blind to.**
+
+    The tests around this one ask whether the entries are well-formed.
+    None of them asks *how many there should be*, and those are different
+    questions — a pattern that stops matching yields a smaller catalog,
+    not an error, and a smaller catalog is internally consistent in every
+    way a reader or a test can see.
+
+    This is the general form of what cost the ONC catalog twelve
+    fabricated criteria: the loader asserted hard about the shape of what
+    it found and nothing at all about whether it had found everything.
+
+    Asked against the **document** rather than against a count. eCFR
+    emits a node per section, so renumbering the part leaves those nodes
+    in place and unrecognised — which is exactly the signal. A
+    hand-written expected total would have to be maintained and could
+    only ever be checked against itself.
+    """
+    xml = FIXTURE.read_text(encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"not recognised as sections"):
+        parse_information_blocking(xml.replace("171.", "171A."))
+
+    # And the unmutated fixture must still parse, or the guard is just
+    # refusing everything — a pinned extent is one typo from that.
+    assert controls
+
+
+def test_reserved_and_definitions_are_excluded_not_unaccounted(by_id):
+    """A recognised section that is deliberately dropped must not trip the
+    extent check. The distinction the guard exists to preserve is between
+    a **decision** and an **omission**, and a guard that cannot tell them
+    apart forces the next person to delete it."""
+    assert "171.402" not in by_id, "reserved, recognised and excluded"
+    assert "171.102" not in by_id, "definitions, recognised and excluded"
+    assert "171.201" in by_id
+
+
 def test_reserved_sections_are_absent(by_id):
     """`171.402` is `[Reserved]`, and absence is the whole assertion.
 

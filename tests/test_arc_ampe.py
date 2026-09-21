@@ -383,6 +383,68 @@ def test_only_rows_with_content_count_as_skipped(workbook):
     assert summary.rows_skipped == 1
 
 
+def test_every_row_with_content_is_read_or_reported(workbook):
+    """**External extent: rows read plus rows skipped equals rows with
+    content.** Every other test here asks whether an entry is right; this
+    is the only one asking whether they are all here.
+
+    The failure it guards has already happened to this loader once — a
+    caption-matched header selecting the `Instructional Guidance` decoy
+    produces a plausible three-control catalog rather than an error. That
+    case is caught by name; this catches the general form, including a
+    row scan that stops early or a column that moves.
+    """
+    controls, summary = arc_ampe.parse_arc_ampe(workbook)
+    consumed = len(controls) + sum(len(c.enhancements) for c in controls)
+
+    # Not an equality against `consumed`: a control stated only as an
+    # enhancement gets a parent synthesised, and that parent has no row.
+    assert summary.rows_skipped == 1
+    assert consumed >= 1
+
+
+def test_a_row_that_is_neither_read_nor_reported_raises():
+    """The guard's contract, asserted directly.
+
+    **The first version of this check compared emitted items against
+    rows** and reconciled exactly against CMS's published workbook —
+    where every parent happens to have its own row. It broke six tests
+    built on sheets where one does not. A relationship that holds on the
+    shipped corpus and not in general is precisely what real data cannot
+    tell you is wrong, so the check counts rows and the test says so.
+    """
+    summary = arc_ampe.Summary()
+    summary.rows_skipped = 2
+
+    with pytest.raises(ValueError, match=r"unaccounted for"):
+        arc_ampe._require_every_row(summary, consumed=5, with_content=9)
+
+    # And it must ALLOW a sheet that reconciles, or it refuses everything.
+    arc_ampe._require_every_row(summary, consumed=7, with_content=9)
+
+
+def test_the_extent_guard_is_actually_called(workbook, monkeypatch):
+    """**A correct guard nobody calls is not a guard.**
+
+    The test above proves the contract; it passes with the call site
+    deleted. I found that by deleting each call in turn and recording
+    which test noticed — two of four noticed nothing, and this pair is
+    why. "The function is right" and "the function runs" are different
+    claims and a unit test only makes the first.
+    """
+    called: list[tuple[int, int]] = []
+    real = arc_ampe._require_every_row
+
+    def spy(summary, *, consumed, with_content):
+        called.append((consumed, with_content))
+        return real(summary, consumed=consumed, with_content=with_content)
+
+    monkeypatch.setattr(arc_ampe, "_require_every_row", spy)
+    arc_ampe.parse_arc_ampe(workbook)
+
+    assert called, "parse_arc_ampe returned without checking extent"
+
+
 def test_scanning_for_the_header_does_not_extend_the_sheet(workbook):
     """openpyxl materializes rows read past a writable sheet's last one.
 

@@ -30,6 +30,7 @@ never touch a command line or `.git/config` — see `_wiki_auth.py`.
 from __future__ import annotations
 
 import re
+import shlex
 import subprocess  # nosec B404 - argv only, never shell=True
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -375,9 +376,15 @@ class GitHubWikiPublisher(Publisher):
         return list(self._notes)
 
     def reconcile_command(self, doc) -> str:
+        # **Quoted with `shlex.quote`, because this line is printed for a
+        # person to copy.** A document title is user-authored prose: the
+        # title `Vendor "Bring Your Own" Policy` inside a hand-written
+        # `"..."` produces `--title "Vendor Bring"`, which is a valid
+        # command naming the wrong document, silently. #187.
         return (
-            f'policyforge pull --target {CLI_TARGET} --title "{self.title(doc)}" '
-            f"--tier {doc.tier or 'standard'} --apply"
+            f"policyforge pull --target {CLI_TARGET} "
+            f"--title {shlex.quote(self.title(doc))} "
+            f"--tier {shlex.quote(doc.tier or 'standard')} --apply"
         )
 
     # -- links -------------------------------------------------------------

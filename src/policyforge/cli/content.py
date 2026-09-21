@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
 import click
@@ -855,7 +856,8 @@ def import_confluence_cmd(
     elif previous:
         click.echo(
             f"Differs from the last recorded version (v{previous[-1].version}) — recorded as "
-            f"{slug!r} v{record.version}. Run `policyforge history --tier {tier} --name {name} "
+            f"{slug!r} v{record.version}. Run `policyforge history "
+            f"--tier {shlex.quote(tier)} --name {shlex.quote(name)} "
             f"--diff {previous[-1].version}:{record.version}` to see what changed."
         )
     else:

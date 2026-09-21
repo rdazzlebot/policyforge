@@ -267,9 +267,13 @@ Each cost real time. They are here because the failure recurs.
   real one by full path: `"C:\Program Files\GitHub CLI\gh.exe"`.
 - **`git describe` in the shared clone lies** — it sits on an old branch. Use
   `git tag --sort=-v:refname | head -1`.
-- **A squash merge leaves no ancestry.** `git branch --merged` and
-  `git merge-base --is-ancestor` both report a good merge as unmerged. Verify
-  by content: `git diff --stat <reviewed-sha> origin/main -- <files>`.
+- **A squash merge leaves the BRANCH HEAD with no ancestry** — `git branch
+  --merged` and `--is-ancestor` both report a good merge as unmerged when given
+  the branch tip. **Use the PR's merge commit instead**, which is a real
+  ancestor: `gh pr view <N> --json mergeCommit --jq .mergeCommit.oid`, then
+  `--is-ancestor <that sha> origin/main`. Then diff the branch head against that
+  commit to confirm the content survived. **Ancestry proof and content proof are
+  both cheap; neither alone is complete.**
 - **Verify prompt changes against real model output, not fakes.** A fake
   written from the same source as the code it tests agrees with it perfectly
   and both disagree with the world.

@@ -26,30 +26,71 @@ import review_lines  # noqa: E402
 
 
 def _git(*args: str) -> str:
+    """Run git and **fail on a non-zero exit**.
+
+    The first version of this returned `result.stdout.strip()` and dropped
+    the status, which is the `cmd | tail` defect in the test file for the
+    tool that adjudicates verdicts, on the same branch as the lint for that
+    exact shape.
+
+    It was not theoretical. On CI's shallow checkout `git rev-parse HEAD~3`
+    **exits 128 and prints `HEAD~3` to stdout**, so the fixture's
+    `assert head and ancestor and orphan` passed on a truthy error string
+    and the failure surfaced three lines later as *"this clone has no
+    history"* — a message that blamed the wrong thing and cost a reproduction
+    to disbelieve. Found by policyforge-9b.
+    """
     result = subprocess.run(["git", *args], capture_output=True, text=True, cwd=ROOT)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"git {' '.join(args)} exited {result.returncode}: "
+            f"{(result.stderr or result.stdout).strip()}"
+        )
     return result.stdout.strip()
+
+
+#: `commit-tree` refuses without an identity, and `actions/checkout` sets
+#: none — the second, independent reason this fixture failed in CI while
+#: passing everywhere else. Two unrelated environment facts, one identical
+#: symptom, which is why the old assertion blamed neither correctly.
+_IDENTITY = ("-c", "user.name=policyforge-test", "-c", "user.email=test@invalid")
 
 
 @pytest.fixture(scope="module")
 def commits() -> dict[str, str]:
-    """Real objects from this clone: a head, an ancestor, and an orphan.
+    """A head, an ancestor of it, and a commit that is an ancestor of nothing.
 
-    The orphan is a commit that exists and is **not** an ancestor of the
-    head — which is what `ELSEWHERE` means and cannot be faked with a
-    random hex string, because that is `FABRICATED` instead.
+    **Built entirely with `commit-tree`, so it needs no clone history.** The
+    first version read `HEAD` and `HEAD~3` from the repository, which works
+    on a developer's clone and fails on CI's depth-1 checkout — the rule
+    about running it somewhere other than where it was written, arriving in
+    a test file about instruments that answer a different question than the
+    one asked.
+
+    Real objects rather than mocks, still: a mocked SHA cannot be an
+    ancestor of anything, so it cannot distinguish `ELSEWHERE` from
+    `FABRICATED`, which is the whole distinction being tested.
     """
-    head = _git("rev-parse", "HEAD")
-    ancestor = _git("rev-parse", "HEAD~3")
-    # A commit on a branch this head does not contain. Written as a real
-    # object so `rev-parse` resolves it and `--is-ancestor` refuses it.
-    orphan = _git("commit-tree", _git("rev-parse", "HEAD^{tree}"), "-p", ancestor, "-m", "orphan")
-    assert head and ancestor and orphan, "this clone has no history to test against"
+    tree = _git("rev-parse", "HEAD^{tree}")
+    ancestor = _git(*_IDENTITY, "commit-tree", tree, "-m", "base")
+    head = _git(*_IDENTITY, "commit-tree", tree, "-p", ancestor, "-m", "child")
+    # No `-p` at all: a real object that is an ancestor of nothing, which is
+    # exactly ELSEWHERE. policyforge-9b's construction.
+    orphan = _git(*_IDENTITY, "commit-tree", tree, "-m", "orphan")
+
+    assert len({ancestor, head, orphan}) == 3, "the three commits must be distinct"
     assert (
         subprocess.run(
             ["git", "merge-base", "--is-ancestor", orphan, head], cwd=ROOT, capture_output=True
         ).returncode
         != 0
     ), "the constructed orphan IS an ancestor; the fixture is not testing ELSEWHERE"
+    assert (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", ancestor, head], cwd=ROOT, capture_output=True
+        ).returncode
+        == 0
+    ), "the constructed ancestor is NOT one; the fixture is not testing STALE"
     return {"head": head, "ancestor": ancestor, "orphan": orphan}
 
 

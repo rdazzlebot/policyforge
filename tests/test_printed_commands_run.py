@@ -152,33 +152,79 @@ _INTERPOLATED = (
 )
 
 
+def _publishers():
+    """Every concrete `Publisher`, derived rather than listed.
+
+    **The population is the point.** The first version of the test below
+    named `ConfluencePublisher` and covered one of the three sites this
+    PR quotes; reverting `shlex.quote` in `github_wiki.py` left the suite
+    green. A fourth publisher must be covered by existing, not by
+    somebody remembering to add a case.
+    """
+    import policyforge.export.github_wiki  # noqa: F401  — registers the subclass
+    from policyforge.export.publisher import Publisher
+
+    return sorted(Publisher.__subclasses__(), key=lambda c: c.__name__)
+
+
+@pytest.mark.parametrize("publisher", _publishers(), ids=lambda c: c.__name__)
 @pytest.mark.parametrize("title", _INTERPOLATED)
-def test_a_reconcile_command_survives_a_hostile_title(title: str):
+def test_a_reconcile_command_survives_a_hostile_title(publisher, title: str):
     """**The defect: a document title is user-authored prose.**
 
     `--title "Vendor "Bring Your Own" Policy"` parses as
     `--title "Vendor Bring"` — a valid command naming the wrong document,
     with nothing to indicate it went wrong. Titles containing quotes are
     not exotic; a policy set has them.
+
+    **Across every publisher, because the guard that shipped with the fix
+    covered only the site being fixed.** policyforge-80 reverted each
+    `shlex.quote` in turn, confirming each edit landed, and found
+    `publisher.py` caught and `github_wiki.py` not — a guard written
+    while fixing one case covering only that case, in the PR closing the
+    issue about exactly that.
     """
-    from policyforge.export.publisher import ConfluencePublisher
 
     class _Doc:
         space = "SEC"
         page_title = title
         tier = "standard"
 
-    # **`ConfluencePublisher`, not `Publisher`.** The first version called
-    # the abstract base, whose `reconcile_command` is a stub returning
-    # `None` -- so the test exercised nothing and failed on `shlex.split`
-    # with "s argument must not be None" rather than on the quoting it
-    # was written to check. It would have passed just as readily against
-    # a broken implementation. Called unbound because the method touches
-    # only `doc`.
-    printed = ConfluencePublisher.reconcile_command(None, _Doc())
+    class _Self:
+        """Enough of a publisher for `reconcile_command`.
+
+        `ConfluencePublisher` reads only `doc`; `GitHubWikiPublisher`
+        calls `self.title(doc)`. Called unbound with this stub so the
+        test needs no network config and no constructor arguments.
+        """
+
+        def title(self, doc):
+            return doc.page_title
+
+    printed = publisher.reconcile_command(_Self(), _Doc())
     parsed = shlex.split(printed)
     assert parsed[parsed.index("--title") + 1] == title, (
-        f"the printed command does not round-trip {title!r}: {printed}"
+        f"{publisher.__name__} does not round-trip {title!r}: {printed}"
+    )
+
+
+@pytest.mark.parametrize("name", _INTERPOLATED)
+def test_the_history_command_survives_a_hostile_document_name(name: str):
+    """The third quoting site, and the one that is not a publisher.
+
+    `cli/content.py` prints a `history` invocation naming a document.
+    Reverting its `shlex.quote` also left the suite green, because the
+    test above reaches publishers and this is a `click.echo` in a CLI
+    function — a different shape, so the derived population cannot
+    include it and it gets its own case, stated rather than assumed.
+    """
+    from policyforge.cli import content
+
+    printed = content.history_hint(tier="standard", name=name, previous="v1", current="v2")
+    parsed = shlex.split(printed)
+
+    assert parsed[parsed.index("--name") + 1] == name, (
+        f"the history hint does not round-trip {name!r}: {printed}"
     )
 
 

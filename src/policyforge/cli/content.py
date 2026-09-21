@@ -20,6 +20,26 @@ from policyforge.cli._common import (
 from policyforge.textfile import write_text_lf
 
 
+def history_hint(*, tier: str, name: str, previous: str, current: str) -> str:
+    """The `history` invocation that shows what changed, as printed.
+
+    **Extracted so the quoting is reachable from a test.** It was inline
+    in a `click.echo`, and reverting its `shlex.quote` left the suite
+    green -- the site was covered by neither the publisher test, which
+    reaches publishers, nor the source-level scan, whose population is
+    backtick-quoted strings.
+
+    A document name is user-authored: `Ryan's Access Policy` inside
+    hand-written quotes produces a valid command naming a different
+    document, silently. Same defect as a page title, different caller.
+    """
+    return (
+        f"Run `policyforge history "
+        f"--tier {shlex.quote(tier)} --name {shlex.quote(name)} "
+        f"--diff {previous}:{current}` to see what changed."
+    )
+
+
 @cli.command("export-confluence")
 @click.option(
     "--doc",
@@ -856,9 +876,13 @@ def import_confluence_cmd(
     elif previous:
         click.echo(
             f"Differs from the last recorded version (v{previous[-1].version}) — recorded as "
-            f"{slug!r} v{record.version}. Run `policyforge history "
-            f"--tier {shlex.quote(tier)} --name {shlex.quote(name)} "
-            f"--diff {previous[-1].version}:{record.version}` to see what changed."
+            f"{slug!r} v{record.version}. "
+            + history_hint(
+                tier=tier,
+                name=name,
+                previous=previous[-1].version,
+                current=record.version,
+            )
         )
     else:
         click.echo(f"Recorded as {slug!r} v{record.version} (first version in this stream).")

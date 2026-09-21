@@ -481,7 +481,11 @@ def _main(argv: list[str] | None = None) -> int:
 def summarise(results: dict[str, bool | None], allow_skip: set[str]) -> int:
     """Print the summary and return the exit code.
 
-    **A gate with no checks is not a passing gate.** `summarise({}, set())`
+    Separate from `main` so the exit rule can be tested without installing
+    or uninstalling tools. The rule it encodes: **a check that did not run
+    is not a check that passed.**
+
+    **And a gate with no checks is not a passing gate.** `summarise({}, set())`
     returned 0 and printed `0 ran, 0 failed, 0 skipped` -- the same failure
     this file's `derived()` guard exists to refuse, one level up, in the
     function that produces the answer everyone conditions their push on.
@@ -500,13 +504,6 @@ def summarise(results: dict[str, bool | None], allow_skip: set[str]) -> int:
             file=sys.stderr,
         )
         return 2
-
-    """Print the summary and return the exit code.
-
-    Separate from `main` so the exit rule can be tested without installing
-    or uninstalling tools. The rule it encodes: a check that did not run is
-    not a check that passed.
-    """
     # A check that declined to run but has no --allow-skip name would
     # fall out of the accounting below and be reported as a pass. Stop
     # instead: the failure mode this whole change exists to remove is

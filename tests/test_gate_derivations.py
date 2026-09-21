@@ -224,3 +224,38 @@ def test_no_assertion_in_the_gate_restates_its_own_construction():
     """
     source = GATE.read_text(encoding="utf-8")
     assert "assert len(corpus) == tracked + others" not in source
+
+
+def test_no_function_here_has_an_orphaned_docstring_block():
+    """**A no-op string expression that reads as documentation.**
+
+    Inserting a docstring above an existing one leaves the original as a
+    bare string expression in the body: still there when you read the file,
+    gone from `__doc__`, from `help()` and from any doc build. `ruff` does
+    not flag it — measured.
+
+    It happened in this very PR. `summarise` ended with two triple-quoted
+    blocks and the sentence *a check that did not run is not a check that
+    passed* — the rule the function encodes — left the API silently.
+    Found by policyforge-ba, who blocked on it for the right reason: **a
+    no-op line that reads as documentation, in the change whose subject is
+    a no-op line that reads as a check.**
+    """
+    tree = ast.parse(GATE.read_text(encoding="utf-8"))
+    orphans = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Module)):
+            continue
+        for index, statement in enumerate(node.body):
+            is_string = (
+                isinstance(statement, ast.Expr)
+                and isinstance(statement.value, ast.Constant)
+                and isinstance(statement.value.value, str)
+            )
+            if is_string and index > 0:
+                name = getattr(node, "name", "<module>")
+                orphans.append(f"{name} line {statement.lineno}")
+    assert not orphans, (
+        f"string expressions that are not docstrings and reach nobody: {orphans}. "
+        f"Merge them into the real docstring above, or delete them."
+    )

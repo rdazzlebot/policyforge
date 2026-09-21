@@ -214,3 +214,101 @@ def test_each_step_failure_stops_the_run():
         "steps joined with `;` would report the status of the last one, so a "
         "failed install followed by a successful command reads as success"
     )
+
+
+def _code_of(func) -> str:
+    """A function's executable source, with the docstring removed.
+
+    **Both tests below failed on their own explanation first.** They read
+    `inspect.getsource`, which includes the docstring — and the docstring
+    names the very strings they assert are absent, because it explains why
+    those strings are not used.
+
+    A rule that penalises its own reasoning loses to the reasoning being
+    deleted. That is the third instance of this shape today and the second
+    written by the same hand, which is why it is a helper rather than a
+    care-taken-once.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+    body = tree.body[0].body
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+        body = body[1:]
+    return "\n".join(ast.unparse(node) for node in body)
+
+
+def test_a_container_that_cannot_start_is_not_an_install_failure():
+    """**policyforge-ba's finding.** A bad image returns docker's own 125,
+    and the first version reported `ran=True` — so the caller printed *"the
+    published formula did not install in a clean container"* about a
+    container the formula never reached.
+
+    Worse, `--allow-skip install` is consulted only on the `not ran`
+    branch, so an operator whose daemon is down or who is offline was told
+    their formula was broken **with no way to acknowledge it.**
+    """
+    import release_check
+
+    ran, lines = release_check.run_install_check(image="this-image-does-not-exist-xyz")
+
+    assert ran is False, (
+        "docker failing to start the container is not the formula failing to "
+        "install; sending it down the failed branch states something false"
+    )
+    assert any("could not start" in line for line in lines)
+
+
+def test_the_probe_is_what_separates_did_not_run_from_failed():
+    """**Why a probe rather than an exit-code allowlist.**
+
+    The suggested remedy was to treat 125, 126 and 127 as did-not-run.
+    That masks a real failure: **127 is also what
+    `policyforge: command not found` gives inside the container after a
+    broken install** — precisely what assertion 4 exists to catch.
+
+    Probing makes *did not run* a fact about docker, and leaves the real
+    run's exit status unambiguously about what happened inside.
+    """
+    from release_check import run_install_check
+
+    code = _code_of(run_install_check)
+    assert '"true"' in code or "'true'" in code, (
+        "no probe run: did-not-run is being inferred from an exit status"
+    )
+    for masking in ("125", "126", "127"):
+        assert masking not in code, (
+            f"{masking} is treated as did-not-run in code. Inside the container "
+            f"it can mean the install produced no working CLI, which is the "
+            f"failure this check is for."
+        )
+
+
+def test_the_docstring_describes_the_mechanism_the_code_uses():
+    """It claimed each step was a separate `docker run`, two lines above
+    code joining them into one with `&&`.
+
+    Both propagate correctly, so nothing misbehaved — but this is the file
+    whose header records a harness reporting success because the last
+    command was `tail`. **A false claim about exit-status mechanics belongs
+    here least of anywhere.**
+
+    Asserted as a positive claim rather than the absence of a phrase: the
+    docstring now recounts the old wording while correcting it, so *"this
+    phrase must not appear"* would fail on the correction itself.
+    """
+    import inspect
+
+    from release_check import run_install_check
+
+    doc = inspect.getdoc(run_install_check) or ""
+    assert "ONE container" in doc, "the docstring no longer states the mechanism used"
+    # Quote-agnostic: `ast.unparse` normalises `" && "` to `' && '`, so
+    # matching the source spelling fails against the reconstructed code.
+    # The assertion is about the join, not about which quote was typed.
+    code = _code_of(run_install_check)
+    assert " && " in code and ".join" in code, (
+        "the code no longer joins the steps, so the docstring is wrong again"
+    )

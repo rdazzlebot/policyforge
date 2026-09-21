@@ -197,11 +197,32 @@ def run_install_check(image: str = CONTAINER_IMAGE) -> tuple[bool, list[str]]:
     into it. The caller turns *did not run* into a failure unless the
     operator said otherwise; it does not turn it into a pass.
 
-    Each step is a separate `docker run`, so each exit status is its own.
-    Chaining them into one shell would return the status of the LAST
-    command, which is the defect this file's header already records: a
-    Homebrew build failed while its harness reported success because the
-    final command in the sequence was `tail`.
+    The steps run in ONE container, joined with `&&`, so the first failure
+    stops the run and its status propagates. `;` would not -- that is the
+    `cmd; echo; tail` shape this file's header records, where a Homebrew
+    build failed while its harness reported success because the last
+    command was `tail`.
+
+    **This docstring said the opposite until policyforge-ba read it.** It
+    claimed each step was a separate `docker run`, two lines above code
+    joining them into one. Both mechanisms propagate correctly so nothing
+    misbehaved -- but a false claim about exit-status mechanics, in the
+    file whose header is about exit-status mechanics, is the worst place
+    to leave one.
+
+    **Whether the container could start is established by a probe rather
+    than inferred from the run's exit status.** ba found that a bad image
+    returns docker's own 125 and this function reported `ran=True`, so the
+    caller printed "the published formula did not install" about a
+    container the formula never reached -- and `--allow-skip` could not
+    help, because it is only consulted on the `not ran` branch.
+
+    Probing rather than treating 125/126/127 as did-not-run, which was the
+    suggested remedy: **127 is also what `policyforge: command not found`
+    gives inside a container after a genuinely broken install**, so that
+    rule would mask the failure this check exists to find. The probe makes
+    "did not run" a fact about docker and leaves the real exit status
+    unambiguously about what happened inside.
     """
     import shutil
     import subprocess
@@ -209,6 +230,19 @@ def run_install_check(image: str = CONTAINER_IMAGE) -> tuple[bool, list[str]]:
     lines: list[str] = []
     if shutil.which("docker") is None:
         return False, ["docker is not on PATH"]
+
+    # Can docker start this image at all? Cheap, and it is the only way to
+    # tell "the container never ran" from "the install failed", because
+    # some exit codes are produced by both.
+    probe = subprocess.run(
+        ["docker", "run", "--rm", image, "true"],
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    if probe.returncode != 0:
+        detail = (probe.stderr or probe.stdout).strip().splitlines()[-1:] or ["no output"]
+        return False, [f"could not start {image}: {detail[0]}"]
 
     script = " && ".join(command for _, command in INSTALL_STEPS)
     # One container, but the steps are joined with `&&` so the FIRST

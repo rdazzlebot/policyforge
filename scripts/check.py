@@ -67,6 +67,49 @@ SKIP_FLAGS = {
 }
 
 
+class EmptyDerivation(RuntimeError):
+    """A check derived the set of things it examines, and got nothing.
+
+    **Raised rather than returned, because the alternative is PASS.** Every
+    tool this gate drives treats "no input" as success — `mdformat --check`
+    with no paths prints *"No files have been passed in. Doing nothing."*
+    and exits 0, and `run()` reports `returncode == 0` as a pass. So a
+    derivation that stops matching is indistinguishable in the summary from
+    a clean tree, and the exit code the charge tells everyone to condition
+    their push on is 0.
+
+    **Guarding the class, not the instance.** #224 named the markdown
+    population. There are three here — markdown targets from `rglob`,
+    tracked files from `ls-files --eol`, and the conflict-marker scan — and
+    all three had the same property. A guard written for the one that was
+    reported covers the one that was reported; the other two were found by
+    asking what else in this file derives a population and then believes a
+    clean result over it.
+
+    Deliberately NOT the same mechanism as a SKIP. A skip says a tool was
+    absent and is acknowledgeable with `--allow-skip`. This says the tool
+    ran and examined nothing, which is never acceptable and must not be
+    silenceable by the same flag.
+    """
+
+
+def derived(label: str, items: list, what: str) -> list:
+    """Return `items`, or refuse if the derivation produced nothing.
+
+    `what` names the thing that should have been found, in the reader's
+    terms, because the failure is always somebody's pathspec and the
+    message has to point at it.
+    """
+    if not items:
+        raise EmptyDerivation(
+            f"{label}: derived ZERO {what}.\n"
+            f"  That is a broken derivation, not a clean tree -- every tool\n"
+            f"  here treats no input as success, so this would otherwise\n"
+            f"  report PASS having examined nothing."
+        )
+    return items
+
+
 def run(label: str, cmd: list[str]) -> bool:
     print(f"\n{'=' * 60}\n{label}\n{'=' * 60}")
     result = subprocess.run(cmd, cwd=REPO_ROOT)
@@ -211,7 +254,11 @@ def check_line_endings(root: Path | None = None) -> bool | None:
         print(f"SKIPPED — `git ls-files --eol` failed:\n{result.stderr.strip()}")
         return None
 
-    rows = [line for line in result.stdout.splitlines() if line.strip()]
+    rows = derived(
+        label,
+        [line for line in result.stdout.splitlines() if line.strip()],
+        "tracked files -- `git ls-files --eol` returned nothing",
+    )
     offenders = [line for line in rows if line.split()[0] in {"i/crlf", "i/mixed"}]
     print(f"{len(rows)} tracked files examined, {len(offenders)} carrying CRLF in the index")
     for line in offenders:
@@ -260,18 +307,31 @@ def check_conflict_markers(root: Path | None = None) -> bool | None:
         return None
 
     hits = [line for line in result.stdout.splitlines() if line.strip()]
-    tracked = len(
-        [line for line in _git("ls-files", root=root).stdout.splitlines() if line.strip()]
+
+    # The corpus is built as a list and guarded, rather than counted twice:
+    # `tracked` and `others` are the numbers the message prints, and the
+    # thing that must not be empty is what was actually scanned.
+    tracked_files = [
+        line for line in _git("ls-files", root=root).stdout.splitlines() if line.strip()
+    ]
+    other_files = [
+        line
+        for line in _git(
+            "ls-files", "--others", "--exclude-standard", root=root
+        ).stdout.splitlines()
+        if line.strip()
+    ]
+    # Guarded as one corpus: what must not be empty is what was scanned.
+    # `tracked` and `others` below are measurements OF this list, so they
+    # cannot disagree with it -- the earlier version called `ls-files`
+    # twice and counted one of them separately.
+    corpus = derived(
+        label,
+        tracked_files + other_files,
+        "files to scan -- `git ls-files` returned no corpus",
     )
-    others = len(
-        [
-            line
-            for line in _git(
-                "ls-files", "--others", "--exclude-standard", root=root
-            ).stdout.splitlines()
-            if line.strip()
-        ]
-    )
+    tracked, others = len(tracked_files), len(other_files)
+    assert len(corpus) == tracked + others
     print(
         f"{tracked} tracked + {others} untracked files scanned, "
         f"{len(hits)} conflict marker(s) found"
@@ -315,6 +375,18 @@ def parse_allow_skip(argv: list[str] | None) -> set[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except EmptyDerivation as exc:
+        # Caught here so the reader gets a gate result rather than a
+        # traceback, and so the exit code is a deliberate 2 -- distinct
+        # from 1 (a check failed) because nothing was actually checked.
+        rule = "=" * 60
+        print(f"\n{rule}\nBROKEN DERIVATION\n{rule}\n{exc}", file=sys.stderr)
+        return 2
+
+
+def _main(argv: list[str] | None = None) -> int:
     allow_skip = parse_allow_skip(argv)
 
     # Before anything runs: the `policyforge` every check below would import
@@ -333,13 +405,17 @@ def main(argv: list[str] | None = None) -> int:
     # script and that hook can't disagree about what "formatted" means. Only
     # output/ is excluded — it holds generated drafts, which are checked by
     # `check_markdown_quality` at generation time instead.
-    md_targets = sorted(
-        str(p)
-        for p in REPO_ROOT.rglob("*.md")
-        if not any(
-            part in {".venv", ".tools", "output", "local_content", ".git", ".pytest_cache"}
-            for part in p.relative_to(REPO_ROOT).parts
-        )
+    md_targets = derived(
+        "mdformat (markdown quality)",
+        sorted(
+            str(p)
+            for p in REPO_ROOT.rglob("*.md")
+            if not any(
+                part in {".venv", ".tools", "output", "local_content", ".git", ".pytest_cache"}
+                for part in p.relative_to(REPO_ROOT).parts
+            )
+        ),
+        "markdown files -- the rglob or the exclusion set stopped matching",
     )
 
     lint_targets = ["src", "tests", "scripts"]

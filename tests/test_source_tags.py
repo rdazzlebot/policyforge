@@ -226,3 +226,41 @@ def test_deontic_counts_a_sentence_with_a_bare_arc_tag_as_cited():
         (True, "Visitors must sign in."),
         (False, "Visitors may bring guests."),
     ]
+
+
+#: Square-bracket placeholders taken from the generated Standards in
+#: `docs/probes/`. A template writes these where an organisation fills in
+#: its own value, and they sit inside binding sentences next to real
+#: citations.
+TEMPLATE_PLACEHOLDERS = [
+    "[AI Governance Owner]",
+    "[Asset Inventory System]",
+    "[Ticketing System]",
+    "[Review Frequency]",
+    "[Organization Name]",
+    "[AIRC]",
+    "[Date]",
+]
+
+
+@pytest.mark.parametrize("placeholder", TEMPLATE_PLACEHOLDERS)
+def test_a_template_placeholder_is_not_a_source_tag(placeholder: str):
+    """**A placeholder read as a citation would anchor a sentence to
+    nothing, silently.**
+
+    These look exactly like tags — square brackets, capitalised words,
+    sitting inside a binding sentence — and `[Review Frequency]` has the
+    same two-token shape as a framework name followed by an identifier.
+
+    The consequence if one matched is in the direction that looks clean:
+    a checker asking "is this obligation anchored?" would answer yes, and
+    **stop reporting** a genuinely uncited requirement. `L43` of
+    `standard-production-kimi-k3.md` is exactly that sentence — *"The
+    inventory shall be maintained in [Asset Inventory System]"* — an
+    uncited obligation whose placeholder would have supplied the anchor.
+
+    Asserted as a property because policyforge-b5 pointed out that
+    checking it once, while fixing something else, is not the same as it
+    being guaranteed. Their grounding gate depends on it.
+    """
+    assert source_tags(placeholder) == []

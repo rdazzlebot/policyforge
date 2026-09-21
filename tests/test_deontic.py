@@ -179,3 +179,89 @@ def test_check_leaves_a_policy_alone(tmp_path):
     report = check_tree(root)
 
     assert not [f for f in report.warnings if "cited requirement" in f.message]
+
+
+#: Every shipped catalog's citation shape, one per framework. Four of the
+#: eight carry a dot in the identifier and every one of those was invisible
+#: to this module until 2026-09-21.
+CITATION_SHAPES = [
+    "[NIST 800-53 AC-2]",
+    "[FedRAMP AC-2(1)]",
+    "[ARC-AMPE AC-2]",
+    "[HIPAA Security Rule 164.308(a)(3)(i)]",
+    "[NIST 800-171 03.01.01]",
+    "[NIST AI RMF Govern 1.1]",
+    "[Substance Use Disorder Records 2.16]",
+    "[Information Blocking 171.203]",
+]
+
+
+@pytest.mark.parametrize("citation", CITATION_SHAPES)
+def test_a_dotted_identifier_does_not_split_the_sentence(citation: str):
+    """**The defect: `_SENTENCE_RE` split through the citation itself.**
+
+    `[^.!?]+(?:[.!?]+|$)` breaks at every full stop, including the ones
+    inside an identifier. `164.308(a)(3)(i)` became three fragments and
+    `03.01.01` four — none of them a citation — so `cited` was False and
+    `weakened_citations` reported nothing.
+
+    The failure direction is **silence**: a document whose requirements
+    were all correctly cited and all written as "should consider" read as
+    clean. It worked for 800-53, FedRAMP and ARC-AMPE — and not for HIPAA,
+    which is the framework this product exists to serve.
+
+    Parametrised over every shipped shape rather than the one that was
+    reported, because the reported instance is never the population.
+    """
+    statements = analyze(f"The organization should consider access control. {citation}")
+
+    assert len(statements) == 1, f"the citation was split: {[s.text for s in statements]}"
+    assert statements[0].cited
+
+
+@pytest.mark.parametrize("citation", CITATION_SHAPES)
+def test_a_weakened_requirement_is_reported_for_every_citation_shape(citation: str):
+    """The check exists to catch a cited requirement rendered as advice.
+    It had never fired for a dotted identifier."""
+    assert weakened_citations(f"The organization should consider encryption. {citation}") != []
+
+
+def test_an_uncited_obligation_is_still_a_statement():
+    """**The rule that must NOT be ported from `entail`.**
+
+    `entail/base.py:cited_sentences` deliberately skips uncited sentences,
+    and its reasoning is sound there: `check_answer` already reports
+    "makes claims without citing any passage" as a fact.
+
+    That reasoning does not hold here. `content/check.py:_check_uncited`
+    fires only when a document cites **nothing at all** — it short-circuits
+    on `source_tags(doc.body)` being non-empty — so a document with one
+    good tag and ten uncited obligations passes it completely. Inheriting
+    the skip would silently drop the worst case on this side: an
+    obligation with no anchor at all.
+
+    Identified by policyforge-b5, who wrote the rule being ported and
+    said which half of it not to bring.
+    """
+    text = (
+        "The organization shall enforce access control. [NIST 800-53 AC-2]\n"
+        "The organization shall review logs quarterly.\n"
+    )
+    statements = analyze(text)
+
+    assert len(statements) == 2
+    assert [s.cited for s in statements] == [True, False]
+    assert all(s.modality == "obligation" for s in statements)
+
+
+def test_an_abbreviation_does_not_end_a_sentence():
+    """`45 C.F.R.` is how every HIPAA citation is written in prose, and
+    `U.S. Department` appears in essentially every one of these documents.
+    Both come from the boundary rule this imports rather than from
+    anything added here."""
+    statements = analyze(
+        "A practice under 45 C.F.R. 171.203(a) qualifies. [Information Blocking 171.203]"
+    )
+
+    assert len(statements) == 1
+    assert statements[0].cited

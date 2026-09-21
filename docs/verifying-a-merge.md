@@ -56,6 +56,11 @@ fetched is reporting your housekeeping, not the branches.** That is the
 sharpest form of this document's subject, and three people measuring and
 disagreeing is what found it.
 
+**The durable statement, which does not drift:** every squash-merged branch
+reports unmerged, so **the flag's count is a lower bound and never the
+answer.** Sampled across ten merged PRs: nine are genuinely ancestors of
+main; the flag names three branches. Prefer that sentence to any count.
+
 `git merge-base --is-ancestor <reviewed-sha> origin/main` agrees with the
 flag and is wrong for the same reason. **Both fail toward alarm**, so a
 cleanup driven by them keeps merged branches forever — the opposite of the
@@ -78,6 +83,28 @@ sign does not.** Re-derive rather than quoting this one.
 Later work touched the same files. The check is sound only when nothing else
 has, which in an active repository is rarely true and never checkable from
 the diff itself.
+
+### A branch head is not what was merged either
+
+The next remedy after the content check is to diff the branch against its
+own merge commit. **That fails too, and for a reason worth knowing.**
+
+```
+#149  merge commit  16eee00d   committed 10:58
+      branch head   bc622fec   committed 11:01     three minutes LATER
+
+commits on the branch and not in the merge:
+  bc622fe  Guard the population the zero-row test loops over
+  3af68b9  Cover the zero-row else-branch, and stop splitting on full stops
+  b27c921  Scope /coverage to the set the registry anchors to
+```
+
+**The branch kept moving after it was merged** — `bc622fe` went on to become
+#151. So a branch head is whatever was last pushed, which may be more, less
+or different from what landed. **It is not a stable identifier for anything.**
+
+Found by policyforge-80 while testing its own recommendation rather than
+defending it.
 
 ### What actually works
 

@@ -1,0 +1,395 @@
+#!/usr/bin/env python3
+"""Refuse committed shell that reports success for a command that failed.
+
+WHY THIS EXISTS. `cmd | tail` takes its exit status from `tail`, so the
+status of `cmd` is discarded. Written as `cmd | tail && action`, it reads as
+sequencing and is a concatenation: the action runs whatever `cmd` returned.
+#213 catalogued **seven instances in one day**, every one caught downstream
+and none prevented at the moment of typing, and three of those were in
+sessions that had the rule in front of them.
+
+**The rule was already written down** — in the team charge, in
+`docs/verifying-a-merge.md`, in four sessions' memory files. Restating it
+produced no measured reduction, because a rule that must be recalled fires
+when you are already being careful and `| tail` is what you type when you
+are not.
+
+WHAT IT FOUND ON THE DAY IT WAS WRITTEN. One line, and it was ours:
+
+    .github/workflows/ci.yml:91
+    run: git ls-files -z '*.md' | xargs -0 mdformat --check
+
+Measured, in both directions, rather than argued:
+
+    bash -e             'false | xargs -0 mdformat --check'  -> exit 0
+    bash -e -o pipefail 'false | xargs -0 mdformat --check'  -> exit 1
+
+So if `git ls-files` failed, **CI's markdown check passed having examined
+nothing** — a green light the whole team had been reading as "markdown is
+fine". GitHub's default shell is `bash -e` with no pipefail, and the only
+`shell: bash` default in that file is on a different job.
+
+THE SECOND PATH, WHICH PIPEFAIL DOES NOT CLOSE. Found by policyforge-9b
+against the fix above, which is why it is here:
+
+    mdformat --check      (no paths at all)  -> exit 0
+      "No files have been passed in. Doing nothing."
+
+`xargs` without `-r` runs the command once on empty input. If `git ls-files`
+*succeeds* and matches nothing — a renamed directory, a pattern that stops
+matching — the tool runs, checks zero files and exits 0. Nothing failed, so
+pipefail never fires. **A check whose population can silently become empty
+reports the absence of input as the absence of problems**, which is the same
+defect `test_the_population_is_not_empty` guards in #214, one layer out.
+
+Hence two rules, not one, and `EMPTY_INPUT_TOOLS` below is the second.
+
+WHAT THIS DOES NOT DO, deliberately.
+
+It does not lint the interactive shell. Nobody lints what a session types at
+a prompt, and **three of #213's seven instances were exactly that.** This
+reduces the committed surface; it does not close the class, which is why
+#213 stays open rather than being closed by this.
+
+It does not require `set -o pipefail` in documentation snippets. A snippet is
+something a reader runs by hand and watches; a script is something that runs
+unattended and is believed. Only the second kind gets the requirement.
+
+It does not forbid pipes. `PIPEFAIL_EXEMPT` takes a site and a reason for a
+pipeline whose status genuinely does not matter, **pinned by the text of the
+line rather than by a line number**, so an exemption cannot silently widen to
+cover a line that moved underneath it.
+
+Usage:
+
+    python scripts/shell_status.py            # check; non-zero on a finding
+    python scripts/shell_status.py --list     # print the population it derived
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+#: Commands that consume a stream and whose own exit status is almost never
+#: the question being asked. Piping INTO one of these discards the status of
+#: whatever produced the stream.
+#:
+#: Deliberately a list of stream consumers rather than "any pipe": `a | b`
+#: where `b` is the real work is a normal pipeline, and a rule that refused
+#: every pipe would be turned off within a day.
+STREAM_CONSUMERS = (
+    "head",
+    "tail",
+    "grep",
+    "sed",
+    "awk",
+    "jq",
+    "cut",
+    "sort",
+    "uniq",
+    "wc",
+    "tee",
+    "cat",
+    "xargs",
+)
+
+#: Tools that treat "no input" as success. Piping a file list into one of
+#: these needs the list asserted non-empty, because pipefail cannot help:
+#: nothing failed. See the module docstring.
+EMPTY_INPUT_TOOLS = ("mdformat", "ruff", "black", "shellcheck")
+
+_CONSUMERS = "|".join(STREAM_CONSUMERS)
+
+#: A stream consumer whose status is then used to gate something else.
+#: `cmd | tail -4 && push` is the shape; the `&&` is what turns a discarded
+#: status into a wrong decision.
+_SWALLOWED = re.compile(rf"\|\s*(?:{_CONSUMERS})\b[^|]*&&")
+
+#: Any pipe into a stream consumer, used for the pipefail requirement.
+_PIPES_TO_CONSUMER = re.compile(rf"\|\s*(?:{_CONSUMERS})\b")
+
+_PIPEFAIL = re.compile(r"set\s+(?:-o\s+pipefail|-[a-zA-Z]*o[a-zA-Z]*\s+pipefail|-euo\s+pipefail)")
+
+#: Exemptions, pinned by the line's own text. A reason is required: an
+#: exemption with no reason is indistinguishable from an oversight, and the
+#: next reader cannot tell whether removing it is safe.
+#:
+#: Empty today, and that is the honest state — the one real finding was
+#: fixed rather than exempted. Kept because a guard with no way to say
+#: "this one is fine" gets deleted the first time it is wrong.
+PIPEFAIL_EXEMPT: dict[str, str] = {}
+
+
+#: How a block says "I checked that the list was not empty". Kept as a set of
+#: shapes rather than one, because the natural spelling differs between a
+#: bash array and a `find -print -quit`, and a rule that accepts only the
+#: spelling its author used is the class-versus-instance failure again.
+_NON_EMPTY_ASSERTIONS = (
+    re.compile(r"\$\{#\w+\[@\]\}"),  # bash array length
+    re.compile(r"\bwc\s+-l\b[^\n]*\b(?:-eq|-gt|-ne|\[)"),
+    re.compile(r"\bxargs\b[^\n]*(?:-r\b|--no-run-if-empty)"),
+    re.compile(r"\bgrep\s+-q\b"),
+)
+
+
+def _asserts_non_empty(block: str) -> bool:
+    """Does this block prove it had input before believing a clean result?
+
+    `xargs -r` counts: it declines to run the tool at all on empty input, so
+    the tool cannot report "nothing to do" as success.
+    """
+    return any(pattern.search(block) for pattern in _NON_EMPTY_ASSERTIONS)
+
+
+@dataclass(frozen=True)
+class Finding:
+    path: str
+    line: int
+    text: str
+    rule: str
+    detail: str
+
+    def __str__(self) -> str:
+        return f"{self.path}:{self.line}  [{self.rule}]\n    {self.text.strip()}\n    {self.detail}"
+
+
+@dataclass(frozen=True)
+class Source:
+    """A committed thing that a shell will execute."""
+
+    path: str
+    kind: str  # "script" | "workflow" | "doc"
+    lines: list[tuple[int, str]]
+
+    @property
+    def requires_pipefail(self) -> bool:
+        """A doc snippet is watched by a person; a script is believed."""
+        return self.kind in ("script", "workflow")
+
+
+def tracked(pattern: str) -> list[str]:
+    out = subprocess.run(
+        ["git", "ls-files", pattern],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return [line for line in out.stdout.splitlines() if line.strip()]
+
+
+def _workflow_run_blocks(path: str, text: str) -> list[Source]:
+    """Every `run:` block in a workflow, with its real file line numbers.
+
+    Parsed by indentation rather than with a YAML library on purpose: the
+    line numbers have to survive into the failure message, and a YAML load
+    discards them. The cost is that this sees a `run:` inside a string; the
+    benefit is that a finding can be pasted into an editor and found.
+    """
+    sources: list[Source] = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        match = re.match(r"^(\s*)-?\s*run:\s*(\S.*)?$", lines[i])
+        if not match:
+            i += 1
+            continue
+        indent, inline = match.group(1), match.group(2)
+        body: list[tuple[int, str]] = []
+        if inline and inline not in ("|", ">", "|-", ">-"):
+            body.append((i + 1, inline))
+            i += 1
+        else:
+            i += 1
+            while i < len(lines):
+                line = lines[i]
+                if line.strip() and not line.startswith(indent + " "):
+                    break
+                body.append((i + 1, line))
+                i += 1
+        if body:
+            sources.append(Source(path=path, kind="workflow", lines=body))
+    return sources
+
+
+_FENCE = re.compile(r"^```\s*(bash|sh|shell|console)\s*$")
+
+
+def _doc_shell_blocks(path: str, text: str) -> list[Source]:
+    sources: list[Source] = []
+    body: list[tuple[int, str]] = []
+    inside = False
+    for number, line in enumerate(text.splitlines(), 1):
+        if not inside and _FENCE.match(line.strip()):
+            inside, body = True, []
+            continue
+        if inside and line.strip().startswith("```"):
+            if body:
+                sources.append(Source(path=path, kind="doc", lines=body))
+            inside = False
+            continue
+        if inside:
+            body.append((number, line))
+    return sources
+
+
+def population() -> list[Source]:
+    """Derive what a shell will execute, from the repository rather than a list.
+
+    **Derived, not listed**, which is the difference between a guard that
+    covers a new file and one that covers the files someone remembered. The
+    non-empty assertion in `main` is the other half: a derivation that stops
+    matching enumerates zero and every assertion over it becomes vacuous.
+    """
+    sources: list[Source] = []
+    for path in tracked("*.sh"):
+        text = (REPO_ROOT / path).read_text(encoding="utf-8", errors="replace")
+        sources.append(
+            Source(path=path, kind="script", lines=list(enumerate(text.splitlines(), 1)))
+        )
+    for path in tracked(".github/workflows/*.yml") + tracked(".github/workflows/*.yaml"):
+        text = (REPO_ROOT / path).read_text(encoding="utf-8", errors="replace")
+        sources.extend(_workflow_run_blocks(path, text))
+    for path in tracked("*.md"):
+        text = (REPO_ROOT / path).read_text(encoding="utf-8", errors="replace")
+        sources.extend(_doc_shell_blocks(path, text))
+    return sources
+
+
+def _strip_comment(line: str) -> str:
+    """Drop a trailing `#` comment so prose about a rule is not a violation.
+
+    Written after two tests in this repository failed on their own
+    explanation — a docstring naming the strings it asserts are absent. A
+    checker that flags the comment describing it has the same defect.
+    """
+    out, quote = [], ""
+    for char in line:
+        if quote:
+            out.append(char)
+            if char == quote:
+                quote = ""
+            continue
+        if char in "'\"":
+            quote = char
+            out.append(char)
+            continue
+        if char == "#":
+            break
+        out.append(char)
+    return "".join(out)
+
+
+def findings(sources: list[Source]) -> list[Finding]:
+    results: list[Finding] = []
+    for source in sources:
+        text = "\n".join(line for _, line in source.lines)
+        has_pipefail = bool(_PIPEFAIL.search(text))
+        for number, raw in source.lines:
+            line = _strip_comment(raw)
+            if not line.strip():
+                continue
+            if _SWALLOWED.search(line):
+                results.append(
+                    Finding(
+                        source.path,
+                        number,
+                        raw,
+                        "swallowed-status",
+                        "the `&&` runs whatever the left of the pipe returned; "
+                        "capture first (`cmd > log 2>&1; rc=$?`) and branch on `$rc`.",
+                    )
+                )
+            if not (source.requires_pipefail and _PIPES_TO_CONSUMER.search(line)):
+                continue
+
+            if not (has_pipefail or line.strip() in PIPEFAIL_EXEMPT):
+                results.append(
+                    Finding(
+                        source.path,
+                        number,
+                        raw,
+                        "no-pipefail",
+                        "this pipeline's status comes from the right-hand command. "
+                        "Add `set -o pipefail` to the block, or name it in "
+                        "PIPEFAIL_EXEMPT with a reason.",
+                    )
+                )
+
+            # **Deliberately NOT nested under the pipefail branch above, and
+            # the first version of this file got that wrong.** Adding
+            # `set -o pipefail` silenced this rule, which is precisely the
+            # mistake it exists to prevent: the two failures are
+            # independent, and the empty-input one survives the fix for the
+            # other. The test that caught it is named after the property.
+            if not _asserts_non_empty(text):
+                for tool in EMPTY_INPUT_TOOLS:
+                    if re.search(rf"\b{tool}\b", line):
+                        results.append(
+                            Finding(
+                                source.path,
+                                number,
+                                raw,
+                                "empty-input-passes",
+                                f"`{tool}` exits 0 when given no paths, so an empty "
+                                f"list reads as 'all clean'. pipefail does not fire "
+                                f"here -- nothing failed. Assert the list is non-empty.",
+                            )
+                        )
+    return results
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--list", action="store_true", help="print the derived population")
+    args = parser.parse_args(argv)
+
+    sources = population()
+
+    # The assertion that keeps every other assertion meaningful. If the
+    # derivation stops matching -- a renamed directory, a changed pathspec --
+    # this check would otherwise pass by examining nothing, which is the
+    # exact defect it exists to find in other people's pipelines.
+    if not sources:
+        print(
+            "shell_status: derived ZERO shell sources from this repository.\n"
+            "  That is not 'no problems'; it is a broken derivation. Committed\n"
+            "  workflows exist, so `git ls-files` or the pathspecs above have\n"
+            "  stopped matching.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.list:
+        for source in sources:
+            first = source.lines[0][0]
+            print(f"  {source.kind:9} {source.path}:{first}  ({len(source.lines)} lines)")
+        print(f"\n{len(sources)} shell source(s)")
+        return 0
+
+    results = findings(sources)
+    if results:
+        print(f"shell_status: {len(results)} finding(s)\n", file=sys.stderr)
+        for finding in results:
+            print(f"{finding}\n", file=sys.stderr)
+        return 1
+
+    scripts = sum(1 for s in sources if s.kind == "script")
+    workflows = sum(1 for s in sources if s.kind == "workflow")
+    docs = sum(1 for s in sources if s.kind == "doc")
+    print(
+        f"shell_status: clean across {len(sources)} source(s) "
+        f"({scripts} script, {workflows} workflow run-block, {docs} doc block)"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -381,6 +381,10 @@ def main(argv: list[str] | None = None) -> int:
             "changelog_fragments --check",
             [sys.executable, "scripts/changelog_fragments.py", "--check"],
         ),
+        "committed shell (exit status)": run(
+            "shell_status",
+            [sys.executable, "scripts/shell_status.py"],
+        ),
         "gitleaks (secrets scan)": check_gitleaks(),
         # Tree hygiene last: both are fast, and both catch a class the rest
         # of the gate only ever caught by accident.

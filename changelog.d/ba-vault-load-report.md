@@ -11,11 +11,18 @@ real notes plus two empty files reported `Parsed 7 controls` and exited
 vault where every note failed was indistinguishable from a vault with no
 notes.
 
-**Whether this changes anything for you.** If `etl-vault` has been
-exiting 0 for you, it still will and the output file is unchanged. If it
-has been quietly skipping notes, the next run says which ones and fails
-— **you may find a catalog you already have is short**, which is the
-point: that was already true and nothing said so.
+**Whether this changes anything for you.** If every note in your vault
+parses, `etl-vault` exits 0 exactly as before and writes the same file.
+Nothing else changes for you.
+
+**If some note does not parse, the run now fails where it used to
+succeed — and the catalog it was writing was already short.** This is
+the uncomfortable half: you may run 1.6.1 against a vault that has been
+working for months and be told it is incomplete. Nothing got worse. The
+notes that fail today were failing before, silently, and the
+`controls.json` you have been generating has been missing them the whole
+time. The new exit code is the first time anything has said so, and the
+names it prints are the notes to fix.
 
 **An empty `Controls/` directory is now an error rather than a success.**
 `--controls-dir` pointing one level too high, or at a vault that stores

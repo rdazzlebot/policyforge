@@ -255,7 +255,7 @@ def test_a_kind_with_nothing_to_find_stays_silent():
     arrival, and would have been switched off rather than obeyed. The census
     is what separates *nothing to find* from *stopped looking*.
     """
-    assert shell_status.census()["script"] == 0, (
+    assert shell_status.census()["script"] == set(), (
         "a committed *.sh now exists; this test's premise is gone and the "
         "script kind should be asserted non-empty instead"
     )
@@ -264,24 +264,67 @@ def test_a_kind_with_nothing_to_find_stays_silent():
 
 def test_the_census_is_a_second_derivation_not_the_parser_again():
     """A census computed by the block parser would agree with it by
-    construction — which is the `arc_ampe` defect, and the thing that makes
-    a check unable to fail. These are crude independent regexes over the
-    raw file text, so the two counts are free to disagree.
+    construction — the `arc_ampe` defect, and the thing that makes a check
+    unable to fail. These are crude regexes over the raw file text, so the
+    two derivations are free to disagree.
 
-    Asserted as a relationship rather than as two magic numbers: every kind
-    the census sees must have produced sources, and the counts are not
-    required to be equal — 5 workflow files yield 3 with `run:` and 34
-    run-blocks.
+    **Independence is a property of the METHOD, not of the units, and the
+    earlier version of this test confused the two.** It asserted
+    `census["workflow"] != count of workflow sources` — 3 against 34 —
+    and called the difference evidence of independence. It was evidence
+    of a unit mismatch: the census counted *files* and the parser counted
+    *run-blocks*. The only question answerable across those two numbers
+    is whether both are zero, so `main` could catch a pathspec that
+    stopped matching entirely and never a pathspec that matched less. A
+    56% loss of the workflow population reported `clean`. #228.
+
+    **The anti-tautology property and the extent-blindness were the same
+    fact seen from two sides**, which is why nobody caught it: the check
+    that proved the guard was real is the check that proved it was
+    limited.
+
+    Both sides now name files, so they are comparable — and still
+    independent, which is asserted here by the census being a *strict
+    subset* of the tracked files. A census that returned everything it
+    globbed would be a list, not a detection.
     """
-    counts = shell_status.census()
+    signalled = shell_status.census()
     sources = shell_status.population()
-    for kind, signalled in counts.items():
-        produced = sum(1 for s in sources if s.kind == kind)
-        if signalled:
-            assert produced, f"{kind}: census saw {signalled} file(s), parser produced none"
-    assert counts["workflow"] != sum(1 for s in sources if s.kind == "workflow"), (
-        "census and parser returned the same number; if they cannot differ, "
-        "one is not an independent derivation of the other"
+    produced = {kind: {s.path for s in sources if s.kind == kind} for kind in shell_status._SIGNALS}
+
+    for kind, paths in signalled.items():
+        assert not (paths - produced[kind]), (
+            f"{kind}: the census signalled {sorted(paths - produced[kind])} and the "
+            f"parser produced nothing for them"
+        )
+
+    tracked_workflows = set(shell_status.tracked(".github/workflows/*.yml"))
+    assert signalled["workflow"] < tracked_workflows, (
+        "the census returned every workflow it globbed, so it is a list rather "
+        "than a detection and cannot disagree with anything"
+    )
+
+
+def test_a_shrunk_population_fails_rather_than_passes(monkeypatch):
+    """**Non-empty accepts a shrink, and that is the whole of #228.**
+
+    `main` refused an *empty* population and nothing else, so a pathspec
+    that matched less rather than nothing reported `clean` and exited 0.
+    Measured on the train before this changed:
+
+        control                        clean across 60 source(s)   exit 0
+        keep one workflow of three     clean across 41 source(s)   exit 0
+
+    A 56% loss, reported as success. This holds the other direction: the
+    population still returns plenty, and the run must still refuse.
+    """
+    whole = shell_status.population()
+    kept = [s for s in whole if s.path != ".github/workflows/ci.yml"]
+    assert kept and len(kept) < len(whole), "the mutation must actually shrink something"
+
+    monkeypatch.setattr(shell_status, "population", lambda: kept)
+    assert shell_status.main([]) == 2, (
+        "a population missing an entire workflow file still reported success"
     )
 
 

@@ -106,6 +106,43 @@ or different from what landed. **It is not a stable identifier for anything.**
 Found by policyforge-80 while testing its own recommendation rather than
 defending it.
 
+### Content IS checkable — from the reviewed SHA, not the branch head
+
+Both failures above share one cause, which this document named and did not
+act on: **the branch head is not a stable identifier.** Start from one that
+is — the SHA that was actually reviewed — and content-checking works.
+
+```
+git diff --stat <REVIEWED-SHA> <merge-commit> -- <the reviewed files>
+```
+
+Measured on #149, the same PR as both failures:
+
+```
+branch-head  vs main            459 insertions, 47 deletions
+branch-head  vs merge-commit      3 insertions, 12 deletions
+3af68b97     vs merge-commit    EMPTY
+```
+
+`3af68b97` is the commit the squash was built from. **Empty means exactly
+what was reviewed is exactly what landed** — which is a different and
+stronger statement than *something landed*.
+
+**Ancestry says something landed. Content says what landed.** Use both: the
+merge commit's ancestry proves it reached main, and this diff proves it is
+the thing you read.
+
+**And this is where the review convention earns its keep.** The reviewed
+SHA is not recoverable from the branch — the branch has moved — nor from
+the merge commit, which is a new object. It is recoverable from the
+`Reviewed-SHA:` line, which exists precisely because nothing else records
+it. **A review line that names a fabricated or abbreviated SHA destroys the
+only proof that what was approved is what shipped.**
+
+Found by policyforge-80, which read this document and noticed that it
+proves content-checking impossible while its own two failures shared a
+cause it had already identified.
+
 ### What actually works
 
 Ask GitHub for the merge commit, then test *that* for ancestry:

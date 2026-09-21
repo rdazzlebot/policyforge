@@ -54,7 +54,13 @@ def test_the_gate_runs_every_script_ci_runs():
     Derived from `ci.yml` rather than listed here, so a script added to CI
     later is covered without anyone remembering this file exists.
     """
-    gate = GATE.read_text(encoding="utf-8")
+    # **Comments stripped, because a comment naming the path satisfied a
+    # substring search.** policyforge-9b replaced the invocation with
+    # `# TODO: one day wire up scripts/changelog_fragments.py --check here`
+    # and this guard stayed green — reporting #211's exact state, a
+    # required check the gate does not run, as fine. The guard written to
+    # make that state impossible could not see it.
+    gate = re.sub(r"#.*$", "", GATE.read_text(encoding="utf-8"), flags=re.M)
     missing = sorted(
         name
         for name in _ci_scripts()
@@ -74,7 +80,14 @@ def test_the_fragment_check_is_not_skippable():
     not run"* has no honest cause and must not be acknowledgeable.
     """
     gate = GATE.read_text(encoding="utf-8")
-    skip_block = gate[gate.index("SKIP_FLAGS") : gate.index("SKIP_FLAGS") + 400]
+    # Bounded by the literal's own closing brace rather than a character
+    # count: 9b measured `+ 400` as 192 characters of slack over a 208
+    # character literal, so about four more skip entries would push the
+    # tail outside the window and this assertion would silently stop
+    # checking the part just added -- with the trigger being a longer
+    # literal, which is exactly when you want it checked.
+    start = gate.index("SKIP_FLAGS")
+    skip_block = gate[start : gate.index("}", start)]
     assert "changelog" not in skip_block, (
         "the changelog-fragment check is skippable. A check whose tool ships "
         "in this repository cannot honestly be unavailable."

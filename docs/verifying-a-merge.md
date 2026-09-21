@@ -224,6 +224,93 @@ git log origin/main --oneline --grep="(#149)"
   16eee00 Scope /coverage to the set the registry anchors to (#149)
 ```
 
+## Half of a shortstat is the opposite of a finding
+
+`git diff <commit> <its PR's merge-commit> -- <the commit's own files>` is
+the right test, and it is **directional**:
+
+```
+insertions(+)   the merge commit has MORE     -> superset, nothing was lost
+deletions(-)    lines the merge did NOT carry -> WHERE TO LOOK, not the finding
+```
+
+Auditing eight orphaned commits, `2 files changed, 127 insertions(+)` was
+read as evidence of lost work. It is evidence of the opposite: the merge
+commit contained everything the orphan had, plus later changes to the same
+files. **Filter to deletions before reporting**, or the instrument reports
+"landed cleanly" as an alarm and every clean commit looks like a loss.
+
+## A deletion has two causes, and only one of them is lost work
+
+**"Read deletions only" was the first version of the rule above and it is
+wrong**, for the same reason *not an ancestor of main* is not a boolean. A
+line present in the orphan and absent from the merge is either:
+
+- **lost work** — it never reached the merge; or
+- **a deliberate removal during review** — a reviewer asked for it to go.
+
+These are indistinguishable in a diff and opposite in consequence.
+
+Measured on **#204, the pull request that shipped this document**:
+
+```
+git diff --shortstat 518889b 50b26a8 -- <its own files>
+  2 files changed, 161 insertions(+), 17 deletions(-)
+```
+
+**Every one of those 17 was content three reviewers asked to have
+removed.** The rule as first written would have reported this document's own
+history as lost work.
+
+**So deletions are where to look, not what to report.** Classify each by
+asking what the review thread says about it:
+
+```
+deletion appears in a review comment as requested   -> deliberate, not a finding
+deletion nobody discussed                           -> candidate lost work
+```
+
+**And note where the first version's validation went wrong**, because the
+mistake is reusable: the method was checked against three commits that had
+no review revisions between orphan and merge. **That is exactly the sample
+that cannot expose this** — a sample chosen because the answer was easy to
+check is selected for the property that makes it uninformative.
+
+## For changelog fragments, absent-from-main is what success looks like
+
+Fragments in `changelog.d/` are **consumed and deleted** when the changelog
+assembles at release. So any sweep for unlanded content flags **every
+shipped fragment** as lost work — the audit's natural reading is exactly
+backwards for a whole class of file.
+
+Three of eight orphaned commits in one audit were fragments and nothing
+else. All three had shipped.
+
+**Exclude `changelog.d/` from a content-landed sweep, or invert the reading
+there.** A file whose whole lifecycle ends in deletion cannot be checked by
+asking whether it still exists.
+
+## The method that survives, stated so it can be run without thinking
+
+For each commit you cannot account for:
+
+1. find the PR whose head it was;
+1. take that PR's `mergeCommit`;
+1. `git diff <sha> <mergeCommit> -- <the commit's own files>`;
+1. **read the deletions, then classify each one.**
+
+Not by subject — squash rewrites it. Not against `origin/main` — main has
+moved, and the diff then measures later work rather than missing work. Both
+wrong methods were tried first on the same eight commits, and **both gave
+confident false answers**: subjects reported all eight as lost, and the
+content diff against main reported 165 unlanded lines in a commit that had
+been reviewed and approved into a merged PR.
+
+**A commit no PR claims is the only kind worth escalating.** Seven of the
+eight were superseded; the eighth held 262 lines existing nowhere. The cheap
+move there is a pushed branch — not a local tag, which is reachability on
+one clone rather than preservation.
+
 ## `gh pr merge` merges into the PR's own base
 
 A stacked PR merged after its base has landed goes somewhere irrelevant

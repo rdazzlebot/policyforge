@@ -188,6 +188,37 @@ INSTALL_STEPS: tuple[tuple[str, str], ...] = (
 CONTAINER_IMAGE = "homebrew/brew"
 
 
+def _run(cmd: list[str], *, timeout: int):
+    """`subprocess.run`, decoding output as UTF-8 and never failing to decode.
+
+    **Both docker calls go through here so the fix cannot land on one and not
+    the other**, which is what it would take to repeat this.
+
+    `text=True` alone decodes with the locale encoding -- cp1252 on the
+    Windows machine the release is cut from. Homebrew prints UTF-8, and its
+    own `🍺` is `F0 9F 8D BA`; `0x8D` is undefined in cp1252. The
+    reader thread died, `stdout` stayed `None`, and the next line raised
+    `TypeError` concatenating it -- so the one assertion that proves a user
+    can install the release **crashed before reporting**, on its first run on
+    the platform it is cut from. Found by policyforge-9b (handle 9b) running
+    it against a real daemon on 2026-09-23, reproduced here.
+
+    `errors="replace"` because this output is only ever shown as a tail: a
+    gate must not crash on a byte it is merely displaying. The exit code, not
+    the text, is what decides the verdict.
+    """
+    import subprocess
+
+    return subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+    )
+
+
 def run_install_check(image: str = CONTAINER_IMAGE) -> tuple[bool, list[str]]:
     """Install the published formula in a clean container and run the CLI.
 
@@ -225,7 +256,6 @@ def run_install_check(image: str = CONTAINER_IMAGE) -> tuple[bool, list[str]]:
     unambiguously about what happened inside.
     """
     import shutil
-    import subprocess
 
     lines: list[str] = []
     if shutil.which("docker") is None:
@@ -234,14 +264,9 @@ def run_install_check(image: str = CONTAINER_IMAGE) -> tuple[bool, list[str]]:
     # Can docker start this image at all? Cheap, and it is the only way to
     # tell "the container never ran" from "the install failed", because
     # some exit codes are produced by both.
-    probe = subprocess.run(
-        ["docker", "run", "--rm", image, "true"],
-        capture_output=True,
-        text=True,
-        timeout=600,
-    )
+    probe = _run(["docker", "run", "--rm", image, "true"], timeout=600)
     if probe.returncode != 0:
-        detail = (probe.stderr or probe.stdout).strip().splitlines()[-1:] or ["no output"]
+        detail = (probe.stderr or probe.stdout or "").strip().splitlines()[-1:] or ["no output"]
         return False, [f"could not start {image}: {detail[0]}"]
 
     script = " && ".join(command for _, command in INSTALL_STEPS)
@@ -249,13 +274,13 @@ def run_install_check(image: str = CONTAINER_IMAGE) -> tuple[bool, list[str]]:
     # failure stops the run and its status propagates. `;` would not --
     # that is the `cmd; echo; tail` shape the header warns about, and it
     # is also issue #182 on this milestone.
-    proc = subprocess.run(
+    proc = _run(
         ["docker", "run", "--rm", image, "bash", "-lc", f"mkdir -p /tmp/pf && {script}"],
-        capture_output=True,
-        text=True,
         timeout=3600,
     )
-    tail = (proc.stdout + proc.stderr).strip().splitlines()[-12:]
+    # `or ""` as a second line of defence behind `_run`: an absent stream is
+    # shown as absent, and the exit status below is reported either way.
+    tail = ((proc.stdout or "") + (proc.stderr or "")).strip().splitlines()[-12:]
     lines.extend(tail)
     lines.append(f"docker exit status: {proc.returncode}")
     return True, lines

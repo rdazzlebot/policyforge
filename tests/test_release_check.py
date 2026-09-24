@@ -355,3 +355,65 @@ def test_the_docstring_describes_the_mechanism_the_code_uses():
     assert " && " in code and ".join" in code, (
         "the code no longer joins the steps, so the docstring is wrong again"
     )
+
+
+# --- output decoding: the install check crashed before it could report --
+#
+# Found by policyforge-9b (handle 9b), running the gate against a real
+# daemon on 2026-09-23: `text=True` with no `encoding` decoded Homebrew's
+# UTF-8 with cp1252, the reader thread died on byte 0x8D, `stdout` stayed
+# None, and the concatenation raised TypeError -- so assertion 4 could not
+# answer on the platform the release is cut from.
+
+
+def _emit(tmp_path, payload: bytes) -> list[str]:
+    """A real child process writing raw bytes -- the decode under test
+    happens inside subprocess, so a mocked result could not reach it."""
+    script = tmp_path / "emit.py"
+    script.write_text(
+        f"import sys\nsys.stdout.buffer.write({payload!r})\nsys.stdout.buffer.flush()\n",
+        encoding="utf-8",
+    )
+    return [sys.executable, str(script)]
+
+
+def test_output_undecodable_on_every_platform_does_not_crash(tmp_path):
+    """**A lone 0x8D is undefined in cp1252 AND invalid as UTF-8**, so the
+    old kwargs fail on the Windows machine the release is cut from and on
+    the Linux CI runners alike. A real Homebrew line would only have failed
+    on Windows, and a test that passes on the runner nobody cuts from would
+    have been green for the wrong reason."""
+    result = release_check._run(_emit(tmp_path, b"ok \x8d done\n"), timeout=60)
+    assert result.stdout is not None, "the reader thread died; stdout is None"
+    assert "ok" in result.stdout and "done" in result.stdout
+
+
+def test_homebrew_output_decodes_to_the_characters_it_wrote(tmp_path):
+    """Not merely survived: decoded correctly. errors="replace" must not be
+    what makes valid UTF-8 look fine."""
+    beer = "\U0001f37a Pouring policyforge"
+    result = release_check._run(_emit(tmp_path, beer.encode("utf-8") + b"\n"), timeout=60)
+    assert beer in result.stdout
+
+
+def test_every_subprocess_call_goes_through_the_decoding_helper():
+    """**The class, not the instance.** The defect was on BOTH docker calls;
+    9b noted the probe had the same shape two statements above the one that
+    crashed. So the rule is that `_run` is the only place `subprocess.run`
+    appears, and a new call added directly fails here rather than
+    reintroducing the crash."""
+    import ast
+
+    tree = ast.parse((Path(release_check.__file__)).read_text(encoding="utf-8"))
+    outside = []
+    for fn in (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)):
+        for call in (c for c in ast.walk(fn) if isinstance(c, ast.Call)):
+            f = call.func
+            if (
+                isinstance(f, ast.Attribute)
+                and f.attr == "run"
+                and getattr(f.value, "id", "") == "subprocess"
+                and fn.name != "_run"
+            ):
+                outside.append(f"{fn.name}:{call.lineno}")
+    assert not outside, f"subprocess.run outside _run, so not UTF-8 safe: {outside}"

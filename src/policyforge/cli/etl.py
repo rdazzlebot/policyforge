@@ -840,8 +840,9 @@ def etl_hitrust(export_path: Path, version: str, out: Path | None, force: bool):
     from policyforge.ingest.hitrust import summarize
     from policyforge.ingest.hitrust_export import ExportFormatError
 
+    losses: list[str] = []
     try:
-        controls = load_hitrust_export(export_path, version=version)
+        controls = load_hitrust_export(export_path, version=version, losses=losses)
     except ExportFormatError as exc:
         raise click.ClickException(
             f"{exc}\n\nIf this export's layout is one this project has not seen, "
@@ -849,7 +850,9 @@ def etl_hitrust(export_path: Path, version: str, out: Path | None, force: bool):
             f"{shlex.quote(str(export_path))}"
         ) from exc
 
-    click.echo(summarize(controls).format_report())
+    summary = summarize(controls)
+    summary.warnings.extend(losses)
+    click.echo(summary.format_report())
 
     if out is None:
         click.echo(

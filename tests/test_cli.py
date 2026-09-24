@@ -186,6 +186,11 @@ def test_etl_govramp_refuses_to_write_into_the_bundled_directory(tmp_path):
 
 
 class _NoReport:
+    # The real Summary's interface: etl-hitrust appends the loader's losses
+    # to `warnings` before printing (#266).
+    def __init__(self):
+        self.warnings: list[str] = []
+
     def format_report(self):
         return ""
 
@@ -201,7 +206,8 @@ def _hitrust(monkeypatch, tmp_path, *args):
     export = tmp_path / "hitrust-export.csv"
     export.write_text("placeholder", encoding="utf-8")
     monkeypatch.setattr(
-        "policyforge.ingest.byoc_loader.load_hitrust_export", lambda path, version: []
+        "policyforge.ingest.byoc_loader.load_hitrust_export",
+        lambda path, version, losses=None: [],
     )
     monkeypatch.setattr("policyforge.ingest.hitrust.summarize", lambda controls: _NoReport())
     return CliRunner().invoke(cli_mod.cli, ["etl-hitrust", "--export", str(export), *args])

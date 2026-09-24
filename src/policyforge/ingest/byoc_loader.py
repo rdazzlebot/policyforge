@@ -46,13 +46,18 @@ from .hitrust_export import load as _load_hitrust
 from .schema import Control
 
 
-def load_hitrust_export(export_path: Path, *, version: str = "") -> list[Control]:
+def load_hitrust_export(
+    export_path: Path, *, version: str = "", losses: list[str] | None = None
+) -> list[Control]:
     """Parse a HITRUST CSF export into `Control` objects, in memory.
 
     Accepts the renderings MyCSF produces: `.csv`, `.tsv`, `.xlsx`,
     `.xlsm`, `.html`, `.htm`, `.mhtml`, `.mht`. Prefer the CSV where you
     have a choice -- the rendered report carries markedly fewer
     authoritative-source mappings than the data export of the same report.
+
+    `losses`, when given, collects warnings for text a rendered report could
+    not place (#266); the caller decides how to show them.
 
     `version` stamps the catalog (e.g. "v11.7"). Left empty, it is taken
     from the filename if that names one, because a MyCSF export states its
@@ -63,7 +68,7 @@ def load_hitrust_export(export_path: Path, *, version: str = "") -> list[Control
     be committed and redistributed -- so this function has no path
     argument, no output directory, and no serialization step.
     """
-    return _load_hitrust(Path(export_path), version=version)
+    return _load_hitrust(Path(export_path), version=version, losses=losses)
 
 
 def load_govramp_export(

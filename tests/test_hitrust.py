@@ -656,3 +656,224 @@ def test_a_rendered_report_with_no_tables_is_refused(tmp_path):
 
     with pytest.raises(export.ExportFormatError, match="no tables found in the rendered report"):
         export.load(path)
+
+
+# ---- #266: what a rendered report cannot place is said, not dropped --------
+#
+# Two losses rest on how SSRS lays out a page break, and no real export has
+# been seen here. The parse is unchanged; each is now reported. Every loud
+# case below has a quiet twin, because a guard that reports every repeated
+# row would be muted by the first person who reads it.
+
+_L2 = "<tr><td>Level 2 Implementation:</td><td>The example thing is reviewed.</td></tr>"
+_L1 = "<tr><td>Level 1 Implementation:</td><td>The example thing is documented.</td></tr>"
+_CONT = "and every change to it is approved by the change board before release"
+_HALF_A = "The first half of the requirement is stated here"
+_HALF_B = "and the second half, which is longer than the first, finishes it on the next page"
+
+
+def _losses(markup: str) -> tuple[list, list[str]]:
+    losses: list[str] = []
+    records = export.records_from_markup(markup, losses)
+    return records, losses
+
+
+def test_the_documented_report_loses_nothing():
+    """The baseline: the report shape the project believes in reports no loss."""
+    _, losses = _losses(_RENDERED)
+    assert losses == []
+
+
+def test_a_continuation_without_its_label_is_reported():
+    """A long cell broken across a page with its label NOT reprinted: the
+    second half is one cell with nothing to say where it belongs."""
+    markup = _RENDERED.replace(_L2, _L2 + f"<tr><td></td><td>{_CONT}</td></tr>")
+    assert markup != _RENDERED
+    _, losses = _losses(markup)
+
+    assert len(losses) == 1, losses
+    assert losses[0].startswith("1 row(s) of text had no label"), losses[0]
+    assert _CONT[:40] in losses[0], "the warning does not show the text it lost"
+
+
+def test_a_label_with_no_value_is_not_a_loss():
+    """The quiet twin: a field left empty is one cell too, but it is a
+    label, and nothing is lost. Reporting it would cry wolf."""
+    markup = _RENDERED.replace(_L2, "<tr><td>Level 2 Implementation:</td><td></td></tr>")
+    assert markup != _RENDERED
+    _, losses = _losses(markup)
+    assert losses == []
+
+
+def test_a_split_statement_reports_the_half_it_discards():
+    """**The shape the docstring says SSRS produces** -- label reprinted --
+    and it still loses text: a statement keeps its longer copy. Behaviour is
+    unchanged (the longer half is kept); the discarded half is now named."""
+    markup = _RENDERED.replace(
+        _L1,
+        f"<tr><td>Level 1 Implementation:</td><td>{_HALF_A}</td></tr>"
+        f"<tr><td>Level 1 Implementation:</td><td>{_HALF_B}</td></tr>",
+    )
+    assert markup != _RENDERED
+    records, losses = _losses(markup)
+
+    level_one = next(r for r in records if r.level == "Level 1")
+    assert level_one.statement == _HALF_B, "which copy wins changed; #266 did not rule that"
+    assert len(losses) == 1, losses
+    assert losses[0].startswith("1 statement(s) arrived as two different copies"), losses[0]
+    assert "01.a Example Control Level 1" in losses[0], "the warning does not say where"
+    assert _HALF_A[:40] in losses[0], "the warning does not show the half it lost"
+
+
+def test_a_repeated_or_contained_statement_is_not_a_loss():
+    """The quiet twins: a report that prints the same statement twice, or a
+    shorter copy that is part of the longer, discards nothing."""
+    whole = "The example thing is documented and reviewed."
+    for first, second in (
+        (whole, whole),
+        (whole[:20], whole),
+        (whole, whole[:20]),
+    ):
+        markup = _RENDERED.replace(
+            _L1,
+            f"<tr><td>Level 1 Implementation:</td><td>{first}</td></tr>"
+            f"<tr><td>Level 1 Implementation:</td><td>{second}</td></tr>",
+        )
+        assert markup != _RENDERED
+        records, losses = _losses(markup)
+        assert losses == [], (first, second, losses)
+        assert next(r for r in records if r.level == "Level 1").statement == whole
+
+
+def test_etl_hitrust_prints_the_loss_as_a_warning(tmp_path):
+    """**Measured on the user's path**, not on the function: the losses are
+    only loud if the command that reads a customer's file prints them."""
+    from click.testing import CliRunner
+
+    from policyforge import cli as cli_mod
+
+    export_file = tmp_path / "CSFLibraryReport_v11.7.html"
+    export_file.write_text(
+        _RENDERED.replace(_L2, _L2 + f"<tr><td>{_CONT}</td></tr>"), encoding="utf-8"
+    )
+    result = CliRunner().invoke(cli_mod.cli, ["etl-hitrust", "--export", str(export_file)])
+
+    assert result.exit_code == 0, result.output
+    warn = [ln for ln in result.output.splitlines() if ln.strip().startswith("warn")]
+    assert any("1 row(s) of text had no label" in ln for ln in warn), result.output
+
+
+def _mhtml(markup: str) -> str:
+    import base64
+
+    encoded = base64.b64encode(markup.encode("utf-8")).decode("ascii")
+    return (
+        "MIME-Version: 1.0\n"
+        'Content-Type: multipart/related; boundary="--=_Part"\n\n'
+        "----=_Part\n"
+        'Content-Type: text/html; charset="utf-8"\n'
+        "Content-Transfer-Encoding: base64\n\n"
+        f"{encoded}\n"
+        "----=_Part--\n"
+    )
+
+
+def test_etl_hitrust_prints_the_loss_from_an_mhtml_export(tmp_path):
+    """MHTML is how MyCSF usually hands the report over, and it reaches
+    `records_from_markup` by its own branch of `read_records`. Dropping the
+    collector there passed every other test (9b, on #273)."""
+    from click.testing import CliRunner
+
+    from policyforge import cli as cli_mod
+
+    export_file = tmp_path / "CSFLibraryReport_v11.7.mhtml"
+    export_file.write_text(
+        _mhtml(_RENDERED.replace(_L2, _L2 + f"<tr><td>{_CONT}</td></tr>")), encoding="utf-8"
+    )
+    result = CliRunner().invoke(cli_mod.cli, ["etl-hitrust", "--export", str(export_file)])
+
+    assert result.exit_code == 0, result.output
+    warn = [ln for ln in result.output.splitlines() if ln.strip().startswith("warn")]
+    assert any("1 row(s) of text had no label" in ln for ln in warn), result.output
+
+
+def _with_furniture(markup: str, pages: int) -> str:
+    """Page furniture in tables of its own around the report, as 1d and 9b
+    built it on #273: a title and a footer on every page, one print line."""
+    rows = []
+    for page in range(1, pages + 1):
+        rows.append("<table><tr><td>HITRUST CSF Library Report</td></tr></table>")
+        rows.append(f"<table><tr><td>Page {page} of {pages}</td></tr></table>")
+    rows.append("<table><tr><td>Printed on 2026-09-24 08:00</td></tr></table>")
+    return markup.replace("<html><body>", "<html><body>" + "".join(rows), 1)
+
+
+def test_a_real_continuation_is_shown_ahead_of_page_furniture():
+    """**1d's case.** Furniture first, one real continuation after it. The
+    count is the WHOLE total -- furniture is classified, never dropped --
+    and the excerpt shows the continuation, not three page footers."""
+    markup = _with_furniture(_RENDERED.replace(_L2, _L2 + f"<tr><td>{_CONT}</td></tr>"), pages=5)
+    assert markup.count("<td>Page ") == 5
+    _, losses = _losses(markup)
+
+    assert len(losses) == 1, losses
+    assert losses[0].startswith("12 row(s) of text had no label"), losses[0]
+    assert "(1 unclassified, 11 look like page numbers" in losses[0], losses[0]
+    assert _CONT[:40] in losses[0], f"the real continuation is hidden: {losses[0]!r}"
+
+
+def test_page_furniture_alone_is_still_reported():
+    """The other arm: classifying is not filtering. A report whose only
+    skipped rows look like furniture still says so, with the count."""
+    _, losses = _losses(_with_furniture(_RENDERED, pages=2))
+
+    assert len(losses) == 1, losses
+    assert losses[0].startswith("5 row(s) of text had no label"), losses[0]
+    assert "(0 unclassified, 5 look like page numbers" in losses[0], losses[0]
+
+
+def test_a_requirement_that_mentions_running_is_not_furniture():
+    """The furniture pattern needs a real date after "run on/at" because a
+    requirement reads that way too. Dropping the date survived every other
+    test (80, on #273), so the comment beside `_FURNITURE_RE` was a claim
+    nothing checked. This continuation must count as unclassified and be
+    shown ahead of the page footers."""
+    lost = "Scans are run at least every 30 days"
+    markup = _with_furniture(_RENDERED.replace(_L2, _L2 + f"<tr><td>{lost}</td></tr>"), pages=4)
+    _, losses = _losses(markup)
+
+    assert len(losses) == 1, losses
+    assert "(1 unclassified," in losses[0], f"a requirement was classed as furniture: {losses[0]!r}"
+    assert lost in losses[0], f"the requirement is hidden behind furniture: {losses[0]!r}"
+
+
+@pytest.mark.parametrize("footer", ["{n} of 12", "Page {n}/12", "- {n} -"])
+def test_a_numbered_footer_does_not_bury_a_continuation(footer):
+    """**1d's case.** A footer whose number changes on every page never
+    repeats word for word, and `_FURNITURE_RE` knows only "Page N of M", so
+    these three shapes were unclassified and took the excerpt slots ahead of
+    the real continuation. Masked, each recurs as one template."""
+    pages = "".join(f"<table><tr><td>{footer.format(n=n)}</td></tr></table>" for n in range(1, 13))
+    markup = _RENDERED.replace(_L2, _L2 + f"<tr><td>{_CONT}</td></tr>").replace(
+        "<html><body>", "<html><body>" + pages, 1
+    )
+    _, losses = _losses(markup)
+
+    assert len(losses) == 1, losses
+    assert losses[0].startswith("13 row(s) of text had no label"), losses[0]
+    assert "(1 unclassified, 12 look like" in losses[0], losses[0]
+    excerpts = losses[0].split("NOT in the catalog: ", 1)[1]
+    assert excerpts.startswith(repr(_CONT[:40])[:-1]), f"not the first excerpt: {excerpts!r}"
+
+
+def test_two_different_numbered_continuations_are_not_furniture():
+    """The quiet twin of masking: two continuations that both carry numbers
+    but differ in their words are two templates, so neither recurs and both
+    stay unclassified."""
+    first = "retain the logs for 90 days"
+    second = "and review them every 7 days"
+    markup = _RENDERED.replace(_L2, _L2 + f"<tr><td>{first}</td></tr><tr><td>{second}</td></tr>")
+    _, losses = _losses(markup)
+
+    assert len(losses) == 1, losses
+    assert "(2 unclassified, 0 look like" in losses[0], losses[0]

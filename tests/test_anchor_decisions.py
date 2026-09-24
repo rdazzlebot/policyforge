@@ -117,7 +117,7 @@ def test_both_views_see_what_a_topic_anchors(directory):
     noticed. For every anchorable catalog, a topic anchoring one of its ids
     is counted as owning it AND gets that control back from synthesis."""
     from policyforge.synthesis.merge import build_synthesis_topic
-    from policyforge.topics.coverage import analyze_coverage
+    from policyforge.topics.coverage import analyze_coverage, split_by_adoption
     from policyforge.topics.registry import Topic
 
     everything = [
@@ -130,7 +130,15 @@ def test_both_views_see_what_a_topic_anchors(directory):
     anchor = sorted(c.control_id for c in own)[0]
     topic = Topic(name="T", owner="O", nist_controls=[anchor])
 
-    report = analyze_coverage([topic], own)
+    # The scope as `/coverage` computes it, through `split_by_adoption`, not
+    # the catalog handed straight in. Passing `own` directly bypassed the
+    # adoption step, so a registry change that dropped this catalog from
+    # scope left this test green (ba, on #308: 19 -> 0 of 19, still 7 passed).
+    in_scope, _unadopted, _reachable = split_by_adoption([topic], everything)
+    assert any(c.control_id == anchor for c in in_scope), (
+        f"{directory}: /coverage's scope does not include {anchor} for a topic anchoring it"
+    )
+    report = analyze_coverage([topic], in_scope)
     assert anchor in report.covered, f"{directory}: /coverage does not count {anchor} as owned"
 
     topic_view = build_synthesis_topic("T", [anchor], everything, build_crosswalk(everything))

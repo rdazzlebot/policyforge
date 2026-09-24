@@ -56,7 +56,8 @@ A figure of *$0.0002 per call* once circulated as glm's rate for synthesis
   - **The configured model string**, for the two retained Claude runs.
     Epoch 21's sonnet-5 run was configured as
     `openrouter/anthropic/claude-sonnet-5`, recorded in its committed step
-    record, and epoch 24's as `openrouter/anthropic/claude-sonnet-4.5`. A
+    record, and epoch 24's as `openrouter/anthropic/claude-sonnet-4.5`,
+    which is named in that entry's own text but in no preserved file. A
     LiteLLM model string prefixed `openrouter/` is routed through OpenRouter
     whatever keys are present.
   - **The request ids**, as corroboration. Those calls, and the two sonnet-5

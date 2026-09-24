@@ -59,22 +59,53 @@ def test_a_citation_on_the_next_line_is_credited_to_the_sentence():
     assert len(playbook_obligations(text)) == 1
 
 
-@pytest.mark.parametrize("phrase", ["needs to", "has to", "is expected to"])
-def test_a_paraphrased_obligation_is_refused(phrase):
-    """Obligations `classify` does not count as binding, added for this check
-    only (#267: a phrase list alone misses paraphrase)."""
-    text = f"The AI team {phrase} maintain an inventory of AI systems. {TAG}\n"
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        # 1d's five forms on #309, each passing the first version's verb list.
+        "NIST requires the organization to maintain an inventory.",
+        "The organization will maintain an inventory.",
+        "The organization is responsible for maintaining an inventory.",
+        "Maintain an inventory of AI systems.",
+        "The organization ensures an inventory is maintained.",
+        # Forms nobody listed, to show the default: the allow-list fails them.
+        "Acme Health commits to keeping an inventory of AI systems.",
+        "It is mandatory to maintain an inventory of AI systems.",
+        "NIST mandates an inventory of AI systems.",
+        # NIST as subject, but binding anyway: a Playbook sentence never binds.
+        "NIST suggests that the organization must maintain an inventory.",
+    ],
+)
+def test_anything_not_framed_as_nists_is_refused(sentence):
+    """**Default-deny** (80's ruling on #309). A verb list chased paraphrase;
+    the rule now allows NIST or the Playbook as the subject, and fails
+    everything else, including forms nobody thought of."""
+    assert len(playbook_obligations(f"{sentence} {TAG}\n")) == 1
 
-    assert len(playbook_obligations(text)) == 1
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "The Playbook groups these actions under Govern 1.",
+        "The Playbook lists three actions for AI inventories.",
+        "NIST also recommends reviewing the inventory.",
+        "1. NIST proposes documenting each system's owner.",
+        "- **NIST** recommends an inventory of AI systems.",
+    ],
+)
+def test_a_descriptive_sentence_framed_as_nists_passes(sentence):
+    """**The passing twins**, because an allow-list fails by default and a
+    false alarm on a sentence that asserts nothing would get it switched off
+    (1d's caution, 80's refinement)."""
+    assert playbook_obligations(f"{sentence} {TAG}\n") == []
 
 
-def test_a_paraphrase_outside_the_set_is_not_caught():
-    """**The stated boundary**, per 80's ruling. "It is mandatory to" is an
-    obligation this check does not recognise. Pinned so the gap is visible
-    in the suite, not discovered."""
-    text = f"It is mandatory to maintain an inventory of AI systems. {TAG}\n"
-
-    assert playbook_obligations(text) == []
+def test_a_sentence_about_nist_with_another_subject_is_refused():
+    """A stated consequence of the ruling: the SUBJECT decides. "One action
+    NIST lists is ..." asserts nothing, but its subject is "One action", so
+    it fails. Proposed as a passing twin on #309; 80's refinement puts the
+    allow condition on the subject, and this is where that line falls."""
+    assert len(playbook_obligations(f"One action NIST lists is an inventory. {TAG}\n")) == 1
 
 
 def test_other_frameworks_are_not_this_checks_business():
@@ -155,31 +186,50 @@ def test_only_playbook_tags_split_across_a_merged_tag_are_still_only_playbook():
 # --------------------------------------------------------------------------
 
 
+#: The section #300 produces most: a suggestion, then the organization's own
+#: uncited obligation -- and NO binding source citing beside them. The first
+#: version of this test also had a CM-8 "must" in the section, and that line
+#: alone made the section count as citing (1d's finding on #309).
 ADOPTED = (
     "# AI Governance Standard\n\n"
     "## Inventory\n\n"
     f"NIST suggests maintaining an inventory of AI systems. {TAG}\n\n"
-    "Every AI system must be recorded in the inventory.\n\n"
-    "The inventory must record each system's owner. [NIST 800-53 CM-8]\n"
+    "Every AI system must be recorded in the inventory.\n"
 )
 
 
-def test_an_adopted_obligation_is_reported_as_unanchored_not_as_this():
-    """**80's ruling, measured.** The organization's own requirement goes in
-    its own sentence without the Playbook tag. This check leaves it alone,
-    and `_check_unanchored` reports it -- correctly, since it is the
-    organization's decision for a person to confirm, not NIST's."""
+def test_an_adoption_beside_a_playbook_suggestion_is_reported():
+    """**80's ruling (2) on #309.** A Playbook citation makes its section
+    count as citing, so the organization's uncited "must" beside it is
+    reported -- the organization's decision, for a person to confirm."""
     assert playbook_obligations(ADOPTED) == []
 
     (finding,) = unanchored(ADOPTED)
     assert "recorded in the inventory" in finding.claim.text
 
 
+def test_the_same_section_without_the_playbook_tag_behaves_as_before():
+    """The twin: with no citation at all, the section cites nothing and the
+    "must" is document boilerplate, exactly as before this change."""
+    assert unanchored(ADOPTED.replace(f" {TAG}", "")) == []
+
+
+def test_a_non_binding_citation_to_another_source_does_not_make_a_section_citing():
+    """**Narrow, not general** (80): only the Playbook gets this effect. A
+    non-binding sentence citing 800-53 leaves the rule as it was."""
+    text = ADOPTED.replace(
+        f"NIST suggests maintaining an inventory of AI systems. {TAG}",
+        "An inventory of system components is useful. [NIST 800-53 CM-8]",
+    )
+
+    assert unanchored(text) == []
+
+
 def test_an_adoption_phrased_as_requires_is_reported_by_neither():
-    """**A stated limit, found writing the test above.** "Acme Health
-    requires ..." is not binding to `deontic` (must, shall, is required to),
-    so `_check_unanchored` does not see it either. An adopted obligation
-    phrased that way is checked by nothing -- pinned so it is known."""
+    """**A stated limit.** "Acme Health requires ..." is not binding to
+    `deontic` (must, shall, is required to), so `_check_unanchored` does not
+    see it -- and it carries no Playbook tag, so the framing rule does not
+    apply. An adopted obligation phrased that way is checked by nothing."""
     text = ADOPTED.replace(
         "Every AI system must be recorded", "Acme Health requires every AI system to be recorded"
     )

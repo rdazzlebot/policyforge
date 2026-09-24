@@ -338,7 +338,7 @@ def _check_requirement_strength(documents: list[ContentDocument]) -> list[Findin
 
 
 def _check_playbook_obligations(documents: list[ContentDocument]) -> list[Finding]:
-    """A sentence that cites the NIST AI RMF Playbook and binds (#300).
+    """A sentence citing only the NIST AI RMF Playbook, not framed as NIST's (#300).
 
     **An error, not a warning** (80's ruling). The sibling checks warn so that
     a tree mid-migration is not blocked, but this one cannot be tripped by an
@@ -354,7 +354,8 @@ def _check_playbook_obligations(documents: list[ContentDocument]) -> list[Findin
                 Finding(
                     doc.relative_path,
                     f"line {statement.line}: cites the NIST AI RMF Playbook, which is "
-                    "voluntary, as an obligation -- write it as NIST suggesting the action, "
+                    "voluntary, but is not framed as NIST's -- make NIST or the Playbook its "
+                    'subject ("NIST suggests ..."), never "NIST requires", '
                     "and state any requirement the organization adopts in its own sentence "
                     f'without the Playbook tag — "{statement.text[:70]}"',
                     ERROR,

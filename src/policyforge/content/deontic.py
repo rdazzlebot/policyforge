@@ -205,42 +205,58 @@ def _is_playbook(reference: str) -> bool:
     return reference.startswith(_PLAYBOOK)
 
 
-#: Obligation phrasings `classify` does not count as binding, added for this
-#: check ONLY, so the binding share of every other document is unchanged.
-#: Provenance, stated because 80 asked for it: NOT observed. The $0 probe on
-#: #300 produced none -- "must" on every Playbook sentence before the prompt
-#: rule, no obligation at all after it. These are common paraphrases of
-#: obligation that #267 showed a phrase list misses; the tests name one that
-#: is still outside this set, so the boundary is stated, not implied.
-_PLAYBOOK_OBLIGATION_EXTRA = re.compile(
-    r"\b(?:has to|have to|needs to|need to|is expected to|are expected to)\b",
+#: A sentence framed as NIST's: its subject is NIST or the Playbook. Matched
+#: at the start of the sentence, after list markers and emphasis.
+_NIST_SUBJECT = re.compile(
+    r"^(?:NIST(?:'s)?(?:\s+AI\s+RMF)?(?:\s+Playbook)?"
+    r"|The\s+(?:NIST\s+)?(?:AI\s+RMF\s+)?Playbook)\s+(?:also\s+|further\s+)?(\w+)",
     re.IGNORECASE,
 )
 
+#: With NIST as subject, the verbs that say NIST obliges. Closed on purpose:
+#: it names the one claim the ruling forbids, "NIST requires ...".
+_NIST_OBLIGES = frozenset({"requires", "mandates", "obliges", "obligates", "directs"})
+
+_LEADING_MARKER = re.compile(r"^(?:[-*+]\s+|\d+[.)]\s+)+")
+
+
+def framed_as_nists(sentence: str) -> bool:
+    """Whether a sentence speaks as NIST describing or suggesting (#300).
+
+    **An allow-list on the subject, not a deny-list of obligation verbs**
+    (80's ruling, refined after 1d's review). Every round of a verb list
+    found another spelling -- "will", "is responsible for", the imperative,
+    "ensures", "NIST requires" -- because a deny-list chases paraphrase. So
+    the sentence must have NIST or the Playbook as its subject ("NIST
+    suggests ...", "The Playbook groups ..."), and anything else fails by
+    default: an organization as subject in any wording, an imperative, any
+    other subject. Within NIST-as-subject, the verbs that say NIST obliges
+    are refused, and so is a sentence that binds anyway ("NIST suggests that
+    the organization must ..."), since a Playbook sentence never binds.
+    """
+    plain = _LEADING_MARKER.sub("", _MARKUP_RE.sub("", sentence).strip())
+    match = _NIST_SUBJECT.match(plain)
+    if not match or match.group(1).lower() in _NIST_OBLIGES:
+        return False
+    return classify(plain) not in BINDING
+
 
 def playbook_obligations(text: str) -> list[Statement]:
-    """Sentences that cite the NIST AI RMF Playbook and bind (#300).
+    """Sentences citing only the NIST AI RMF Playbook, not framed as NIST's.
 
     The Playbook is voluntary: NIST's suggested actions, which it
     deliberately kept out of the AI RMF Core. A sentence citing it may say
-    NIST suggests an action; it may never make one an obligation, **whatever
-    its subject** -- "Acme Health shall ... [Playbook ...]" presents NIST's
-    suggestion as a requirement just as "NIST requires ..." would (80's
-    ruling on #300). An obligation the organization adopts goes in its own
-    sentence, without the Playbook tag.
+    NIST suggests or describes; it may never present an action as anyone's
+    obligation -- "Acme Health will ... [Playbook ...]" does so as surely as
+    "NIST requires ..." (80's rulings on #300 and #309). An obligation the
+    organization adopts goes in its own sentence, without the Playbook tag.
 
     **Only sentences whose every citation is a Playbook tag.** A merged tag
     that also names a binding source -- `[NIST 800-53 AC-2 | NIST AI RMF
     Playbook ...]` -- carries that source's obligation, and the requirement
-    strength rule governs it instead. Otherwise no wording could satisfy
-    both rules (80's second ruling on #300).
+    strength rule governs it instead.
     """
-    return [
-        s
-        for s in analyze(text)
-        if s.cites_only_the_playbook
-        and (s.binds or _PLAYBOOK_OBLIGATION_EXTRA.search(_MARKUP_RE.sub("", s.text)))
-    ]
+    return [s for s in analyze(text) if s.cites_only_the_playbook and not framed_as_nists(s.text)]
 
 
 def classify(sentence: str) -> str:

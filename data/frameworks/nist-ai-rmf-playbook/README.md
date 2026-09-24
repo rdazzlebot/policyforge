@@ -16,13 +16,21 @@ action. It must never say NIST requires one.** In NIST's own words:
 tell the model to write a Playbook-tagged action as NIST suggesting it, and to
 put any requirement the organization adopts in a separate sentence without
 the Playbook tag. `policyforge check` then reports, **as an error**, any
-sentence that cites only the Playbook and binds: "must", "shall", "is
-required to", or "needs to", "has to", "is expected to". Two limits:
+sentence that cites only the Playbook and is not framed as NIST's: its
+subject must be NIST or the Playbook ("NIST suggests ...", "The Playbook
+lists ..."), its verb must not be "requires", "mandates", "obliges" or
+"directs", and it must not bind. **Anything else fails**, however it is
+worded, so a new paraphrase of an obligation is caught by default. Limits:
 
 - A merged tag that also cites a binding source (`[NIST 800-53 CM-8 | NIST AI RMF Playbook ...]`) is held to that source's rule instead, so it may bind.
-- Obligation wording outside those phrases, such as "it is mandatory to",
-  is not caught. Read generated text that cites this catalog with that in
-  mind.
+- The subject is read from the start of the sentence. A sentence about NIST
+  with another subject, such as "One action NIST lists is ...", fails even
+  though it asserts nothing; reword it with NIST or the Playbook as subject.
+- An obligation the organization adopts, in its own sentence beside a
+  Playbook citation, is reported by `policyforge check` as a binding
+  sentence that cites nothing, for a person to confirm. It is seen only if
+  it binds in the usual words ("must", "shall", "is required to"); one
+  phrased "Acme Health requires ..." is not.
 
 ## What this catalog is
 

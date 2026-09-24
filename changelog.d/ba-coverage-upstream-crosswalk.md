@@ -11,7 +11,7 @@ suggests nothing to run, because nothing a user can run reads those links yet.
 
 The note above the rows changed too. It sorted every zero into two kinds and
 had no place for one the source publishes that this release does not yet read;
-it now names that kind, among the four it lists.
+the rows now name that kind among the others.
 
 **Nothing else changes.** The 800-171 figures are the same, and `crosswalk seed` still accepts 800-171 if you choose to
 run it; the report simply no longer recommends it.

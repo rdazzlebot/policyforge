@@ -9,6 +9,10 @@ did this correctly; these hold `_coverage` to its neighbour.
 
 from __future__ import annotations
 
+import json
+import re
+from pathlib import Path
+
 # ---- the coverage skill's zero rows -----------------------------------------
 
 
@@ -375,21 +379,22 @@ def test_800_171_says_the_source_publishes_the_mapping_and_offers_no_seed():
     assert "crosswalk seed" not in row, "800-171 still tells the user to seed by hand"
 
 
-def test_the_header_names_four_kinds_of_zero():
-    """The header was a two-way partition -- *work nobody has done* or *a
-    mapping that would be wrong* -- with no place for a zero the source has
-    already answered (#260). It then said "one nobody has published", which
-    no search established for any framework (#264). Fixing a row alone would
-    leave the header denying the category the row now names."""
+def test_the_header_says_zeros_differ_and_counts_nothing():
+    """The header was a two-way partition with no place for a zero the source
+    has already answered (#260), then said "one nobody has published", which
+    no search established (#264), then went from three kinds to five in one
+    evening (#270). **A count in output is a claim that has to stay true**,
+    so it names none and the rows carry the taxonomy (80, on #270)."""
     from policyforge.zardoz.skills import _coverage
 
     output = _coverage(_coverage_state(), [])
     header = output[output.index("Why those are zero") :].split("\n  CFR-")[0]
 
-    assert "one of four things" in header, header
-    assert "the source publishes that this\n  release does not yet read" in header, header
-    assert "searched for and not found" in header, header
-    assert "a catalog\n  that carries no crosswalk yet" in header, header
+    assert "has one of several causes" in header, header
+    assert "Each line below names its cause." in header, header
+    assert not re.search(r"\b(two|three|four|five|six)\b", header), (
+        f"the header counts the kinds again, and the count will go stale: {header!r}"
+    )
     assert "nobody has published" not in header, "the header still claims a search nobody made"
 
 
@@ -546,3 +551,117 @@ def test_every_searched_framework_names_a_shipped_catalog():
             f"{name!r}'s search record does not say what was NOT searched; a "
             "negative result without its limits is a shrug, not a finding."
         )
+
+
+# ---- #270: a catalog that carries a crosswalk is never told to seed one ----
+#
+# `covered` is the catalog joined to the user's topics, not a fact about the
+# file. Under the example registry every crosswalk-carrying catalog was
+# covered, so the seed branch's population looked like Part 2 alone; a
+# one-topic registry sends HIPAA and FedRAMP there too (1d, on #270).
+
+_REACHES_TEXT = "none of the controls it reaches belongs to one of your topics"
+_ID_RE = re.compile(r"\b[A-Z]{2}-\d+(?:\(\d+\))?")
+
+
+def _shipped_rows():
+    root = Path(__file__).resolve().parent.parent / "data" / "frameworks"
+    for path in sorted(root.glob("*/controls.json")):
+        yield from json.loads(path.read_text(encoding="utf-8"))
+
+
+def _crosswalks(row) -> list[dict]:
+    return [row.get("source_crosswalk") or {}] + [
+        e.get("source_crosswalk") or {} for e in row.get("enhancements", [])
+    ]
+
+
+def _zero_rows(output: str) -> dict[str, str]:
+    """`{row heading: row}` for every cause line under "Why those are zero"."""
+    block = output[output.index("Why those are zero") :].splitlines()
+    rows = {}
+    for line in block[3:]:
+        if not line.strip():
+            break
+        heading, sep, _ = line.strip().partition(": ")
+        if sep and heading.upper() == heading:
+            rows[heading] = line
+    return rows
+
+
+def test_no_catalog_carrying_a_crosswalk_is_told_to_seed_one():
+    """**1d's test.** A registry anchored on one 800-53 control that no
+    shipped crosswalk reaches. Both sides are DERIVED from the raw
+    `controls.json` files -- not from the loader the code under test reads
+    -- so the catalogs are not listed by name and a new one is covered the
+    day it ships. Conservation: every cause row is classified, so a carrier
+    cannot leave the population by being mislabelled."""
+    import dataclasses
+    from types import SimpleNamespace
+
+    from policyforge.topics.registry import load_topics
+    from policyforge.zardoz.skills import _coverage, _framework_key
+
+    reached: set[str] = set()
+    carriers: set[str] = set()
+    anchorable: set[str] = set()
+    for row in _shipped_rows():
+        crosswalks = _crosswalks(row)
+        for crosswalk in crosswalks:
+            for value in crosswalk.values():
+                reached |= set(_ID_RE.findall(value))
+        if any(crosswalks):
+            carriers.add(_framework_key(row["framework"]))
+        if _framework_key(row["framework"]) == _framework_key("NIST 800-53"):
+            anchorable.add(row["control_id"])
+    free = sorted(anchorable - reached)
+    assert carriers, "no shipped catalog carries a crosswalk, so this checks nothing"
+    assert free, "every 800-53 control is reached by some crosswalk; pick another anchor"
+
+    root = Path(__file__).resolve().parent.parent
+    topic = dataclasses.replace(
+        load_topics(root / "config" / "topics.example.yaml")[0], nist_controls=[free[0]]
+    )
+    state = SimpleNamespace(topics=[topic], controls_paths=[], config={}, content_dir=None)
+    rows = _zero_rows(_coverage(state, []))
+
+    seen = {heading: row for heading, row in rows.items() if _framework_key(heading) in carriers}
+    assert seen, f"no crosswalk-carrying catalog reached a zero row: {sorted(rows)}"
+    for heading, row in seen.items():
+        assert _REACHES_TEXT in row, f"{heading} carries a crosswalk but reads: {row!r}"
+        assert "crosswalk seed" not in row, f"{heading} is told to seed what it carries"
+        assert "carries no crosswalk" not in row, f"{heading} is told it carries none"
+    for heading, row in rows.items():
+        if heading not in seen:
+            assert _REACHES_TEXT not in row, f"{heading} carries no crosswalk but reads: {row!r}"
+
+
+def test_a_crosswalk_carried_only_by_enhancements_still_counts():
+    """NIST's HIPAA crosswalk maps implementation specifications separately
+    from their Standards, so a catalog can carry its mapping only below the
+    control. No shipped catalog is shaped that way -- the one enhancement-only
+    control sits in a catalog with control-level mappings too -- so the data
+    cannot tell a control-level-only check from the real one, and this
+    hand-built catalog can."""
+    from types import SimpleNamespace
+
+    from policyforge.ingest.schema import Control, ControlEnhancement
+    from policyforge.zardoz.skills import _zero_row_reasons
+
+    name = "Example Enhancement Framework"
+    control = Control(control_id="EEF-1", title="t", framework=name, framework_version="1")
+    control.enhancements = [
+        ControlEnhancement(
+            enhancement_id="EEF-1(a)",
+            title="t",
+            baseline="",
+            description="",
+            source_crosswalk={"NIST 800-53": "AC-2"},
+        )
+    ]
+    assert not control.source_crosswalk, "the premise: nothing at control level"
+    report = SimpleNamespace(framework_coverage=[SimpleNamespace(framework=name, covered=0)])
+    row = _row("\n".join(_zero_row_reasons([control], report)), name.upper())
+
+    assert _REACHES_TEXT in row, f"an enhancement-level crosswalk was not seen: {row!r}"
+    assert "crosswalk seed" not in row, row

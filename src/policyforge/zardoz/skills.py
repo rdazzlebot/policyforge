@@ -601,9 +601,8 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
     """Why each framework reachable through the crosswalk covers nothing.
 
     **A zero under a heading that reads as a gap is not a finding until it
-    carries its cause.** Three shipped frameworks report zero, and with a
-    fourth kind that only a catalog nobody has examined reaches, they mean
-    four different things:
+    carries its cause.** A zero means one of five things, and which ones a
+    user sees depends on their topics as much as on the catalogs:
 
     - `Information Blocking` is refused **by design**. Its entries are
       conditions of an exception, not controls to implement, so mapping
@@ -619,11 +618,19 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
       (`oscal_loader` keeps only `rel="related"` links, and 800-171 encodes
       its sources as `rel="reference"`; #259). That zero is a gap in
       PolicyForge, not in the source, and `PUBLISHED_UPSTREAM` holds it.
+    - **A catalog that carries a crosswalk** -- HIPAA and FedRAMP ship
+      one -- reads zero when none of the 800-53 controls it maps to belongs
+      to one of the user's topics. The gap is in the topics, not the
+      mapping, so the row suggests no command and advises against seeding:
+      a hand-made mapping would compete with the publisher's. `covered` is
+      the catalog joined to the registry, not a fact about the file -- the
+      example registry anchors so much that this never showed, and a
+      one-topic registry shows it at once (1d, on #270).
     - **Any other catalog** -- every BYOC one, and any shipped one added
-      later without a crosswalk -- is in none of those tables, so nobody has
-      said anything about it. Its row states only what the catalog carries.
-      Until #264 this branch printed "no published crosswalk yet" for all of
-      them, which is a claim about the world that no one had checked.
+      later without a crosswalk -- is in none of those tables and carries no
+      mapping. Its row states only that. Until #264 this branch printed "no
+      published crosswalk yet" for all of them, including the two above,
+      which is a claim about the world that no one had checked.
 
     **This docstring said the opposite until #260**: *"`42 CFR Part 2` and
     `NIST 800-171` seed a crosswalk normally. Nobody has published one."*
@@ -634,8 +641,11 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
     kind was filed under the second.
 
     Those want different responses — *leave it alone*, *wait for the
-    ingest*, *go and map it*, and *find out, then map it* — and the report
-    prints the same number for all four. The reasons are looked up from the
+    ingest*, *fix the topics*, *go and map it*, and *find out, then map it*
+    — and the report prints the same number for all five. The header names
+    no count: it went from two to five in one evening, and a count in
+    output is a claim that goes stale in a place nobody adding a kind
+    thinks to look (80, on #270). The rows carry the taxonomy. The reasons are looked up from the
     declared framework name, which is reliable since the two CFR catalogs
     were renamed to be citable.
 
@@ -660,9 +670,15 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
     )
 
     declared = {}
+    # Frameworks whose catalog carries any 800-53 mapping, at either level --
+    # NIST's HIPAA crosswalk maps implementation specifications separately
+    # from their Standards, so a control-level check alone would miss some.
+    carries_crosswalk = set()
     for control in controls:
         key = _framework_key(control.framework)
         declared.setdefault(key, control.framework)
+        if control.source_crosswalk or any(e.source_crosswalk for e in control.enhancements):
+            carries_crosswalk.add(key)
 
     path_for = _paths_by_framework(catalog_paths or [])
     anchor_path = path_for.get(_framework_key("NIST 800-53"))
@@ -684,6 +700,15 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
             # this branch used to print told users to rebuild by hand what the
             # publisher already publishes. #260.
             notes.append(f"  {framework.framework.upper()}: {upstream}")
+        elif _framework_key(framework.framework) in carries_crosswalk:
+            # The fifth kind, and checked before the seed advice: a crosswalk
+            # actually in the file outranks any claim about searching for one.
+            # No command, because the remedy is a topic, not a mapping. #270.
+            notes.append(
+                f"  {framework.framework.upper()}: this catalog maps to 800-53, but none "
+                "of the controls it reaches belongs to one of your topics. The gap is in "
+                "your topics, not the mapping; do not seed it by hand."
+            )
         else:
             # Named for its contract, because the name is what the source
             # scan sees at the interpolation site: a pre-assembled fragment
@@ -694,12 +719,13 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
             for path in (own_path, anchor_path):
                 if path and shlex.quote(str(path)) not in quoted_flags:
                     quoted_flags += f" --controls {shlex.quote(str(path))}"
-            # Two kinds of zero share the seed advice and differ only in what
-            # the row may claim. "found" is reserved for a framework someone
-            # actually searched for (`SEARCHED_NONE_FOUND`, whose search record
-            # sits beside it -- Part 2, #264). Every other catalog, including
-            # any BYOC one, gets a fact about the catalog and no claim about
-            # the world: nobody searched for it, so nothing was "not found".
+            # Two kinds of zero share the seed advice -- neither catalog carries
+            # any mapping -- and differ only in what the row may claim. "found"
+            # is reserved for a framework someone actually searched for
+            # (`SEARCHED_NONE_FOUND`, whose search record sits beside it --
+            # Part 2, #264). Every other catalog, including any BYOC one, gets
+            # a fact about the catalog and no claim about the world: nobody
+            # searched for it, so nothing was "not found".
             if _searched_none_found(name) is not None:
                 state = "no published crosswalk found"
             else:
@@ -715,10 +741,8 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
         "",
         "Why those are zero",
         "-" * 60,
-        "  A zero here is one of four things, and they want different responses:",
-        "  a mapping that would be wrong to make, one the source publishes that this",
-        "  release does not yet read, one searched for and not found, or a catalog",
-        "  that carries no crosswalk yet.",
+        "  A zero here has one of several causes, and they want different responses.",
+        "  Each line below names its cause.",
         *notes,
     ]
 

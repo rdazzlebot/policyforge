@@ -51,8 +51,12 @@ A figure of *$0.0002 per call* once circulated as glm's rate for synthesis
 
 - **Claude through its direct API.** Not authorised for this release (the
   user, 2026-09-21). **Every Claude figure in this file went through
-  OpenRouter**; the two paths are different code, and nothing here measures
-  the direct one.
+  OpenRouter**, on two different grounds. For the retained ledgers, each
+  Claude row records `provider: litellm`. For the sections whose sources did
+  not survive, the ground is the file's own record: epoch 11 notes that the
+  only credential the project had configured was `OPENROUTER_API_KEY`, with
+  no Anthropic or Vertex key. The two paths are different code, and nothing
+  here measures the direct one.
 - **Gemini through its direct API.** Never measured. Gemini appears only via
   OpenRouter, in the 2026-09-12 comparison, whose source was not retained.
 - **Local models through `openai-compat`.** Never measured. One

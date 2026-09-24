@@ -200,6 +200,49 @@ Recorded so nobody re-derives them as model verdicts.
 
 ______________________________________________________________________
 
+## How an epoch is registered
+
+A pre-registered epoch fixes its criteria before the data exists, so that
+nothing can be tuned to the result. Three conventions, each earned by
+epoch 23, where the registration was sound in intent and still left the
+measurer to decide a verdict it should have decided in advance.
+
+**1. Every criterion carries a number, or states "no tolerance" as a
+choice.** Epoch 23 registered *"N reported and comparable to arm A's"*,
+which implies a tolerance, and *"a fall in N against arm A fails
+independently"*, which implies none. N fell 1058 → 1041 (−1.6%). Applying
+the unnumbered clause at zero tolerance would have meant inventing the
+tolerance while reading the data, so the verdict was referred rather than
+decided. **Where a numbered clause and an unnumbered one govern the same
+quantity, the numbered one governs**, and the next registration should not
+contain the pair.
+
+**2. Characterise the variance before the data exists.** Epoch 23 fixed a
+direction with no idea what the noise looked like. Arm A turned out bimodal
+at the document level: 9 documents entirely short-form, 11 entirely
+qualified, none mixed, so the ~1,050 citations were about 20 draws, not
+1,050. **Found afterwards, that is only a fact; used as a reason, it is
+inventing a tolerance.** Known beforehand, it would have set the tolerance.
+
+**3. Run the null.** An arm-A-versus-arm-A re-run is how convention 2 gets
+its number. It is a baseline, not a tiebreaker, which is why it is worth
+running when nothing is in dispute: that is the only time nobody is
+tempted to read it as a verdict. On this corpus it costs cents (see epoch
+23's cost correction), so **declining it on cost is declining it on a
+figure that was never measured.**
+
+A registration that follows all three states, for each criterion:
+
+```
+criterion:   <quantity>, <direction>
+tolerance:   <number, with its unit>  |  none, by choice: <why>
+variance:    <null-run spread, with its date and commit>  |  not yet measured
+cost:        <calls x measured rate, provider, date>  -- not an estimate carried
+             forward from a different instrument
+```
+
+______________________________________________________________________
+
 ## Configuration epochs
 
 What changed, and therefore which numbers may be compared.
@@ -1680,9 +1723,22 @@ draws. **This is recorded as a fact and deliberately not used as a reason**
 — excusing a delta by variance discovered afterwards is the same move as
 inventing a tolerance. The lesson belongs to the next pre-registration, not
 retrofitted into this one: **an arm-A-versus-arm-A re-run gives the null
-distribution for about $0.28**, and it is worth that even when no criterion
-is in dispute, because it is the only way anyone gets a first number for
-document-level variance on this corpus.
+distribution**, and it is worth running even when no criterion is in
+dispute, because it is the only way anyone gets a first number for
+document-level variance on this corpus. **Its cost, corrected 2026-09-24
+(#186):** this said *about $0.28*, which priced epoch 21's four calls per
+topic, three of them output-heavy `generate` calls. An arm here is 20
+`synthesize` calls. A glm-5.3-flash `synthesize` call measured $0.0020 to
+$0.0046 on 2026-09-24, **mean $0.0029** (three calls through OpenRouter,
+paired by topic with epoch 21's), and **mean $0.0054** across epoch 21's
+twenty (2026-09-17). So a null arm is **about $0.06 to $0.11**: 20 x each
+mean. The three calls' own range, 20 x $0.0020 to $0.0046, gives $0.04 to
+$0.09, lower at both ends. Three calls are too few to bound a rate, so the
+estimate uses the means, and the larger sample sets the top. Those calls used four catalogs and this
+epoch used seven, which makes inputs larger, so read it as an order of
+magnitude, not a quote. A figure of *$0.0002/call* also circulated for this
+comparison. It does not reproduce, and it is 9x below the cheapest
+`synthesize` call on record.
 
 **Secondary guardrails, as registered.** Citation density rose 118.40 →
 118.65 (+0.2%; the threshold was a fall of no more than 10%). Truncation:

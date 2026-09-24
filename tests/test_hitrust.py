@@ -903,9 +903,11 @@ def test_a_trailing_third_cell_is_reported_with_the_record_it_took():
     assert "The example thing is reviewed." in losses[0], "the warning does not show the text"
 
 
-def test_a_leading_third_cell_is_not_a_loss():
-    """The quiet twin: a third cell IN FRONT leaves label and value as the
-    last two, so the row is read and nothing is lost."""
+def test_a_leading_third_cell_keeps_its_row_and_reports_its_own_text():
+    """A third cell IN FRONT leaves label and value as the last two, so the
+    row is read -- but the front cell's own text goes nowhere. #281 first
+    called this "harmless", measured only as "the last two still read";
+    9b showed the front cell's text was in no record and no warning."""
     markup = _RENDERED.replace(
         _L2,
         "<tr><td>Section 1</td><td>Level 2 Implementation:</td>"
@@ -914,8 +916,10 @@ def test_a_leading_third_cell_is_not_a_loss():
     assert markup != _RENDERED
     records, losses = _losses(markup)
 
-    assert [r.level for r in records] == ["Level 1", "Level 2"]
-    assert losses == []
+    assert [r.level for r in records] == ["Level 1", "Level 2"], "the row itself stopped reading"
+    assert len(losses) == 1, losses
+    assert losses[0].startswith("1 cell(s) sat in front of a label and value"), losses[0]
+    assert "'Section 1'" in losses[0], losses[0]
 
 
 def test_an_unrecognised_label_is_reported_with_its_text():
@@ -935,13 +939,40 @@ def test_an_unrecognised_label_is_reported_with_its_text():
 
 
 def test_a_heading_row_is_not_a_loss():
-    """The quiet twin for both: a two-cell heading with no colon-ended label
-    -- the fixture's own "Level 1 | Implementation Requirements" -- falls
-    through by design and carries no requirement text."""
+    """The quiet twin: a two-cell level heading whose value is a caption,
+    for a level the report uses -- the fixture's own "Level 1 |
+    Implementation Requirements" -- carries no requirement text."""
     assert "<tr><td>Level 1</td><td>Implementation Requirements</td></tr>" in _RENDERED
     heading = "<tr><td>Level 2</td><td>Implementation Requirements</td></tr>"
     _, losses = _losses(_RENDERED.replace(_L2, heading + _L2))
     assert losses == []
+
+
+def test_a_multi_word_level_heading_the_report_uses_is_quiet():
+    """Overlay levels are open-ended ("Level FedRAMP", "Level NIST SP
+    800-171"), so a heading is judged by whether the report USES its level,
+    not by a list of names."""
+    rows = (
+        "<tr><td>Level FedRAMP</td><td>Implementation Requirements</td></tr>"
+        "<tr><td>Level FedRAMP Implementation:</td><td>The FedRAMP overlay text.</td></tr>"
+    )
+    records, losses = _losses(_RENDERED.replace(_L2, _L2 + rows))
+    assert "Level FedRAMP" in [r.level for r in records]
+    assert losses == []
+
+
+def test_a_heading_for_a_level_the_report_never_uses_is_reported():
+    """**9b's shape.** "Level 2 MARKER" is shaped exactly like an overlay
+    level, and no row of this report uses it, so the row is not a heading
+    of anything -- its text is reported, not quietly dropped."""
+    markup = _RENDERED.replace(
+        _L2, _L2 + "<tr><td>Level 2 MARKER</td><td>Implementation Requirements</td></tr>"
+    )
+    assert markup != _RENDERED
+    _, losses = _losses(markup)
+
+    assert len(losses) == 1, losses
+    assert "'Level 2 MARKER'" in losses[0], losses[0]
 
 
 def test_a_known_but_unread_label_is_not_a_loss():
@@ -1048,7 +1079,14 @@ def test_every_row_of_text_is_placed_quiet_or_reported():
     ledger: list = []
     records = export.records_from_pairs(rows, losses, ledger)
 
-    assert [cells for _, cells in ledger] == text_rows, "a row of text left the ledger"
+    # Per CELL, not per row (9b): a placed row whose front cell went nowhere
+    # used to count the whole row as placed.
+    from collections import Counter
+
+    ledgered = Counter(cell for _, cells in ledger for cell in cells)
+    assert ledgered == Counter(cell for cells in text_rows for cell in cells), (
+        "a cell of text left the ledger"
+    )
     kinds = {kind for kind, _ in ledger}
     assert kinds == {export.PLACED, export.QUIET, export.REPORTED}, kinds
 
@@ -1063,10 +1101,11 @@ def test_every_row_of_text_is_placed_quiet_or_reported():
         else:
             bare_label = len(cells) == 1 and hitrust.field_for_label(cells[0]) is not None
             unread = len(cells) >= 2 and hitrust.field_for_label(cells[-2]) in {"topics"}
+            used = {r.level for r in records}
             heading = (
                 len(cells) == 2
                 and hitrust.field_for_label(cells[0]) is None
-                and hitrust.level_from_label(cells[0])
+                and hitrust.level_from_label(cells[0]) in used
                 and hitrust.field_for_label(cells[1]) is not None
             )
             assert bare_label or unread or heading, (
@@ -1075,4 +1114,4 @@ def test_every_row_of_text_is_placed_quiet_or_reported():
 
     reported = sum(1 for kind, _ in ledger if kind == export.REPORTED)
     assert reported == sum(int(w.split(" ", 1)[0]) for w in losses), (reported, losses)
-    assert reported == 6, f"the fixture holds six loud rows, the ledger reported {reported}"
+    assert reported == 7, f"the fixture holds seven loud groups, the ledger reported {reported}"

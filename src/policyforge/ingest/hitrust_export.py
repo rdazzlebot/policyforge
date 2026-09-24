@@ -318,9 +318,11 @@ def read_mhtml(path: Path) -> str:
 _LABEL_VALUE_WIDTH = 2
 
 
-#: The three outcomes every row of text ends in (#281). `records_from_pairs`
-#: records one per non-empty row into `ledger` when given, so a test can
-#: assert they PARTITION the input: nothing may leave every outcome.
+#: The three outcomes every cell of text ends in (#281). `records_from_pairs`
+#: records (outcome, cells) into `ledger` when given -- a placed row's label
+#: and value as one entry, any cell in front of them as another -- so a test
+#: can assert they PARTITION the input's cells: nothing may leave every
+#: outcome.
 PLACED, QUIET, REPORTED = "placed", "quiet", "reported"
 
 #: Labels this reader knows and deliberately does not keep. Enumerated, so a
@@ -355,17 +357,18 @@ def records_from_pairs(
     described into `losses` when given, and `etl-hitrust` prints them as
     warnings, so an export that hits either shape says so on its first run.
 
-    **Every row with text is placed, deliberately quiet, or reported**
-    (#277, and 1d on #281). Quiet is an enumerated set -- a bare label with
-    no value, a label in `_KNOWN_UNREAD`, and a level heading whose two
-    cells are both captions ("Level 1 | Implementation Requirements").
-    Anything else nothing placed is REPORTED by default: a row of three or
-    more cells whose label is not second-to-last (read as text plus an
-    extra cell, taking its level record with it), a label this reader does
-    not know, colon or not, and a recognised label with nowhere to go -- no
-    level in it, or no Control Reference yet. A third cell IN FRONT is
-    harmless; the last two still read. `ledger` records each row's outcome
-    so the partition can be tested against the input.
+    **Every cell with text is placed, deliberately quiet, or reported**
+    (#277; 1d and 9b on #281). Quiet is an enumerated set -- a bare label
+    with no value, a label in `_KNOWN_UNREAD`, and a level heading whose
+    two cells are both captions ("Level 1 | Implementation Requirements")
+    for a level the report actually uses in a placed row. Anything else is
+    REPORTED by default: a row whose label is not second-to-last (read as
+    text plus an extra cell, taking its level record with it), a label
+    this reader does not know, colon or not, a recognised label with
+    nowhere to go -- no level in it, or no Control Reference yet -- and a
+    cell IN FRONT of a label and value that were read: the row is placed,
+    that cell's text is not. `ledger` records the outcome per group of
+    cells, so the partition can be tested against the input's cells.
 
     **Page furniture is one cell too, if SSRS puts it in a table** -- a
     report title, "Page 1 of 212", a print date. Whether it does is as
@@ -405,10 +408,22 @@ def records_from_pairs(
     misplaced: list[list[str]] = []
     unknown: list[tuple[str, str]] = []
     orphaned: list[tuple[str, str]] = []
+    stray: list[str] = []
+    headings: list[list[str]] = []
+    levels_used: set[str] = set()
 
     def outcome(kind: str, cells: list[str]) -> None:
         if ledger is not None:
             ledger.append((kind, cells))
+
+    def placed(cells: list[str]) -> None:
+        """Label and value are read. Any cell IN FRONT of them is not, so it
+        is reported: the unit that carries text is the cell, not the row
+        (9b, on #281)."""
+        outcome(PLACED, cells[-2:])
+        if len(cells) > _LABEL_VALUE_WIDTH:
+            stray.extend(cells[:-2])
+            outcome(REPORTED, cells[:-2])
 
     for row in rows:
         cells = [cell for cell in row if cell.strip()]
@@ -428,18 +443,18 @@ def records_from_pairs(
         if field in ("category", "objective", "objective_statement"):
             setattr(context, field, value)
             current.clear()
-            outcome(PLACED, cells)
+            placed(cells)
             continue
         if field == "reference":
             context.reference = value
             context.specification = ""
             context.factor_type = ""
             current.clear()
-            outcome(PLACED, cells)
+            placed(cells)
             continue
         if field in ("specification", "factor_type"):
             setattr(context, field, value)
-            outcome(PLACED, cells)
+            placed(cells)
             continue
         if field in (
             "statement",
@@ -449,10 +464,11 @@ def records_from_pairs(
             "mapping",
         ):
             if level and context.reference:
+                levels_used.add(level)
                 lost = _absorb(record_for(level), field, value)
                 if lost:
                     discarded.append((f"{context.reference} {level}", lost))
-                outcome(PLACED, cells)
+                placed(cells)
             else:
                 # Recognised, and then nowhere to put it: no level in the
                 # label ("Implementation:"), or no Control Reference yet.
@@ -464,10 +480,21 @@ def records_from_pairs(
         if field in _KNOWN_UNREAD:
             outcome(QUIET, cells)  # a label this reader knows and does not keep
             continue
-        if field is None and level and hitrust.field_for_label(value) is not None:
-            # A level heading: "Level 1 | Implementation Requirements". Both
-            # cells are captions, so no requirement text is in the row.
-            outcome(QUIET, cells)
+        if (
+            len(cells) == _LABEL_VALUE_WIDTH
+            and field is None
+            and hitrust.field_for_label(value) is not None
+        ):
+            # A heading candidate: "Level 1 | Implementation
+            # Requirements". Decided after the loop: quiet only if the report
+            # USES that level in a placed row, because any "Level X" is a
+            # valid overlay name and "Level 2 MARKER" is shaped exactly like
+            # one (9b, on #281). No "label has a level" test here: a label
+            # without one has level "", which is never in `levels_used`, so
+            # it is reported below either way -- the condition could not be
+            # told apart by any input, and was removed rather than kept as
+            # an untestable guard.
+            headings.append(cells)
             continue
 
         # Nothing placed this row and it is in no quiet set, so it is
@@ -482,8 +509,17 @@ def records_from_pairs(
             unknown.append((label, value))
         outcome(REPORTED, cells)
 
+    for cells in headings:
+        if hitrust.level_from_label(cells[0]) in levels_used:
+            outcome(QUIET, cells)
+        else:
+            unknown.append((cells[0], cells[1]))
+            outcome(REPORTED, cells)
+
     if losses is not None:
-        losses.extend(_describe_losses(skipped_text, discarded, misplaced, unknown, orphaned))
+        losses.extend(
+            _describe_losses(skipped_text, discarded, misplaced, unknown, orphaned, stray)
+        )
     return records
 
 
@@ -524,6 +560,7 @@ def _describe_losses(
     misplaced: list[list[str]] | None = None,
     unknown: list[tuple[str, str]] | None = None,
     orphaned: list[tuple[str, str]] | None = None,
+    stray: list[str] | None = None,
 ) -> list[str]:
     """Warnings for what `records_from_pairs` could not place, first three shown.
 
@@ -574,6 +611,12 @@ def _describe_losses(
             + "; ".join(
                 f"{_excerpt(label)!r}: {_excerpt(value)!r}" for label, value in orphaned[:3]
             )
+        )
+    if stray:
+        notes.append(
+            f"{len(stray)} cell(s) sat in front of a label and value that were read; "
+            "their own text is NOT in the catalog: "
+            + "; ".join(repr(_excerpt(s)) for s in stray[:3])
         )
     return notes
 

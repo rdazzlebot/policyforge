@@ -34,13 +34,13 @@ approves an estimate.
 
 ### What was measured, per provider — re-derived
 
-| path       | model                         | what                                                            | cost                                                       | time    |
-| ---------- | ----------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------- | ------- |
-| OpenRouter | `z-ai/glm-5.3-flash`          | 20 topics, synthesize + three tiers (epoch 21, 2026-09-17)      | $0.2798, **$0.0140 per topic**                             | 103 min |
-| OpenRouter | `anthropic/claude-sonnet-5`   | 5 topics, the same pipeline (epoch 21)                          | $3.0875, **$0.6175 per topic**                             | 37 min  |
-| OpenRouter | `anthropic/claude-sonnet-4.5` | 25 topics, synthesize + Standard (epoch 24, 2026-09-21)         | $6.1487, mean **$0.2459 per topic**                        | 1.26 h  |
-| OpenRouter | `z-ai/glm-5.3-flash`          | 3 synthesize calls, paired by topic with epoch 21 (2026-09-24)  | $0.0086, $0.0020–$0.0046 per call                          | —       |
-| OpenRouter | glm and `deepseek-v4-flash`   | eval-harness calls, 2026-09-18/19, attached to no written epoch | glm $0.00015–$0.00018 per call; deepseek $0.00009–$0.00010 | —       |
+| path       | model                         | what                                                                                    | cost                                                                                                                          | time    |
+| ---------- | ----------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------- |
+| OpenRouter | `z-ai/glm-5.3-flash`          | 20 topics, synthesize + three tiers (epoch 21, 2026-09-17)                              | $0.2798, **$0.0140 per topic**                                                                                                | 103 min |
+| OpenRouter | `anthropic/claude-sonnet-5`   | 5 topics, the same pipeline (epoch 21)                                                  | $3.0875, **$0.6175 per topic**                                                                                                | 37 min  |
+| OpenRouter | `anthropic/claude-sonnet-4.5` | 25 topics, synthesize + Standard (epoch 24, 2026-09-21)                                 | $6.1487, mean **$0.2459 per topic**                                                                                           | 1.26 h  |
+| OpenRouter | `z-ai/glm-5.3-flash`          | 3 synthesize calls, paired by topic with epoch 21 (2026-09-24)                          | $0.0086, $0.0020–$0.0046 per call                                                                                             | —       |
+| OpenRouter | glm and `deepseek-v4-flash`   | eval-harness calls, 2026-09-18/19, attached to no written epoch (plus 2 sonnet-5 calls) | mean per call, by file: glm $0.00015–$0.00018 (calls $0.00003–$0.00037); deepseek $0.00009–$0.00010 (calls $0.00002–$0.00104) | —       |
 
 **A per-call rate is a rate for that kind of call.** A glm `synthesize` call
 averaged $0.0054 across epoch 21's twenty; a glm eval call cost about $0.0002.
@@ -1749,7 +1749,7 @@ its verdict, which is sequenced after this run.
 
 ### 23. Whether the prompt alone stops short-form NIST citations — 2026-09-20
 
-> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived The one exception is the null-run cost correction, which rests on [`docs/measurements/ledgers/`](docs/measurements/ledgers/README.md).
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived. The one exception is the null-run cost correction, which rests on [`docs/measurements/ledgers/`](docs/measurements/ledgers/README.md).
 
 **Pre-registered before the data existed** (design, thresholds and the
 blocking prerequisite fixed 2026-09-18, held by 1d), and run once 800-171

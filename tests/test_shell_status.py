@@ -537,6 +537,33 @@ def test_a_committed_fence_the_parser_cannot_read_is_refused(
     assert "README.md  1 -> 0" in capsys.readouterr().err
 
 
+def test_an_aliased_run_agrees_on_count_and_is_not_linted(tmp_path, monkeypatch):
+    """**A known limit, pinned so it is not mistaken for coverage** (9b, #326).
+
+    Census and parser both count the aliased step, so the floor is satisfied,
+    and the parser lints the literal `*cmd`. The anchored step IS reported,
+    and the aliased copy of the same command is not. If the parser is ever
+    handed resolved strings, this test fails, and it should then assert 2
+    findings instead of 1.
+    """
+    text = """\
+on: push
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - run: &cmd "python scripts/check.py | tail -4 && git push"
+      - run: *cmd
+"""
+    assert shell_status._count_workflow_steps(text) == 2
+    assert len(shell_status._workflow_run_blocks("seeded.yml", text)) == 2
+    _repo(tmp_path, monkeypatch, {".github/workflows/alias.yml": text})
+    swallowed = [
+        f for f in shell_status.findings(shell_status.population()) if f.rule == "swallowed-status"
+    ]
+    assert [f.line for f in swallowed] == [6], swallowed
+
+
 def test_a_workflow_the_census_cannot_parse_fails(tmp_path, monkeypatch, capsys):
     """A census that cannot read a file cannot vouch for it."""
     _repo(tmp_path, monkeypatch, {".github/workflows/bad.yml": "jobs: [unclosed\n"})

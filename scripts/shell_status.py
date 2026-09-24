@@ -302,6 +302,16 @@ def _count_workflow_steps(text: str) -> int:
     - A step input named `run` under `with:` belongs to the action, not
       to a shell.
 
+    **The census agrees on COUNT, not on CONTENT** (policyforge-9b, on #326).
+    With an anchor, `run: &cmd "x | tail && y"` in one step and `run: *cmd`
+    in another, this counts both, and so does the parser, 2 = 2. But the
+    parser lints the literal text `*cmd`, not the resolved command, so the
+    aliased step's swallowed status is not reported.
+    `test_an_aliased_run_agrees_on_count_and_is_not_linted` pins that. The
+    tree has 0 anchors today (5 workflows). Closing it means handing the
+    parser the YAML-resolved strings, which gives up the line numbers the
+    parser exists to keep.
+
     A workflow that does not parse raises `yaml.YAMLError`. `main` reports
     that as exit 2, because the census cannot vouch for a file it cannot
     read, and GitHub would refuse that file too.

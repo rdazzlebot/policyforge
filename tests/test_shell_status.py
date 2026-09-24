@@ -923,6 +923,18 @@ _PIPEFAIL_OFF_AGAIN = (
 )
 
 
+@pytest.mark.parametrize(
+    "query", ["shopt -o pipefail", "shopt -qo pipefail", "shopt -q -o pipefail"]
+)
+def test_a_shopt_query_does_not_turn_pipefail_on(query):
+    """**The unsafe direction, found surviving by policyforge-ba on #328.**
+    `shopt -o pipefail` with neither `-s` nor `-u` only REPORTS the setting;
+    bash leaves pipefail off (verified). A mutant reading the query as "on"
+    passed every other test and cleared the pipe."""
+    command = f"{query}; python scripts/check.py | tail -4 && git push"
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
 @pytest.mark.parametrize("spelling", _PIPEFAIL_ON)
 def test_each_bash_verified_on_spelling_clears_the_finding(spelling):
     """ba on #328: `set -o errexit -o pipefail` was not recognised, a false

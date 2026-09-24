@@ -845,3 +845,35 @@ def test_a_requirement_that_mentions_running_is_not_furniture():
     assert len(losses) == 1, losses
     assert "(1 unclassified," in losses[0], f"a requirement was classed as furniture: {losses[0]!r}"
     assert lost in losses[0], f"the requirement is hidden behind furniture: {losses[0]!r}"
+
+
+@pytest.mark.parametrize("footer", ["{n} of 12", "Page {n}/12", "- {n} -"])
+def test_a_numbered_footer_does_not_bury_a_continuation(footer):
+    """**1d's case.** A footer whose number changes on every page never
+    repeats word for word, and `_FURNITURE_RE` knows only "Page N of M", so
+    these three shapes were unclassified and took the excerpt slots ahead of
+    the real continuation. Masked, each recurs as one template."""
+    pages = "".join(f"<table><tr><td>{footer.format(n=n)}</td></tr></table>" for n in range(1, 13))
+    markup = _RENDERED.replace(_L2, _L2 + f"<tr><td>{_CONT}</td></tr>").replace(
+        "<html><body>", "<html><body>" + pages, 1
+    )
+    _, losses = _losses(markup)
+
+    assert len(losses) == 1, losses
+    assert losses[0].startswith("13 row(s) of text had no label"), losses[0]
+    assert "(1 unclassified, 12 look like" in losses[0], losses[0]
+    excerpts = losses[0].split("NOT in the catalog: ", 1)[1]
+    assert excerpts.startswith(repr(_CONT[:40])[:-1]), f"not the first excerpt: {excerpts!r}"
+
+
+def test_two_different_numbered_continuations_are_not_furniture():
+    """The quiet twin of masking: two continuations that both carry numbers
+    but differ in their words are two templates, so neither recurs and both
+    stay unclassified."""
+    first = "retain the logs for 90 days"
+    second = "and review them every 7 days"
+    markup = _RENDERED.replace(_L2, _L2 + f"<tr><td>{first}</td></tr><tr><td>{second}</td></tr>")
+    _, losses = _losses(markup)
+
+    assert len(losses) == 1, losses
+    assert "(2 unclassified, 0 look like" in losses[0], losses[0]

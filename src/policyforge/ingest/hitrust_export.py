@@ -347,9 +347,13 @@ def records_from_pairs(rows: list[list[str]], losses: list[str] | None = None) -
     that look like furniture would be a guess that fails silently, so none
     is dropped: `_looks_like_furniture` only CLASSIFIES, the warning keeps
     the whole count and says how it splits, and the excerpts are drawn from
-    the unclassified rows first -- so a real continuation is not hidden
-    behind a hundred page footers. A misclassified continuation is still
-    counted; it is only shown later.
+    the unclassified rows first. Furniture is recognised by recurring: text
+    that appears on more than one row once its numbers are masked ("3 of
+    12", "Page 3/12", "- 3 -", a title), plus "Page N" and a dated print
+    line. **A footer shape seen only once, or furniture that does not recur,
+    is still unclassified and can still take an excerpt slot** -- this
+    orders what is shown, it does not guarantee it. A misclassified
+    continuation is still counted; it is only shown later.
     """
     context = Record()
     records: list[Record] = []
@@ -433,10 +437,18 @@ _FURNITURE_RE = re.compile(
 )
 
 
+def _template(text: str) -> str:
+    """`text` with every run of digits masked, so "3 of 12" and "4 of 12"
+    are one template -- a footer recurs with only its number changing."""
+    return re.sub(r"\d+", "#", " ".join(text.split()))
+
+
 def _looks_like_furniture(text: str, occurrences: int) -> bool:
-    """A page number or print line, or text repeated word for word on more
-    than one row -- a report title on every page. A continuation is part of
-    one requirement's text, so it has no reason to recur."""
+    """A page number or print line, or text whose digit-masked template
+    recurs on more than one row -- a title or a numbered footer on every
+    page (1d, on #273). A continuation is part of one requirement's text,
+    so it has no reason to recur; two continuations differing ONLY in their
+    numbers would be classed as furniture, and are still counted."""
     return occurrences > 1 or bool(_FURNITURE_RE.match(" ".join(text.split())))
 
 
@@ -451,9 +463,9 @@ def _describe_losses(skipped_text: list[str], discarded: list[tuple[str, str]]) 
     if skipped_text:
         seen: dict[str, int] = {}
         for text in skipped_text:
-            seen[text] = seen.get(text, 0) + 1
-        furniture = [s for s in skipped_text if _looks_like_furniture(s, seen[s])]
-        other = [s for s in skipped_text if not _looks_like_furniture(s, seen[s])]
+            seen[_template(text)] = seen.get(_template(text), 0) + 1
+        furniture = [s for s in skipped_text if _looks_like_furniture(s, seen[_template(s)])]
+        other = [s for s in skipped_text if not _looks_like_furniture(s, seen[_template(s)])]
         shown = (other + furniture)[:3]
         notes.append(
             f"{len(skipped_text)} row(s) of text had no label and were skipped "

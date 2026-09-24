@@ -589,3 +589,70 @@ def test_a_non_800_53_source_never_anchors_a_row():
         [_record(mapping="NIST Cybersecurity Framework 2.0 GV.PO-02")]
     )
     assert build_crosswalk(controls) == {}
+
+
+# --------------------------------------------------------------------------
+# #253: the refusals #180's audit found no test reaching
+# --------------------------------------------------------------------------
+#
+# Each guard below was deleted in turn and the full suite still passed. Each
+# test asserts text only its own guard writes and is proven to fail with that
+# guard deleted.
+#
+# **Two of them raise the same sentence.** The CSV reader and the workbook
+# reader both say "<name> has no rows." — so the message alone cannot say
+# which spoke. The input decides it: a `.csv` reaches only the CSV reader and
+# an `.xlsx` only the workbook reader, and each assertion carries the file
+# name, so a test is tied to the path it actually exercised.
+
+
+def test_an_empty_csv_export_is_refused(tmp_path):
+    """**Deleted, `rows[0]` on an empty list raises `IndexError`.**"""
+    path = tmp_path / "empty-export.csv"
+    path.write_text("", encoding="utf-8")
+
+    with pytest.raises(export.ExportFormatError, match=r"empty-export\.csv has no rows"):
+        export.load(path)
+
+
+def test_an_empty_workbook_export_is_refused(tmp_path):
+    """**Deleted, `rows[0]` on an empty list raises `IndexError`.**
+
+    Same sentence as the CSV reader's; the `.xlsx` routes here and nowhere
+    else, which is what makes this a test of THIS guard.
+    """
+    from openpyxl import Workbook
+
+    path = tmp_path / "empty-export.xlsx"
+    Workbook().save(path)
+
+    with pytest.raises(export.ExportFormatError, match=r"empty-export\.xlsx has no rows"):
+        export.load(path)
+
+
+def test_an_mhtml_export_with_no_html_part_is_refused(tmp_path):
+    """A web archive carrying no `text/html` part and no `<html` anywhere.
+
+    **Deleted, `read_mhtml` returns None and the markup reader fails on it
+    with `TypeError: can only concatenate str (not "NoneType")`.**
+    """
+    path = tmp_path / "report.mht"
+    path.write_bytes(
+        b"MIME-Version: 1.0\r\nContent-Type: text/plain\r\n\r\njust text, no markup\r\n"
+    )
+
+    with pytest.raises(export.ExportFormatError, match="contains no HTML part"):
+        export.load(path)
+
+
+def test_a_rendered_report_with_no_tables_is_refused(tmp_path):
+    """Markup that is a page but holds no table to read.
+
+    **Deleted, the width scan below it raises `ValueError: max() iterable
+    argument is empty`.**
+    """
+    path = tmp_path / "report.html"
+    path.write_text("<html><body><p>a report with no tables</p></body></html>", encoding="utf-8")
+
+    with pytest.raises(export.ExportFormatError, match="no tables found in the rendered report"):
+        export.load(path)

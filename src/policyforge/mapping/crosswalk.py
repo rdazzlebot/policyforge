@@ -148,6 +148,11 @@ FRAMEWORK_ALIASES: tuple[tuple[str, str], ...] = (
     # add-on you cannot hold standalone, so any user with one has both.
     # Two needles for AI RMF because NIST writes the name both ways and
     # neither spelling contains the other.
+    # The Playbook BEFORE the Core, because first match wins and "NIST AI RMF
+    # Playbook" contains "ai rmf": without this it keyed to `nist-ai-rmf` and
+    # merged NIST's voluntary suggested actions into the Core's outcomes --
+    # two separately versioned publications in one bucket (#177).
+    ("ai rmf playbook", "nist-ai-rmf-playbook"),
     ("ai rmf", "nist-ai-rmf"),
     ("ai risk management", "nist-ai-rmf"),
     # The RMF's document number, which NIST prints on its cover and CPRT

@@ -111,6 +111,21 @@ jobs:
         run: |
           policyforge drift             --controls data/frameworks/nist-ai-rmf/controls.json             --detail --fail-on-change
 
+      # The Playbook is pinned to one export by its SHA-256 (NIST publishes no
+      # revision number), so when NIST re-publishes it the ETL REFUSES and
+      # this step goes red. That is this job succeeding: a person reviews the
+      # new export and re-pins. Do not "fix" the red by loosening the pin.
+      - name: Fetch the current AI RMF Playbook
+        if: always()
+        run: policyforge etl-ai-rmf-playbook
+
+      - name: What changed in the NIST AI RMF Playbook
+        if: always()
+        run: |
+          policyforge drift \
+            --controls data/frameworks/nist-ai-rmf-playbook/controls.json \
+            --detail --fail-on-change
+
       - name: Fetch the current SP 800-171 rev 3
         if: always()
         run: policyforge etl-800-171

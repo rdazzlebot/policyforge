@@ -1391,6 +1391,75 @@
         }
       ]
     },
+    "etl-ai-rmf-playbook": {
+      "help": "Fetch the NIST AI RMF Playbook -- NIST's suggested actions per Core\nsubcategory -- and parse it into this project's data schema. A US\ngovernment work, so safe to bundle.\n\nTHE PLAYBOOK IS VOLUNTARY: NIST calls its suggestions \"voluntary\" and\n\"neither a checklist nor set of steps to be followed in its entirety\".\nA document citing an action may say NIST suggests it, never that NIST\nrequires it. The catalog's README carries the long form.\n\nPinned to one export by its SHA-256, because NIST publishes no revision\nnumber: a different export is refused, and on the scheduled drift job\nthat refusal is the job working. The per-subcategory action counts are\npinned to an independent count, and a short or long parse is refused\nwhole.",
+      "name": "etl-ai-rmf-playbook",
+      "params": [
+        {
+          "default": "data/frameworks/nist-ai-rmf-playbook/controls.json",
+          "help": "Where to write the parsed data.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Parse a saved copy of playbook.json instead of fetching. It must be the pinned export, byte for byte.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "json_path",
+          "nargs": 1,
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": false,
+            "exists": true,
+            "file_okay": true,
+            "name": "file"
+          }
+        },
+        {
+          "default": "data/frameworks/nist-ai-rmf/controls.json",
+          "help": "The AI RMF Core catalog. Every Playbook entry must serve one of its subcategories.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "core",
+          "nargs": 1,
+          "opts": [
+            "--core"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": false,
+            "exists": true,
+            "file_okay": true,
+            "name": "file"
+          }
+        }
+      ]
+    },
     "etl-arc-ampe": {
       "help": "Fetch CMS's ARC-AMPE Volume II baseline and parse it into this schema.\n\nPublic domain - published by CMS, a federal agency, with no copyright\nnotice or redistribution restriction, same basis as the NIST and eCFR\nsources.\n\nNote which volume this reads. Volume I is the narrative PDF and holds no\ncontrols; Volume II is the System Security and Privacy Plan workbook,\nand its `AE Mandatory Baseline` sheet is the catalog - 402 controls\nrequired of an ACA Administering Entity, with CMS's parameter decisions\nalready written into the control text. The sheet is found by its shape\nrather than its name, so the Direct Enrollment Entity workbook reads the\nsame way via --export. See ingest/arc_ampe.py.",
       "name": "etl-arc-ampe",

@@ -7,8 +7,9 @@ install commands in the README, the formula URL template in `CONTRIBUTING.md`,
 a CI run link in the security architecture notes, and the
 `org.opencontainers.image.source` label every built image carries.
 
-**Homebrew install commands are unchanged for now.** `brew install rdazzlebot/tap/policyforge` still works and still points at the right place;
-it changes only once the tap itself has moved.
+**The Homebrew tap moved too: install with `brew install rdazzleman/tap/policyforge`.** An existing
+installation from `rdazzlebot/tap` keeps updating through GitHub's forwarding
+for now.
 
 **Removed `prev.md` from the repository root** — a copy of the 1.5.0 changelog
 left in the 1.6.0 release by mistake. It was never used by anything and

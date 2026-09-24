@@ -830,3 +830,18 @@ def test_page_furniture_alone_is_still_reported():
     assert len(losses) == 1, losses
     assert losses[0].startswith("5 row(s) of text had no label"), losses[0]
     assert "(0 unclassified, 5 look like page numbers" in losses[0], losses[0]
+
+
+def test_a_requirement_that_mentions_running_is_not_furniture():
+    """The furniture pattern needs a real date after "run on/at" because a
+    requirement reads that way too. Dropping the date survived every other
+    test (80, on #273), so the comment beside `_FURNITURE_RE` was a claim
+    nothing checked. This continuation must count as unclassified and be
+    shown ahead of the page footers."""
+    lost = "Scans are run at least every 30 days"
+    markup = _with_furniture(_RENDERED.replace(_L2, _L2 + f"<tr><td>{lost}</td></tr>"), pages=4)
+    _, losses = _losses(markup)
+
+    assert len(losses) == 1, losses
+    assert "(1 unclassified," in losses[0], f"a requirement was classed as furniture: {losses[0]!r}"
+    assert lost in losses[0], f"the requirement is hidden behind furniture: {losses[0]!r}"

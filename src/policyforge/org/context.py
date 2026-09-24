@@ -138,14 +138,22 @@ def org_actors(config: dict) -> tuple[str, ...]:
     is right. Here it dropped actors the organization had declared, so
     "..., and IT Ops will adopt it" passed.
     """
-    org = (config or {}).get("org") or {}
+    # `check` is the pre-publish gate and never read `org:` before #323, so a
+    # shape it did not expect must not turn it into a traceback (1d on #329):
+    # a bare string is the organization's name, any other non-mapping gives
+    # no actors, and only string values count as names.
+    org = (config or {}).get("org")
+    if isinstance(org, str):
+        org = {"name": org}
+    if not isinstance(org, dict):
+        return ()
     names = [org.get("name")]
     for block in (org.get("teams"), org.get("vendors")):
         if isinstance(block, dict):
             names += list(block.values())
         elif isinstance(block, list):
             names += block
-    return tuple(dict.fromkeys(str(n).strip() for n in names if n is not None and str(n).strip()))
+    return tuple(dict.fromkeys(n.strip() for n in names if isinstance(n, str) and n.strip()))
 
 
 @dataclass

@@ -259,7 +259,46 @@ def test_org_actors_include_names_under_keys_no_role_recognises():
     assert set(load_org_profile(config).unknown) == {"it_ops", "mystery_tool"}  # the premise
     assert set(org_actors(config)) == {"Acme", "IT Ops", "IAM", "Zendesk"}
     assert set(org_actors({"org": {"teams": ["Platform", "Data"]}})) == {"Platform", "Data"}
+    # Only strings are names: a number or a nested mapping is not an actor.
+    odd = {"org": {"name": "Initech", "teams": {"a": 5, "b": {"x": 1}, "c": "Globex"}}}
+    assert org_actors(odd) == ("Initech", "Globex")
+    assert org_actors({"org": "Acme"}) == ("Acme",)
+    assert org_actors({"org": ["Acme"]}) == ()
     assert _flagged("NIST suggests reviewing access, and IT Ops will adopt it.", org_actors(config))
+
+
+@pytest.mark.parametrize(
+    "org_yaml, caught",
+    [
+        ("org: Globex\n", True),  # a bare string is the organization's name
+        ('org: ["Globex"]\n', False),  # not a mapping: no actors, and no crash
+        ("org:\n  name: Initech\n  teams: {a: 5, b: {x: 1}, c: Globex}\n", True),
+        ("org:\n", False),
+    ],
+)
+def test_check_survives_any_org_shape(tmp_path, monkeypatch, org_yaml, caught):
+    """1d on #329: `check` never read `org:` before #323, and `org: Acme`
+    turned the pre-publish gate into an AttributeError traceback. Every
+    shape now exits without one; only string names become actors."""
+    from click.testing import CliRunner
+
+    from policyforge.cli import cli
+
+    tree = tmp_path / "docs"
+    tree.mkdir()
+    (tree / "a.md").write_text(
+        f"# A\n\nNIST suggests reviewing the inventory, and Globex will adopt it. {TAG}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "config.yaml").write_text(org_yaml, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(cli, ["check", "--content-dir", str(tree)])
+    assert result.exception is None or isinstance(result.exception, SystemExit), repr(
+        result.exception
+    )
+    assert "Traceback" not in result.output
+    assert ("Globex will adopt it" in result.output) is caught, result.output
 
 
 def test_policyforge_check_reads_the_org_name_from_config(tmp_path, monkeypatch):

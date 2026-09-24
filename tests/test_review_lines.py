@@ -634,6 +634,61 @@ def test_a_malformed_approval_does_not_retire_an_objection(commits, monkeypatch,
     assert "policyforge-9b" in _section(out, "OPEN OBJECTION(S)")
 
 
+def _off_branch_commit() -> str:
+    return _git(*_IDENTITY, "commit-tree", _git("rev-parse", "HEAD^{tree}"), "-m", "off")
+
+
+@pytest.mark.parametrize(
+    ("where", "sha_for"),
+    [
+        # A real commit, not on this PR: an approval of different code.
+        ("ELSEWHERE", lambda c: c["orphan"]),
+        # 40 hex whose prefix names a commit NOT on this branch.
+        ("MISANCHORED", lambda c: _off_branch_commit()[:7] + "0" * 33),
+        # 40 hex that names nothing, and no prefix resolves.
+        ("FABRICATED", lambda c: "0" * 39 + "1"),
+    ],
+)
+def test_an_approval_off_this_branch_does_not_retire_an_objection(
+    commits, monkeypatch, capsys, where, sha_for
+):
+    """**9b's finding on #284.** A well-formed approval that points off the
+    branch, or at nothing, approved something other than this code, so it
+    cannot answer an objection to it. One test per excluded location."""
+    sha = sha_for(commits)
+    assert review_lines.location_of(sha, commits["head"]).label == where, "fixture mislabelled"
+    assert review_lines.shape_of(sha, "approved").well_formed, "only the LOCATION may differ"
+    out = _report(
+        monkeypatch,
+        capsys,
+        commits["head"],
+        [
+            _comment(commits["ancestor"], "changes-requested", "policyforge-9b"),
+            _comment(sha, "approved", "policyforge-9b"),
+        ],
+    )
+    assert "policyforge-9b" in _section(out, "OPEN OBJECTION(S)"), f"retired by an {where} approval"
+
+
+def test_a_reconstructed_approval_still_retires_an_objection(commits, monkeypatch, capsys):
+    """The passing twin. RECONSTRUCTED names no object, but its prefix is a
+    commit of THIS PR: the reviewer read this branch, with a broken anchor.
+    Excluding it would re-open objections their own reviewer answered."""
+    sha = commits["head"][:7] + "0" * 33
+    assert review_lines.location_of(sha, commits["head"]).label == "RECONSTRUCTED"
+    out = _report(
+        monkeypatch,
+        capsys,
+        commits["head"],
+        [
+            _comment(commits["ancestor"], "changes-requested", "policyforge-9b"),
+            _comment(sha, "approved", "policyforge-9b"),
+        ],
+    )
+    assert "OPEN OBJECTION" not in out
+    assert "(RECONSTRUCTED)" in _section(out, "retired by their own reviewer")
+
+
 def test_a_perishable_session_name_is_named_not_silently_counted(commits, monkeypatch, capsys):
     """**The rename case (#237's comment).** A block signed with a session
     name and an approval signed with the handle are the same reader to a

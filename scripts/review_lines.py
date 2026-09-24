@@ -393,6 +393,15 @@ def verdict_lines(comments: list[dict]) -> list[Line]:
     return found
 
 
+#: Where an approval must point to retire an objection: a commit of THIS PR.
+#: AT HEAD and STALE resolve on the branch; RECONSTRUCTED names no object but
+#: its prefix is a commit of this PR, so the reviewer read this branch.
+#: ELSEWHERE, MISANCHORED and FABRICATED point off the branch or at nothing,
+#: so what was approved is not this code -- they leave the objection OPEN.
+#: Found by policyforge-9b on #284: well-formed alone let all three retire.
+RETIRING_LOCATIONS = frozenset({"AT HEAD", "STALE", "RECONSTRUCTED"})
+
+
 def objection_states(lines: list[Line]) -> list[tuple[Line, str, Line | None]]:
     """Every objection, in posting order, with its state and what retired it.
 
@@ -417,6 +426,7 @@ def objection_states(lines: list[Line]) -> list[tuple[Line, str, Line | None]]:
             if later.reviewer == line.reviewer
             and later.verdict == "approved"
             and later.shape.well_formed
+            and later.location.label in RETIRING_LOCATIONS
         ]
         at_head = [later for later in retiring if later.counts]
         if at_head:

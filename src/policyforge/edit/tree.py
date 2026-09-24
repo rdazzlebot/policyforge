@@ -206,24 +206,38 @@ def uncommitted(paths: list[Path], *, cwd: Path) -> list[Path] | None:
     if not paths:
         return []
 
-    def git(*args: str) -> subprocess.CompletedProcess | None:
+    from policyforge.child_output import strict_text
+
+    def git(*args: str) -> tuple[int, str] | None:
+        """(returncode, stdout) -- stdout decoded strictly, in this thread.
+
+        A DECISION rides on it: whether an edit may overwrite a file. `-z`
+        output is NOT quoted, so a page named `café.md` arrives as raw UTF-8;
+        read as cp1252 it never matched its own path, and a modified page was
+        reported clean (#287). Bytes, decoded here, so a byte that is not
+        UTF-8 refuses rather than answering "clean".
+        """
+        argv = ["git", *args]
         try:
             # A fixed executable and argument list, never a shell. The only
             # variable parts are file paths this command resolved itself from
             # the content tree, passed after `--` so none can read as an option.
-            return subprocess.run(  # nosec B603 B607
-                ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=10, check=False
+            result = subprocess.run(  # nosec B603 B607
+                argv, cwd=cwd, capture_output=True, timeout=10, check=False
             )
         except (OSError, subprocess.SubprocessError):
             return None
+        return result.returncode, strict_text(
+            result.stdout, site="uncommitted-change check", argv=argv
+        )
 
     top = git("rev-parse", "--show-toplevel")
-    if top is None or top.returncode != 0:
+    if top is None or top[0] != 0:
         return None
-    root = Path(top.stdout.strip())
+    root = Path(top[1].strip())
 
     status = git("status", "--porcelain=v1", "-z", "--", *(str(p) for p in paths))
-    if status is None or status.returncode != 0:
+    if status is None or status[0] != 0:
         return None
 
     # Porcelain v1 with -z: "XY path" entries separated by NUL, and a rename
@@ -231,7 +245,7 @@ def uncommitted(paths: list[Path], *, cwd: Path) -> list[Path] | None:
     # Compared as resolved paths, never by string suffix, so `standard.md`
     # cannot match `old-standard.md`.
     dirty: set[Path] = set()
-    tokens = status.stdout.split("\0")
+    tokens = status[1].split("\0")
     index = 0
     while index < len(tokens):
         entry = tokens[index]
@@ -296,11 +310,15 @@ def display_path(path: Path, *, cwd: Path) -> str:
 
     try:
         # Fixed executable and arguments, no shell, no user-supplied input.
+        # SHOWN: only ever printed for a person to paste. `replace` cannot
+        # raise, and a bad byte costs a U+FFFD in a message, not a decision.
         result = subprocess.run(  # nosec B603 B607
             ["git", "rev-parse", "--show-toplevel"],
             cwd=cwd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
             check=False,
         )

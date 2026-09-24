@@ -169,6 +169,30 @@ def test_review_decisions_reach_map_and_survive_the_next_proposal(tmp_path, monk
     assert "Nothing in" in run("crosswalk", "review").output
 
 
+def test_a_reviewer_name_that_is_not_utf8_is_a_clean_refusal(tmp_path, monkeypatch):
+    """**Through the real command** (1d, on #294). `review` with no `--who`
+    records git's user.name. A name that is not UTF-8 is refused rather than
+    recorded as mojibake (#287) -- and the refusal must reach the user as an
+    `Error:` line, not a traceback. Nothing is decided, so nothing is written."""
+    import subprocess
+
+    run, _ = _setup(tmp_path, monkeypatch, Mapper())
+    assert run("crosswalk", "propose").exit_code == 0
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, capture_output=True)
+    config = tmp_path / ".git" / "config"
+    config.write_bytes(config.read_bytes() + b"[user]\n\tname = Bad\xffName\n")
+    before = (tmp_path / OVERLAY).read_bytes()
+
+    result = run("crosswalk", "review", input="a\n\n\nq\n")
+
+    assert result.exit_code == 1, result.output
+    assert isinstance(result.exception, SystemExit), f"not a clean exit: {result.exception!r}"
+    assert "Error: crosswalk review (reviewer name)" in result.output, result.output
+    assert "0xff" in result.output
+    assert "Traceback" not in result.output
+    assert (tmp_path / OVERLAY).read_bytes() == before, "a decision was written"
+
+
 def test_quitting_review_keeps_the_decisions_already_made(tmp_path, monkeypatch):
     run, _ = _setup(tmp_path, monkeypatch, Mapper())
     assert run("crosswalk", "propose").exit_code == 0

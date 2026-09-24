@@ -4,7 +4,8 @@ Every check in this repository looks *inside* the repository. On 2026-09-19
 three sessions declared 1.4.0 done — the tag was right, the version triple
 agreed, the changelog was correct, the gate was green, the release notes
 were published — and for roughly three hours `brew install
-rdazzlebot/tap/policyforge`, the first command in this project's own README,
+rdazzlebot/tap/policyforge`, the first command in this project's own README
+(the tap has since moved to `rdazzleman`),
 installed **1.3.0**. Every individual check passed. None of them looked at
 the artefact a user receives.
 
@@ -68,7 +69,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 FORMULA_URL = (
-    "https://raw.githubusercontent.com/rdazzlebot/homebrew-tap/main/Formula/policyforge.rb"
+    "https://raw.githubusercontent.com/rdazzleman/homebrew-tap/main/Formula/policyforge.rb"
 )
 
 #: The lock the formula's resources must agree with. `runtime.txt` rather
@@ -178,14 +179,45 @@ def lock_pins(text: str) -> dict[str, str]:
 #: until somebody checks which**, so the correct sequence is pinned here
 #: rather than retyped from memory each time.
 INSTALL_STEPS: tuple[tuple[str, str], ...] = (
-    ("tap", "brew tap rdazzlebot/tap"),
-    ("install", "brew install --build-from-source rdazzlebot/tap/policyforge"),
-    ("audit", "brew audit --strict --online rdazzlebot/tap/policyforge"),
+    ("tap", "brew tap rdazzleman/tap"),
+    ("install", "brew install --build-from-source rdazzleman/tap/policyforge"),
+    ("audit", "brew audit --strict --online rdazzleman/tap/policyforge"),
     ("init", "cd /tmp/pf && policyforge init"),
     ("frameworks", "cd /tmp/pf && policyforge frameworks"),
 )
 
 CONTAINER_IMAGE = "homebrew/brew"
+
+
+def _run(cmd: list[str], *, timeout: int):
+    """`subprocess.run`, decoding output as UTF-8 and never failing to decode.
+
+    **Both docker calls go through here so the fix cannot land on one and not
+    the other**, which is what it would take to repeat this.
+
+    `text=True` alone decodes with the locale encoding -- cp1252 on the
+    Windows machine the release is cut from. Homebrew prints UTF-8, and its
+    own `🍺` is `F0 9F 8D BA`; `0x8D` is undefined in cp1252. The
+    reader thread died, `stdout` stayed `None`, and the next line raised
+    `TypeError` concatenating it -- so the one assertion that proves a user
+    can install the release **crashed before reporting**, on its first run on
+    the platform it is cut from. Found by policyforge-9b (handle 9b) running
+    it against a real daemon on 2026-09-23, reproduced here.
+
+    `errors="replace"` because this output is only ever shown as a tail: a
+    gate must not crash on a byte it is merely displaying. The exit code, not
+    the text, is what decides the verdict.
+    """
+    import subprocess
+
+    return subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+    )
 
 
 def run_install_check(image: str = CONTAINER_IMAGE) -> tuple[bool, list[str]]:
@@ -225,7 +257,6 @@ def run_install_check(image: str = CONTAINER_IMAGE) -> tuple[bool, list[str]]:
     unambiguously about what happened inside.
     """
     import shutil
-    import subprocess
 
     lines: list[str] = []
     if shutil.which("docker") is None:
@@ -234,14 +265,9 @@ def run_install_check(image: str = CONTAINER_IMAGE) -> tuple[bool, list[str]]:
     # Can docker start this image at all? Cheap, and it is the only way to
     # tell "the container never ran" from "the install failed", because
     # some exit codes are produced by both.
-    probe = subprocess.run(
-        ["docker", "run", "--rm", image, "true"],
-        capture_output=True,
-        text=True,
-        timeout=600,
-    )
+    probe = _run(["docker", "run", "--rm", image, "true"], timeout=600)
     if probe.returncode != 0:
-        detail = (probe.stderr or probe.stdout).strip().splitlines()[-1:] or ["no output"]
+        detail = (probe.stderr or probe.stdout or "").strip().splitlines()[-1:] or ["no output"]
         return False, [f"could not start {image}: {detail[0]}"]
 
     script = " && ".join(command for _, command in INSTALL_STEPS)
@@ -249,19 +275,54 @@ def run_install_check(image: str = CONTAINER_IMAGE) -> tuple[bool, list[str]]:
     # failure stops the run and its status propagates. `;` would not --
     # that is the `cmd; echo; tail` shape the header warns about, and it
     # is also issue #182 on this milestone.
-    proc = subprocess.run(
+    proc = _run(
         ["docker", "run", "--rm", image, "bash", "-lc", f"mkdir -p /tmp/pf && {script}"],
-        capture_output=True,
-        text=True,
         timeout=3600,
     )
-    tail = (proc.stdout + proc.stderr).strip().splitlines()[-12:]
+    # `or ""` as a second line of defence behind `_run`: an absent stream is
+    # shown as absent, and the exit status below is reported either way.
+    tail = ((proc.stdout or "") + (proc.stderr or "")).strip().splitlines()[-12:]
     lines.extend(tail)
     lines.append(f"docker exit status: {proc.returncode}")
     return True, lines
 
 
+def _safe_stdout(stream=None) -> None:
+    """Make every `print` below survive a character the console cannot encode.
+
+    **`_run` fixed the decode and moved the crash to the print.** Decoding as
+    UTF-8 with `errors="replace"` only replaces bytes that are *invalid*
+    UTF-8. Homebrew's `🍺` is *valid* UTF-8, so it decodes into a real
+    character -- and then `print` must re-encode it for stdout, which on the
+    Windows machine the release is cut from is cp1252, where it does not
+    exist. `UnicodeEncodeError`, same traceback, one step later. Found by
+    policyforge-9b (handle 9b) reading `0ef705d`.
+
+    **And it crashes on the path the gate exists for.** The tail is the last
+    twelve lines. On success the last step is `audit`, whose output is ASCII.
+    On a FAILED install the `&&` chain stops at `install`, and the tail is
+    that step's last lines -- which include the beer-mug summary of the last
+    dependency poured before the failure. So it hid the install error, the
+    one output this check is for.
+
+    **A class fix, not line 445.** Every `print` here can carry text from
+    outside -- the docker tail, exception messages, package names -- so the
+    stream is reconfigured once rather than each call site guarded.
+    `errors="replace"` rather than switching to UTF-8: an operator on a
+    cp1252 console then reads `?` for the mug instead of mojibake.
+
+    The same mistake appeared in 1d's own probe an hour before 9b found this
+    one -- a `print` of the mug failed to the console -- and 1d read it as
+    proof the decode had worked without asking whether the product printed
+    the same way.
+    """
+    stream = stream if stream is not None else sys.stdout
+    if hasattr(stream, "reconfigure"):
+        stream.reconfigure(errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _safe_stdout()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--version", required=True, help="the version just cut, e.g. 1.4.0")
     parser.add_argument(

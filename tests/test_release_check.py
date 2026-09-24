@@ -355,3 +355,126 @@ def test_the_docstring_describes_the_mechanism_the_code_uses():
     assert " && " in code and ".join" in code, (
         "the code no longer joins the steps, so the docstring is wrong again"
     )
+
+
+# --- output decoding: the install check crashed before it could report --
+#
+# Found by policyforge-9b (handle 9b), running the gate against a real
+# daemon on 2026-09-23: `text=True` with no `encoding` decoded Homebrew's
+# UTF-8 with cp1252, the reader thread died on byte 0x8D, `stdout` stayed
+# None, and the concatenation raised TypeError -- so assertion 4 could not
+# answer on the platform the release is cut from.
+
+
+def _emit(tmp_path, payload: bytes) -> list[str]:
+    """A real child process writing raw bytes -- the decode under test
+    happens inside subprocess, so a mocked result could not reach it."""
+    script = tmp_path / "emit.py"
+    script.write_text(
+        f"import sys\nsys.stdout.buffer.write({payload!r})\nsys.stdout.buffer.flush()\n",
+        encoding="utf-8",
+    )
+    return [sys.executable, str(script)]
+
+
+def test_output_undecodable_on_every_platform_does_not_crash(tmp_path):
+    """**A lone 0x8D is undefined in cp1252 AND invalid as UTF-8**, so the
+    old kwargs fail on the Windows machine the release is cut from and on
+    the Linux CI runners alike. A real Homebrew line would only have failed
+    on Windows, and a test that passes on the runner nobody cuts from would
+    have been green for the wrong reason."""
+    result = release_check._run(_emit(tmp_path, b"ok \x8d done\n"), timeout=60)
+    assert result.stdout is not None, "the reader thread died; stdout is None"
+    assert "ok" in result.stdout and "done" in result.stdout
+
+
+def test_homebrew_output_decodes_to_the_characters_it_wrote(tmp_path):
+    """Not merely survived: decoded correctly. errors="replace" must not be
+    what makes valid UTF-8 look fine."""
+    beer = "\U0001f37a Pouring policyforge"
+    result = release_check._run(_emit(tmp_path, beer.encode("utf-8") + b"\n"), timeout=60)
+    assert beer in result.stdout
+
+
+#: Every function in `subprocess` that starts a child. The first version of
+#: the guard below checked `run` only, so a `check_output` added elsewhere
+#: slipped through while its docstring said any direct call would fail --
+#: found by policyforge-80 (handle 80) mutating it. **A guard naming one
+#: entry point guards one entry point.**
+SUBPROCESS_ENTRY_POINTS = frozenset(
+    {"run", "Popen", "call", "check_call", "check_output", "getoutput", "getstatusoutput"}
+)
+
+
+def test_every_subprocess_call_goes_through_the_decoding_helper():
+    """**The class, not the instance.** The defect was on BOTH docker calls;
+    9b noted the probe had the same shape two statements above the one that
+    crashed. So the rule is that `_run` is the only place `subprocess.run`
+    appears, and a new call added directly fails here rather than
+    reintroducing the crash."""
+    import ast
+
+    tree = ast.parse((Path(release_check.__file__)).read_text(encoding="utf-8"))
+    outside = []
+    for fn in (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)):
+        for call in (c for c in ast.walk(fn) if isinstance(c, ast.Call)):
+            f = call.func
+            if (
+                isinstance(f, ast.Attribute)
+                and f.attr in SUBPROCESS_ENTRY_POINTS
+                and getattr(f.value, "id", "") == "subprocess"
+                and fn.name != "_run"
+            ):
+                outside.append(f"{fn.name}:{call.lineno}")
+    assert not outside, f"a subprocess call outside _run, so not UTF-8 safe: {outside}"
+
+
+# --- the print half: decoding fixed, then the crash moved to `print` ----
+#
+# Found by policyforge-9b (handle 9b) reading 0ef705d. errors="replace" on
+# decode only replaces INVALID UTF-8; Homebrew's beer mug is VALID UTF-8, so
+# it arrives as a real character that a cp1252 stdout cannot encode.
+
+
+def test_a_character_cp1252_cannot_encode_prints_rather_than_raising():
+    """**The opposite fixture to the decode test, deliberately.** The lone
+    0x8D there is replaced on decode and never reaches `print` as an
+    unencodable character, so that test cannot see this defect at all. This
+    needs VALID UTF-8 that is NOT cp1252: the real Homebrew summary line."""
+    import io
+
+    console = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+    release_check._safe_stdout(console)
+    line = "\U0001f37a  /home/linuxbrew/.linuxbrew/Cellar/policyforge/1.6.0: 1,234 files"
+    print(f"    {line}", file=console)
+    console.flush()
+    printed = console.buffer.getvalue().decode("cp1252")
+    assert "Cellar/policyforge" in printed, "the rest of the line must survive the mug"
+
+
+def test_the_strict_console_really_does_raise_without_the_fix():
+    """**The second arm, expected to fail.** If a strict cp1252 stream did
+    not raise on the mug, the test above would pass for the wrong reason."""
+    import io
+
+    console = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+    with pytest.raises(UnicodeEncodeError):
+        print("\U0001f37a", file=console)
+        console.flush()
+
+
+def test_main_actually_calls_the_stdout_fix():
+    """**A fix nobody calls is not a fix.** `_safe_stdout` being correct says
+    nothing about whether `main` invokes it; three loaders here shipped a
+    guard that was proven correct and never proven called. Required to be
+    the first statement, so no `print` can run before it."""
+    import ast
+
+    tree = ast.parse(Path(release_check.__file__).read_text(encoding="utf-8"))
+    main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main")
+    first = main.body[0]
+    assert (
+        isinstance(first, ast.Expr)
+        and isinstance(first.value, ast.Call)
+        and getattr(first.value.func, "id", "") == "_safe_stdout"
+    ), "main() must call _safe_stdout() before anything can print"

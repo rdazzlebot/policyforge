@@ -877,3 +877,78 @@ def test_two_different_numbered_continuations_are_not_furniture():
 
     assert len(losses) == 1, losses
     assert "(2 unclassified, 0 look like" in losses[0], losses[0]
+
+
+# ---- #277: a row nothing placed says what it carried ----------------------
+
+
+def test_a_trailing_third_cell_is_reported_with_the_record_it_took():
+    """**1d's shape.** A third cell AFTER the value makes the reader take
+    (value, extra) as (label, value): the label is unrecognised, the row
+    falls through, and the whole Level 2 record is never opened. Behaviour is
+    unchanged -- still one record -- but the row is now named."""
+    extra = "An extra note in a third cell."
+    markup = _RENDERED.replace(
+        _L2,
+        "<tr><td>Level 2 Implementation:</td><td>The example thing is reviewed.</td>"
+        f"<td>{extra}</td></tr>",
+    )
+    assert markup != _RENDERED
+    records, losses = _losses(markup)
+
+    assert [r.level for r in records] == ["Level 1"], "the parse changed; #277 did not rule that"
+    assert len(losses) == 1, losses
+    assert losses[0].startswith("1 row(s) had more than two cells"), losses[0]
+    assert "Level 2 Implementation:" in losses[0], "the warning does not show the label"
+    assert "The example thing is reviewed." in losses[0], "the warning does not show the text"
+
+
+def test_a_leading_third_cell_is_not_a_loss():
+    """The quiet twin: a third cell IN FRONT leaves label and value as the
+    last two, so the row is read and nothing is lost."""
+    markup = _RENDERED.replace(
+        _L2,
+        "<tr><td>Section 1</td><td>Level 2 Implementation:</td>"
+        "<td>The example thing is reviewed.</td></tr>",
+    )
+    assert markup != _RENDERED
+    records, losses = _losses(markup)
+
+    assert [r.level for r in records] == ["Level 1", "Level 2"]
+    assert losses == []
+
+
+def test_an_unrecognised_label_is_reported_with_its_text():
+    """A colon-ended caption this reader does not know drops its value, and
+    the record count does not change, so only a warning can show it."""
+    markup = _RENDERED.replace(
+        _L2, _L2 + "<tr><td>Level 2 Assessment Notes:</td><td>Auditors check the log.</td></tr>"
+    )
+    assert markup != _RENDERED
+    records, losses = _losses(markup)
+
+    assert len(records) == 2
+    assert len(losses) == 1, losses
+    assert losses[0].startswith("1 row(s) had a label this reader does not recognise"), losses[0]
+    assert "'Level 2 Assessment Notes:'" in losses[0], losses[0]
+    assert "Auditors check the log." in losses[0], losses[0]
+
+
+def test_a_heading_row_is_not_a_loss():
+    """The quiet twin for both: a two-cell heading with no colon-ended label
+    -- the fixture's own "Level 1 | Implementation Requirements" -- falls
+    through by design and carries no requirement text."""
+    assert "<tr><td>Level 1</td><td>Implementation Requirements</td></tr>" in _RENDERED
+    heading = "<tr><td>Level 2</td><td>Implementation Requirements</td></tr>"
+    _, losses = _losses(_RENDERED.replace(_L2, heading + _L2))
+    assert losses == []
+
+
+def test_a_known_but_unread_label_is_not_a_loss():
+    """The quiet twin of the unknown-label warning: "Topics:" is a label this
+    reader KNOWS and deliberately does not keep (the CSV reader drops it
+    too), so it is not reported as unrecognised."""
+    markup = _RENDERED.replace(_L2, _L2 + "<tr><td>Topics:</td><td>Change Management</td></tr>")
+    assert markup != _RENDERED
+    _, losses = _losses(markup)
+    assert losses == []

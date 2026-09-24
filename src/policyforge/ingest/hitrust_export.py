@@ -341,6 +341,13 @@ def records_from_pairs(rows: list[list[str]], losses: list[str] | None = None) -
     described into `losses` when given, and `etl-hitrust` prints them as
     warnings, so an export that hits either shape says so on its first run.
 
+    **Two more shapes lose text and are counted, not fixed** (#277): a row
+    of three or more cells whose label is not second-to-last is read as
+    (text, extra cell), falls through, and takes its level record with it;
+    and a colon-ended label this reader does not know drops its value. A
+    third cell IN FRONT is harmless -- the last two still read -- and a
+    heading row with no colon-ended label stays quiet.
+
     **Page furniture is one cell too, if SSRS puts it in a table** -- a
     report title, "Page 1 of 212", a print date. Whether it does is as
     unmeasured as the two shapes above (9b and 1d, on #273). Dropping rows
@@ -376,6 +383,8 @@ def records_from_pairs(rows: list[list[str]], losses: list[str] | None = None) -
 
     skipped_text: list[str] = []
     discarded: list[tuple[str, str]] = []
+    misplaced: list[list[str]] = []
+    unknown: list[tuple[str, str]] = []
 
     for row in rows:
         cells = [cell for cell in row if cell.strip()]
@@ -416,8 +425,22 @@ def records_from_pairs(rows: list[list[str]], losses: list[str] | None = None) -
                     discarded.append((f"{context.reference} {level}", lost))
             continue
 
+        # Nothing above placed this row (#277). Two shapes are known to lose
+        # text here and are counted; anything else that falls through -- a
+        # heading such as "Level 1 | Implementation Requirements" -- carries
+        # no requirement text and stays quiet. The parse is unchanged.
+        if any(hitrust.field_for_label(cell) is not None for cell in cells[:-2]):
+            # A recognised label that is not second-to-last: the row was
+            # read as (text, extra cell), so its value AND the level record
+            # it would have opened are both gone.
+            misplaced.append(cells)
+        elif field is None and label.rstrip().endswith(":"):
+            # Shaped like a label -- the rendered report ends its captions
+            # with a colon -- but not one this reader knows.
+            unknown.append((label, value))
+
     if losses is not None:
-        losses.extend(_describe_losses(skipped_text, discarded))
+        losses.extend(_describe_losses(skipped_text, discarded, misplaced, unknown))
     return records
 
 
@@ -452,7 +475,12 @@ def _looks_like_furniture(text: str, occurrences: int) -> bool:
     return occurrences > 1 or bool(_FURNITURE_RE.match(" ".join(text.split())))
 
 
-def _describe_losses(skipped_text: list[str], discarded: list[tuple[str, str]]) -> list[str]:
+def _describe_losses(
+    skipped_text: list[str],
+    discarded: list[tuple[str, str]],
+    misplaced: list[list[str]] | None = None,
+    unknown: list[tuple[str, str]] | None = None,
+) -> list[str]:
     """Warnings for what `records_from_pairs` could not place, first three shown.
 
     Skipped rows are classified, never filtered: the count is the total, and
@@ -481,6 +509,19 @@ def _describe_losses(skipped_text: list[str], discarded: list[tuple[str, str]]) 
             # Truncate the lost text, never the location: a prefix inside the
             # excerpt once left ~30 characters of what was actually lost.
             + "; ".join(f"{where}: {_excerpt(lost)!r}" for where, lost in discarded[:3])
+        )
+    if misplaced:
+        notes.append(
+            f"{len(misplaced)} row(s) had more than two cells with the label not "
+            "second-to-last, so nothing read them: their text, and any level "
+            "record they would have opened, is NOT in the catalog: "
+            + "; ".join(repr(_excerpt(" | ".join(cells))) for cells in misplaced[:3])
+        )
+    if unknown:
+        notes.append(
+            f"{len(unknown)} row(s) had a label this reader does not recognise, so "
+            "their text is NOT in the catalog: "
+            + "; ".join(f"{_excerpt(label)!r}: {_excerpt(value)!r}" for label, value in unknown[:3])
         )
     return notes
 

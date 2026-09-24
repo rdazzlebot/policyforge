@@ -27,24 +27,13 @@ ENTRY_POINTS = frozenset({"run", "Popen", "call", "check_call", "check_output"})
 #: use is a violation.
 ALWAYS_LOCALE = frozenset({"getoutput", "getstatusoutput"})
 
-#: Product sites carried by #287, keyed by (path, enclosing function), NOT by
-#: line: a line key breaks on any edit above it. Each carries its COUNT, so
-#: the exemption covers these calls and not the function: a new call in an
-#: exempted function is still a violation. When #287 fixes one, its count
-#: drops here -- the test fails on a stale count, so the list cannot outlive
-#: what it exempts.
-DEFERRED_TO_287: Counter[tuple[str, str]] = Counter(
-    {
-        ("src/policyforge/cli/crosswalk.py", "_reviewer"): 1,
-        ("src/policyforge/edit/tree.py", "git"): 1,
-        ("src/policyforge/edit/tree.py", "display_path"): 1,
-        ("src/policyforge/export/github_wiki.py", "__call__"): 1,
-        ("src/policyforge/frameworks/drift.py", "read_committed"): 1,
-        ("src/policyforge/frameworks/registry.py", "is_tracked"): 1,
-        ("src/policyforge/frameworks/registry.py", "is_ignored"): 1,
-        ("src/policyforge/ingest/parser_gate.py", "trial_run"): 1,
-    }
-)
+#: Product sites carried by #287, keyed by (path, enclosing function) with a
+#: COUNT, so an exemption covers those calls and not the function. EMPTY since
+#: #287 fixed all eight (policyforge-ba): each now decodes UTF-8 -- strictly
+#: in the caller where the output is data, with `replace` where it is only
+#: shown, or not at all where only a return code is read. Kept, not deleted:
+#: the next deferral goes here, and the stale check still covers it.
+DEFERRED_TO_287: Counter[tuple[str, str]] = Counter()
 
 
 def _tracked_python() -> list[str]:

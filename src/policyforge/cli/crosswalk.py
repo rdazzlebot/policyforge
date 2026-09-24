@@ -345,16 +345,17 @@ def _reviewer() -> str:
     import getpass
     import subprocess  # nosec B404 - asks git for the configured name, nothing else
 
+    from policyforge.child_output import strict_text
+
+    argv = ["git", "config", "user.name"]
     try:
-        name = subprocess.run(  # nosec B603 B607
-            ["git", "config", "user.name"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=5,
-        ).stdout.strip()
+        result = subprocess.run(argv, capture_output=True, check=False, timeout=5)  # nosec B603 B607
     except (OSError, subprocess.TimeoutExpired):
-        name = ""
+        return getpass.getuser()
+    # DATA: recorded in the overlay as who decided. Bytes, decoded here, so a
+    # name that is not UTF-8 refuses instead of being recorded as `JosÃ©`,
+    # which is what a cp1252 decode of "José" wrote before #287.
+    name = strict_text(result.stdout, site="crosswalk review (reviewer name)", argv=argv).strip()
     return name or getpass.getuser()
 
 

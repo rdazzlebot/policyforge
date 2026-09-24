@@ -279,6 +279,74 @@ def _preserve_crosswalk(out: Path, replacement: list[dict]) -> None:
                 enhancement["source_crosswalk"] = dict(known[citation])
 
 
+def _optional_field_counts(catalog: list[dict]) -> dict[str, int]:
+    """How many entries carry each field a catalog may legitimately leave empty.
+
+    **Guidance lives in two places, and counting one of them would pass the
+    regression in the other.** ARC-AMPE puts a control's supplemental
+    guidance in `discussion` and an enhancement's in
+    `additional_requirements`: 179 and 127 in the shipped catalog. A guard
+    that counted only the first would let a parse that emptied every
+    enhancement's guidance through untouched.
+    """
+    enhancements = [e for c in catalog for e in (c.get("enhancements") or [])]
+    return {
+        "guidance": sum(1 for c in catalog if (c.get("discussion") or "").strip())
+        + sum(1 for e in enhancements if (e.get("additional_requirements") or "").strip()),
+        "related": sum(1 for c in catalog if c.get("related_controls")),
+        "family": sum(1 for c in catalog if (c.get("family") or "").strip()),
+    }
+
+
+def _refuse_optional_field_loss(out: Path, replacement: list[dict]) -> None:
+    """Stop before overwriting a catalog whose optional fields this write empties.
+
+    The same shape as `_refuse_crosswalk_loss` below, for the same reason
+    (#265). An optional column whose caption stops matching does not fail the
+    parse — every row simply reads it as empty — so the catalog still loads,
+    still has 215 controls, and has quietly lost its guidance or its related
+    controls. Nothing in the result looks wrong.
+
+    **Compared as counts against the catalog being overwritten**, so the bound
+    is derived rather than pinned: the shipped revision's 306 guidance entries
+    are what a re-parse of the same workbook reproduces, and what a re-pin
+    that drifted a caption would fall below. **Refuses rather than warns**,
+    because the parse's own warning is one line in a command's output and the
+    loss it describes is invisible in the file.
+
+    **A count that rises or holds is allowed**, and so is a first write with
+    nothing to compare against — a guard that could not be satisfied by a
+    faithful re-parse would be switched off.
+    """
+    import json
+
+    if not out.exists():
+        return
+    try:
+        existing = json.loads(out.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(existing, list):
+        return
+
+    had, keeps = _optional_field_counts(existing), _optional_field_counts(replacement)
+    lost = {field: (had[field], keeps[field]) for field in had if keeps[field] < had[field]}
+    if not lost:
+        return
+
+    shown = ", ".join(f"{field} {before} -> {after}" for field, (before, after) in lost.items())
+    raise click.ClickException(
+        f"{out} carries more optional content than this write would leave ({shown}), "
+        "so nothing has been written.\n"
+        "An optional column whose caption no longer matches does not fail the "
+        "parse — every row reads it as empty. Check the header of the source "
+        "sheet against the captions in `COLUMN_CAPTIONS`; a changed `&`/`and`, "
+        "or a pluralization such as 'Related Control(s)', is enough.\n"
+        "If CMS really did remove the content, move the existing catalog aside "
+        "and re-run, so the loss is a decision rather than a side effect."
+    )
+
+
 def _refuse_crosswalk_loss(out: Path, replacement: list[dict]) -> None:
     """Stop before overwriting a catalog that carries mappings this write drops.
 
@@ -1157,11 +1225,16 @@ def etl_arc_ampe(export_path: Path | None, version: str, nist_path: Path, out: P
         workbook, version=version or ARC_AMPE_VERSION, nist_ids=nist_ids
     )
 
-    out.parent.mkdir(parents=True, exist_ok=True)
-    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
-    click.echo(f"Wrote {len(controls)} controls -> {out}")
+    replacement = [dataclasses.asdict(c) for c in controls]
+    # The report prints before the guard runs, so a refusal arrives with the
+    # parse's own warning above it — the warning is what names the column.
     for line in summary.format_report():
         click.echo(f"  {line}")
+    _refuse_optional_field_loss(out, replacement)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_text_lf(out, json.dumps(replacement, indent=2))
+    click.echo(f"Wrote {len(controls)} controls -> {out}")
 
     stamp = record_source_provenance(
         out.parent / "framework.yaml",

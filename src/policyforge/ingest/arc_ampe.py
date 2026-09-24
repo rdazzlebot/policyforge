@@ -125,6 +125,21 @@ COLUMN_CAPTIONS = {
 #: The three captions without which a sheet is not the controls sheet.
 REQUIRED_FIELDS = ("control_id", "title", "statement")
 
+#: Every recognized field a sheet may lack and still qualify — derived from
+#: the caption table rather than listed, so a caption added to
+#: `COLUMN_CAPTIONS` later is covered without anyone remembering this line.
+#:
+#: **An optional column whose caption fails to match does not fail; it reads
+#: as empty on every row** (#265). `cell()` returns `""` both for a genuinely
+#: blank cell and for a column that was never found, so from that point on
+#: the two are indistinguishable. The caption is matched exactly after
+#: lowercasing, so `&` -> `and` or `Related Controls` -> `Related Control(s)`
+#: in a later revision drops the whole column in silence while the sheet
+#: still qualifies on its three required captions. The loader cannot tell a
+#: drifted caption from a column CMS removed, so it reports the absence loudly
+#: and leaves the decision to whoever is re-pinning.
+OPTIONAL_FIELDS = tuple(f for f in COLUMN_CAPTIONS.values() if f not in REQUIRED_FIELDS)
+
 #: `AC-01`, `AC-02(01)`, tolerant of the stray space a hand-edited template
 #: acquires.
 _CONTROL_ID_RE = re.compile(r"^([A-Za-z]{2})-(\d{1,3})(?:\s*\(\s*(\d{1,3})\s*\))?$")
@@ -371,6 +386,11 @@ class Summary:
         self.controls = 0
         self.enhancements = 0
         self.with_guidance = 0
+        self.with_related = 0
+        #: Optional fields whose caption was not found in the header. Every
+        #: row reads empty for these, so they are reported by name rather
+        #: than left to surface as a count of zero.
+        self.missing_optional: list[str] = []
         self.rows_skipped = 0
         self.unparsed: list[str] = []
         self.crosswalked = 0
@@ -382,6 +402,17 @@ class Summary:
             f"({self.controls + self.enhancements} baseline items) "
             f"from sheet '{self.sheet}'.",
             f"{self.with_guidance} carry supplemental requirements and guidance.",
+            f"{self.with_related} controls list related controls.",
+        ]
+        # First and loud, because the lines above read as facts about the
+        # source and are not: with the column missing, "0 carry" measures the
+        # parse rather than CMS, and the related count used to print nothing
+        # at all.
+        lines[:0] = [
+            f"WARNING: no '{field}' column was found in the header, so every row "
+            f"reads it as empty. A caption that no longer matches exactly drops "
+            f"the whole column without failing the parse."
+            for field in self.missing_optional
         ]
         if self.crosswalked:
             lines.append(f"Crosswalked {self.crosswalked} onto their 800-53 equivalents.")
@@ -423,6 +454,7 @@ def parse_arc_ampe(
 
     summary = Summary()
     summary.sheet = sheet_title
+    summary.missing_optional = [f for f in OPTIONAL_FIELDS if f not in columns]
     assembled: dict[str, Control] = {}
     order: list[str] = []
 
@@ -497,6 +529,8 @@ def parse_arc_ampe(
             parent.control_statement = statement
             parent.discussion = guidance
             parent.related_controls = related
+            if related:
+                summary.with_related += 1
             parent.source_crosswalk = crosswalk
             summary.controls += 1
             continue

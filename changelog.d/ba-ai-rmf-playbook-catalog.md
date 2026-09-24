@@ -13,5 +13,5 @@ Fetch it again with `policyforge etl-ai-rmf-playbook`. NIST publishes no
 revision number for the Playbook, so the catalog is pinned to the exact export
 it was built from, and the command refuses any other. The catalog carries no
 outcome wording, because the Playbook's restatement of the outcomes differs
-from the AI RMF 1.0 Core in 38 of the 72 subcategories. Each outcome is read
+from the AI RMF 1.0 Core in 30 of the 72 subcategories. Each outcome is read
 from the AI RMF catalog under the same id.

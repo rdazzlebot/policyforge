@@ -15,8 +15,9 @@ the one route to actions that invents nothing (#177).
 **Shape.** One Control per Core subcategory (`Govern 1.1` ...), titled with
 OUR label ("Suggested actions for GOVERN 1.1"), and one enhancement per
 suggested action (`Govern 1.1 Action 3`). No outcome wording is carried: the
-export restates each outcome, and in 38 of 72 its wording differs from the
-AI RMF 1.0 Core's (observed on #177), so the outcome is read from
+export restates each outcome, and in 30 of 72 its wording differs from the
+AI RMF 1.0 Core's, and in 8 more only its capitalisation (observed on #177;
+the split is 9b's, on #304), so the outcome is read from
 `nist-ai-rmf` under the same id (80's ruling). The action NUMBER is ours -- its position in
 NIST's list -- because NIST does not number them; the README says so. Every
 Control's id must be a subcategory the shipped Core carries: an action with
@@ -228,9 +229,10 @@ def parse_playbook(raw: bytes, core_subcategories: set[str]) -> list[Control]:
                 control_id=subcategory,
                 # A LABEL, ours, not NIST's outcome wording (80's ruling on
                 # #177). The export's `description` restates each outcome,
-                # and in 38 of 72 subcategories its wording differs from the
-                # AI RMF 1.0 Core's; carrying it would give one outcome two
-                # NIST-attributed wordings under two valid citations. The
+                # and in 30 of 72 subcategories its wording differs from the
+                # AI RMF 1.0 Core's (8 more differ only in capitalisation);
+                # carrying it would give one outcome two NIST-attributed
+                # wordings under two valid citations. The
                 # outcome lives in `nist-ai-rmf`, under this same id.
                 title=f"Suggested actions for {entry['title'].strip()}",
                 framework=FRAMEWORK,

@@ -192,16 +192,25 @@ def _typography(text: str) -> str:
 
 def test_the_observed_divergence_from_the_core_is_what_the_readme_says(raw, core):
     """Pinned so a re-published export that changes it is noticed, and so the
-    README's figure cannot drift from the data: 38 of 72 subcategories word
-    the outcome differently from AI RMF 1.0, beyond typography."""
+    README's figures cannot drift from the data. Two figures, because 9b
+    measured on #304 that the first count (38) folded quotes and dashes but
+    not case: 30 subcategories word the outcome differently from AI RMF 1.0,
+    and 8 more differ only in capitalisation. Both are derived here."""
     entries = json.loads(raw.decode("utf-8"))
-    differ = sorted(
+
+    def differs(entry, fold) -> bool:
+        ours = fold(_typography(entry["description"]))
+        return ours != fold(_typography(core[_subcategory(entry["title"])]))
+
+    differ = sorted(_subcategory(e["title"]) for e in entries if differs(e, str.casefold))
+    case_only = sorted(
         _subcategory(e["title"])
         for e in entries
-        if _typography(e["description"]) != _typography(core[_subcategory(e["title"])])
+        if differs(e, str) and not differs(e, str.casefold)
     )
-    readme = (CATALOG / "README.md").read_text(encoding="utf-8")
-    assert f"in {len(differ)} of the {len(entries)}" in " ".join(readme.split()), len(differ)
+    readme = " ".join((CATALOG / "README.md").read_text(encoding="utf-8").split())
+    assert f"in {len(differ)} of the {len(entries)}" in readme, len(differ)
+    assert f"in {len(case_only)} more only in capitalisation" in readme, len(case_only)
     for example in ("Govern 1.2", "Govern 1.3", "Govern 4.1"):
         assert example in differ, f"the README's example {example} does not differ"
 

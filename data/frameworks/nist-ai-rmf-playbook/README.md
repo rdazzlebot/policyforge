@@ -40,8 +40,8 @@ action and attribute it to NIST without PolicyForge inventing it.
 ## Why the outcome wording is not carried
 
 The Playbook export restates each subcategory's outcome. On the pinned export,
-that wording **differs from the AI RMF 1.0 Core's in 38 of the 72
-subcategories** (observed when this catalog was built, #177). For example:
+that wording **differs from the AI RMF 1.0 Core's in 30 of the 72
+subcategories**, and in 8 more only in capitalisation (observed when this catalog was built, #177). For example:
 
 | Subcategory | AI RMF 1.0 Core                                        | Playbook export                            |
 | ----------- | ------------------------------------------------------ | ------------------------------------------ |

@@ -130,7 +130,12 @@ structure rather than only emptiness:
 - any row with empty text,
 - an unrecognised function name,
 - a subcategory whose parent category is missing,
-- categories not contiguous from 1 within a function.
+- categories not contiguous from 1 within a function,
+- any shape other than the one pinned under `shape:` in this catalog's
+  `framework.yaml` — 19 and 72 for revision 1.0. More is refused as firmly
+  as fewer, because contiguity accepts an invented `Govern 7`. The ETL never
+  rewrites that key, so a new revision means editing it by hand, alongside
+  this README.
 
 The contiguity check is the one that earns its place: a partial parse that
 drops `Govern 3` produces a well-formed catalog with a real count, and

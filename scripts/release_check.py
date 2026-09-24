@@ -4,7 +4,8 @@ Every check in this repository looks *inside* the repository. On 2026-09-19
 three sessions declared 1.4.0 done — the tag was right, the version triple
 agreed, the changelog was correct, the gate was green, the release notes
 were published — and for roughly three hours `brew install
-rdazzleman/tap/policyforge`, the first command in this project's own README,
+rdazzlebot/tap/policyforge`, the first command in this project's own README
+(the tap has since moved to `rdazzleman`),
 installed **1.3.0**. Every individual check passed. None of them looked at
 the artefact a user receives.
 

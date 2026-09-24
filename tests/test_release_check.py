@@ -396,6 +396,16 @@ def test_homebrew_output_decodes_to_the_characters_it_wrote(tmp_path):
     assert beer in result.stdout
 
 
+#: Every function in `subprocess` that starts a child. The first version of
+#: the guard below checked `run` only, so a `check_output` added elsewhere
+#: slipped through while its docstring said any direct call would fail --
+#: found by policyforge-80 (handle 80) mutating it. **A guard naming one
+#: entry point guards one entry point.**
+SUBPROCESS_ENTRY_POINTS = frozenset(
+    {"run", "Popen", "call", "check_call", "check_output", "getoutput", "getstatusoutput"}
+)
+
+
 def test_every_subprocess_call_goes_through_the_decoding_helper():
     """**The class, not the instance.** The defect was on BOTH docker calls;
     9b noted the probe had the same shape two statements above the one that
@@ -411,12 +421,12 @@ def test_every_subprocess_call_goes_through_the_decoding_helper():
             f = call.func
             if (
                 isinstance(f, ast.Attribute)
-                and f.attr == "run"
+                and f.attr in SUBPROCESS_ENTRY_POINTS
                 and getattr(f.value, "id", "") == "subprocess"
                 and fn.name != "_run"
             ):
                 outside.append(f"{fn.name}:{call.lineno}")
-    assert not outside, f"subprocess.run outside _run, so not UTF-8 safe: {outside}"
+    assert not outside, f"a subprocess call outside _run, so not UTF-8 safe: {outside}"
 
 
 # --- the print half: decoding fixed, then the crash moved to `print` ----

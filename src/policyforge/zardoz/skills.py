@@ -601,8 +601,9 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
     """Why each framework reachable through the crosswalk covers nothing.
 
     **A zero under a heading that reads as a gap is not a finding until it
-    carries its cause.** A zero means one of five things, and which ones a
-    user sees depends on their topics as much as on the catalogs:
+    carries its cause.** A zero means one of several things, and which ones
+    a user sees depends on their topics and overlays as much as on the
+    catalogs:
 
     - `Information Blocking` is refused **by design**. Its entries are
       conditions of an exception, not controls to implement, so mapping
@@ -626,6 +627,13 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
       the catalog joined to the registry, not a fact about the file -- the
       example registry anchors so much that this never showed, and a
       one-topic registry shows it at once (1d, on #270).
+    - **A catalog reached only in part** -- the topics DO own controls it
+      maps to, but the organisation's overlay records those mappings as
+      `superset` or `intersects` -- reads covered 0 with `partial`
+      non-empty. Whether partial is enough is a person's decision, not a
+      count, so the row says that and suggests nothing. Checked before the
+      row above, which would otherwise tell the user controls they own are
+      unowned (1d's second case on #270).
     - **Any other catalog** -- every BYOC one, and any shipped one added
       later without a crosswalk -- is in none of those tables and carries no
       mapping. Its row states only that. Until #264 this branch printed "no
@@ -641,13 +649,14 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
     kind was filed under the second.
 
     Those want different responses — *leave it alone*, *wait for the
-    ingest*, *fix the topics*, *go and map it*, and *find out, then map it*
-    — and the report prints the same number for all five. The header names
-    no count: it went from two to five in one evening, and a count in
-    output is a claim that goes stale in a place nobody adding a kind
-    thinks to look (80, on #270). The rows carry the taxonomy. The reasons are looked up from the
-    declared framework name, which is reliable since the two CFR catalogs
-    were renamed to be citable.
+    ingest*, *fix the topics*, *decide whether partial is enough*, *go and
+    map it*, and *find out, then map it* — and the report prints the same
+    number for all of them. The header names no count: it went from two
+    kinds to six in a day, and a count in output is a claim that goes stale
+    in a place nobody adding a kind thinks to look (80, on #270). The rows
+    carry the taxonomy. The reasons are looked up from the declared
+    framework name, which is reliable since the two CFR catalogs were
+    renamed to be citable.
 
     **`catalog_paths` is what makes the remedy performable.** Without it
     this printed `crosswalk seed --framework 'NIST 800-171'`, which the
@@ -700,6 +709,26 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
             # this branch used to print told users to rebuild by hand what the
             # publisher already publishes. #260.
             notes.append(f"  {framework.framework.upper()}: {upstream}")
+        elif framework.partial:
+            # The sixth kind, and checked before the fifth: with `partial`
+            # non-empty the topics demonstrably OWN controls this catalog
+            # reaches, so "none ... belongs to one of your topics" can never
+            # be true. The zero is the organisation's own reviewed decision
+            # (superset/intersects in its overlay), and whether that is
+            # enough is a person's call. No command: nothing here is a
+            # mapping problem (80, on #270; case found by 1d).
+            #
+            # "listed as partial above" is true because `_coverage`, this
+            # function's only production caller, prints `format_report`
+            # first, and that lists every framework's partial requirements.
+            # `test_a_partial_only_catalog_is_not_told_its_controls_are_unowned`
+            # asserts both in one output, so moving this row elsewhere fails.
+            notes.append(
+                f"  {framework.framework.upper()}: what it reaches, your topics own, but "
+                "only in part (listed as partial above): your organisation recorded those "
+                "mappings as superset or intersects. Whether that is enough is a decision "
+                "for a person, not a count."
+            )
         elif _framework_key(framework.framework) in carries_crosswalk:
             # The fifth kind, and checked before the seed advice: a crosswalk
             # actually in the file outranks any claim about searching for one.

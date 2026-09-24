@@ -582,6 +582,7 @@ def test_the_crosswalk_seed_hint_survives_a_path_with_a_space():
         def __init__(self, name):
             self.framework = name
             self.covered = 0
+            self.partial = []  # FrameworkCoverage has it; #270 reads it
 
     class _Report:
         framework_coverage = [_Coverage(framework)]

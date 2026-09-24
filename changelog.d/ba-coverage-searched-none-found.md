@@ -13,6 +13,11 @@ The row now names the actual cause:
   The row says so: the gap is in your topics, not the mapping. It suggests no
   command and advises against seeding by hand, because a hand-made mapping
   would compete with the publisher's.
+- **A catalog your topics reach only in part** reads zero when your
+  organisation's crosswalk overlay records every mapping your topics use as
+  `superset` or `intersects`. The row says your topics do own those controls
+  and that whether partial coverage is enough is a decision for a person. It
+  suggests nothing to run.
 - **42 CFR Part 2** says *"no published crosswalk found"*, because a search
   was made. It covered NIST, HHS/OCR, SAMHSA rulemaking and HITRUST's source
   list, but not NIST's OLIR catalog, where a formal mapping would be

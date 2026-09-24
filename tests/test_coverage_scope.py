@@ -492,7 +492,9 @@ def test_a_catalog_in_no_table_claims_nothing_about_the_world():
     assert _searched_none_found(name) is None
 
     controls = [Control(control_id="ECF-1", title="t", framework=name, framework_version="1")]
-    report = SimpleNamespace(framework_coverage=[SimpleNamespace(framework=name, covered=0)])
+    report = SimpleNamespace(
+        framework_coverage=[SimpleNamespace(framework=name, covered=0, partial=[])]
+    )
     row = _row("\n".join(_zero_row_reasons(controls, report)), name.upper())
 
     assert _CARRIES_TEXT in row, f"generic row does not state what the catalog carries: {row!r}"
@@ -660,8 +662,79 @@ def test_a_crosswalk_carried_only_by_enhancements_still_counts():
         )
     ]
     assert not control.source_crosswalk, "the premise: nothing at control level"
-    report = SimpleNamespace(framework_coverage=[SimpleNamespace(framework=name, covered=0)])
+    report = SimpleNamespace(
+        framework_coverage=[SimpleNamespace(framework=name, covered=0, partial=[])]
+    )
     row = _row("\n".join(_zero_row_reasons([control], report)), name.upper())
 
     assert _REACHES_TEXT in row, f"an enhancement-level crosswalk was not seen: {row!r}"
     assert "crosswalk seed" not in row, row
+
+
+def _every_pair_recorded_superset(framework_key: str) -> dict[tuple[str, str, str], str]:
+    """Relationships as an overlay would hold them if the organisation
+    recorded every mapping of one framework as `superset` -- 1d's case on
+    #270 -- built from the raw `controls.json`, keyed as
+    `accepted_relationships` keys them. A real, non-empty dict: an empty
+    stand-in is falsy, and `analyze_coverage` then reads no relationships at
+    all, which is how this test's first draft passed through nothing."""
+    from policyforge.zardoz.skills import _framework_key
+
+    pairs = {}
+    for row in _shipped_rows():
+        if _framework_key(row["framework"]) != framework_key:
+            continue
+        levels = [(row["control_id"], row.get("source_crosswalk") or {})] + [
+            (e["enhancement_id"], e.get("source_crosswalk") or {})
+            for e in row.get("enhancements", [])
+        ]
+        for requirement_id, crosswalk in levels:
+            for value in crosswalk.values():
+                for nist_id in _ID_RE.findall(value):
+                    pairs[(framework_key, requirement_id, nist_id)] = "superset"
+    assert pairs, f"no {framework_key} mapping found to record; the test would check nothing"
+    return pairs
+
+
+def test_a_partial_only_catalog_is_not_told_its_controls_are_unowned(monkeypatch):
+    """**1d's case, through the real `_coverage`.** A topic owns an 800-53
+    control HIPAA maps to, and the organisation recorded that mapping as
+    `superset`: covered 0, partial non-empty. The fifth-kind row said "none
+    of the controls it reaches belongs to one of your topics" -- false, the
+    topic owns it. The question is whether partial is enough, which is a
+    person's call (80's ruling)."""
+    import dataclasses
+    from types import SimpleNamespace
+
+    import policyforge.crosswalk.overlay as overlay
+    from policyforge.topics.registry import load_topics
+    from policyforge.zardoz.skills import _coverage, _framework_key
+
+    hipaa = _framework_key("HIPAA Security Rule")
+    anchor = next(
+        match
+        for row in _shipped_rows()
+        if _framework_key(row["framework"]) == hipaa
+        for crosswalk in _crosswalks(row)
+        for value in crosswalk.values()
+        for match in _ID_RE.findall(value)
+    )
+    relationships = _every_pair_recorded_superset(hipaa)
+    monkeypatch.setattr(overlay, "accepted_relationships", lambda _: relationships)
+
+    root = Path(__file__).resolve().parent.parent
+    topic = dataclasses.replace(
+        load_topics(root / "config" / "topics.example.yaml")[0], nist_controls=[anchor]
+    )
+    state = SimpleNamespace(topics=[topic], controls_paths=[], config={}, content_dir=None)
+    output = _coverage(state, [])
+    row = _zero_rows(output)["HIPAA"]
+
+    assert "your topics own, but only in part" in row, f"partial-only row missing: {row!r}"
+    assert "belongs to one of your topics" not in row, "told its owned controls are unowned"
+    assert "seed" not in row, f"a partial-only catalog is told to seed: {row!r}"
+    # The row points at a section; that section must be in the same output.
+    assert "(listed as partial above)" in row
+    above = output[: output.index("Why those are zero")]
+    assert "HIPAA reachable via the crosswalk" in above, "the section the row points at is gone"
+    assert "are reached only in part" in above, "the row says 'listed above' and nothing is"

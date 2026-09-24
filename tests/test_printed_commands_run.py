@@ -125,6 +125,8 @@ def _cli_help(*command: str) -> str:
         [sys.executable, "-m", "policyforge.cli", *command, "--help"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=120,
     )
     return result.stdout + result.stderr

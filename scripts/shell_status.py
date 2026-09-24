@@ -203,6 +203,8 @@ def tracked(pattern: str) -> list[str]:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
     return [line for line in out.stdout.splitlines() if line.strip()]

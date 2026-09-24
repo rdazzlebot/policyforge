@@ -183,6 +183,8 @@ def _git(*args: str, root: Path | None = None) -> subprocess.CompletedProcess[st
         cwd=root or REPO_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
 

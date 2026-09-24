@@ -41,7 +41,13 @@ BODY = "## Purpose\n\nEntitlements are recertified quarterly. [NIST AC-2]\n"
 
 def git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
     return subprocess.run(  # nosec B603 B607 - fixed argv, no shell
-        ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=True,
     )
 
 

@@ -365,6 +365,8 @@ def test_the_built_crosswalk_is_byte_identical_across_processes(tmp_path):
             [sys.executable, "-c", script, str(nist_path), str(hipaa_path)],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             env=env,
             check=True,
         )

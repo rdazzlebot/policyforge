@@ -144,14 +144,18 @@ VERDICTS = ("approved", "changes-requested", "blocked")
 
 def _gh(*args: str) -> str:
     exe = shutil.which("gh") or r"C:\Program Files\GitHub CLI\gh.exe"
-    result = subprocess.run([exe, *args], capture_output=True, text=True)
+    result = subprocess.run(
+        [exe, *args], capture_output=True, text=True, encoding="utf-8", errors="replace"
+    )
     if result.returncode != 0:
         raise RuntimeError(f"gh {' '.join(args)} failed:\n{result.stderr.strip()}")
     return result.stdout
 
 
 def _git(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], capture_output=True, text=True)
+    return subprocess.run(
+        ["git", *args], capture_output=True, text=True, encoding="utf-8", errors="replace"
+    )
 
 
 def clean(value: str) -> tuple[str, str]:

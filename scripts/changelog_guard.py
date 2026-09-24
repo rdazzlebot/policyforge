@@ -157,6 +157,8 @@ def changed_paths(base: str, root: Path | None = None) -> list[str]:
         cwd=root,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if result.returncode != 0:
@@ -189,7 +191,12 @@ def main(argv: list[str] | None = None) -> int:
     # user-facing changed" and "I could not see your change".
     if not paths:
         dirty = subprocess.run(
-            ["git", "status", "--porcelain"], capture_output=True, text=True, check=False
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
         ).stdout.strip()
         if dirty:
             print(

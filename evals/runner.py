@@ -1329,6 +1329,8 @@ def code_provenance() -> list[str]:
                 cwd=Path(__file__).resolve().parent.parent,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=10,
             ).stdout.strip()
         except Exception:  # noqa: BLE001 - provenance is never worth failing a run over

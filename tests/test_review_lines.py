@@ -40,7 +40,9 @@ def _git(*args: str) -> str:
     history"* — a message that blamed the wrong thing and cost a reproduction
     to disbelieve. Found by policyforge-9b.
     """
-    result = subprocess.run(["git", *args], capture_output=True, text=True, cwd=ROOT)
+    result = subprocess.run(
+        ["git", *args], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT
+    )
     if result.returncode != 0:
         raise RuntimeError(
             f"git {' '.join(args)} exited {result.returncode}: "

@@ -159,7 +159,12 @@ def run(cmd: list[str], **kwargs) -> int:
 
 def dirty_tree() -> list[str]:
     out = subprocess.run(
-        ["git", "status", "--porcelain"], cwd=REPO_ROOT, capture_output=True, text=True
+        ["git", "status", "--porcelain"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
     ).stdout
     return [line for line in out.splitlines() if line.strip()]
 
@@ -241,6 +246,8 @@ def image_checks(work: Path) -> dict[str, bool]:
         ["docker", "run", "--rm", "--entrypoint", "sh", IMAGE_TAG, "-c", probe + " ; true"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     ).stdout.strip()
     print(leaked or "No planted private file reached the image.")
     results["private files stay out of the image"] = not leaked

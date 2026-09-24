@@ -406,14 +406,32 @@ GENERIC_ACTORS = (
 )
 
 
-def _actor_pattern(actors) -> re.Pattern[str] | None:
+def _alternatives(actors) -> str:
     words = [a for a in {" ".join(str(a).split()) for a in actors} if a]
-    if not words:
-        return None
-    alternatives = "|".join(
+    return "|".join(
         r"\s+".join(re.escape(w) for w in a.split()) for a in sorted(words, key=len, reverse=True)
     )
-    return re.compile(rf"{_JOINER}(?:{alternatives})\b", re.IGNORECASE)
+
+
+def _actor_pattern(org_actors=()) -> re.Pattern[str]:
+    """Joiner, then an actor, then no further word character.
+
+    **Generic actors match in any case; the organization's own do NOT**
+    (1d on #329). Config names are proper nouns, and one-word team or vendor
+    names are also ordinary words: with teams "Security", "Compliance", "IT"
+    and vendors "Legal", "Privacy", case-insensitive matching fired on 4 of
+    the 459 shipped Playbook actions and 3 of b5's 66 sentences, every one an
+    Oxford-comma list item ("..., and legal review"). Stated limit: a
+    declared name written in another case ("ACME" for "Acme") is not caught.
+
+    A negative lookahead for a word character, rather than a word boundary,
+    follows the actor, so a name that ends in punctuation, "Foo (EU)", can
+    still match (1d on #329).
+    """
+    generic = _alternatives(GENERIC_ACTORS)
+    declared = _alternatives(org_actors)
+    actor = f"(?i:{generic})" + (f"|{declared}" if declared else "")
+    return re.compile(rf"(?i:{_JOINER})(?:{actor})(?!\w)")
 
 
 def _second_clause_actor(plain: str, org_actors=()) -> str | None:
@@ -432,8 +450,7 @@ def _second_clause_actor(plain: str, org_actors=()) -> str | None:
     subsidiary, a person's name -- is NOT caught, and nor is a clause joined
     some other way (a bare comma, "which", "while").
     """
-    pattern = _actor_pattern((*GENERIC_ACTORS, *org_actors))
-    match = pattern.search(_CITATION_RE.sub("", plain)) if pattern else None
+    match = _actor_pattern(org_actors).search(_CITATION_RE.sub("", plain))
     return match.group(0) if match else None
 
 

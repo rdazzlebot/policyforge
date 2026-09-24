@@ -122,11 +122,42 @@ def test_a_multi_word_name_matches_across_any_whitespace():
     [
         "NIST suggests reviewing the inventory, and The Organization will adopt it.",
         "NIST suggests reviewing the inventory; WE will adopt it.",
-        "NIST suggests reviewing the inventory, and ACME will adopt it.",
+        "NIST suggests reviewing the inventory, AND the team will adopt it.",
     ],
 )
-def test_actors_match_in_any_case(sentence):
+def test_generic_actors_and_joiners_match_in_any_case(sentence):
     assert _flagged(sentence, ACME)
+
+
+# One-word team and vendor names that are also ordinary words (1d on #329).
+ONE_WORD_ORG = ("Security", "Compliance", "IT", "Legal", "Privacy")
+
+
+def test_one_word_config_names_raise_no_false_alarm_on_real_text():
+    """Case-insensitive, these fired on 3 of the 66 real sentences and 4 of
+    the 459 shipped Playbook actions, all Oxford-comma list items ("..., and
+    legal review"). Config names are proper nouns, so they match as written."""
+    import json
+
+    from policyforge.content.deontic import _second_clause_actor
+
+    assert playbook_obligations(CORPUS.read_text(encoding="utf-8"), ONE_WORD_ORG) == []
+    catalog = Path(__file__).resolve().parent.parent / "data" / "frameworks"
+    rows = json.loads(
+        (catalog / "nist-ai-rmf-playbook" / "controls.json").read_text(encoding="utf-8")
+    )
+    actions = [e["description"] for r in rows for e in r["enhancements"]]
+    assert len(actions) == 459
+    assert [a for a in actions if _second_clause_actor(a, ONE_WORD_ORG)] == []
+
+
+def test_a_one_word_config_name_is_still_caught_as_written():
+    assert _flagged("NIST suggests reviewing access, and Security will do so.", ONE_WORD_ORG)
+    assert not _flagged("NIST suggests reviewing access, and security reviews.", ONE_WORD_ORG)
+
+
+def test_a_config_name_ending_in_punctuation_matches():
+    assert _flagged("NIST suggests reviewing access, and Foo (EU) will do so.", ("Foo (EU)",))
 
 
 def test_the_zardoz_check_skill_reads_the_org_name_from_its_config(tmp_path):
@@ -176,6 +207,8 @@ def test_a_word_that_only_starts_like_an_actor_passes(sentence):
     [
         # An actor neither generic nor declared.
         "NIST suggests reviewing the inventory, and Globex will adopt it.",
+        # A declared name in another case: config names match as written.
+        "NIST suggests reviewing the inventory, and ACME will adopt it.",
         # A clause joined some other way than the listed joiners.
         "NIST suggests reviewing the inventory, Acme will adopt it.",
         "NIST suggests reviewing the inventory, which the organization will adopt.",

@@ -5,5 +5,7 @@ passed, because only the start of the sentence was read. A clause after
 ", and", ", but", ", so", a semicolon or a dash is now refused when its
 subject is the organisation: "the organization", "we", "our", "staff", "the
 team" and similar, or the organisation's own name, team names and vendor
-names, read from `org:` in your config. An actor that is none of these is not
-caught, and the check says so in its documentation.
+names, read from `org:` in your config. Your own names match as you wrote them,
+so a team called "Security" is caught but the word "security" in a list is not.
+An actor that is none of these is not caught, and the check says so in its
+documentation.

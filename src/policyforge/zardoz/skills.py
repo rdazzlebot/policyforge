@@ -308,7 +308,9 @@ def _check(state, args: list[str]) -> str:
     root = Path(state.content_dir or DEFAULT_CONTENT_DIR)
     if not root.exists():
         return f"No content tree at {root}, so there is nothing to check."
-    return check_tree(root).format_report()
+    from policyforge.org.context import org_actors
+
+    return check_tree(root, org_actors=org_actors(state.config or {})).format_report()
 
 
 def _catalogs_used(controls) -> str:

@@ -122,6 +122,20 @@ def load_org_profile(config: dict) -> OrgProfile:
     )
 
 
+def org_actors(config: dict) -> tuple[str, ...]:
+    """The names the organization acts under, from its own config (#323).
+
+    Its name, its team names and its vendor names, keyed or not. The Playbook
+    gate refuses one of these opening a clause after "NIST suggests ...",
+    because that clause is the organization committing. Derived from config,
+    never typed, so it cannot drift from the organization it describes.
+    """
+    profile = load_org_profile(config)
+    names = [profile.name, *profile.unkeyed_vendors]
+    names += [a.value for a in profile.assignments]
+    return tuple(dict.fromkeys(n.strip() for n in names if n and n.strip()))
+
+
 @dataclass
 class SubstitutionResult:
     text: str

@@ -722,7 +722,7 @@ def _cited_blocks(document: str) -> list[str]:
 
 
 #: A data-state qualifier a document can assert, and what grounds it in a
-#: premise. Only "in transit" (#174): sized on epoch 21's 60 documents, it
+#: premise. Only "in transit" (#174): sized on epoch 21's 59 documents, it
 #: fired 3 times in 1,096 cited blocks and every one was a real addition --
 #: including "encryption in transit" cited to SC-28, which is protection AT
 #: REST. "At rest" fired 4 times, mostly on defensible glosses (access-control

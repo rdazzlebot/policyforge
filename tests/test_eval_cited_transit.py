@@ -11,7 +11,7 @@ from epoch 21's glm run (2026-09-17), and each passed every existing check:
   information AT REST.
 
 The check is narrow on purpose, and sized before it was written: across that
-run's 60 documents (1,096 cited blocks) "in transit" fired 3 times, all real.
+run's 59 documents (1,096 cited blocks) "in transit" fired 3 times, all real.
 "At rest" fired 4 times, mostly on defensible glosses, and is left out.
 """
 
@@ -103,6 +103,52 @@ def test_in_motion_is_the_same_claim():
     document = INSTANCE.replace("in transit", "in motion")
 
     assert len(unfounded_transit(document, ENCRYPT)) == 1
+
+
+def test_a_title_case_heading_is_still_a_claim():
+    """Real headings capitalise it ("Protect Integrity of ePHI in Storage and
+    Transit"). 9b found dropping the case flag passed every other test."""
+    document = (
+        "## Encryption In Transit [HIPAA 164.312(a)(2)(iv) Addressable]\n\n"
+        "1. Enable the mechanism.\n"
+    )
+
+    assert len(unfounded_transit(document, ENCRYPT)) == 1
+
+
+def test_a_capitalised_grounding_word_still_grounds():
+    """The grounding side needs the case flag too: HIPAA states the standard
+    as "Transmission security", capitalised at the start of the line."""
+    synthesis = "- Transmission security: guard ePHI sent over networks. [HIPAA 164.312(e)(1)]"
+    document = "## Transmission\n\n1. Protect ePHI in transit. [HIPAA 164.312(e)(1)]\n"
+
+    assert unfounded_transit(document, synthesis) == []
+
+
+def test_transport_grounds_transit():
+    """**A twin per synonym** (1d's finding on #292): with one test for the
+    family, `transport` and `transfer` could each be dropped unnoticed. MP-5
+    states media protection "during transport", which a document faithfully
+    glosses as "media in transit"."""
+    synthesis = (
+        "- Protect and control digital and non-digital media during transport "
+        "outside of controlled areas. [NIST 800-53 MP-5]"
+    )
+    document = "## Media\n\n1. Encrypt media in transit to the offsite vault. [NIST 800-53 MP-5]\n"
+
+    assert unfounded_transit(document, synthesis) == []
+
+
+def test_transfer_grounds_transit():
+    synthesis = (
+        "- Enforce approved authorizations for controlling the flow of information "
+        "when it is transferred between connected systems. [NIST 800-53 AC-4]"
+    )
+    document = (
+        "## Flow Control\n\n1. Inspect information in transit between systems. [NIST 800-53 AC-4]\n"
+    )
+
+    assert unfounded_transit(document, synthesis) == []
 
 
 def test_words_that_merely_contain_transit_are_not_claims():

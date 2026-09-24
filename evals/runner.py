@@ -721,6 +721,52 @@ def _cited_blocks(document: str) -> list[str]:
     return [block for block in joined if _SOURCE_TAG_RE.search(block)]
 
 
+#: A data-state qualifier a document can assert, and what grounds it in a
+#: premise. Only "in transit" (#174): sized on epoch 21's 59 documents, it
+#: fired 3 times in 1,096 cited blocks and every one was a real addition --
+#: including "encryption in transit" cited to SC-28, which is protection AT
+#: REST. "At rest" fired 4 times, mostly on defensible glosses (access-control
+#: encryption, integrity protection read as storage), so it is left out on
+#: that measurement. "In use" was 3 of 3 ordinary English.
+_TRANSIT_CLAIM = re.compile(r"\b(?:in transit|in motion)\b", re.I)
+_TRANSIT_GROUND = re.compile(
+    r"\b(?:in transit|in motion|transmi\w*|transport\w*|transfer\w*)\b", re.I
+)
+
+
+def unfounded_transit(document: str, synthesis: str) -> list[str]:
+    """Cited blocks that say "in transit" where their own citations never do.
+
+    `_tags` asks whether a reference is one the synthesis carries, and never
+    whether the sentence under it came from that reference (#174). A block
+    can assert "encrypt ePHI at rest and in transit" under HIPAA
+    164.312(a)(2)(iv), whose text is "a mechanism to encrypt and decrypt
+    electronic protected health information", and pass: the citation is
+    real.
+
+    **The premise is the synthesis lines carrying one of the block's own
+    references, not the whole synthesis.** Measured: the topic that produced
+    the instance above says "transmitting" once, in an unrelated backup-test
+    control, so a whole-synthesis comparison grounds the invention in a
+    sentence it never cited. And transmission is matched as a family of
+    words, because a heading glossing HIPAA's transmission specifications as
+    "in transit" is a faithful paraphrase and must stay quiet.
+
+    Returns the first line of each firing block that states the qualifier.
+    """
+    lines = synthesis.splitlines()
+    found: list[str] = []
+    for block in _cited_blocks(document):
+        if not _TRANSIT_CLAIM.search(block):
+            continue
+        references = _tags(block)
+        premise = "\n".join(line for line in lines if _tags(line) & references)
+        if _TRANSIT_GROUND.search(premise):
+            continue
+        found.append(next(ln for ln in block.splitlines() if _TRANSIT_CLAIM.search(ln)).strip())
+    return found
+
+
 def _heading_name(line: str) -> str:
     """A `## ` heading's name, without the numbering documents often carry."""
     return re.sub(r"^\d+[.)]\s*", "", line[3:].strip()).lower()
@@ -829,6 +875,14 @@ def run_generation(case: dict, provider, corpora: dict | None = None) -> Outcome
         return Outcome(
             False,
             f"a cited requirement states intervals the synthesis does not {ungrounded}",
+            document,
+        )
+
+    unfounded = unfounded_transit(document, synthesis)
+    if unfounded:
+        return Outcome(
+            False,
+            f"a cited block says 'in transit' where its citations never do: {unfounded[0][:100]!r}",
             document,
         )
 

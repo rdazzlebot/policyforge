@@ -1137,11 +1137,33 @@ SUITES = {
 }
 
 
-def load_cases(path: Path = DEFAULT_CASES) -> dict[str, list[dict]]:
+#: Suites the shipped cases fill from their own files rather than from
+#: `cases.yaml`. A `--cases` file gets these only by naming them (#275).
+GENERATED_SUITES = ("paraphrase", "answer_paraphrase")
+
+
+def load_cases(path: Path | None = None) -> dict[str, list[dict]]:
+    """The cases to run: the shipped set, or exactly what `path` names.
+
+    **A named file is the whole population** (#275, 80's ruling). With a
+    path, only the suites that file lists are loaded, its own `paraphrase:`
+    and `answer_paraphrase:` rows included. It used to gain the 66 shipped
+    paraphrases whatever it said, and the shipped rewordings of any
+    answering case whose name matched a shipped parent. A two-case routing
+    file planned 68 cases, and a file's own paraphrase rows were replaced
+    rather than run. Nothing in the file said so, so a cost estimated from
+    it came out 34x low.
+
+    With no path, the shipped cases load as before, generated suites
+    included.
+    """
     import yaml
 
-    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    source = DEFAULT_CASES if path is None else Path(path)
+    data = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
     cases = {suite: list(rows or []) for suite, rows in data.items() if suite in SUITES}
+    if path is not None:
+        return cases
 
     paraphrases = load_paraphrases()
     if paraphrases:

@@ -43,6 +43,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from evals.provider import EVAL_SITE, Metered, build_provider, eval_config
 from evals.runner import (
+    GENERATED_SUITES,
     SUITES,
     format_report,
     load_cases,
@@ -112,14 +113,38 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    cases = load_cases(args.cases) if args.cases else load_cases()
+    cases = load_cases(args.cases)
     corpora = load_corpora(args.cases) if args.cases else load_corpora()
-    wanted = args.suite or sorted(SUITES)
+    requested = args.suite or sorted(SUITES)
+    # Once each, in the order first named (#276). Naming a suite twice
+    # planned its cases twice: double the spend for no extra information,
+    # since spread comes from --repeat, and each case counted twice in the
+    # epoch.
+    wanted = list(dict.fromkeys(requested))
     planned = [
         (suite, case)
         for suite in wanted
         for case in (cases.get(suite, [])[: args.limit] if args.limit else cases.get(suite, []))
     ]
+
+    # Every way the plan differs from the command line gets said, rather than
+    # fixed quietly (#276, #275): a silent de-duplication, or a suite a
+    # `--cases` file does not name, is a population change a reader of the
+    # plan cannot see. Printed before the refusal below, so a refused run
+    # says why its suite is empty.
+    notices = [
+        f"{suite} named {requested.count(suite)} times; planned once"
+        for suite in wanted
+        if requested.count(suite) > 1
+    ]
+    if args.cases is not None:
+        notices += [
+            f"{suite}  0  (not in --cases file)"
+            for suite in GENERATED_SUITES
+            if suite in wanted and not cases.get(suite)
+        ]
+    for line in notices:
+        print(line)
 
     # Per suite, not over the union (#223). `if not planned` alone is
     # satisfied by any one suite's cases, so a requested suite contributing

@@ -63,9 +63,26 @@ def normalize_framework(name: str) -> str:
     """
     lowered = name.strip().lower()
     for needle, framework in FRAMEWORK_ALIASES:
-        if needle in lowered:
+        if _needle_found(needle, lowered):
             return framework
     return lowered.split()[0] if lowered.split() else ""
+
+
+def _needle_found(needle: str, lowered: str) -> bool:
+    """Whether `needle` occurs in `lowered` -- and, for a needle ending in a
+    digit, occurs with NO digit after it.
+
+    A document number is a prefix of its successors: as a plain substring,
+    `ai 100-1` matched NIST AI 100-10 through 100-19 and filed them under the
+    RMF, and `ai 100-2` took 100-20 onward (80 and 1d, on #296). `(?!\\d)`,
+    not a word boundary, because the Taxonomy's 2025 edition is written
+    `100-2e2025` -- a letter follows, and it must stay mapped. The rule holds
+    for every digit-ending needle, not only the two that exposed it:
+    `800-53` must not take a hypothetical 800-530 either.
+    """
+    if not needle[-1].isdigit():
+        return needle in lowered
+    return re.search(re.escape(needle) + r"(?!\d)", lowered) is not None
 
 
 def _is_nist(framework: str) -> bool:
@@ -133,6 +150,20 @@ FRAMEWORK_ALIASES: tuple[tuple[str, str], ...] = (
     # neither spelling contains the other.
     ("ai rmf", "nist-ai-rmf"),
     ("ai risk management", "nist-ai-rmf"),
+    # The RMF's document number, which NIST prints on its cover and CPRT
+    # uses as its id (`AI_100_1`). Without it `NIST AI 100-1` fell to the
+    # bare `nist` key while both prose spellings were pinned (#176).
+    ("ai 100-1", "nist-ai-rmf"),
+    # Its sibling, AI 100-2, the Adversarial ML Taxonomy, published beside the
+    # RMF. Pinned by its DOCUMENT NUMBER only, which no other publisher uses.
+    # **Not pinned, deliberately** (1d, on #296): "ai taxonomy" -- OECD, the
+    # EU, ISO, Microsoft and MITRE ATLAS all publish an "AI Taxonomy", and a
+    # needle would merge them into NIST's key -- nor "nist ai taxonomy", which
+    # no NIST source has been found to declare (CPRT's `AITAXONOMY` is a code
+    # identifier, not a name). Nor the title words "adversarial machine
+    # learning", for the same reason as "ai taxonomy". A catalog named only
+    # "AI Taxonomy" keeps the bare `ai` orphan; keying it is #295's job.
+    ("ai 100-2", "nist-ai-100-2"),
     ("hitrust ai", "hitrust-ai"),
     ("800-172", "nist-800-172"),
     ("800-137", "nist-800-137"),
@@ -148,6 +179,17 @@ FRAMEWORK_ALIASES: tuple[tuple[str, str], ...] = (
     ("iso/iec 27002", "iso-27002"),
     ("pci dss", "pci-dss"),
 )
+# **ONC is deliberately absent** (#176). Every ONC name keys to the bare
+# `onc` today -- "ONC Certification Criteria", "ONC Health IT Certification
+# Program", "ONC Certification Program Requirements" -- which is harmless
+# while only one ONC catalog exists and becomes a collision the day a second
+# lands (Part 170's Subparts D and E are also "ONC ... Certification"). They
+# are not pre-pinned because their declared names are a guess until someone
+# reads the regulation: this table is for names that have been READ, and a
+# pin written in anticipation reads as decided. `test_onc_siblings_share_
+# the_bare_key` pins today's behaviour, so the next ONC catalog meets this
+# decision instead of the gap. The structural remedy -- a key the catalog
+# declares -- is #295.
 
 #: The old name, kept because the table's first readers were the HITRUST
 #: importer's authoritative-source names. It is the same table; the catalog

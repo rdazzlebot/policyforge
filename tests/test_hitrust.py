@@ -656,3 +656,108 @@ def test_a_rendered_report_with_no_tables_is_refused(tmp_path):
 
     with pytest.raises(export.ExportFormatError, match="no tables found in the rendered report"):
         export.load(path)
+
+
+# ---- #266: what a rendered report cannot place is said, not dropped --------
+#
+# Two losses rest on how SSRS lays out a page break, and no real export has
+# been seen here. The parse is unchanged; each is now reported. Every loud
+# case below has a quiet twin, because a guard that reports every repeated
+# row would be muted by the first person who reads it.
+
+_L2 = "<tr><td>Level 2 Implementation:</td><td>The example thing is reviewed.</td></tr>"
+_L1 = "<tr><td>Level 1 Implementation:</td><td>The example thing is documented.</td></tr>"
+_CONT = "and every change to it is approved by the change board before release"
+_HALF_A = "The first half of the requirement is stated here"
+_HALF_B = "and the second half, which is longer than the first, finishes it on the next page"
+
+
+def _losses(markup: str) -> tuple[list, list[str]]:
+    losses: list[str] = []
+    records = export.records_from_markup(markup, losses)
+    return records, losses
+
+
+def test_the_documented_report_loses_nothing():
+    """The baseline: the report shape the project believes in reports no loss."""
+    _, losses = _losses(_RENDERED)
+    assert losses == []
+
+
+def test_a_continuation_without_its_label_is_reported():
+    """A long cell broken across a page with its label NOT reprinted: the
+    second half is one cell with nothing to say where it belongs."""
+    markup = _RENDERED.replace(_L2, _L2 + f"<tr><td></td><td>{_CONT}</td></tr>")
+    assert markup != _RENDERED
+    _, losses = _losses(markup)
+
+    assert len(losses) == 1, losses
+    assert losses[0].startswith("1 row(s) of text had no label"), losses[0]
+    assert _CONT[:40] in losses[0], "the warning does not show the text it lost"
+
+
+def test_a_label_with_no_value_is_not_a_loss():
+    """The quiet twin: a field left empty is one cell too, but it is a
+    label, and nothing is lost. Reporting it would cry wolf."""
+    markup = _RENDERED.replace(_L2, "<tr><td>Level 2 Implementation:</td><td></td></tr>")
+    assert markup != _RENDERED
+    _, losses = _losses(markup)
+    assert losses == []
+
+
+def test_a_split_statement_reports_the_half_it_discards():
+    """**The shape the docstring says SSRS produces** -- label reprinted --
+    and it still loses text: a statement keeps its longer copy. Behaviour is
+    unchanged (the longer half is kept); the discarded half is now named."""
+    markup = _RENDERED.replace(
+        _L1,
+        f"<tr><td>Level 1 Implementation:</td><td>{_HALF_A}</td></tr>"
+        f"<tr><td>Level 1 Implementation:</td><td>{_HALF_B}</td></tr>",
+    )
+    assert markup != _RENDERED
+    records, losses = _losses(markup)
+
+    level_one = next(r for r in records if r.level == "Level 1")
+    assert level_one.statement == _HALF_B, "which copy wins changed; #266 did not rule that"
+    assert len(losses) == 1, losses
+    assert losses[0].startswith("1 statement(s) arrived as two different copies"), losses[0]
+    assert "01.a Example Control Level 1" in losses[0], "the warning does not say where"
+    assert _HALF_A[:40] in losses[0], "the warning does not show the half it lost"
+
+
+def test_a_repeated_or_contained_statement_is_not_a_loss():
+    """The quiet twins: a report that prints the same statement twice, or a
+    shorter copy that is part of the longer, discards nothing."""
+    whole = "The example thing is documented and reviewed."
+    for first, second in (
+        (whole, whole),
+        (whole[:20], whole),
+        (whole, whole[:20]),
+    ):
+        markup = _RENDERED.replace(
+            _L1,
+            f"<tr><td>Level 1 Implementation:</td><td>{first}</td></tr>"
+            f"<tr><td>Level 1 Implementation:</td><td>{second}</td></tr>",
+        )
+        assert markup != _RENDERED
+        records, losses = _losses(markup)
+        assert losses == [], (first, second, losses)
+        assert next(r for r in records if r.level == "Level 1").statement == whole
+
+
+def test_etl_hitrust_prints_the_loss_as_a_warning(tmp_path):
+    """**Measured on the user's path**, not on the function: the losses are
+    only loud if the command that reads a customer's file prints them."""
+    from click.testing import CliRunner
+
+    from policyforge import cli as cli_mod
+
+    export_file = tmp_path / "CSFLibraryReport_v11.7.html"
+    export_file.write_text(
+        _RENDERED.replace(_L2, _L2 + f"<tr><td>{_CONT}</td></tr>"), encoding="utf-8"
+    )
+    result = CliRunner().invoke(cli_mod.cli, ["etl-hitrust", "--export", str(export_file)])
+
+    assert result.exit_code == 0, result.output
+    warn = [ln for ln in result.output.splitlines() if ln.strip().startswith("warn")]
+    assert any("1 row(s) of text had no label" in ln for ln in warn), result.output

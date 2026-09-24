@@ -60,7 +60,10 @@ def _pull(**overrides):
 
 def _run(monkeypatch, pulls, pending=0, argv=None, parked=()):
     monkeypatch.setattr(stale_prs, "open_pull_requests", lambda repo=None: pulls)
-    monkeypatch.setattr(stale_prs, "pending_checks", lambda number, repo=None: pending)
+    # `pending` keeps its old meaning; an int is (pending, 0 failing), a tuple
+    # passes through, None is "no check-runs readable".
+    checks = pending if pending is None or isinstance(pending, tuple) else (pending, 0)
+    monkeypatch.setattr(stale_prs, "head_checks", lambda sha, repo=None: checks)
     monkeypatch.setattr(
         stale_prs, "branches_without_pull_request", lambda repo=None: (list(parked), False)
     )
@@ -447,3 +450,132 @@ def test_a_truncated_branch_check_is_said_in_the_report(monkeypatch):
     with contextlib.redirect_stdout(out):
         stale_prs.main([])
     assert "filled its limit" in out.getvalue()
+
+
+# ---- #299: the build half comes from check-runs at head, not mergeStateStatus -
+
+
+def test_unknown_merge_state_with_green_checks_and_an_approval_is_ready(monkeypatch):
+    """**80's finding on #299.** mergeStateStatus reads UNKNOWN for most pull
+    requests, because GitHub computes it lazily. #297 did, approved at head with
+    every check green. It is ready, and stale past the threshold."""
+    code, out = _run(monkeypatch, [_pull(mergeStateStatus="UNKNOWN")], pending=(0, 0))
+    assert "STALE" in out and code == 1
+
+
+@pytest.mark.parametrize(
+    ("checks", "shown"),
+    [((0, 1), "1 failing"), ((2, 0), "2 pending")],
+)
+def test_unknown_merge_state_is_decided_by_the_checks(monkeypatch, checks, shown):
+    code, out = _run(monkeypatch, [_pull(mergeStateStatus="UNKNOWN")], pending=checks)
+    assert shown in out and "STALE" not in out and code == 0
+
+
+def _check_runs(monkeypatch, runs):
+    import json as _json
+
+    monkeypatch.setattr(stale_prs, "_gh", lambda args: _json.dumps(runs))
+
+
+def test_only_the_latest_run_of_each_check_counts(monkeypatch):
+    """The charge's #232 finding: `gh pr checks` blends runs, so a stale green
+    can sit beside a current red. Latest per NAME at the head decides."""
+    _check_runs(
+        monkeypatch,
+        [
+            {
+                "name": "pytest",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-09-24T10:00:00Z",
+            },
+            {
+                "name": "pytest",
+                "status": "completed",
+                "conclusion": "failure",
+                "started_at": "2026-09-24T11:00:00Z",
+            },
+            {
+                "name": "lint",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-09-24T11:00:00Z",
+            },
+        ],
+    )
+    assert stale_prs.head_checks(HEAD, "o/r") == (0, 1)
+
+
+def test_a_later_green_rerun_supersedes_an_earlier_failure(monkeypatch):
+    """The twin: the same two runs in the other order."""
+    _check_runs(
+        monkeypatch,
+        [
+            {
+                "name": "pytest",
+                "status": "completed",
+                "conclusion": "failure",
+                "started_at": "2026-09-24T10:00:00Z",
+            },
+            {
+                "name": "pytest",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-09-24T11:00:00Z",
+            },
+        ],
+    )
+    assert stale_prs.head_checks(HEAD, "o/r") == (0, 0)
+
+
+@pytest.mark.parametrize(
+    ("conclusion", "failing"),
+    [
+        ("success", 0),
+        ("skipped", 0),
+        ("neutral", 0),
+        ("failure", 1),
+        ("timed_out", 1),
+        ("cancelled", 1),
+        ("action_required", 1),
+    ],
+)
+def test_check_conclusions_are_classified(monkeypatch, conclusion, failing):
+    _check_runs(
+        monkeypatch,
+        [
+            {
+                "name": "c",
+                "status": "completed",
+                "conclusion": conclusion,
+                "started_at": "2026-09-24T10:00:00Z",
+            }
+        ],
+    )
+    assert stale_prs.head_checks(HEAD, "o/r") == (0, failing)
+
+
+def test_a_running_check_is_pending(monkeypatch):
+    _check_runs(
+        monkeypatch,
+        [
+            {
+                "name": "c",
+                "status": "in_progress",
+                "conclusion": None,
+                "started_at": "2026-09-24T10:00:00Z",
+            }
+        ],
+    )
+    assert stale_prs.head_checks(HEAD, "o/r") == (1, 0)
+
+
+def test_unreadable_check_runs_are_none(monkeypatch):
+    def boom(args):
+        raise RuntimeError("503")
+
+    monkeypatch.setattr(stale_prs, "_gh", boom)
+    assert stale_prs.head_checks(HEAD, "o/r") is None
+    _check_runs(monkeypatch, [])
+    assert stale_prs.head_checks(HEAD, "o/r") is None

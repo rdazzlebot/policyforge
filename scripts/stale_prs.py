@@ -68,8 +68,18 @@ import review_lines
 #: short enough that a working day cannot hide one.
 DEFAULT_THRESHOLD_MINUTES = 60
 
-#: The only state that means "the machine is finished and a person is not".
-READY = "CLEAN"
+#: mergeStateStatus values that reliably mean "someone else's turn": a
+#: conflict, a protection rule unmet, a check GitHub already calls failed. Any
+#: OTHER value -- UNKNOWN above all -- is not evidence of readiness either way.
+#: GitHub computes the field lazily and returns UNKNOWN for most pull
+#: requests, so gating readiness on CLEAN meant a ready pull request mostly
+#: read UNKNOWN and was never flagged: #297 did, approved at head with every
+#: check green (80, on #299). The build half now comes from head-scoped
+#: check-runs; this set is only the negatives the field is trusted for.
+NOT_READY_STATES = frozenset({"DIRTY", "BLOCKED", "UNSTABLE"})
+
+#: Check-run conclusions that are not a failure.
+_PASSING = frozenset({"success", "skipped", "neutral"})
 
 FIELDS = (
     "number,title,headRefName,updatedAt,mergeStateStatus,isDraft,author,"
@@ -103,23 +113,39 @@ def open_pull_requests(repo: str | None = None) -> list[dict]:
     return json.loads(result.stdout or "[]")
 
 
-def pending_checks(number: int, repo: str | None = None) -> int | None:
-    """How many checks are still running, or None if that cannot be read.
+def head_checks(sha: str, repo: str | None = None) -> tuple[int, int] | None:
+    """(pending, failing) among the check-runs AT THE HEAD, or None if unread.
 
-    `gh pr checks` exits non-zero when any check has failed, which is not an
-    error here — a failing check means the pull request is not ready, and
-    that is an answer rather than a fault. So the exit status is ignored and
-    the rows are read instead.
+    Scoped to the head commit and the LATEST run of each check name. `gh pr
+    checks` aggregates across workflow runs, so a stale green run can sit
+    beside a current red one -- the charge's #232 finding -- and it is not
+    used here. None (nothing readable) is reported as "no checks", as before.
     """
-    command = ["gh", "pr", "checks", str(number)]
-    if repo:
-        command += ["--repo", repo]
-    result = subprocess.run(  # nosec B603 - fixed argv, no shell
-        command, capture_output=True, text=True, encoding="utf-8", check=False
+    path = (
+        f"repos/{repo}/commits/{sha}/check-runs"
+        if repo
+        else (f"repos/{{owner}}/{{repo}}/commits/{sha}/check-runs")
     )
-    if not result.stdout.strip():
+    try:
+        runs = json.loads(_gh(["api", path, "--jq", ".check_runs"]) or "[]")
+    except (RuntimeError, ValueError):
         return None
-    return sum(1 for line in result.stdout.splitlines() if "\tpending\t" in line)
+    if not runs:
+        return None
+    latest: dict[str, dict] = {}
+    for run in runs:
+        name = run.get("name") or ""
+        if name not in latest or (run.get("started_at") or "") > (
+            latest[name].get("started_at") or ""
+        ):
+            latest[name] = run
+    pending = sum(1 for r in latest.values() if r.get("status") != "completed")
+    failing = sum(
+        1
+        for r in latest.values()
+        if r.get("status") == "completed" and (r.get("conclusion") or "") not in _PASSING
+    )
+    return pending, failing
 
 
 def _at_head(sha: str, head: str) -> bool:
@@ -325,22 +351,25 @@ def main(argv: list[str] | None = None) -> int:
         waiting = idle_minutes(waiting_since(pull))
         if reading != "read at head" and waiting >= args.minutes:
             unread.append(f"#{number} {branch} — {reading} for {describe(waiting)}")
-        if state != READY:
-            # Not ready is not stale: checks running, review outstanding or a
-            # conflict are all someone's turn, and the queue is working.
+        if state in NOT_READY_STATES:
+            # Not ready is not stale: a conflict, a protection rule or a
+            # failed check is someone's turn, and the queue is working.
             print(f"  #{number:<5} {describe(waited):>8}  {state:<12} {branch}")
             continue
         if not approved_at_head(pull):
-            # CLEAN is the machine's verdict, not the readers'. An open
-            # objection or no approval at head is a reader's turn (#298).
+            # The machine's verdict is not the readers'. An open objection or
+            # no approval at head is a reader's turn (#298).
             print(f"  #{number:<5} {describe(waited):>8}  not approved {branch}")
             continue
 
-        pending = pending_checks(number, args.repo)
-        if pending is None:
+        checks = head_checks(pull.get("headRefOid") or "", args.repo)
+        if checks is None:
             print(f"  #{number:<5} {describe(waited):>8}  no checks    {branch}")
-        elif pending:
-            print(f"  #{number:<5} {describe(waited):>8}  {pending} pending    {branch}")
+        elif checks[0]:
+            print(f"  #{number:<5} {describe(waited):>8}  {checks[0]} pending    {branch}")
+            continue
+        elif checks[1]:
+            print(f"  #{number:<5} {describe(waited):>8}  {checks[1]} failing    {branch}")
             continue
         elif waited < args.minutes:
             print(f"  #{number:<5} {describe(waited):>8}  ready        {branch}")

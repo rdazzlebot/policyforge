@@ -30,6 +30,8 @@ import pytest
 import yaml
 
 from evals.runner import (
+    DEFAULT_CASES,
+    GENERATED_SUITES,
     CaseResult,
     Outcome,
     load_answer_paraphrases,
@@ -139,6 +141,50 @@ def test_a_suite_not_asked_for_gets_no_exclusion_line(monkeypatch, capsys, tmp_p
     assert not any("(not in --cases file)" in line for line in out)
 
 
+def test_the_shipped_file_named_explicitly_is_a_file_like_any_other(monkeypatch, capsys):
+    """**Pinned, at 80's ruling on #280: no special case.** The switch is
+    whether a path was GIVEN, not whether it equals the default, so
+    spelling out `evals/cases.yaml` plans what that file names: 101 today
+    against 192 by default. 9b found this unpinned: special-casing the
+    shipped path back to 192 left every test green."""
+    assert not set(GENERATED_SUITES) & set(load_cases(DEFAULT_CASES))
+
+    _, out = _run(monkeypatch, capsys, "--cases", str(DEFAULT_CASES), "--dry-run")
+
+    from_file = sum(len(v) for k, v in SHIPPED.items() if k not in GENERATED_SUITES)
+    assert _planned(out) == from_file < sum(len(v) for v in SHIPPED.values())
+    assert "paraphrase  0  (not in --cases file)" in out
+    assert "answer_paraphrase  0  (not in --cases file)" in out
+
+
+def test_a_refused_run_says_why_before_it_refuses(monkeypatch, capsys, tmp_path):
+    """**The order is the point** (1d's finding on #280). The #223 refusal
+    says a requested suite has no cases; the exclusion line says it is
+    because the file does not name it. Printed after the refusal, it is
+    never printed at all, and moving it there left every test green."""
+    path = _file(tmp_path, {"routing": SHIPPED["routing"][:2]})
+
+    code, out = _run(
+        monkeypatch, capsys, "--cases", str(path), "--suite", "paraphrase", "--dry-run"
+    )
+
+    assert code == 1
+    reason = out.index("paraphrase  0  (not in --cases file)")
+    refusal = out.index("No cases for requested suite(s), so nothing was run: paraphrase")
+    assert reason < refusal
+
+
+def test_a_refused_ordinary_suite_gets_no_exclusion_line(monkeypatch, capsys, tmp_path):
+    """Quiet twin: synthesis is not generated, so its absence from a file is
+    not an exclusion, and the refusal stands alone."""
+    path = _file(tmp_path, {"routing": SHIPPED["routing"][:2]})
+
+    code, out = _run(monkeypatch, capsys, "--cases", str(path), "--suite", "synthesis", "--dry-run")
+
+    assert code == 1
+    assert out == ["No cases for requested suite(s), so nothing was run: synthesis"]
+
+
 # --------------------------------------------------------------------------
 # #276: a suite named twice is planned once, and the plan says so
 # --------------------------------------------------------------------------
@@ -159,6 +205,27 @@ def test_a_suite_named_once_gets_no_repeat_line(monkeypatch, capsys):
 
     assert not any("planned once" in line for line in out)
     assert _planned(out) == len(SHIPPED["routing"]) + len(SHIPPED["synthesis"])
+
+
+def test_suites_are_planned_in_the_order_first_named(monkeypatch, capsys):
+    """What `dict.fromkeys` buys over a set: the plan reads in the order the
+    command line did. Only print order depends on it (9b, non-blocking)."""
+    _, out = _run(
+        monkeypatch,
+        capsys,
+        "--suite",
+        "synthesis",
+        "--suite",
+        "routing",
+        "--suite",
+        "synthesis",
+        "--dry-run",
+    )
+
+    suites = [line.split()[0] for line in out if line.startswith("  ")]
+    assert suites == ["synthesis"] * len(SHIPPED["synthesis"]) + ["routing"] * len(
+        SHIPPED["routing"]
+    )
 
 
 def test_each_repeated_suite_is_named_with_its_own_count(monkeypatch, capsys):

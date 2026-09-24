@@ -601,7 +601,7 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
     """Why each framework reachable through the crosswalk covers nothing.
 
     **A zero under a heading that reads as a gap is not a finding until it
-    carries its cause.** Three frameworks report zero and they mean two
+    carries its cause.** Three frameworks report zero and they mean three
     different things:
 
     - `Information Blocking` is refused **by design**. Its entries are
@@ -609,13 +609,26 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
       them would assert something neither document says. That zero is the
       correct answer and `NOT_CROSSWALK_ANCHORABLE` already holds the
       reason as prose.
-    - `42 CFR Part 2` and `NIST 800-171` seed a crosswalk normally.
-      Nobody has published one. That zero is work nobody has done.
+    - `42 CFR Part 2` seeds a crosswalk normally and nobody has published
+      one. That zero is work nobody has done.
+    - `NIST 800-171` **has** a published mapping: NIST's own OSCAL links
+      all 97 requirements to 800-53. This release does not read it
+      (`oscal_loader` keeps only `rel="related"` links, and 800-171 encodes
+      its sources as `rel="reference"`; #259). That zero is a gap in
+      PolicyForge, not in the source, and `PUBLISHED_UPSTREAM` holds it.
 
-    Those want opposite responses — *leave it alone* against *go and map
-    it* — and the report prints the same number for both. The reasons are
-    looked up from the declared framework name, which is reliable since
-    the two CFR catalogs were renamed to be citable.
+    **This docstring said the opposite until #260**: *"`42 CFR Part 2` and
+    `NIST 800-171` seed a crosswalk normally. Nobody has published one."*
+    The report then told 800-171 users to rebuild by hand, with `crosswalk
+    seed`, a mapping NIST publishes in the very file the catalog is built
+    from. The two-way framing — *leave it alone* against *go and map it* —
+    had no place for a zero the source had already answered, so the third
+    kind was filed under the second.
+
+    Those want different responses — *leave it alone*, *go and map it*, and
+    *wait for the ingest* — and the report prints the same number for all
+    three. The reasons are looked up from the declared framework name, which
+    is reliable since the two CFR catalogs were renamed to be citable.
 
     **`catalog_paths` is what makes the remedy performable.** Without it
     this printed `crosswalk seed --framework 'NIST 800-171'`, which the
@@ -631,7 +644,7 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
     framework plus the 800-53 anchor a crosswalk is built against. Both,
     because seeding needs the thing being mapped and the thing it maps to.
     """
-    from policyforge.crosswalk.overlay import _refusal_reason
+    from policyforge.crosswalk.overlay import _refusal_reason, _upstream_reason
 
     declared = {}
     for control in controls:
@@ -651,6 +664,13 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
             notes.append(
                 f"  {framework.framework.upper()}: not mapped by design. {_first_sentence(reason)}"
             )
+        elif (upstream := _upstream_reason(name)) is not None:
+            # The third kind of zero. Printed whole rather than cut to a first
+            # sentence: the second sentence -- a gap in PolicyForge, not in the
+            # source -- is the point, and no command follows, because the one
+            # this branch used to print told users to rebuild by hand what the
+            # publisher already publishes. #260.
+            notes.append(f"  {framework.framework.upper()}: {upstream}")
         else:
             # Named for its contract, because the name is what the source
             # scan sees at the interpolation site: a pre-assembled fragment
@@ -672,8 +692,9 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
         "",
         "Why those are zero",
         "-" * 60,
-        "  A zero here is either work nobody has done or a mapping that would be",
-        "  wrong to make. They are not the same and they want opposite responses.",
+        "  A zero here is one of three things, and they want different responses:",
+        "  a mapping that would be wrong to make, one nobody has published, or one",
+        "  the source publishes that this release does not yet read.",
         *notes,
     ]
 

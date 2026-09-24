@@ -553,14 +553,30 @@ def test_the_crosswalk_seed_hint_survives_a_path_with_a_space():
 
     Both hostile values at once and each distinct, so a value that is
     dropped or merged into its neighbour is visible rather than masked:
-    a framework name with a space, which is ordinary (`NIST 800-171`),
-    and a catalog path with one, which on Windows is ordinary too.
+    a framework name with a space, which is ordinary, and a catalog path
+    with one, which on Windows is ordinary too.
+
+    **This used `NIST 800-171` until #260**, and #260 is why it cannot
+    now. 800-171 no longer receives a `crosswalk seed` hint at all: NIST
+    publishes its mapping, so the report says so instead of telling users
+    to rebuild it. The test was about quoting and only borrowed 800-171 as
+    a name with a space; it now uses the framework that still prints this
+    hint in production. The premise is asserted first, so the next time a
+    framework leaves this branch the failure names that, rather than
+    reading "no printed command" as it did on #260.
     """
+    from policyforge.crosswalk.overlay import _refusal_reason, _upstream_reason
     from policyforge.ingest.schema import Control
     from policyforge.zardoz import skills
 
-    framework = "NIST 800-171"
-    catalog = Path("data/my catalogs/171.json")
+    # 42 CFR Part 2's declared name: it has spaces, and it is the framework
+    # that still reaches the seed-hint branch.
+    framework = "Substance Use Disorder Records"
+    catalog = Path("data/my catalogs/part2.json")
+    assert _refusal_reason(framework) is None and _upstream_reason(framework) is None, (
+        f"{framework!r} no longer reaches the seed-hint branch, so this test no "
+        "longer exercises the quoting it exists for. Pick a framework that does."
+    )
 
     class _Coverage:
         def __init__(self, name):
@@ -572,10 +588,10 @@ def test_the_crosswalk_seed_hint_survives_a_path_with_a_space():
 
     controls = [
         Control(
-            control_id="3.1.1",
+            control_id="2.11",
             title="t",
             framework=framework,
-            framework_version="Rev 2",
+            framework_version="2024",
             control_statement="s",
         ),
         Control(

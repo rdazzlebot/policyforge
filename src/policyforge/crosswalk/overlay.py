@@ -160,6 +160,57 @@ def _refusal_reason(framework: str) -> str | None:
     return None
 
 
+#: Frameworks whose SOURCE publishes a mapping to 800-53 that this release
+#: does not ingest. A third reason a coverage row can read zero, and the one
+#: the report used to call "no published crosswalk yet" — which was false.
+#:
+#: **This is NOT a refusal, and must never be merged into
+#: `NOT_CROSSWALK_ANCHORABLE`.** That table makes `seed_overlay` refuse and
+#: makes `/coverage` print "not mapped by design". Both would be false here:
+#: these frameworks SHOULD be mapped, and their publisher already did it.
+#: Seeding one by hand stays ALLOWED — the tool does not refuse it — but the
+#: report advises against it: a hand-made mapping competes with the source's,
+#: and the source's is the one to use. (Product ruling, 80, on #260.)
+#:
+#: **Enumerated, because it cannot be derived.** Whether a source publishes a
+#: crosswalk is a fact about the source that only reading it establishes;
+#: nothing in the produced catalog records it until an ingest keeps the
+#: links. Each entry therefore names what was measured, so the claim can be
+#: re-checked rather than trusted.
+#:
+#: Keyed by declared framework name through `_canonical`, the same matching as
+#: the refusal table, which has already been re-opened once by a catalog
+#: rename. `test_every_upstream_crosswalk_names_a_shipped_catalog` fails if a
+#: key stops matching, so a rename cannot silently restore the false message.
+PUBLISHED_UPSTREAM: dict[str, str] = {
+    # Measured 2026-09-23, three times with two different assumptions:
+    # `policyforge-f8` (5b) and 80 each classified back-matter reference titles
+    # by SHAPE; `ba` checked MEMBERSHIP in the shipped 800-53 catalog. All three:
+    # 97 of 97 requirements linked, 157 links, no control-shaped title outside
+    # 800-53. The links are `rel="reference"` to back-matter resources, which
+    # `oscal_loader._related_controls` does not read — see #259.
+    "NIST 800-171": (
+        "NIST publishes this mapping -- the source file links every requirement "
+        "to its 800-53 controls -- but this release does not read it. The zero is "
+        "a gap in PolicyForge, not in the source; do not seed it by hand: NIST's "
+        "mapping is the one to use."
+    ),
+}
+
+
+def _upstream_reason(framework: str) -> str | None:
+    """Why `framework` reads zero when its source publishes the mapping, or None.
+
+    Checked AFTER `_refusal_reason`: a framework that cannot anchor a
+    crosswalk is refused whatever its source says.
+    """
+    wanted = _canonical(framework)
+    for name, reason in PUBLISHED_UPSTREAM.items():
+        if _canonical(name) == wanted:
+            return reason
+    return None
+
+
 def _tokens(name: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", name.casefold()))
 

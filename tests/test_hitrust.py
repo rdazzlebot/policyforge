@@ -952,3 +952,127 @@ def test_a_known_but_unread_label_is_not_a_loss():
     assert markup != _RENDERED
     _, losses = _losses(markup)
     assert losses == []
+
+
+# ---- #281: every row of text is placed, deliberately quiet, or reported ----
+
+_OBJ = "<tr><td>Control Objective:</td><td>To do the example thing.</td></tr>"
+
+
+def test_a_statement_label_with_no_level_is_reported():
+    """**1d's new shape.** "Implementation:" is recognised as a statement,
+    then has no level to attach to, and was dropped after recognition --
+    before the fall-through #277 counted at."""
+    markup = _RENDERED.replace(
+        _L2, _L2 + "<tr><td>Implementation:</td><td>No level here.</td></tr>"
+    )
+    assert markup != _RENDERED
+    _, losses = _losses(markup)
+
+    assert len(losses) == 1, losses
+    assert losses[0].startswith("1 row(s) had a recognised label but no level in it"), losses[0]
+    assert "No level here." in losses[0], losses[0]
+
+
+def test_a_level_row_before_any_control_reference_is_reported():
+    """The orphan from #281's own Limits: a level-scoped row with no Control
+    Reference yet has no record to go into. Same guard, other half."""
+    row = "<tr><td>Level 1 Implementation:</td><td>Before any reference.</td></tr>"
+    markup = _RENDERED.replace(_OBJ, _OBJ + row)
+    assert markup != _RENDERED
+    _, losses = _losses(markup)
+
+    assert len(losses) == 1, losses
+    assert "before any Control Reference" in losses[0], losses[0]
+    assert "Before any reference." in losses[0], losses[0]
+
+
+def test_an_unknown_label_without_a_colon_is_reported():
+    """The colon was an assumption about the format. Under the partition an
+    unknown caption is reported whatever it ends in."""
+    markup = _RENDERED.replace(
+        _L2, _L2 + "<tr><td>Level 2 Implementation Note</td><td>No colon on this one.</td></tr>"
+    )
+    assert markup != _RENDERED
+    _, losses = _losses(markup)
+
+    assert len(losses) == 1, losses
+    assert losses[0].startswith("1 row(s) had a label this reader does not recognise"), losses[0]
+    assert "No colon on this one." in losses[0], losses[0]
+
+
+def _every_shape() -> str:
+    """The fixture plus one of every shape the reader knows, loud and quiet,
+    and a spacer. At most one row per warning kind that shows three
+    excerpts, so every reported row's text is visible in a warning."""
+    loud = (
+        "<tr><td>Implementation:</td><td>Statement with no level.</td></tr>"
+        "<tr><td>Level 2 Implementation Note</td><td>Caption without a colon.</td></tr>"
+        "<tr><td>Level 2 Assessment Notes:</td><td>Unknown label text.</td></tr>"
+        "<tr><td>Level 2 System Factors:</td><td>Misread factor.</td><td>Extra cell.</td></tr>"
+        "<tr><td>A continuation with no label.</td></tr>"
+    )
+    quiet = (
+        "<tr><td>Topics:</td><td>Change Management</td></tr>"
+        "<tr><td>Level 2 Regulatory Factors:</td></tr>"
+        "<tr><td>Level 2</td><td>Implementation Requirements</td></tr>"
+        "<tr><td></td><td></td></tr>"
+    )
+    placed = (
+        "<tr><td>Section 1</td><td>Level 2 Organizational Factors:</td><td>Size: Small</td></tr>"
+    )
+    orphan = "<tr><td>Level 1 Implementation:</td><td>Before any reference.</td></tr>"
+    return _RENDERED.replace(_OBJ, _OBJ + orphan).replace(_L2, _L2 + loud + quiet + placed)
+
+
+def test_every_row_of_text_is_placed_quiet_or_reported():
+    """**The conservation 80 ruled on #277 and 1d asked for on #281.** The
+    ledger must account for every non-empty row of the INPUT -- derived from
+    `read_html_rows`, not from the shapes -- and each outcome is checked
+    against the output it claims:
+
+    - placed:   the row's value is in some record;
+    - reported: the row's text is in a warning, and the warnings' counts
+                add up to the number of rows reported;
+    - quiet:    the row is one of the enumerated quiet shapes.
+
+    A new shape nothing handles is reported by default, so it cannot leave
+    all three unnoticed."""
+    import dataclasses
+
+    markup = _every_shape()
+    rows = export.read_html_rows(markup)
+    text_rows = [[c for c in row if c.strip()] for row in rows]
+    text_rows = [cells for cells in text_rows if cells]
+    losses: list[str] = []
+    ledger: list = []
+    records = export.records_from_pairs(rows, losses, ledger)
+
+    assert [cells for _, cells in ledger] == text_rows, "a row of text left the ledger"
+    kinds = {kind for kind, _ in ledger}
+    assert kinds == {export.PLACED, export.QUIET, export.REPORTED}, kinds
+
+    kept = "\n".join(str(v) for r in records for v in dataclasses.asdict(r).values() if v)
+    for kind, cells in ledger:
+        if kind == export.PLACED:
+            assert cells[-1] in kept, f"marked placed, but not in any record: {cells}"
+        elif kind == export.REPORTED:
+            assert any(cells[-1] in w or cells[0] in w for w in losses), (
+                f"reported nowhere: {cells}"
+            )
+        else:
+            bare_label = len(cells) == 1 and hitrust.field_for_label(cells[0]) is not None
+            unread = len(cells) >= 2 and hitrust.field_for_label(cells[-2]) in {"topics"}
+            heading = (
+                len(cells) == 2
+                and hitrust.field_for_label(cells[0]) is None
+                and hitrust.level_from_label(cells[0])
+                and hitrust.field_for_label(cells[1]) is not None
+            )
+            assert bare_label or unread or heading, (
+                f"quiet, but not an enumerated quiet shape: {cells}"
+            )
+
+    reported = sum(1 for kind, _ in ledger if kind == export.REPORTED)
+    assert reported == sum(int(w.split(" ", 1)[0]) for w in losses), (reported, losses)
+    assert reported == 6, f"the fixture holds six loud rows, the ledger reported {reported}"

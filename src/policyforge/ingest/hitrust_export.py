@@ -318,7 +318,21 @@ def read_mhtml(path: Path) -> str:
 _LABEL_VALUE_WIDTH = 2
 
 
-def records_from_pairs(rows: list[list[str]], losses: list[str] | None = None) -> list[Record]:
+#: The three outcomes every row of text ends in (#281). `records_from_pairs`
+#: records one per non-empty row into `ledger` when given, so a test can
+#: assert they PARTITION the input: nothing may leave every outcome.
+PLACED, QUIET, REPORTED = "placed", "quiet", "reported"
+
+#: Labels this reader knows and deliberately does not keep. Enumerated, so a
+#: quiet row is a decision someone wrote down, not a default.
+_KNOWN_UNREAD = frozenset({"topics"})
+
+
+def records_from_pairs(
+    rows: list[list[str]],
+    losses: list[str] | None = None,
+    ledger: list[tuple[str, list[str]]] | None = None,
+) -> list[Record]:
     """Read a rendered report's label/value rows into records.
 
     The page is a stream: tier headings set the context that following
@@ -341,12 +355,17 @@ def records_from_pairs(rows: list[list[str]], losses: list[str] | None = None) -
     described into `losses` when given, and `etl-hitrust` prints them as
     warnings, so an export that hits either shape says so on its first run.
 
-    **Two more shapes lose text and are counted, not fixed** (#277): a row
-    of three or more cells whose label is not second-to-last is read as
-    (text, extra cell), falls through, and takes its level record with it;
-    and a colon-ended label this reader does not know drops its value. A
-    third cell IN FRONT is harmless -- the last two still read -- and a
-    heading row with no colon-ended label stays quiet.
+    **Every row with text is placed, deliberately quiet, or reported**
+    (#277, and 1d on #281). Quiet is an enumerated set -- a bare label with
+    no value, a label in `_KNOWN_UNREAD`, and a level heading whose two
+    cells are both captions ("Level 1 | Implementation Requirements").
+    Anything else nothing placed is REPORTED by default: a row of three or
+    more cells whose label is not second-to-last (read as text plus an
+    extra cell, taking its level record with it), a label this reader does
+    not know, colon or not, and a recognised label with nowhere to go -- no
+    level in it, or no Control Reference yet. A third cell IN FRONT is
+    harmless; the last two still read. `ledger` records each row's outcome
+    so the partition can be tested against the input.
 
     **Page furniture is one cell too, if SSRS puts it in a table** -- a
     report title, "Page 1 of 212", a print date. Whether it does is as
@@ -385,15 +404,22 @@ def records_from_pairs(rows: list[list[str]], losses: list[str] | None = None) -
     discarded: list[tuple[str, str]] = []
     misplaced: list[list[str]] = []
     unknown: list[tuple[str, str]] = []
+    orphaned: list[tuple[str, str]] = []
+
+    def outcome(kind: str, cells: list[str]) -> None:
+        if ledger is not None:
+            ledger.append((kind, cells))
 
     for row in rows:
         cells = [cell for cell in row if cell.strip()]
+        if not cells:
+            continue  # a spacer row carries nothing, so it is not a row of text
         if len(cells) < _LABEL_VALUE_WIDTH:
-            # One cell and it is not a label: text with nothing to say where
-            # it belongs. A bare label (a field left empty) loses nothing, and
-            # an empty spacer row carries nothing, so neither is counted.
-            if len(cells) == 1 and hitrust.field_for_label(cells[0]) is None:
+            if hitrust.field_for_label(cells[0]) is not None:
+                outcome(QUIET, cells)  # a bare label: a field left empty
+            else:
                 skipped_text.append(cells[0])
+                outcome(REPORTED, cells)
             continue
         label, value = cells[-2], cells[-1]
         field = hitrust.field_for_label(label)
@@ -402,15 +428,18 @@ def records_from_pairs(rows: list[list[str]], losses: list[str] | None = None) -
         if field in ("category", "objective", "objective_statement"):
             setattr(context, field, value)
             current.clear()
+            outcome(PLACED, cells)
             continue
         if field == "reference":
             context.reference = value
             context.specification = ""
             context.factor_type = ""
             current.clear()
+            outcome(PLACED, cells)
             continue
         if field in ("specification", "factor_type"):
             setattr(context, field, value)
+            outcome(PLACED, cells)
             continue
         if field in (
             "statement",
@@ -423,24 +452,38 @@ def records_from_pairs(rows: list[list[str]], losses: list[str] | None = None) -
                 lost = _absorb(record_for(level), field, value)
                 if lost:
                     discarded.append((f"{context.reference} {level}", lost))
+                outcome(PLACED, cells)
+            else:
+                # Recognised, and then nowhere to put it: no level in the
+                # label ("Implementation:"), or no Control Reference yet.
+                # This `continue` dropped text silently until 1d measured it
+                # on #281 -- a guard that drops a recognised row reports it.
+                orphaned.append((label, value))
+                outcome(REPORTED, cells)
+            continue
+        if field in _KNOWN_UNREAD:
+            outcome(QUIET, cells)  # a label this reader knows and does not keep
+            continue
+        if field is None and level and hitrust.field_for_label(value) is not None:
+            # A level heading: "Level 1 | Implementation Requirements". Both
+            # cells are captions, so no requirement text is in the row.
+            outcome(QUIET, cells)
             continue
 
-        # Nothing above placed this row (#277). Two shapes are known to lose
-        # text here and are counted; anything else that falls through -- a
-        # heading such as "Level 1 | Implementation Requirements" -- carries
-        # no requirement text and stays quiet. The parse is unchanged.
+        # Nothing placed this row and it is in no quiet set, so it is
+        # REPORTED by default: a new shape fails loud rather than vanishing
+        # (#277, #281). The parse is unchanged.
         if any(hitrust.field_for_label(cell) is not None for cell in cells[:-2]):
-            # A recognised label that is not second-to-last: the row was
-            # read as (text, extra cell), so its value AND the level record
-            # it would have opened are both gone.
+            # A recognised label that is not second-to-last: read as (text,
+            # extra cell), so its value AND the level record it would have
+            # opened are both gone.
             misplaced.append(cells)
-        elif field is None and label.rstrip().endswith(":"):
-            # Shaped like a label -- the rendered report ends its captions
-            # with a colon -- but not one this reader knows.
+        else:
             unknown.append((label, value))
+        outcome(REPORTED, cells)
 
     if losses is not None:
-        losses.extend(_describe_losses(skipped_text, discarded, misplaced, unknown))
+        losses.extend(_describe_losses(skipped_text, discarded, misplaced, unknown, orphaned))
     return records
 
 
@@ -480,6 +523,7 @@ def _describe_losses(
     discarded: list[tuple[str, str]],
     misplaced: list[list[str]] | None = None,
     unknown: list[tuple[str, str]] | None = None,
+    orphaned: list[tuple[str, str]] | None = None,
 ) -> list[str]:
     """Warnings for what `records_from_pairs` could not place, first three shown.
 
@@ -522,6 +566,14 @@ def _describe_losses(
             f"{len(unknown)} row(s) had a label this reader does not recognise, so "
             "their text is NOT in the catalog: "
             + "; ".join(f"{_excerpt(label)!r}: {_excerpt(value)!r}" for label, value in unknown[:3])
+        )
+    if orphaned:
+        notes.append(
+            f"{len(orphaned)} row(s) had a recognised label but no level in it, or came "
+            "before any Control Reference, so their text is NOT in the catalog: "
+            + "; ".join(
+                f"{_excerpt(label)!r}: {_excerpt(value)!r}" for label, value in orphaned[:3]
+            )
         )
     return notes
 

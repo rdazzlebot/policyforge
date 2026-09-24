@@ -57,6 +57,14 @@ or operates it.
   expired, as of the eCFR date. `170.315(a)(9)` expired on 1 January 2025.
 - **Reserved categories.** `170.315(i)` exists only as a reserved placeholder.
 
+**Pending, and not applied:** ONC has **proposed** removing `170.315(a)(14)`,
+`(h)(1)` and `(h)(2)` (90 FR 60981-60999, described in the FY2027 IPPS final
+rule, 91 FR 49570, 2026-08-04). No final rule amending § 170.315 has been
+published since HTI-4 as of 2026-09-24, so all three are still live here. **If
+the proposal is finalised, the framework-drift job goes red, and that is the
+job working.** A person then re-derives the agreed set (#179) and re-pins the
+catalog; the loader refuses a changed set rather than absorbing it.
+
 ## How it is kept honest
 
 § 170.315 is one section of about 540 flat paragraphs, and its hierarchy exists

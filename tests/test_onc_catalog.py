@@ -201,6 +201,25 @@ def test_a_criterion_citation_resolves_to_this_catalog(parsed):
     assert [(f, r) for f, r, _, _ in found] == [(FRAMEWORK, "170.315(g)(10)")]
 
 
+def test_the_pending_proposal_names_criteria_that_are_still_live(parsed):
+    """The README says ONC's proposal to remove (a)(14), (h)(1) and (h)(2)
+    is pending and that all three are still live here (#179, 80). That is
+    true only while they are in the catalog: when a re-pin applies the final
+    rule, this fails, so the README's "pending" paragraph is rewritten in
+    the same change rather than left describing a proposal that has since
+    become law."""
+    import re
+
+    readme = " ".join((CATALOG / "README.md").read_text(encoding="utf-8").split())
+    start = readme.index("Pending, and not applied:")
+    paragraph = readme[start : readme.index("absorbing it.", start)]
+    named = set(re.findall(r"\([a-z]\)\(\d+\)", paragraph))
+    live = {c.control_id for c in parsed[0]}
+    expected = {"170.315(a)(14)", "170.315(h)(1)", "170.315(h)(2)"}
+    assert {f"170.315{n}" for n in named} == expected, paragraph
+    assert expected <= live, f"no longer live, so rewrite the pending paragraph: {expected - live}"
+
+
 def test_the_readme_s_counts_are_the_catalog_s(parsed):
     readme = " ".join((CATALOG / "README.md").read_text(encoding="utf-8").split())
     controls = parsed[0]

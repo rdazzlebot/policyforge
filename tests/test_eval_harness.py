@@ -334,6 +334,7 @@ def test_the_shipped_cases_load_and_are_well_formed():
         "edit_apply",
         "generation",
         "crosswalk",
+        "synthesis",
     }
     for suite, rows in cases.items():
         assert rows, f"{suite} has no cases"
@@ -363,6 +364,25 @@ def test_the_shipped_cases_load_and_are_well_formed():
                 # would be graded by whichever branch happened to run.
                 assert case.get("synthesis"), f"{case['name']} drafts from nothing"
                 assert case.get("tier") in {"standard", "policy", "procedure"}, case["name"]
+            elif suite == "synthesis":
+                # Anchors and a topic name, because the suite builds its own
+                # input: `build_synthesis_topic` resolves the anchors against
+                # the bundled catalogs. A case with no anchors resolves no
+                # controls, and a prompt asked to merge nothing produces
+                # nothing to grade -- it would pass without the model ever
+                # being tested.
+                assert case.get("anchors"), f"{case['name']} anchors nothing"
+                assert case.get("topic"), f"{case['name']} names no topic"
+                # Without this the suite would derive its expectation from
+                # the topic the builder returned, and so agree with the
+                # builder by construction.
+                assert case.get("expect_frameworks"), (
+                    f"{case['name']} declares no expected frameworks"
+                )
+                # The framework set catches a catalog disappearing; only the
+                # count catches the topic shrinking while still covering
+                # every framework.
+                assert case.get("expect_controls"), f"{case['name']} pins no control count"
             elif suite == "crosswalk":
                 # A case with neither expectation passes on any answer at all.
                 assert case.get("must_map") or case.get("expect_none"), case["name"]
@@ -710,6 +730,13 @@ def test_every_case_names_a_corpus_that_exists():
                     # A crosswalk case reads one requirement from the bundled
                     # catalogs.
                     or "requirement" in case
+                    # A synthesis case names ANCHOR IDS and the suite builds
+                    # the topic from the bundled catalogs, so the input it
+                    # grades does not exist until the case runs. Carrying a
+                    # synthesis here would test the prompt against a fixture
+                    # rather than against what `build_synthesis_topic`
+                    # actually assembles.
+                    or "anchors" in case
                     or suite
                     in {
                         "routing",

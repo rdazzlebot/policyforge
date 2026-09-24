@@ -140,6 +140,7 @@ def load_all() -> None:
     from policyforge.edit import apply, plan  # noqa: F401
     from policyforge.entail import llm_entailer  # noqa: F401
     from policyforge.generate import policy_writer  # noqa: F401
+    from policyforge.synthesis import merge  # noqa: F401
     from policyforge.zardoz import answer, conversation, discover, paraphrase, skills  # noqa: F401
 
 

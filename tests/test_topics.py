@@ -500,7 +500,8 @@ def test_zardoz_opens_on_a_registry_with_a_syntax_error(tmp_path, monkeypatch):
 def test_the_ai_block_names_topics_that_exist_and_ai_topics_anchor_only_outcomes():
     """**#188.** The AI block's comment says an AI topic generates an
     outcomes document because it anchors only AI RMF ids, and names the
-    security topics whose 800-53 controls carry the obligations instead.
+    security topics whose 800-53 controls carry the obligations instead
+    (every name in its "for example" list must be a topic).
     Both are claims about this file, so both are checked against it: a
     renamed security topic, or an 800-53 id added to an AI topic, would
     otherwise leave the comment describing a registry that no longer
@@ -519,16 +520,16 @@ def test_the_ai_block_names_topics_that_exist_and_ai_topics_anchor_only_outcomes
     text = " ".join(line.strip().lstrip("#") for line in source[start:end].splitlines())
     text = " ".join(text.split())
 
-    named = [
-        "Security Program Governance",
-        "Risk Assessment & Authorization",
-        "Secure Development Lifecycle",
-        "Workforce Security Training",
-        "Business Associate & Vendor Risk",
-        "Incident Response",
-    ]
+    # The names are READ from the block, not listed here, so a topic added
+    # to the comment is checked too (9b, on #289: a fixed list passed a
+    # made-up name). Bound, stated: the names sit in one sentence of the form
+    # "for example A, B, ... and Z." -- if that sentence is reworded, the
+    # index() below raises, loudly, rather than checking nothing.
+    listed = text[text.index("for example ") + len("for example ") :]
+    listed = listed[: listed.index(".")]
+    named = [n.strip() for n in re.split(r",| and (?=[A-Z])", listed) if n.strip()]
+    assert len(named) >= 2, f"parsed no topic list from the AI block: {listed!r}"
     for name in named:
-        assert name in text, f"the AI block no longer names {name!r}"
         assert name in names, f"the AI block names {name!r}, which is not a topic"
 
     outcome = re.compile(r"^(Govern|Map|Measure|Manage) \d")

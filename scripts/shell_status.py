@@ -265,26 +265,100 @@ def _doc_shell_blocks(path: str, text: str) -> list[Source]:
     return sources
 
 
-#: A crude, independent signal that a kind OUGHT to yield sources, used only
-#: to decide whether zero is suspicious. Deliberately not the block parsers
-#: above: two derivations of one fact are what let them disagree, and a
-#: census computed by the parser would agree with the parser by construction.
+_SCRIPT_HAS_CONTENT = re.compile(r"\A\s*\S", re.S)
+
+
+def _count_script(text: str) -> int:
+    """One block per non-empty script: a script is one source.
+
+    Matches at most ONCE per file, because the census counts BLOCKS. `\\S`
+    alone would have counted every non-space character as a block the
+    moment a *.sh was committed.
+    """
+    return len(_SCRIPT_HAS_CONTENT.findall(text))
+
+
+def _count_workflow_steps(text: str) -> int:
+    """`run:` steps as GitHub reads them: a real YAML load, not a line regex (#256).
+
+    **Why a different MECHANISM, not a better regex.** The census used to be
+    `^\\s*-?\\s*run:` and the parser an indentation walk: two regexes of the
+    same shape. policyforge-b5 built `- { name: x, run: "cmd | tail" }`,
+    flow-style YAML, and both counted 0. They agreed, the floor could not
+    fire, and a block containing exactly the pattern this lint exists for was
+    examined by nothing. Two derivations that fail on the same input cannot
+    disagree about it. A YAML load sees flow and block style identically, so
+    that step is counted here and missed by the parser, and the disagreement
+    is the alarm.
+
+    **Only `jobs.<id>.steps[*].run` holding a string**, which is where GitHub
+    executes a shell. Two lookalikes are deliberately not counted, and both
+    are measured on this tree:
+
+    - `defaults: run: shell: bash` is a mapping, not a script. The line
+      parser takes it as a block whose body is `shell: bash`, so on `ci.yml`
+      the parser yields 15 and this yields 14. The floor only fires when the
+      parser has FEWER, so this over-count on the parser side is harmless.
+    - A step input named `run` under `with:` belongs to the action, not
+      to a shell.
+
+    A workflow that does not parse raises `yaml.YAMLError`. `main` reports
+    that as exit 2, because the census cannot vouch for a file it cannot
+    read, and GitHub would refuse that file too.
+    """
+    import yaml
+
+    document = yaml.safe_load(text) or {}
+    jobs = document.get("jobs") if isinstance(document, dict) else None
+    count = 0
+    for job in (jobs or {}).values():
+        steps = job.get("steps") if isinstance(job, dict) else None
+        for step in steps or []:
+            if isinstance(step, dict) and isinstance(step.get("run"), str):
+                count += 1
+    return count
+
+
+_SHELL_FENCES = frozenset({"bash", "sh", "shell", "console"})
+
+
+def _count_doc_fences(text: str) -> int:
+    """Shell fences as a CommonMark parser reads them, not as a line regex (#256).
+
+    Same reasoning as `_count_workflow_steps`: the census regex and
+    `_FENCE` were the same shape, so any fence both missed was invisible to
+    both. markdown-it reads `~~~bash`, `` ```bash title=x ``, and a fence
+    inside a list or a block quote. The parser's `_FENCE` reads only an exact
+    `` ```bash ``, so each of those is now a disagreement, and so a failure,
+    rather than a silence. The first word of the info string decides, as
+    it does for a renderer.
+    """
+    from markdown_it import MarkdownIt
+
+    return sum(
+        1
+        for token in MarkdownIt("commonmark").parse(text)
+        if token.type == "fence" and (token.info.split() or [""])[0].lower() in _SHELL_FENCES
+    )
+
+
+#: An independent count of how many blocks each kind OUGHT to yield, used
+#: only to decide whether the parser's count is suspicious. **Independent
+#: in MECHANISM, not only in call graph** (#256): the workflow and doc
+#: counters are a YAML load and a CommonMark parse, while the parsers above
+#: are line walks. A census that is a second regex of the parser's shape
+#: fails on the same inputs, and agrees with it exactly where both are blind.
 _SIGNALS = {
-    # Matches at most ONCE per file: a script is one source, and the
-    # census counts BLOCKS. `\S` would have counted every non-space
-    # character as a block the moment a *.sh was committed -- latent,
-    # because the repository has none today, and it would have reported
-    # a forty-character script as forty missing blocks.
-    "script": (("*.sh",), re.compile(r"\A\s*\S", re.S)),
+    "script": (("*.sh",), _count_script),
     # Both extensions, matching `population()`. With only `*.yml` a
     # `.yaml` workflow is read by the parser and invisible to the census,
     # so the one file the census exists to notice could be the one it
     # cannot see.
     "workflow": (
         (".github/workflows/*.yml", ".github/workflows/*.yaml"),
-        re.compile(r"^\s*-?\s*run:", re.M),
+        _count_workflow_steps,
     ),
-    "doc": (("*.md",), re.compile(r"^```[ \t]*(?:bash|sh|shell|console)[ \t]*$", re.M)),
+    "doc": (("*.md",), _count_doc_fences),
 }
 
 
@@ -318,15 +392,17 @@ def census() -> dict[str, dict[str, int]]:
     not supposed. That takes two coordinated edits rather than one, so it
     is narrower than what the census catches, but it is not zero.
     **A second derivation raises the cost of going blind; it does not make
-    it impossible.**
+    it impossible.** #256 closed the other shared-blindness, a shared
+    *pattern shape*, by moving the counters onto a different mechanism. It
+    did not touch the shared pathspec.
     """
     found: dict[str, dict[str, int]] = {}
-    for kind, (patterns, signal) in _SIGNALS.items():
+    for kind, (patterns, count) in _SIGNALS.items():
         hits: dict[str, int] = {}
         for pattern in patterns:
             for path in tracked(pattern):
                 text = (REPO_ROOT / path).read_text(encoding="utf-8", errors="replace")
-                blocks = len(signal.findall(text))
+                blocks = count(text)
                 if blocks:
                     hits[path] = blocks
         found[kind] = hits
@@ -528,10 +604,28 @@ def main(argv: list[str]) -> int:
     for source in sources:
         produced[source.kind][source.path] = produced[source.kind].get(source.path, 0) + 1
 
-    # A FLOOR rather than equality: the parser finding MORE than the crude
-    # signal is not a shrink, and the danger has one direction. Measured on
-    # this tree they agree exactly, file by file -- 15/15, 8/8, 11/11 across
-    # the workflows -- so the floor is not slack hiding anything today.
+    # A census that cannot read a file cannot vouch for it, so that is a
+    # failure, not a skip (#256: the workflow census is now a YAML load).
+    # Only the YAML error: markdown-it accepts any text, and anything else
+    # is a bug in this file that should crash, not become an exit 2.
+    import yaml
+
+    try:
+        signalled = census()
+    except yaml.YAMLError as error:
+        print(
+            f"shell_status: the census could not count a file, so it cannot say\n"
+            f"  whether the parser saw everything: {type(error).__name__}: {error}",
+            file=sys.stderr,
+        )
+        return 2
+
+    # A FLOOR rather than equality: the parser finding MORE than the census
+    # is not a shrink, and the danger has one direction. Measured on this
+    # tree after #256: content.yml 8/8 and framework-drift.yml 15/15, while
+    # ci.yml is 14 against the parser's 15. The one extra is the parser
+    # reading `defaults: run: shell: bash` as a block; see
+    # `_count_workflow_steps`. Docs are 25/25.
     silent = {
         kind: rows
         for kind, rows in (
@@ -543,7 +637,7 @@ def main(argv: list[str]) -> int:
                     if produced[kind].get(path, 0) < blocks
                 ),
             )
-            for kind, counts in census().items()
+            for kind, counts in signalled.items()
         )
         if rows
     }
@@ -554,7 +648,11 @@ def main(argv: list[str]) -> int:
                 f"shell_status: {missing} {kind} block(s) went missing "
                 f"across {len(rows)} file(s).\n"
                 f"  That is not 'no problems'; it is a broken derivation\n"
-                f"  -- a pathspec, or a block parser, that stopped matching.\n"
+                f"  -- a pathspec, or a block parser, that stopped matching --\n"
+                f"  or a block written in a form the parser does not read:\n"
+                f"  a flow-style `{{ run: ... }}` step, or a `~~~bash` or\n"
+                f"  ```bash-with-attributes fence. Rewrite it in block style or\n"
+                f"  as a plain ```bash fence, or teach the parser the form.\n"
                 f"  Each row is file, blocks signalled, blocks parsed:\n"
                 + "\n".join(f"    {path}  {blocks} -> {got}" for path, blocks, got in rows),
                 file=sys.stderr,

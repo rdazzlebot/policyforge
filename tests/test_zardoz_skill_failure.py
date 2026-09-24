@@ -147,8 +147,16 @@ def test_a_refusal_list_that_cannot_load_does_not_end_the_session(monkeypatch):
     text = "\n".join(written)
     assert "Traceback (most recent call last)" in text
     assert "ClickException" in text
+    assert "(refusal list unavailable: ImportError: an optional dependency went missing)" in text
     assert FAILED in text
     assert any("Zardoz permits" in line for line in written), "the session went on"
+
+
+def test_a_loadable_refusal_list_adds_no_unavailable_line(monkeypatch):
+    """Quiet twin: the note appears only when the list failed to load."""
+    _, written = _run(monkeypatch, _refuse, ["/boom"])
+
+    assert not any("refusal list unavailable" in line for line in written)
 
 
 def test_the_plain_voice_says_it_failed_too():

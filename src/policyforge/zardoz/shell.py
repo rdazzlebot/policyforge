@@ -847,11 +847,15 @@ def describe_failure(exc: Exception, state: ShellState) -> str:
     # own fix (9b's finding on #303).
     try:
         kinds = refusal_types()
-    except Exception:  # noqa: BLE001 - the fallback is the full traceback, below
+        unavailable = ""
+    except Exception as lookup:  # noqa: BLE001 - reported below, not swallowed
         kinds = ()
+        # Said, not swallowed (1d, on #303): the command's failure prints as a
+        # bug either way, and this names why it could not be told apart.
+        unavailable = f"\n(refusal list unavailable: {type(lookup).__name__}: {lookup})"
     if isinstance(exc, kinds):
         message = exc.format_message() if hasattr(exc, "format_message") else str(exc)
         head = f"{type(exc).__name__}: {message}"
     else:
         head = "".join(traceback.format_exception(exc)).rstrip()
-    return f"{head}\n{state.voice['command_failed']}"
+    return f"{head}{unavailable}\n{state.voice['command_failed']}"

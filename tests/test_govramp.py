@@ -588,6 +588,13 @@ def test_a_file_that_is_not_a_workbook_is_refused(tmp_path):
     with pytest.raises(export.ExportFormatError) as raised:
         export.load(path)
     assert ".xlsx" in str(raised.value)
+    # `.xlsx` alone cannot tell which guard spoke. With the extension guard
+    # deleted, a `.csv` falls through to `_load_workbook`, whose message
+    # interpolates openpyxl's own error -- "Supported formats are: .xlsx,..."
+    # -- so `.xlsx` is in BOTH messages and this passed with the guard gone.
+    # Found by the #180 audit. `no reader for` is written only by the
+    # extension guard, so it is the assertion that can fail. See #253.
+    assert "no reader for" in str(raised.value)
 
 
 # --------------------------------------------------------------------------
@@ -844,3 +851,63 @@ def test_a_profiles_additions_reach_the_synthesis_prompt(matrix):
     ac2 = _render_control(next(c for c in controls if c.control_id == "AC-2"))
     assert "Additional framework requirements" in ac2
     assert "idleness period" in ac2
+
+
+# --------------------------------------------------------------------------
+# #253: the refusals #180's audit found no test reaching
+# --------------------------------------------------------------------------
+#
+# Each of these guards was deleted in turn and the full suite still passed:
+# nothing fed the loader the input it refuses. Every test below asserts text
+# that ONLY its own guard writes, and is proven to fail with that guard
+# deleted — several sit in front of, or behind, another guard raising the
+# same `ExportFormatError`, so an assertion on the type alone would pass with
+# the wrong guard answering. See the 418 note on
+# `test_a_file_that_is_not_a_workbook_is_refused` above for how that goes.
+
+
+def test_a_file_that_is_not_a_workbook_says_so(tmp_path):
+    """Guard at `_load_workbook`: openpyxl raises a zoo of types for a file
+    that is not a workbook, and this re-raises them as one.
+
+    **Deleted, `_load_workbook` returns None and the caller dies on
+    `None.close()` — an `AttributeError` naming nothing a user could act on.**
+    """
+    path = tmp_path / "GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx"
+    path.write_text("this is not a workbook\n", encoding="utf-8")
+
+    with pytest.raises(export.ExportFormatError, match="could not be opened as a workbook"):
+        export.load(path)
+
+
+def test_a_workbook_with_no_recognisable_sheet_says_so(tmp_path):
+    """Guard in `find_controls_sheet`: every sheet scanned, none carries a
+    header this loader recognises.
+
+    **Deleted, the search returns None and the unpack beneath it raises
+    `TypeError: cannot unpack non-iterable NoneType`.**
+    """
+    path = tmp_path / "GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx"
+    Workbook().save(path)  # one sheet, nothing in it
+
+    with pytest.raises(export.ExportFormatError, match="the workbook has no readable sheets"):
+        export.load(path)
+
+
+def test_a_sheet_with_the_right_columns_and_no_rows_is_refused_not_emptied(tmp_path):
+    """**The one of the seven that fails SILENT.**
+
+    The row loop deliberately skips the totals row and the blank tail — they
+    are template, not controls. This guard is the extent check behind that
+    skip: if every row was skipped, the sheet held no controls, and saying so
+    is the only thing between a malformed matrix and an empty catalog.
+
+    **Deleted, `load` returns an empty list with no error** — measured on
+    #180 and re-measured by the quality owner before #180 closed. A GovRAMP
+    matrix with its captions intact and its rows gone would ingest as a
+    catalog of nothing. Same shape as the `etl-vault` defect on #220.
+    """
+    path = build_workbook(tmp_path / "GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx", data_rows=[])
+
+    with pytest.raises(export.ExportFormatError, match="has the right columns but no control rows"):
+        export.load(path)

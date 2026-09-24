@@ -201,6 +201,13 @@ def test_a_govramp_loader_refuses_a_format_it_has_no_reader_for(tmp_path):
     with pytest.raises(ExportFormatError) as raised:
         byoc.load_govramp_export(export)
     assert ".xlsx" in str(raised.value)
+    # `.xlsx` alone cannot tell which guard spoke. With the extension guard
+    # deleted, a `.csv` falls through to `_load_workbook`, whose message
+    # interpolates openpyxl's own error -- "Supported formats are: .xlsx,..."
+    # -- so `.xlsx` is in BOTH messages and this passed with the guard gone.
+    # Found by the #180 audit. `no reader for` is written only by the
+    # extension guard, so it is the assertion that can fail. See #253.
+    assert "no reader for" in str(raised.value)
 
 
 def test_an_implemented_loader_refuses_a_file_it_cannot_read(tmp_path):

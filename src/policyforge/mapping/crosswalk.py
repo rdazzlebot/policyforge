@@ -304,7 +304,8 @@ ANCHOR_DECISIONS: dict[str, str] = {
         "organisation seeds"
     ),
     "nist-ai-rmf-playbook": (
-        "not yet: whether AI topics anchor Playbook actions is #301's decision"
+        "retrieved for Standards through the Core subcategory a topic anchors, never "
+        "anchored or counted in /coverage, because its actions are voluntary (80, on #301)"
     ),
     "govramp": (
         "bring-your-own: no ids ship, so there is nothing to anchor until a user "

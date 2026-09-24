@@ -75,14 +75,24 @@ FIELDS = (
     "number,title,headRefName,updatedAt,mergeStateStatus,isDraft,author,"
     "createdAt,headRefOid,comments"
 )
+# NOT `commits`: asked for across a 100-PR listing it takes GitHub's GraphQL
+# query past its node limit (1,000,000 requested against 500,000) and the
+# whole listing is refused -- found by the first live run of #298, which no
+# fixture could show. The head commit's time is fetched per PR instead.
 
 #: A SHA prefix shorter than this names too many commits to count as "at head".
 _MIN_PREFIX = 7
 
+#: How many pull requests each listing asks for. A result that fills its limit
+#: may be cut short by it, and is SAID to be (#298) -- a silently short list is
+#: the population failure this project keeps finding.
+OPEN_LIMIT = 100
+ALL_LIMIT = 1000
+
 
 def open_pull_requests(repo: str | None = None) -> list[dict]:
     """Every open pull request, as `gh` reports them."""
-    command = ["gh", "pr", "list", "--state", "open", "--json", FIELDS, "--limit", "100"]
+    command = ["gh", "pr", "list", "--state", "open", "--json", FIELDS, "--limit", str(OPEN_LIMIT)]
     if repo:
         command += ["--repo", repo]
     result = subprocess.run(  # nosec B603 - fixed argv, no shell
@@ -112,6 +122,11 @@ def pending_checks(number: int, repo: str | None = None) -> int | None:
     return sum(1 for line in result.stdout.splitlines() if "\tpending\t" in line)
 
 
+def _at_head(sha: str, head: str) -> bool:
+    cleaned, _ = review_lines.clean(sha)
+    return len(cleaned) >= _MIN_PREFIX and head.startswith(cleaned.lower())
+
+
 def read_state(pull: dict) -> str:
     """`read at head`, `read, not at head`, or `unread` -- from verdict lines.
 
@@ -122,14 +137,80 @@ def read_state(pull: dict) -> str:
     verdicts = review_lines.verdict_lines(pull.get("comments") or [])
     if not verdicts:
         return "unread"
-    for verdict in verdicts:
-        sha, _ = review_lines.clean(verdict["sha"])
-        if len(sha) >= _MIN_PREFIX and head.startswith(sha.lower()):
-            return "read at head"
+    if any(_at_head(v["sha"], head) for v in verdicts):
+        return "read at head"
     return "read, not at head"
 
 
-def branches_without_pull_request(repo: str | None = None) -> list[str]:
+def approved_at_head(pull: dict) -> bool:
+    """Approved at head with no objection standing (#298).
+
+    `mergeStateStatus` CLEAN says the machine has no objection; it says
+    nothing about the readers. It called #294 and #296 ready while each
+    carried a changes-requested at head. So readiness also asks the verdict
+    reader's own question, through `review_lines.objection_states`: at least
+    one well-formed approval at head, and every objection RETIRED AT HEAD by
+    its own reviewer. An objection answered at an older commit is not enough
+    -- the objector approved code that has since changed.
+
+    Locations are decided by SHA prefix against the head, not by resolving
+    ancestry, so this runs without a local clone. That is exact for the one
+    distinction readiness needs: at head, or not."""
+    head = pull.get("headRefOid") or ""
+    lines = []
+    for verdict in review_lines.verdict_lines(pull.get("comments") or []):
+        at = _at_head(verdict["sha"], head)
+        lines.append(
+            review_lines.Line(
+                sha=verdict["sha"],
+                verdict=verdict["verdict"],
+                reviewer=verdict["reviewer"],
+                shape=review_lines.shape_of(
+                    verdict["sha"], verdict["verdict"], verdict["reviewer"]
+                ),
+                location=review_lines.Location(resolves=True, at_head=at, ancestor_of_head=not at),
+            )
+        )
+    approved = any(line.verdict == "approved" and line.counts for line in lines)
+    settled = all(
+        state == "RETIRED AT HEAD" for _, state, _ in review_lines.objection_states(lines)
+    )
+    return approved and settled
+
+
+def waiting_since(pull: dict) -> str:
+    """When the current head began waiting for a reader (#298).
+
+    The latest of: the head commit, the pull request's creation, and the last
+    comment carrying a verdict line. NOT `updatedAt`, which any comment
+    resets -- so a pull request people discussed and nobody reviewed never
+    aged into "unread", the one shape "unread" exists to catch (9b, on #293).
+
+    Stated limit: a commit's `committedDate` is when it was made, not pushed.
+    Force-pushing an old commit onto an existing pull request can read as
+    older than it is; creation time bounds that for a new pull request."""
+    moments = [pull.get("createdAt") or pull.get("updatedAt"), pull.get("headCommittedAt")]
+    for comment in pull.get("comments") or []:
+        if review_lines.verdict_lines([comment]):
+            moments.append(comment.get("createdAt"))
+    stamps = [m for m in moments if m]
+    return max(stamps, key=lambda s: datetime.fromisoformat(s.replace("Z", "+00:00")))
+
+
+def head_committed_at(sha: str, repo: str | None = None) -> str | None:
+    """When the head commit was made, or None if that cannot be read.
+
+    One small REST call per open pull request, rather than a `commits` field
+    on the listing (see FIELDS). None leaves `waiting_since` on the other two
+    sources, which is a smaller clock, never a missing report."""
+    path = f"repos/{repo}/commits/{sha}" if repo else f"repos/{{owner}}/{{repo}}/commits/{sha}"
+    try:
+        return _gh(["api", path, "--jq", ".commit.committer.date"]).strip() or None
+    except RuntimeError:
+        return None
+
+
+def branches_without_pull_request(repo: str | None = None) -> tuple[list[str], bool]:
     """Remote branches no pull request of any state was ever opened from.
 
     Compared by name against every PR's head, open, closed or merged, so a
@@ -138,7 +219,10 @@ def branches_without_pull_request(repo: str | None = None) -> list[str]:
     integration branch like a release train, which PRs are opened into and
     never from. Derived from the pull requests, not a list of names: the
     first run named `release/1.6.1` as parked, because only the default
-    branch was excluded."""
+    branch was excluded.
+
+    Returns the names and whether the pull-request listing filled its limit:
+    if it did, a branch whose PR fell past the limit would read as parked."""
     target = repo or _gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"])
     target = target.strip()
     default = _gh(
@@ -158,7 +242,7 @@ def branches_without_pull_request(repo: str | None = None) -> list[str]:
                 "--state",
                 "all",
                 "--limit",
-                "1000",
+                str(ALL_LIMIT),
                 "--json",
                 "headRefName,baseRefName",
             ]
@@ -166,7 +250,7 @@ def branches_without_pull_request(repo: str | None = None) -> list[str]:
     )
     heads = {p["headRefName"] for p in pulls}
     bases = {p["baseRefName"] for p in pulls}
-    return sorted(branches - heads - bases - {default})
+    return sorted(branches - heads - bases - {default}), len(pulls) >= ALL_LIMIT
 
 
 def _gh(args: list[str]) -> str:
@@ -214,6 +298,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(f"{len(pulls)} open pull request(s); ready and untouched over {args.minutes}m is stale")
+    if len(pulls) >= OPEN_LIMIT:
+        print(
+            f"  !! the listing returned {len(pulls)}, its limit: open pull requests past it "
+            "are NOT examined, so this report may be short."
+        )
     print("=" * 72)
 
     stale: list[str] = []
@@ -228,14 +317,23 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         # The step before ready (#178): has anyone read THIS head? Timed from
-        # the last change, because a push restarts the wait for a reader.
+        # when the head began waiting -- not updatedAt, which any comment
+        # resets (#298).
         reading = read_state(pull)
-        if reading != "read at head" and waited >= args.minutes:
-            unread.append(f"#{number} {branch} — {reading} for {describe(waited)}")
+        if "headCommittedAt" not in pull:
+            pull["headCommittedAt"] = head_committed_at(pull.get("headRefOid") or "", args.repo)
+        waiting = idle_minutes(waiting_since(pull))
+        if reading != "read at head" and waiting >= args.minutes:
+            unread.append(f"#{number} {branch} — {reading} for {describe(waiting)}")
         if state != READY:
             # Not ready is not stale: checks running, review outstanding or a
             # conflict are all someone's turn, and the queue is working.
             print(f"  #{number:<5} {describe(waited):>8}  {state:<12} {branch}")
+            continue
+        if not approved_at_head(pull):
+            # CLEAN is the machine's verdict, not the readers'. An open
+            # objection or no approval at head is a reader's turn (#298).
+            print(f"  #{number:<5} {describe(waited):>8}  not approved {branch}")
             continue
 
         pending = pending_checks(number, args.repo)
@@ -280,10 +378,18 @@ def main(argv: list[str] | None = None) -> int:
 
     # Informational only: parking a pushed branch with no PR is legitimate.
     try:
-        parked = branches_without_pull_request(args.repo)
+        parked, truncated = branches_without_pull_request(args.repo)
     except Exception as exc:  # noqa: BLE001 - said, not hidden; it gates nothing
-        print(f"\n  could not list branches ({type(exc).__name__}); pushed-with-no-PR not checked")
+        # The message, not only the type: 9b's live run hit a GitHub 503 and a
+        # bare `RuntimeError` said nothing about why (#298).
+        print(f"\n  could not list branches: {type(exc).__name__}: {exc}")
+        print("  This report is INCOMPLETE: pushed-with-no-PR was not checked, not found empty.")
     else:
+        if truncated:
+            print(
+                f"\n  !! the pull-request listing filled its limit ({ALL_LIMIT}): a branch whose "
+                "PR fell past it would read as parked below."
+            )
         if parked:
             print(f"\n  {len(parked)} pushed branch(es) with no pull request of any state")
             print("  (reported, not failed -- parking is allowed; this is so it is seen):\n")

@@ -61,7 +61,10 @@ def _pull(**overrides):
 def _run(monkeypatch, pulls, pending=0, argv=None, parked=()):
     monkeypatch.setattr(stale_prs, "open_pull_requests", lambda repo=None: pulls)
     monkeypatch.setattr(stale_prs, "pending_checks", lambda number, repo=None: pending)
-    monkeypatch.setattr(stale_prs, "branches_without_pull_request", lambda repo=None: list(parked))
+    monkeypatch.setattr(
+        stale_prs, "branches_without_pull_request", lambda repo=None: (list(parked), False)
+    )
+    monkeypatch.setattr(stale_prs, "head_committed_at", lambda sha, repo=None: None)
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         code = stale_prs.main(argv or [])
@@ -164,7 +167,8 @@ def test_an_open_pull_request_with_no_verdict_line_is_unread(monkeypatch):
     past the threshold: a worklist item, and the run fails."""
     code, out = _run(monkeypatch, [_pull(mergeStateStatus="BLOCKED", comments=[])])
     assert code == 1
-    assert "#132 fix/local-provider-accounting — unread for 10h 00m" in out
+    # Timed from creation (700m ago), not updatedAt (600m) -- #298.
+    assert "#132 fix/local-provider-accounting — unread for 11h 40m" in out
 
 
 def test_a_verdict_on_an_older_commit_is_not_a_reading_of_this_head(monkeypatch):
@@ -181,7 +185,7 @@ def test_a_verdict_on_an_older_commit_is_not_a_reading_of_this_head(monkeypatch)
     ("overrides", "why"),
     [
         ({"comments": [_verdict()]}, "read at head"),
-        ({"comments": [], "updatedAt": _ago(10)}, "changed within the threshold"),
+        ({"comments": [], "headCommittedAt": _ago(10)}, "head committed within the threshold"),
         ({"comments": [], "isDraft": True}, "a draft"),
         ({"comments": [_verdict(HEAD[:7])]}, "a 7-character prefix of head"),
         ({"comments": [_verdict(HEAD + "**")]}, "trailing formatting is cleaned"),
@@ -241,7 +245,9 @@ def test_a_failed_branch_listing_is_said_and_gates_nothing(monkeypatch):
     with contextlib.redirect_stdout(out):
         code = stale_prs.main([])
     assert code == 0
-    assert "pushed-with-no-PR not checked" in out.getvalue()
+    text = out.getvalue()
+    assert "RuntimeError: rate limited" in text, "the message, not only the type"
+    assert "INCOMPLETE" in text and "not found empty" in text
 
 
 def test_the_branch_listing_excludes_the_default_branch_and_every_pr_head(monkeypatch):
@@ -284,4 +290,160 @@ def test_the_branch_listing_excludes_the_default_branch_and_every_pr_head(monkey
     monkeypatch.setattr(stale_prs, "_gh", fake)
     # main: the default. release/1.6.1: a base, found on the real repo's first
     # run. ba/merged: a merged head. 1d/open: an open head.
-    assert stale_prs.branches_without_pull_request("rdazzleman/policyforge") == ["salvage/x"]
+    assert stale_prs.branches_without_pull_request("rdazzleman/policyforge") == (
+        ["salvage/x"],
+        False,
+    )
+
+
+# ---- #298: "ready" is the readers' verdict too, not only the machine's --------
+
+
+def _say(sha, verdict, reviewer, at=None):
+    body = f"Read it.\n\nReviewed-SHA: {sha} verdict={verdict} reviewer={reviewer}"
+    comment = {"body": body}
+    if at is not None:
+        comment["createdAt"] = _ago(at)
+    return comment
+
+
+def test_clean_and_green_with_an_objection_at_head_is_not_ready(monkeypatch):
+    """**The incident #298 was filed for.** mergeStateStatus CLEAN, no checks
+    pending -- and a changes-requested at head. It was labelled ready; it is a
+    reader's turn, so it is not stale and does not fail the run on this."""
+    comments = [
+        _say(HEAD, "approved", "policyforge-80"),
+        _say(HEAD, "changes-requested", "policyforge-9b"),
+    ]
+    code, out = _run(monkeypatch, [_pull(comments=comments)])
+    assert "not approved" in out
+    assert "STALE" not in out and "ready and nobody has acted" not in out
+    assert code == 0
+
+
+def test_the_objector_approving_at_head_makes_it_ready(monkeypatch):
+    """The passing twin: the same objection, retired at head by its own
+    reviewer. Ready, and stale past the threshold."""
+    comments = [
+        _say(HEAD, "changes-requested", "policyforge-9b"),
+        _say(HEAD, "approved", "policyforge-9b"),
+    ]
+    code, out = _run(monkeypatch, [_pull(comments=comments)])
+    assert "STALE" in out and code == 1
+
+
+@pytest.mark.parametrize(
+    ("comments", "why"),
+    [
+        (
+            [
+                _say("b" * 40, "changes-requested", "policyforge-9b"),
+                _say("b" * 40, "approved", "policyforge-9b"),
+                _say(HEAD, "approved", "policyforge-80"),
+            ],
+            "objection answered at an older commit only",
+        ),
+        (
+            [
+                _say(HEAD, "changes-requested", "policyforge-9b"),
+                _say(HEAD, "approved", "policyforge-80"),
+            ],
+            "another reviewer's approval does not answer it",
+        ),
+        (
+            [_say(HEAD[:7], "approved", "policyforge-80")],
+            "a truncated approval is not a well-formed verdict",
+        ),
+        ([_say("b" * 40, "approved", "policyforge-80")], "approved, but not at head"),
+    ],
+)
+def test_not_ready_unless_approved_at_head_with_nothing_standing(monkeypatch, comments, why):
+    # The exit code differs by case (approved-not-at-head is also UNREAD), so
+    # only readiness is asserted here.
+    _, out = _run(monkeypatch, [_pull(comments=comments)])
+    assert "not approved" in out, why
+    assert "ready and nobody has acted" not in out, why
+
+
+# ---- #298: the unread clock -------------------------------------------------
+
+
+def test_a_discussed_but_unreviewed_head_still_ages_into_unread(monkeypatch):
+    """**9b's shape.** Fresh comments reset updatedAt; none is a verdict, the
+    head is old. The wait is the head's, so it is reported unread."""
+    pull = _pull(
+        mergeStateStatus="BLOCKED",
+        updatedAt=_ago(2),
+        createdAt=_ago(300),
+        headCommittedAt=_ago(300),
+        comments=[{"body": "what about the edge case?", "createdAt": _ago(2)}],
+    )
+    code, out = _run(monkeypatch, [pull])
+    assert "unread for 5h 00m" in out and code == 1
+
+
+def test_a_recent_verdict_restarts_the_clock(monkeypatch):
+    """The twin: the last VERDICT is recent (on an older commit), so the head
+    has not been waiting past the threshold for a reader."""
+    pull = _pull(
+        mergeStateStatus="BLOCKED",
+        createdAt=_ago(300),
+        headCommittedAt=_ago(300),
+        comments=[_say("b" * 40, "changes-requested", "policyforge-9b", at=5)],
+    )
+    code, out = _run(monkeypatch, [pull])
+    assert "waiting on a reader" not in out and code == 0
+
+
+def test_waiting_since_is_the_latest_of_its_three_sources():
+    pull = _pull(
+        createdAt="2026-09-24T01:00:00Z",
+        headCommittedAt="2026-09-24T03:00:00Z",
+        comments=[
+            {"body": "chat", "createdAt": "2026-09-24T09:00:00Z"},
+            {**_say(HEAD, "approved", "policyforge-9b"), "createdAt": "2026-09-24T05:00:00Z"},
+        ],
+    )
+    assert stale_prs.waiting_since(pull) == "2026-09-24T05:00:00Z", "chat must not count"
+
+
+# ---- #298: a listing that fills its limit says so ---------------------------
+
+
+def test_an_open_listing_at_its_limit_is_flagged(monkeypatch):
+    drafts = [_pull(number=n, isDraft=True) for n in range(stale_prs.OPEN_LIMIT)]
+    _, out = _run(monkeypatch, drafts)
+    assert "its limit" in out and "may be short" in out
+
+
+def test_an_open_listing_under_its_limit_is_not(monkeypatch):
+    drafts = [_pull(number=n, isDraft=True) for n in range(stale_prs.OPEN_LIMIT - 1)]
+    _, out = _run(monkeypatch, drafts)
+    assert "may be short" not in out
+
+
+def test_a_pr_listing_at_its_limit_is_flagged_by_the_branch_check(monkeypatch):
+    import json as _json
+
+    pulls = [{"headRefName": f"b{n}", "baseRefName": "main"} for n in range(stale_prs.ALL_LIMIT)]
+
+    def fake(args):
+        if args[:2] == ["repo", "view"]:
+            return "main\n" if "defaultBranchRef" in args else "o/r"
+        if args[:2] == ["pr", "list"]:
+            return _json.dumps(pulls)
+        return _json.dumps([[{"name": "main"}]])
+
+    monkeypatch.setattr(stale_prs, "_gh", fake)
+    assert stale_prs.branches_without_pull_request("o/r") == ([], True)
+    pulls.pop()
+    assert stale_prs.branches_without_pull_request("o/r") == ([], False)
+
+
+def test_a_truncated_branch_check_is_said_in_the_report(monkeypatch):
+    monkeypatch.setattr(stale_prs, "open_pull_requests", lambda repo=None: [])
+    monkeypatch.setattr(stale_prs, "branches_without_pull_request", lambda repo=None: ([], True))
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        stale_prs.main([])
+    assert "filled its limit" in out.getvalue()

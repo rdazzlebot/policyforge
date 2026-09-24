@@ -295,8 +295,9 @@ ANCHOR_DECISIONS: dict[str, str] = {
         "(NOT_CROSSWALK_ANCHORABLE)"
     ),
     "cfr-170-315-onc-certification": (
-        "re-landed by #179 as a catalog to cite: no ruling makes its certification "
-        "criteria anchorable"
+        "a certification criterion describes what a certified product can do, not what "
+        "an organization implements, so a topic owning one would count a product "
+        "capability as organizational coverage (its README; 80, on #308)"
     ),
     "cfr-42-part-2-sud-records": (
         "no published mapping was found (#264); reached only through a crosswalk an "

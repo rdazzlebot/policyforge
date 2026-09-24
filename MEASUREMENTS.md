@@ -1804,19 +1804,41 @@ says nothing about the five. **The completion pass cost $0.4113.**
 #### A rate from one topic is a rate for that topic
 
 The estimate came from a single probe topic at $0.3477 — *Identity Lifecycle
-& Access Review*, 28 controls. That topic sits at the **72nd percentile** of
-the 25, against a median of 18 controls:
+& Access Review*, 28 controls. By control count that topic sits at the **60th
+percentile** of the 25: 15 of 25 have strictly fewer, against a median of 18.
 
 ```
 25 x $0.3477 (one topic)   =  $8.69      the estimate
 actual across 25 topics    =  $6.1487    −29%
 ```
 
-The probe was not wrong about itself. It was **unrepresentative in a
-direction nothing in it could show**, because a single measurement has no
-spread. This is the same shape as the earlier fixture error one level in:
-that probe under-stated by 13x by measuring a 647-character synthesis; this
-one over-stated by 29% by measuring an above-median topic. **Both are "the
+**The same topic cost $0.3879 in this run — 12% more than in the probe, on
+identical input.** That is the spread a single measurement cannot show, now
+measured rather than argued: the probe was not merely unrepresentative of the
+other 24 topics, **its own figure was one draw from a distribution with at
+least 12% of width.** So it was wrong in two directions at once — an
+above-median topic, and a draw that happened to land low.
+
+This entry first said the **72nd** percentile. That placed the probe's cost
+from the *separate* rate-probe run into *this* run's cost distribution — two
+runs in one comparison — and then set the result beside a median of
+**controls**, so the sentence compared a cost rank with a control count.
+policyforge-f2 recomputed from the table and got the 60th; policyforge-d8,
+who had approved having checked the table but not the figure derived from
+it, agreed. **Every way the figure can be taken:**
+
+| quantity                                  | strictly below | at or below |
+| ----------------------------------------- | -------------- | ----------- |
+| **controls** (what the sentence is about) | **60th**       | 64th        |
+| cost, this run's value ($0.3879)          | 88th           | 92nd        |
+| cost, rate-probe value ($0.3477)          | 72nd           | 72nd        |
+
+The conclusion survives on every row — the probe was above the middle — but
+only the first row answers the sentence it sits in.
+
+This is the same shape as the earlier fixture error one level in: that probe
+under-stated by 13x by measuring a 647-character synthesis; this one
+over-stated by 29% by measuring an above-median topic once. **Both are "the
 population is one".**
 
 #### What could not be measured, and why

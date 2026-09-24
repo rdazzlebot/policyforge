@@ -478,3 +478,108 @@ def test_main_actually_calls_the_stdout_fix():
         and isinstance(first.value, ast.Call)
         and getattr(first.value.func, "id", "") == "_safe_stdout"
     ), "main() must call _safe_stdout() before anything can print"
+
+
+# --- #258: the formula's url must name the canonical owner --------------
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://github.com/rdazzleman/policyforge/archive/refs/tags/v1.6.1.tar.gz",
+    ],
+)
+def test_a_canonical_source_url_passes(url):
+    """What it must ALLOW, beside what it refuses."""
+    assert release_check.names_canonical_owner(url)
+
+
+@pytest.mark.parametrize(
+    "url, why",
+    [
+        (
+            "https://github.com/rdazzlebot/policyforge/archive/refs/tags/v1.6.1.tar.gz",
+            "the OLD owner -- installs through the 301, so only the string can catch it",
+        ),
+        (
+            "https://github.com/someone-else/policyforge/archive/refs/tags/v1.6.1.tar.gz",
+            "any other owner",
+        ),
+        (
+            "https://github.com/rdazzleman/policyforge-evil/archive/refs/tags/v1.6.1.tar.gz",
+            "a repository whose NAME starts with ours -- the trailing slash is what refuses it",
+        ),
+        (
+            "http://github.com/rdazzleman/policyforge/archive/refs/tags/v1.6.1.tar.gz",
+            "plain http",
+        ),
+        (None, "a formula with no url at all"),
+    ],
+)
+def test_a_non_canonical_source_url_fails(url, why):
+    assert not release_check.names_canonical_owner(url), why
+
+
+def test_the_owner_is_named_in_one_place():
+    """**#258 asked for the assertion to derive from the same constant as
+    FORMULA_URL, not to type the owner twice.** So the owner must appear as
+    a string literal exactly once in code -- the `OWNER` constant -- and
+    FORMULA_URL, the install steps and the prefix must all be built from it.
+    Two literals would let the URL and the check that guards it disagree.
+    """
+    import ast
+
+    tree = ast.parse(Path(release_check.__file__).read_text(encoding="utf-8"))
+    literals = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and "rdazzleman" in node.value
+        and not node.value.lstrip().startswith(("After cutting", "Does the formula", "What "))
+        and "\n" not in node.value  # docstrings are prose, not configuration
+    ]
+    assert [n.value for n in literals] == ["rdazzleman"], (
+        f"the owner must be named once, as OWNER; found {[n.value for n in literals]}"
+    )
+    assert release_check.OWNER in release_check.FORMULA_URL
+    assert all(release_check.OWNER in cmd for _, cmd in release_check.INSTALL_STEPS[:3])
+
+
+def _report(monkeypatch, capsys, formula: str) -> str:
+    """Drive the real `main()` report, with only the network stubbed.
+
+    `hash_of` returns whatever the formula states, so 1b agrees and cannot
+    be the thing that speaks; docker is reported absent and acknowledged,
+    so assertion 4 does not run.
+    """
+    stated = release_check.sha256_in_formula(formula)
+    monkeypatch.setattr(release_check, "fetch_formula", lambda url=None: formula)
+    monkeypatch.setattr(release_check, "hash_of", lambda url: stated)
+    monkeypatch.setattr(
+        release_check, "run_install_check", lambda image=None: (False, ["docker is not on PATH"])
+    )
+    tag = release_check.tag_in_formula(formula).lstrip("v")
+    release_check.main(["--version", tag, "--allow-skip", "install"])
+    return capsys.readouterr().out
+
+
+def test_the_report_refuses_a_formula_that_names_the_old_owner(monkeypatch, capsys):
+    """**The wiring test, and the one the function tests cannot replace.**
+
+    Deleting the check from `main()` while leaving `names_canonical_owner`
+    intact kept every other test in this file green -- measured. A guard
+    proven correct and never proven called is what three loaders here
+    shipped. So this drives the report itself, with a formula whose `url`
+    names `rdazzlebot`: the right tag, the right hash, installable through
+    the redirect, and wrong.
+    """
+    assert "rdazzlebot/policyforge" in FORMULA, "the fixture's premise changed"
+    assert "NOT CANONICAL" in _report(monkeypatch, capsys, FORMULA)
+
+
+def test_the_report_accepts_a_formula_that_names_the_canonical_owner(monkeypatch, capsys):
+    """The passing case, through the same path -- or the test above could be
+    satisfied by a report that flags every formula."""
+    canonical = FORMULA.replace("rdazzlebot/policyforge", "rdazzleman/policyforge")
+    assert "NOT CANONICAL" not in _report(monkeypatch, capsys, canonical)

@@ -68,9 +68,38 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-FORMULA_URL = (
-    "https://raw.githubusercontent.com/rdazzleman/homebrew-tap/main/Formula/policyforge.rb"
-)
+#: **The one place the owner is named.** The formula URL, the tap in the
+#: install steps and the canonical-owner assertion below all derive from it,
+#: so a future transfer is one line rather than a hunt -- and so the
+#: assertion and the URL it checks cannot disagree about who the owner is.
+#: A literal owner is still a coordinate that moves; it is here because a
+#: formula URL has to name *some* owner, and one constant is the least-bad
+#: form of that. (content.yml's publish gate, which compared against the old
+#: owner by string, is the failure this avoids repeating in five places.)
+OWNER = "rdazzleman"
+REPOSITORY = f"{OWNER}/policyforge"
+
+FORMULA_URL = f"https://raw.githubusercontent.com/{OWNER}/homebrew-tap/main/Formula/policyforge.rb"
+
+#: What a formula's source `url` must start with. **Trailing slash
+#: included**, so `rdazzleman/policyforge-evil/` does not pass as a prefix.
+CANONICAL_SOURCE_PREFIX = f"https://github.com/{REPOSITORY}/"
+
+
+def names_canonical_owner(url: str | None) -> bool:
+    """Does the formula's source `url` name the canonical repository?
+
+    **Compared as a string, deliberately never by following the URL.** A
+    formula still pointing at the old owner installs perfectly -- through
+    GitHub's 301 from `rdazzlebot/policyforge` to `rdazzleman/policyforge`
+    -- so assertion 4 cannot see it. And redirect-counting cannot tell the
+    two apart either: the canonical archive URL ALSO redirects, a 302 to
+    codeload. Measured 2026-09-23. So the only thing that distinguishes them
+    is the text the formula carries. #258, found by policyforge-9b (handle
+    9b) reviewing #252.
+    """
+    return bool(url) and url.startswith(CANONICAL_SOURCE_PREFIX)
+
 
 #: The lock the formula's resources must agree with. `runtime.txt` rather
 #: than `ci.txt`: Homebrew installs what a user runs, not the dev extras.
@@ -179,9 +208,9 @@ def lock_pins(text: str) -> dict[str, str]:
 #: until somebody checks which**, so the correct sequence is pinned here
 #: rather than retyped from memory each time.
 INSTALL_STEPS: tuple[tuple[str, str], ...] = (
-    ("tap", "brew tap rdazzleman/tap"),
-    ("install", "brew install --build-from-source rdazzleman/tap/policyforge"),
-    ("audit", "brew audit --strict --online rdazzleman/tap/policyforge"),
+    ("tap", f"brew tap {OWNER}/tap"),
+    ("install", f"brew install --build-from-source {OWNER}/tap/policyforge"),
+    ("audit", f"brew audit --strict --online {OWNER}/tap/policyforge"),
     ("init", "cd /tmp/pf && policyforge init"),
     ("frameworks", "cd /tmp/pf && policyforge frameworks"),
 )
@@ -372,6 +401,18 @@ def main(argv: list[str] | None = None) -> int:
             print("  -> MISMATCH")
         else:
             print("  -> match")
+
+        # The right tag at the wrong owner still installs -- through the
+        # redirect -- so assertion 4 passes it. Only the string can tell.
+        source = source_url_in_formula(formula)
+        print(f"  formula url owner : {'canonical' if names_canonical_owner(source) else source}")
+        if not names_canonical_owner(source):
+            failures.append(
+                f"the formula's url is {source!r}, not under {CANONICAL_SOURCE_PREFIX} -- it "
+                "installs only through a redirect that ends if anything is created at the "
+                "old name"
+            )
+            print("  -> NOT CANONICAL")
 
         # 1b. Naming the right tag is not the same as installing it. A
         # formula edited by hand can carry the new url beside the previous

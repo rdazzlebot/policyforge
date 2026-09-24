@@ -99,3 +99,16 @@ def test_the_catalog_is_not_marked_unmappable():
     from policyforge.crosswalk.overlay import NOT_CROSSWALK_ANCHORABLE
 
     assert "42 CFR Part 2" not in NOT_CROSSWALK_ANCHORABLE
+
+
+def test_the_readme_claims_only_what_the_search_found(readme):
+    """**#264.** The README said "there is no equivalent authority mapping
+    Part 2" -- the same shape of sentence #260 found false for 800-171,
+    where NIST publishes the mapping in the file the catalog is built from.
+    A search of 2026-09-24 (policyforge-f8, handle 5b) found none for Part 2,
+    but could not enumerate NIST OLIR, where one would be registered. So the
+    README may say "not found" and must say what was not searched."""
+    assert "there is no equivalent" not in readme, "stronger than the search (#264)"
+    assert "was found" in readme, "the claim the search supports"
+    assert "OLIR" in readme, "the limit that stops 'not found' reading as 'does not exist'"
+    assert "Subpart C" in readme, "why the HIPAA crosswalk does not reach Part 2"

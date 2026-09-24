@@ -186,7 +186,26 @@ retention all have counterparts.
 
 It ships without a `source_crosswalk`, which is a different thing from
 being unmappable. NIST publishes an official HIPAA-to-800-53 crosswalk that
-this project ingests (`etl-hipaa-crosswalk`); there is no equivalent
-authority mapping Part 2. A crosswalk invented here would be this project's
+this project ingests (`etl-hipaa-crosswalk`). **No equivalent mapping for
+Part 2 was found.** A crosswalk invented here would be this project's
 opinion wearing the source's authority, so the mapping is left to
 `crosswalk propose` and a human reviewer, where its provenance is visible.
+
+**The HIPAA crosswalk does not reach Part 2 indirectly.** § 2.16 points at
+HIPAA only through 45 CFR 164.514(b) (de-identification) and Subpart D
+(breach notification). The published HIPAA mappings, NIST SP 800-66r2 and
+the OCR crosswalk, map the Security Rule, which is Subpart C. So Part 2
+gets no 800-53 mapping through them.
+
+**What "not found" rests on** (searched 2026-09-24 UTC, #264):
+
+- the § 2.16 text, and the 2020 and 2024 Part 2 final rules
+- the HITRUST CSF v11.7.0 list of authoritative sources
+- NIST SP 800-66r2, and site-scoped searches of nist.gov, csrc.nist.gov,
+  hhs.gov, samhsa.gov, healthit.gov and 405d.hhs.gov
+
+**Not ruled out:** the NIST OLIR and CPRT catalogs could not be listed, and
+OLIR is where a formal mapping would be registered. The OCR crosswalk's
+contents were not readable. Commercial frameworks were not checked. If a
+mapping turns up, Part 2 moves to the same footing as 800-171 (see its
+README).

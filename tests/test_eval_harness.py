@@ -406,7 +406,7 @@ def test_the_report_calls_out_flaky_cases_separately_from_failures():
         CaseResult("routing", "never", [Outcome(False, "bad"), Outcome(False, "bad")]),
     ]
 
-    report = format_report(results, repeat=2)
+    report = format_report(results, repeat=2, requested=["routing"])
 
     assert "FLAKY" in report
     assert "1 never passed" in report
@@ -589,7 +589,7 @@ def test_the_report_says_the_run_did_not_happen():
         )
     ]
 
-    report = format_report(results, repeat=1)
+    report = format_report(results, repeat=1, requested=["routing"])
 
     assert "could not run" in report
     assert "say nothing about the prompts" in report
@@ -1309,7 +1309,7 @@ def test_an_unsupported_claim_is_reported_and_does_not_change_the_score(monkeypa
     notes = [note for outcome in result.outcomes for note in outcome.notes]
     assert notes and "says nothing about it" in notes[0]
 
-    report = format_report([result], repeat=1)
+    report = format_report([result], repeat=1, requested=["answering"])
     assert "entailment:" in report
     assert "reported and not scored" in report
     assert "says nothing about it" in report
@@ -1327,7 +1327,7 @@ def test_a_supported_claim_still_passes(monkeypatch):
     assert result.rate == 1.0
     assert judge.calls, "the judge is asked even when it agrees"
     assert not [note for outcome in result.outcomes for note in outcome.notes]
-    assert "entailment:" not in format_report([result], repeat=1)
+    assert "entailment:" not in format_report([result], repeat=1, requested=["answering"])
 
 
 def test_a_judge_that_could_not_run_says_so_loudly(monkeypatch):
@@ -1346,7 +1346,7 @@ def test_a_judge_that_could_not_run_says_so_loudly(monkeypatch):
     result = run_case("answering", dict(ENTAIL_CASE), Scripted("Quarterly. [1]"))
 
     assert result.rate == 1.0, "a broken judge does not fail the prompt under test"
-    report = format_report([result], repeat=1)
+    report = format_report([result], repeat=1, requested=["answering"])
     assert "did not run" in report
     assert "the judge failing to run, not a claim it read" in report
 

@@ -650,6 +650,90 @@ def etl_ai_rmf(out: Path, html: Path | None):
     )
 
 
+@cli.command("etl-ai-rmf-playbook")
+@click.option(
+    "--out",
+    default=Path("data/frameworks/nist-ai-rmf-playbook/controls.json"),
+    type=click.Path(path_type=Path),
+    help="Where to write the parsed data.",
+)
+@click.option(
+    "--json",
+    "json_path",
+    default=None,
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    help="Parse a saved copy of playbook.json instead of fetching. It must be the "
+    "pinned export, byte for byte.",
+)
+@click.option(
+    "--core",
+    default=Path("data/frameworks/nist-ai-rmf/controls.json"),
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    help="The AI RMF Core catalog. Every Playbook entry must serve one of its subcategories.",
+)
+def etl_ai_rmf_playbook(out: Path, json_path: Path | None, core: Path):
+    """Fetch the NIST AI RMF Playbook -- NIST's suggested actions per Core
+    subcategory -- and parse it into this project's data schema. A US
+    government work, so safe to bundle.
+
+    THE PLAYBOOK IS VOLUNTARY: NIST calls its suggestions "voluntary" and
+    "neither a checklist nor set of steps to be followed in its entirety".
+    A document citing an action may say NIST suggests it, never that NIST
+    requires it. The catalog's README carries the long form.
+
+    Pinned to one export by its SHA-256, because NIST publishes no revision
+    number: a different export is refused, and on the scheduled drift job
+    that refusal is the job working. The per-subcategory action counts are
+    pinned to an independent count, and a short or long parse is refused
+    whole.
+    """
+    import dataclasses
+    import json
+
+    from policyforge.ingest.ai_rmf_playbook import (
+        FRAMEWORK_VERSION,
+        SOURCE_URL,
+        AiRmfPlaybookError,
+        fetch_playbook,
+        parse_playbook,
+    )
+    from policyforge.ingest.provenance import record_source_provenance
+
+    if json_path is not None:
+        raw = json_path.read_bytes()
+        click.echo(f"Parsing saved export {json_path} instead of fetching.")
+    else:
+        raw, last_modified = fetch_playbook()
+        click.echo(f"Fetched {SOURCE_URL} (Last-Modified: {last_modified or 'not sent'}).")
+
+    core_rows = json.loads(core.read_text(encoding="utf-8"))
+    subcategories = {e["enhancement_id"] for row in core_rows for e in row["enhancements"]}
+    try:
+        controls = parse_playbook(raw, subcategories)
+    except AiRmfPlaybookError as exc:
+        # A refused export is the pin WORKING -- on the drift job, the
+        # expected outcome when NIST re-publishes -- so it is a clean error
+        # line naming the reason, not a traceback. Nothing is written.
+        raise click.ClickException(str(exc)) from exc
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
+
+    # Digest over the PARSED output, as every other loader here; the export's
+    # own hash is the pin in `ai_rmf_playbook.SOURCE_SHA256`.
+    stamp = record_source_provenance(
+        out.parent / "framework.yaml",
+        source_ref=FRAMEWORK_VERSION,
+        source_url=SOURCE_URL,
+        content=out.read_bytes(),
+    )
+    if stamp is not None:
+        click.echo(f"Recorded provenance: sha256:{stamp[:16]}… -> {out.parent}")
+    actions = sum(len(c.enhancements) for c in controls)
+    click.echo(
+        f"Parsed {len(controls)} AI RMF subcategories carrying {actions} suggested actions -> {out}"
+    )
+
+
 def _bundled_catalog_dirs() -> list[Path]:
     """The bundled catalog directories that exist and must never take licensed data.
 

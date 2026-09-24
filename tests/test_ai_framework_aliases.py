@@ -109,6 +109,9 @@ def test_no_bundled_catalog_changed_key():
         "nist-800-171-r3": "nist-800-171",
         "nist-800-53-r5": "nist-800-53",
         "nist-ai-rmf": "nist-ai-rmf",
+        # Its own key, not the Core's: the "ai rmf playbook" needle is ordered
+        # before "ai rmf", which "NIST AI RMF Playbook" also contains (#177).
+        "nist-ai-rmf-playbook": "nist-ai-rmf-playbook",
     }
     seen = {}
     skipped = set()

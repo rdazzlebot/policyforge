@@ -76,6 +76,11 @@ class FrameworkCoverage:
     #: Reached only through owned controls recorded as covering part of the
     #: requirement (`superset` or `intersects`).
     partial: list[str] = field(default_factory=list)
+    #: True when the framework is counted per LEVEL requirement ("01.a
+    #: Level 1") rather than per control -- HITRUST, whose crosswalk is
+    #: published per level (#282). The report says so, because the unit is
+    #: what the number means.
+    per_level: bool = False
 
     @property
     def total(self) -> int:
@@ -357,12 +362,26 @@ def _framework_coverage(
                 else:
                     reachable.setdefault(framework, set()).add(requirement_id)
 
+    # **Counted in the unit the crosswalk records.** A control carrying level
+    # requirements (HITRUST) is counted per requirement, every level the
+    # catalog carries, because `build_crosswalk` records its mappings under
+    # "01.a Level 1", never under "01.a". Listing the control id instead made
+    # the two id spaces disjoint and HITRUST read 0 whatever the topics owned
+    # (#282). Not rolled up to the control: that would claim a mapping for
+    # levels that never had one -- `_requirement_sources`' own reasoning, and
+    # the ruling that the project does not assert what its sources withheld
+    # (80, on #282). Which levels APPLY to an organisation is scoping (#283).
     by_framework: dict[str, list[str]] = {}
+    per_level: set[str] = set()
     for control in other_controls:
         framework = normalize_framework(control.framework)
         ids = by_framework.setdefault(framework, [])
-        ids.append(control.control_id)
-        ids.extend(e.enhancement_id for e in control.enhancements)
+        if control.requirements:
+            ids.extend(r.requirement_id for r in control.requirements)
+            per_level.add(framework)
+        else:
+            ids.append(control.control_id)
+            ids.extend(e.enhancement_id for e in control.enhancements)
 
     coverage: list[FrameworkCoverage] = []
     for framework, requirement_ids in sorted(by_framework.items()):
@@ -374,6 +393,7 @@ def _framework_coverage(
                 covered=sorted(r for r in requirement_ids if r in hit),
                 partial=sorted(r for r in requirement_ids if r in part),
                 uncovered=sorted(r for r in requirement_ids if r not in hit and r not in part),
+                per_level=framework in per_level,
             )
         )
     return coverage
@@ -442,6 +462,11 @@ def format_report(report: CoverageReport, *, show_all: bool = False) -> str:
             f"  {len(framework.covered)} of {framework.total} requirements map to an "
             "owned NIST control"
         )
+        if framework.per_level:
+            lines.append(
+                "  counted per level requirement (all levels in the catalog), the unit "
+                "HITRUST publishes its mappings in"
+            )
         if framework.partial:
             lines.append(
                 f"  {len(framework.partial)} more are reached only in part — no owned control "

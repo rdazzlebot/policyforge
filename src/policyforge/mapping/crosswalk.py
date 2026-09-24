@@ -63,9 +63,26 @@ def normalize_framework(name: str) -> str:
     """
     lowered = name.strip().lower()
     for needle, framework in FRAMEWORK_ALIASES:
-        if needle in lowered:
+        if _needle_found(needle, lowered):
             return framework
     return lowered.split()[0] if lowered.split() else ""
+
+
+def _needle_found(needle: str, lowered: str) -> bool:
+    """Whether `needle` occurs in `lowered` -- and, for a needle ending in a
+    digit, occurs with NO digit after it.
+
+    A document number is a prefix of its successors: as a plain substring,
+    `ai 100-1` matched NIST AI 100-10 through 100-19 and filed them under the
+    RMF, and `ai 100-2` took 100-20 onward (80 and 1d, on #296). `(?!\\d)`,
+    not a word boundary, because the Taxonomy's 2025 edition is written
+    `100-2e2025` -- a letter follows, and it must stay mapped. The rule holds
+    for every digit-ending needle, not only the two that exposed it:
+    `800-53` must not take a hypothetical 800-530 either.
+    """
+    if not needle[-1].isdigit():
+        return needle in lowered
+    return re.search(re.escape(needle) + r"(?!\d)", lowered) is not None
 
 
 def _is_nist(framework: str) -> bool:

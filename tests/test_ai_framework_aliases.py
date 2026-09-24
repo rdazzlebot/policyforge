@@ -215,3 +215,36 @@ def test_onc_siblings_share_the_bare_key(written: str):
     this test is the one that should change -- deliberately, with the names
     read -- and the table's comment says so."""
     assert normalize_framework(written) == "onc"
+
+
+@pytest.mark.parametrize(
+    ("written", "must_not"),
+    [
+        ("NIST AI 100-10", "nist-ai-rmf"),
+        ("NIST AI 100-12", "nist-ai-rmf"),
+        ("NIST AI 100-19", "nist-ai-rmf"),
+        ("NIST AI 100-20", "nist-ai-100-2"),
+        ("NIST SP 800-530", "nist-800-53"),
+    ],
+)
+def test_a_document_number_does_not_claim_its_successors(written: str, must_not: str):
+    """**80 and 1d, on #296.** A document number is a prefix of its
+    successors, and a substring needle matched them all: AI 100-10 to
+    100-19 keyed to the RMF, 100-20 onward to the Taxonomy. A digit-ending
+    needle now matches only where no digit follows."""
+    assert normalize_framework(written) != must_not
+
+
+@pytest.mark.parametrize(
+    ("written", "key"),
+    [
+        ("NIST AI 100-2 E2023", "nist-ai-100-2"),
+        ("NIST AI 100-2e2025", "nist-ai-100-2"),
+        ("NIST SP 800-53r5", "nist-800-53"),
+        ("NIST SP 800-53A", "nist-800-53"),
+    ],
+)
+def test_a_document_number_followed_by_a_letter_still_matches(written: str, key: str):
+    """The passing twins. `100-2e2025` is the Taxonomy's 2025 edition, so the
+    rule is "no DIGIT follows", not a word boundary -- a letter may."""
+    assert normalize_framework(written) == key

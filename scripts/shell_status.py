@@ -142,27 +142,34 @@ _XARGS_RUNS_ON_EMPTY = re.compile(r"\|\s*xargs\b(?![^|]*(?:-r\b|--no-run-if-empt
 
 _CONSUMERS = "|".join(STREAM_CONSUMERS)
 
+#: A pipe, including `|&`, which pipes stderr too and discards the left
+#: side's status in the same way (ba on #328).
+_PIPE = r"\|&?\s*"
+
 #: A stream consumer whose status is then used to gate something else.
 #: `cmd | tail -4 && push` is the shape; the `&&` is what turns a discarded
 #: status into a wrong decision.
 #: The candidate shape only. Whether the `&&` really gates THIS pipe is
 #: decided by `_swallowed_at`, which reads quoting and `$( )` nesting.
-_SWALLOWED = re.compile(rf"\|\s*(?:{_CONSUMERS})\b[^|]*&&")
-_CONSUMER_PIPE = re.compile(rf"(?<!\|)\|\s*(?:{_CONSUMERS})\b")
+_SWALLOWED = re.compile(rf"{_PIPE}(?:{_CONSUMERS})\b[^|]*&&")
+_CONSUMER_PIPE = re.compile(rf"(?<!\|){_PIPE}(?:{_CONSUMERS})\b")
 
 
 def _nesting(line: str) -> list[tuple[str, int]]:
     """Per character: the quote it sits in ('' / "'" / '"') and its `$( )`
     depth. **A small scanner, not a shell parser, and its limits are
     stated:** each `$( )` opens a fresh quoting context, as the shell does,
-    so an awk `'... && ...'` inside `"$( ... )"` is still awk's.
-    Backslash escapes are honoured outside single quotes. Backticks,
-    `${ }` and arithmetic `$(( ))` are not tracked."""
+    so an awk `'... && ...'` inside `"$( ... )"` is still awk's. Plain
+    parentheses are counted per context, so a subshell's `)` does not close
+    the `$(` around it (policyforge-ba on #328: `$( (x | tail) && y )`).
+    Backslash escapes are honoured outside single quotes. Backticks and
+    `${ }` are not tracked."""
     states: list[tuple[str, int]] = []
-    quotes = [""]  # one quoting context per open `$(`
+    contexts = [["", 0]]  # per open `$(`: [quote, open plain parens]
     i = 0
     while i < len(line):
-        ch, quote, depth = line[i], quotes[-1], len(quotes) - 1
+        ch, context, depth = line[i], contexts[-1], len(contexts) - 1
+        quote = context[0]
         states.append((quote, depth))
         if ch == "\\" and quote != "'" and i + 1 < len(line):
             states.append((quote, depth))
@@ -170,20 +177,39 @@ def _nesting(line: str) -> list[tuple[str, int]]:
             continue
         if quote == "'":
             if ch == "'":
-                quotes[-1] = ""
+                context[0] = ""
         elif line.startswith("$(", i):
-            quotes.append("")
+            contexts.append(["", 0])
             states.append((quote, depth))
             i += 2
             continue
-        elif ch == ")" and depth and not quote:
-            quotes.pop()
+        elif ch == "(" and not quote:
+            context[1] += 1
+        elif ch == ")" and not quote and context[1]:
+            context[1] -= 1
+        elif ch == ")" and not quote and depth:
+            contexts.pop()
         elif ch in "'\"" and not quote:
-            quotes[-1] = ch
+            context[0] = ch
         elif ch == quote:
-            quotes[-1] = ""
+            context[0] = ""
         i += 1
     return states
+
+
+#: A statement that is only assignments up to a `$(`: `n=$(`, `out="$(`,
+#: `a=1 b=$(`. Its exit status IS the substitution's, so an `&&` after it
+#: gates the pipe inside (ba on #328: `n=$(pytest | tail -1) && git push`).
+#: `local`/`export` are NOT this: their own status masks the substitution's.
+_ASSIGNMENT_ONLY = re.compile(r"\s*(?:[A-Za-z_]\w*=[^\s;&|]*\s+)*[A-Za-z_]\w*=[\"']?")
+
+
+def _opener_of(line: str, states: list[tuple[str, int]], start: int, depth: int) -> int:
+    """Where the `$(` enclosing `start` at `depth` begins."""
+    k = start
+    while k >= 0 and states[k][1] >= depth:
+        k -= 1
+    return k - 1 if line[max(k - 1, 0) : k + 1] == "$(" else k
 
 
 def _swallowed_at(line: str) -> int | None:
@@ -204,24 +230,40 @@ def _swallowed_at(line: str) -> int | None:
         return None
     states = _nesting(line)
     for match in _CONSUMER_PIPE.finditer(line):
-        level = states[match.start()]
+        quote, depth = states[match.start()]
+        #: After leaving a substitution whose statement is assignment-only,
+        #: the level is its depth with any quoting, and only a closing quote
+        #: or space may stand between it and the `&&`.
+        after_assignment = False
         for i in range(match.end(), len(line)):
             here = states[i]
-            if here[1] < level[1]:
-                break
-            if here != level:
+            if here[1] < depth:
+                opener = _opener_of(line, states, match.start(), depth)
+                statement = re.split(r";|&&|\|\||\||\(", line[:opener])[-1]
+                if not _ASSIGNMENT_ONLY.fullmatch(statement):
+                    break
+                quote, depth, after_assignment = None, here[1], True
+            if here[1] != depth or (quote is not None and here[0] != quote):
                 continue
-            if line.startswith("&&", i):
+            ch = line[i]
+            if line.startswith("&&", i) and (quote is not None or here[0] == ""):
                 return match.start()
-            if line[i] in "|;":
+            if ch in "|;" and (quote is not None or here[0] == ""):
+                break
+            if after_assignment and not (ch.isspace() or ch in "\"')&"):
                 break
     return None
 
 
 #: Any pipe into a stream consumer, used for the pipefail requirement.
-_PIPES_TO_CONSUMER = re.compile(rf"\|\s*(?:{_CONSUMERS})\b")
+_PIPES_TO_CONSUMER = re.compile(rf"{_PIPE}(?:{_CONSUMERS})\b")
 
-_PIPEFAIL = re.compile(r"set\s+(?:-o\s+pipefail|-[a-zA-Z]*o[a-zA-Z]*\s+pipefail|-euo\s+pipefail)")
+#: Any spelling that turns pipefail on, including after other options:
+#: `set -o pipefail`, `set -euo pipefail`, `set -e -o pipefail`, and
+#: `set -o errexit -o pipefail` (the last refused before #328, per ba).
+_PIPEFAIL = re.compile(
+    r"set\s+(?:-[a-zA-Z]+\s+|-o\s+\w+\s+)*(?:-o\s+pipefail|-[a-zA-Z]*o[a-zA-Z]*\s+pipefail)"
+)
 _PIPEFAIL_OFF = re.compile(r"set\s+\+o\s+pipefail")
 
 #: `$?` read anywhere on a line.
@@ -229,7 +271,7 @@ _READS_STATUS = re.compile(r"\$\?")
 
 #: A pipe into a stream consumer, then `;`, then a statement reading `$?`:
 #: `x | tail ; echo "exit: $?"`. The `$?` is the consumer's.
-_STATUS_AFTER_PIPE = re.compile(rf"\|\s*(?:{_CONSUMERS})\b[^;&|]*;[^;&|]*\$\?")
+_STATUS_AFTER_PIPE = re.compile(rf"{_PIPE}(?:{_CONSUMERS})\b[^;&|]*;[^;&|]*\$\?")
 
 #: A heredoc opener, `<<EOF`, `<<-'EOF'`, `<< "EOF"`, but not a here-string
 #: `<<<`. Its body is data, unless the command it feeds is a shell, and then
@@ -247,7 +289,7 @@ _SHELL_READS_HEREDOC = re.compile(r"(?:^|[\s;&|(])(?:bash|sh|zsh|ksh|dash)\b[^;&
 
 #: A line whose LAST statement is a pipe into a stream consumer, so a `$?`
 #: at the start of the next line reads the consumer's status.
-_ENDS_IN_CONSUMER_PIPE = re.compile(rf"\|\s*(?:{_CONSUMERS})\b[^;&|]*$")
+_ENDS_IN_CONSUMER_PIPE = re.compile(rf"{_PIPE}(?:{_CONSUMERS})\b[^;&|]*$")
 
 #: Exemptions, pinned by the line's own text. A reason is required: an
 #: exemption with no reason is indistinguishable from an oversight, and the

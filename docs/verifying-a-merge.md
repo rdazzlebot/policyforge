@@ -50,7 +50,7 @@ first three. Set after the pipe, in another block, or turned off again with
 `set +o pipefail`, it does not.
 
 **Measured before shipping (#213):** replaying one session's 2,742 typed
-commands found 56 findings. 24 were consequential: a push gated on `tail`, a
+commands found 57 findings. 25 were consequential: a push gated on `tail`, a
 stale container run after a failed build, and five `$?` read from a stream
 consumer. 32 gated only another read. That same pass found and removed
 three false alarms: heredoc bodies quoting the pattern, an `&&` in a later
@@ -67,7 +67,12 @@ statement, and an `&&` inside awk's own quoted program.
 - a multi-line quoted string, such as `python -c "…"` over several lines,
   which is read line by line as if it were shell;
 - a workflow `run: *alias`, which is counted but linted as the literal
-  alias.
+  alias;
+- `cmd | tail || handle`. The `||` runs on `tail`'s status too, but only
+  `&&` is refused today;
+- the pattern inside a `printf` or `echo` argument that nothing executes.
+  It is refused as if it ran, because a single-line quoted string is
+  scanned on purpose (`bash -c '…'` does run it).
 
 **The typed surface is guarded only if a hook calls `--hook`.** Installing
 one is a change to the user's own Claude Code settings. The repository does

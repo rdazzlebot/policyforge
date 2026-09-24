@@ -869,3 +869,48 @@ def test_a_substitution_opens_its_own_quoting():
     assert shell_status.check_command(awk) == []
     inner = 'echo "$(python scripts/check.py | tail -1 && git push)"'
     assert "swallowed-status" in _rules(shell_status.check_command(inner))
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "n=$(python -m pytest -q | tail -1) && git push",
+        'out="$(docker build -q . | tail -5)" && docker run --rm app',
+        'echo "$( (python -m pytest -q | tail -1) && git push )"',
+        "(python -m pytest -q | tail -1) && git push",
+        "python -m pytest -q |& tail -1 && git push",
+    ],
+)
+def test_the_regressions_found_on_328_are_refused(command):
+    """policyforge-ba on #328: each was refused on the train by the plain
+    regex and ALLOWED by the first version of the scanner. An assignment-only
+    statement takes its substitution's status. A subshell's `)` must not
+    close the `$(` around it. `|&` is a pipe."""
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "local n=$(python -m pytest -q | tail -1) && git push",
+        "n=$(python -m pytest -q | tail -1) env-cmd && git push",
+    ],
+)
+def test_a_substitution_whose_status_is_masked_is_not_a_finding(command):
+    """The other side of the assignment rule. `local` returns its own
+    status, and a command after the assignment runs with it as an
+    environment variable, so neither `&&` gates the pipe."""
+    assert shell_status.check_command(command) == []
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    ["set -o errexit -o pipefail", "set -e -o pipefail", "set -euo pipefail", "set -o pipefail"],
+)
+def test_every_spelling_of_pipefail_clears_the_finding(spelling):
+    """`set -o errexit -o pipefail` was not recognised (ba on #328), which is
+    a false alarm on the lint's own recommended fix."""
+    assert (
+        shell_status.check_command(f"{spelling}; python scripts/check.py | tail -4 && git push")
+        == []
+    )

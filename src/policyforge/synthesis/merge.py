@@ -277,7 +277,10 @@ def build_synthesis_topic(
         # Expanding through the crosswalk below is a CROSSWALK-anchor
         # question -- what a requirement is mapped ONTO -- and stays keyed
         # on `NIST_ANCHOR` by construction. At most one anchorable catalog
-        # can hold any given id, so the loop cannot double-count.
+        # holds any given id, so the loop cannot double-count -- true of the
+        # catalogs that anchor today, and held rather than assumed:
+        # `test_anchor_decisions.py` fails if a catalog is made anchorable
+        # that shares an id with another (#183, folded into #175).
         #
         # policyforge-80 found this: the A/B split that separated the two
         # constants was assigned per FILE, and this file does both.

@@ -261,6 +261,64 @@ NIST_ANCHOR = "nist-800-53"
 #: exactly that reason.
 TOPIC_ANCHORS: frozenset[str] = frozenset({NIST_ANCHOR, "nist-ai-rmf"})
 
+#: The value `ANCHOR_DECISIONS` gives a catalog that topics may anchor.
+ANCHORS = "anchors"
+
+#: **Every catalog's answer to "may a topic anchor it?", written down** (#175).
+#: Keyed by catalog DIRECTORY -- the unit someone adds -- bundled and
+#: bring-your-own alike. The value is `ANCHORS`, or the reason it is not.
+#:
+#: Adding a catalog forced four declarations (bundled or BYOC, licence, alias,
+#: README row) and never this one, which is the one that decides whether its
+#: requirements enter `/coverage`'s denominator and whether synthesis can
+#: retrieve them. Wrong either way, it fails silently: omitted, and the catalog
+#: is inert (#171); included, and every user's coverage figure moves for a
+#: framework they never adopted (#169). `test_anchor_decisions.py` derives the
+#: catalog population from `data/frameworks/` and the scaffold lists and
+#: refuses a catalog with no entry here, an entry for no catalog, and any
+#: disagreement with `TOPIC_ANCHORS`.
+#:
+#: The reasons record the state as of 2026-09-24, drawn from the rulings on
+#: each catalog's issue; changing one is a product decision (80), not an edit.
+ANCHOR_DECISIONS: dict[str, str] = {
+    "nist-800-53-r5": ANCHORS,
+    "nist-ai-rmf": ANCHORS,
+    "arc-ampe": "reached through its crosswalk to 800-53, not anchored beside it",
+    "fedramp": "reached through its crosswalk to 800-53, not anchored beside it",
+    "hipaa-security-rule": "reached through its crosswalk to 800-53, not anchored beside it",
+    "nist-800-171-r3": (
+        "its 800-53 mapping is published upstream and not yet read (#259); a topic "
+        "anchors the 800-53 controls it maps to"
+    ),
+    "cfr-171-information-blocking": (
+        "conditions of an exception, not controls to implement: refused by design "
+        "(NOT_CROSSWALK_ANCHORABLE)"
+    ),
+    "cfr-170-315-onc-certification": (
+        "re-landed by #179 as a catalog to cite: no ruling makes its certification "
+        "criteria anchorable"
+    ),
+    "cfr-42-part-2-sud-records": (
+        "no published mapping was found (#264); reached only through a crosswalk an "
+        "organisation seeds"
+    ),
+    "nist-ai-rmf-playbook": (
+        "not yet: whether AI topics anchor Playbook actions is #301's decision"
+    ),
+    "govramp": (
+        "bring-your-own: no ids ship, so there is nothing to anchor until a user "
+        "supplies the catalog"
+    ),
+    "hitrust-ai": (
+        "bring-your-own: no ids ship, so there is nothing to anchor until a user "
+        "supplies the catalog"
+    ),
+    "hitrust-csf": (
+        "bring-your-own: no ids ship, so there is nothing to anchor until a user "
+        "supplies the catalog"
+    ),
+}
+
 
 def anchors_a_topic(framework: str) -> bool:
     """Whether a topic registry may anchor identifiers from `framework`.

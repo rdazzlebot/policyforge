@@ -340,6 +340,16 @@ def records_from_pairs(rows: list[list[str]], losses: list[str] | None = None) -
     The parse is unchanged; what changed is that neither is silent. Each is
     described into `losses` when given, and `etl-hitrust` prints them as
     warnings, so an export that hits either shape says so on its first run.
+
+    **Page furniture is one cell too, if SSRS puts it in a table** -- a
+    report title, "Page 1 of 212", a print date. Whether it does is as
+    unmeasured as the two shapes above (9b and 1d, on #273). Dropping rows
+    that look like furniture would be a guess that fails silently, so none
+    is dropped: `_looks_like_furniture` only CLASSIFIES, the warning keeps
+    the whole count and says how it splits, and the excerpts are drawn from
+    the unclassified rows first -- so a real continuation is not hidden
+    behind a hundred page footers. A misclassified continuation is still
+    counted; it is only shown later.
     """
     context = Record()
     records: list[Record] = []
@@ -412,14 +422,45 @@ def _excerpt(text: str, width: int = 70) -> str:
     return text if len(text) <= width else text[: width - 3] + "..."
 
 
+#: Single-cell text that is probably page furniture: a page number, or a
+#: "printed on <date>" line. Deliberately narrow -- this only decides the
+#: ORDER excerpts are shown in, never whether a row counts -- and it needs a
+#: real date, because "run ... every 30 days" is how a requirement reads.
+_FURNITURE_RE = re.compile(
+    r"^(?:page\s+\d+(?:\s+of\s+\d+)?"
+    r"|.*\b(?:printed|generated|run|created)\s+(?:on|at)\s+\S*\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}.*)$",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_furniture(text: str, occurrences: int) -> bool:
+    """A page number or print line, or text repeated word for word on more
+    than one row -- a report title on every page. A continuation is part of
+    one requirement's text, so it has no reason to recur."""
+    return occurrences > 1 or bool(_FURNITURE_RE.match(" ".join(text.split())))
+
+
 def _describe_losses(skipped_text: list[str], discarded: list[tuple[str, str]]) -> list[str]:
-    """Warnings for what `records_from_pairs` could not place, first three shown."""
+    """Warnings for what `records_from_pairs` could not place, first three shown.
+
+    Skipped rows are classified, never filtered: the count is the total, and
+    the split says how many look like page furniture. Excerpts come from the
+    rest first, so the rows most likely to be lost requirement text are the
+    ones a reader sees."""
     notes = []
     if skipped_text:
+        seen: dict[str, int] = {}
+        for text in skipped_text:
+            seen[text] = seen.get(text, 0) + 1
+        furniture = [s for s in skipped_text if _looks_like_furniture(s, seen[s])]
+        other = [s for s in skipped_text if not _looks_like_furniture(s, seen[s])]
+        shown = (other + furniture)[:3]
         notes.append(
-            f"{len(skipped_text)} row(s) of text had no label and were skipped. If "
-            "any continues a requirement across a page break, that text is NOT "
-            "in the catalog: " + "; ".join(repr(_excerpt(s)) for s in skipped_text[:3])
+            f"{len(skipped_text)} row(s) of text had no label and were skipped "
+            f"({len(other)} unclassified, {len(furniture)} look like page numbers, "
+            "print dates or repeated titles). If any continues a requirement across "
+            "a page break, that text is NOT in the catalog: "
+            + "; ".join(repr(_excerpt(s)) for s in shown)
         )
     if discarded:
         notes.append(

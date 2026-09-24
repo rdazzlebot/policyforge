@@ -761,3 +761,72 @@ def test_etl_hitrust_prints_the_loss_as_a_warning(tmp_path):
     assert result.exit_code == 0, result.output
     warn = [ln for ln in result.output.splitlines() if ln.strip().startswith("warn")]
     assert any("1 row(s) of text had no label" in ln for ln in warn), result.output
+
+
+def _mhtml(markup: str) -> str:
+    import base64
+
+    encoded = base64.b64encode(markup.encode("utf-8")).decode("ascii")
+    return (
+        "MIME-Version: 1.0\n"
+        'Content-Type: multipart/related; boundary="--=_Part"\n\n'
+        "----=_Part\n"
+        'Content-Type: text/html; charset="utf-8"\n'
+        "Content-Transfer-Encoding: base64\n\n"
+        f"{encoded}\n"
+        "----=_Part--\n"
+    )
+
+
+def test_etl_hitrust_prints_the_loss_from_an_mhtml_export(tmp_path):
+    """MHTML is how MyCSF usually hands the report over, and it reaches
+    `records_from_markup` by its own branch of `read_records`. Dropping the
+    collector there passed every other test (9b, on #273)."""
+    from click.testing import CliRunner
+
+    from policyforge import cli as cli_mod
+
+    export_file = tmp_path / "CSFLibraryReport_v11.7.mhtml"
+    export_file.write_text(
+        _mhtml(_RENDERED.replace(_L2, _L2 + f"<tr><td>{_CONT}</td></tr>")), encoding="utf-8"
+    )
+    result = CliRunner().invoke(cli_mod.cli, ["etl-hitrust", "--export", str(export_file)])
+
+    assert result.exit_code == 0, result.output
+    warn = [ln for ln in result.output.splitlines() if ln.strip().startswith("warn")]
+    assert any("1 row(s) of text had no label" in ln for ln in warn), result.output
+
+
+def _with_furniture(markup: str, pages: int) -> str:
+    """Page furniture in tables of its own around the report, as 1d and 9b
+    built it on #273: a title and a footer on every page, one print line."""
+    rows = []
+    for page in range(1, pages + 1):
+        rows.append("<table><tr><td>HITRUST CSF Library Report</td></tr></table>")
+        rows.append(f"<table><tr><td>Page {page} of {pages}</td></tr></table>")
+    rows.append("<table><tr><td>Printed on 2026-09-24 08:00</td></tr></table>")
+    return markup.replace("<html><body>", "<html><body>" + "".join(rows), 1)
+
+
+def test_a_real_continuation_is_shown_ahead_of_page_furniture():
+    """**1d's case.** Furniture first, one real continuation after it. The
+    count is the WHOLE total -- furniture is classified, never dropped --
+    and the excerpt shows the continuation, not three page footers."""
+    markup = _with_furniture(_RENDERED.replace(_L2, _L2 + f"<tr><td>{_CONT}</td></tr>"), pages=5)
+    assert markup.count("<td>Page ") == 5
+    _, losses = _losses(markup)
+
+    assert len(losses) == 1, losses
+    assert losses[0].startswith("12 row(s) of text had no label"), losses[0]
+    assert "(1 unclassified, 11 look like page numbers" in losses[0], losses[0]
+    assert _CONT[:40] in losses[0], f"the real continuation is hidden: {losses[0]!r}"
+
+
+def test_page_furniture_alone_is_still_reported():
+    """The other arm: classifying is not filtering. A report whose only
+    skipped rows look like furniture still says so, with the count."""
+    _, losses = _losses(_with_furniture(_RENDERED, pages=2))
+
+    assert len(losses) == 1, losses
+    assert losses[0].startswith("5 row(s) of text had no label"), losses[0]
+    assert "(0 unclassified, 5 look like page numbers" in losses[0], losses[0]

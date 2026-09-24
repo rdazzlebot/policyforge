@@ -98,7 +98,11 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-REPO = "rdazzlebot/policyforge"
+#: The canonical owner since the transfer (#244). The old path still works
+#: through GitHub's redirect, which is why nothing failed while it read
+#: `rdazzlebot` -- and why it would keep "working" if anything were ever
+#: created at the old name. Overridable with `--repo`.
+REPO = "rdazzleman/policyforge"
 
 #: The convention's line. Anchored to the END of the comment because a quoted
 #: line is otherwise indistinguishable from a given one -- **discussing a

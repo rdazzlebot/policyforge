@@ -121,14 +121,34 @@ def main() -> int:
         for case in (cases.get(suite, [])[: args.limit] if args.limit else cases.get(suite, []))
     ]
 
+    # Per suite, not over the union (#223). `if not planned` alone is
+    # satisfied by any one suite's cases, so a requested suite contributing
+    # none dropped out of the run and the report without a word, and the
+    # totals stayed true about what did run. Derived from `planned` rather
+    # than from `cases`, so whatever emptied a suite — the file, `--limit` —
+    # is what gets counted.
+    empty = [suite for suite in wanted if not any(s == suite for s, _ in planned)]
+    if args.suite and empty:
+        # Asked for by name: a run without it is not the run that was asked
+        # for, so refuse before anything is spent rather than report around
+        # the hole.
+        print(f"No cases for requested suite(s), so nothing was run: {', '.join(empty)}")
+        return 1
     if not planned:
         print("No cases selected.")
         return 1
+    # Not asked for by name, so a `--cases` file covering some suites is a
+    # legitimate run of those — but the rest are named here and in the
+    # report, so the run cannot be read as covering them. Whether the
+    # SHIPPED cases fill every suite is a test, not a runtime judgement.
+    not_run = f"NOT RUN, no cases: {', '.join(empty)}" if empty else ""
 
     if args.dry_run:
         print(f"{len(planned)} case(s) x {args.repeat} run(s) = {len(planned) * args.repeat} calls")
         for suite, case in planned:
             print(f"  {suite:11} {case.get('name') or case.get('question')}")
+        if not_run:
+            print(not_run)
         return 0
 
     # One construction path, whether or not --model was given: the options
@@ -177,6 +197,8 @@ def main() -> int:
         set_entailer(judge)
 
     print(f"Running {len(planned)} case(s) x {args.repeat} against {grading}...")
+    if not_run:
+        print(not_run)
     if judge is not None:
         print(f"Entailment judged by {args.entail_model}, one call per cited sentence.")
     print()
@@ -192,7 +214,7 @@ def main() -> int:
         )
         print(mark, end="", flush=True)
     print("\n")
-    print(format_report(results, repeat=args.repeat))
+    print(format_report(results, repeat=args.repeat, requested=wanted))
     print(f"\n{provider.summary()}")
     if judge is not None:
         print(f"entailment: {judge_meter.summary()}")

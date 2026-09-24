@@ -29,6 +29,7 @@ and a suite people cannot run offline is a suite people stop running.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -1420,10 +1421,28 @@ def _entailment_report(results: list[CaseResult]) -> list[str]:
     return lines
 
 
-def format_report(results: list[CaseResult], *, repeat: int) -> str:
+def format_report(results: list[CaseResult], *, repeat: int, requested: Sequence[str]) -> str:
+    """The graded run, one block per suite, as pasted into an epoch.
+
+    **`requested` is required because results alone cannot show an
+    absence** (#223). A suite with no results used to produce no line, so a
+    report of two suites out of three read like a complete run of two, and
+    this report is what becomes an epoch in `MEASUREMENTS.md`. Every
+    requested suite now gets a line, and one that contributed nothing says
+    so. It has no default, so a caller that forgets it fails rather than
+    quietly getting the old behaviour back.
+    """
+    unknown = sorted(set(requested) - set(SUITES))
+    if unknown:
+        raise ValueError(f"not a suite: {', '.join(unknown)}")
+    not_run = [s for s in SUITES if s in requested and not any(r.suite == s for r in results)]
+
     lines = []
     for suite in SUITES:
         rows = [r for r in results if r.suite == suite]
+        if suite in not_run:
+            lines.append(f"{suite}: NOT RUN, 0 cases, so this report says nothing about it")
+            continue
         if not rows:
             continue
         passes = sum(r.passes for r in rows)
@@ -1452,7 +1471,16 @@ def format_report(results: list[CaseResult], *, repeat: int) -> str:
     errored = [r for r in results if r.errors]
     flaky = [r for r in results if r.flaky and not r.errors]
     failed = [r for r in results if r.passes == 0 and not r.errors]
-    lines += ["", f"{len(results)} case(s) x {repeat} run(s)"]
+    # The suite list is part of the measurement: eleven of twelve suites is a
+    # different epoch from twelve, even when every figure in it is right.
+    asked = [s for s in SUITES if s in requested]
+    lines += [
+        "",
+        f"{len(results)} case(s) x {repeat} run(s), "
+        f"{len(asked) - len(not_run)} of {len(asked)} requested suite(s) measured",
+    ]
+    if not_run:
+        lines.append(f"  {len(not_run)} requested suite(s) NOT RUN: {', '.join(not_run)}")
     if errored:
         lines += [
             f"  {len(errored)} could not run — the API refused the request, so "
@@ -1467,7 +1495,11 @@ def format_report(results: list[CaseResult], *, repeat: int) -> str:
             "cannot tell from right always"
         )
     if not failed and not flaky:
-        lines.append("  every case passed every run")
+        # "every case" with a suite missing is true of the cases and false of
+        # the run, so it says which.
+        lines.append(
+            "  every case that ran passed every run" if not_run else "  every case passed every run"
+        )
 
     if cut_off_runs:
         # Said even when every case passed: a reply that stopped at its

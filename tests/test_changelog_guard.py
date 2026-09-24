@@ -154,3 +154,35 @@ def test_the_size_of_the_examined_set_is_reported() -> None:
     """0 of 0 must not read as 0 of 14."""
     _, message = guard.decide(["tests/a.py", "tests/b.py"], body="")
     assert "2 file(s) examined" in message
+
+
+def test_a_job_that_reads_the_pr_body_is_triggered_when_the_body_changes():
+    """**#250.** The changelog job reads its exemption from
+    `github.event.pull_request.body` -- the event PAYLOAD. With no `edited`
+    type, editing the body fires nothing, and re-running the failed job
+    replays the original payload and fails again, reading exactly like the
+    exemption being rejected. Found by policyforge-23 (handle b5) on #234.
+
+    Derived rather than hard-wired to the changelog job: any workflow whose
+    text reads the PR body must be triggered on `edited`, so the next job
+    that starts reading it is covered by the test that exists.
+    """
+    import yaml
+
+    workflows = Path(__file__).resolve().parent.parent / ".github" / "workflows"
+    readers = [
+        wf
+        for wf in sorted(workflows.glob("*.yml"))
+        if "github.event.pull_request.body" in wf.read_text(encoding="utf-8")
+    ]
+    assert readers, "no workflow reads the PR body; the derivation is broken"
+    for wf in readers:
+        spec = yaml.safe_load(wf.read_text(encoding="utf-8"))
+        # PyYAML reads a bare `on:` key as the boolean True (YAML 1.1).
+        on = spec.get("on", spec.get(True)) or {}
+        pr = on.get("pull_request") or {}
+        types = pr.get("types") if isinstance(pr, dict) else None
+        assert types and "edited" in types, (
+            f"{wf.name} reads the PR body but is not triggered on `edited`, so an "
+            f"exemption added after the last push is invisible to every re-run"
+        )

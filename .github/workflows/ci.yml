@@ -3,6 +3,21 @@ name: ci
 on:
   push:
   pull_request:
+    # `edited` so that changing the pull request BODY re-runs the changelog
+    # job, which reads its exemption from the event payload
+    # (`github.event.pull_request.body`). Without it the default is
+    # opened/synchronize/reopened, and editing the body fires nothing -- worse,
+    # re-running the failed job REPLAYS THE ORIGINAL PAYLOAD, so it fails
+    # again exactly as though the exemption had been rejected, and the likely
+    # "fix" is a changelog fragment for a change with no user-visible effect.
+    # Found and measured by policyforge-23 (handle b5) on #234 (#250).
+    #
+    # `edited` also fires on a title change and on a BASE-BRANCH change. The
+    # other jobs are deliberately NOT gated off on edits: a base change is a
+    # real reason to re-test, and a job skipped on the edit run would post
+    # `skipped` for the same head and mask its earlier green in the checks
+    # view. The cost is a full re-run on a title typo, on a public repo.
+    types: [opened, synchronize, reopened, edited]
 
 # Least privilege, as content.yml and codeql.yml already declare. Without a
 # block this job ran with whatever default the repository grants. Nothing

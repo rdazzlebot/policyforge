@@ -54,7 +54,14 @@ def test_both_names_are_citable_so_the_cfr_trap_is_not_repeated():
 
 @pytest.mark.parametrize(
     "identifier",
-    ["hitrust-csf", "hitrust-ai", "nist-ai-rmf", "nist-800-53", "cfr-171-information-blocking"],
+    [
+        "hitrust-csf",
+        "hitrust-ai",
+        "nist-ai-rmf",
+        "nist-ai-100-2",
+        "nist-800-53",
+        "cfr-171-information-blocking",
+    ],
 )
 def test_a_needle_does_not_swallow_a_catalog_identifier(identifier: str):
     """A `hitrust` needle was removed once for exactly this: it matched
@@ -128,3 +135,62 @@ def test_no_bundled_catalog_changed_key():
         "catalogs silently."
     )
     assert len(set(seen.values())) == len(seen), "two bundled catalogs now share a key"
+
+
+# ---- #176: siblings of a pinned name ----------------------------------------
+#
+# `normalize_framework` falls back to the first word, so every sibling of a
+# pinned name fell through: `NIST AI 100-1` -- the RMF's own document number
+# -- keyed to bare `nist` while both of its prose spellings were pinned. Pin
+# what has been READ; record what is deliberately not pinned.
+
+
+@pytest.mark.parametrize("written", ["NIST AI 100-1", "AI 100-1"])
+def test_the_rmf_document_number_keys_to_the_rmf(written: str):
+    assert normalize_framework(written) == "nist-ai-rmf"
+
+
+@pytest.mark.parametrize(
+    "written", ["NIST AI 100-2", "NIST AI 100-2 E2023", "NIST AI Taxonomy", "AI Taxonomy"]
+)
+def test_every_nist_spelling_of_the_ai_taxonomy_keys_to_one_catalog(written: str):
+    """Both fell to an orphan before #176 -- `nist`, and for the unprefixed
+    spelling a second orphan, `ai` -- and neither is the RMF's key."""
+    key = normalize_framework(written)
+    assert key == "nist-ai-100-2"
+    assert key != normalize_framework("NIST AI RMF")
+
+
+def test_the_taxonomy_title_words_are_deliberately_not_pinned():
+    """**A decision, recorded where the next person will meet it.** Other
+    publishers use "adversarial machine learning", and a needle would file
+    their catalog under NIST's key. If this starts returning
+    `nist-ai-100-2`, someone pinned a phrase nobody has read in a catalog
+    name -- the table's comment says why not."""
+    assert normalize_framework("Adversarial Machine Learning") != "nist-ai-100-2"
+
+
+def test_the_taxonomy_is_citable():
+    """Capital-initial, like the other AI names, so the digit-initial trap
+    that made two CFR catalogs uncitable does not recur here either."""
+    for tag in ("[NIST AI 100-2 NISTAML.01]", "[NIST AI Taxonomy NISTAML.01]"):
+        assert source_tags(tag) == [tag], f"{tag} is not a legal source tag"
+
+
+@pytest.mark.parametrize(
+    "written",
+    [
+        "ONC Certification Criteria",
+        "ONC Health IT Certification Program",
+        "ONC Certification Program Requirements",
+        "ONC Disincentives for Health IT Developers",
+    ],
+)
+def test_onc_siblings_share_the_bare_key(written: str):
+    """**Pinned behaviour, not an endorsement** (#176). Every ONC name keys
+    to bare `onc`: harmless with one ONC catalog, a collision the day a
+    second lands. Not pre-pinned, because their declared names are a guess
+    until someone reads the regulation. When a second ONC catalog arrives
+    this test is the one that should change -- deliberately, with the names
+    read -- and the table's comment says so."""
+    assert normalize_framework(written) == "onc"

@@ -133,6 +133,19 @@ FRAMEWORK_ALIASES: tuple[tuple[str, str], ...] = (
     # neither spelling contains the other.
     ("ai rmf", "nist-ai-rmf"),
     ("ai risk management", "nist-ai-rmf"),
+    # The RMF's document number, which NIST prints on its cover and CPRT
+    # uses as its id (`AI_100_1`). Without it `NIST AI 100-1` fell to the
+    # bare `nist` key while both prose spellings were pinned (#176).
+    ("ai 100-1", "nist-ai-rmf"),
+    # Its sibling, AI 100-2, the Adversarial ML Taxonomy -- published beside
+    # the RMF, and declared on the adjacent line of CPRT's bundle
+    # (`AITAXONOMY`). Both NIST spellings are pinned; each fell to `nist`,
+    # and `AI Taxonomy` without the prefix to a second orphan, `ai` (#176).
+    # **Not pinned: the title words "adversarial machine learning".** Other
+    # publishers use that phrase, and a needle would file their catalog under
+    # NIST's key -- a wrong pin reads as decided.
+    ("ai 100-2", "nist-ai-100-2"),
+    ("ai taxonomy", "nist-ai-100-2"),
     ("hitrust ai", "hitrust-ai"),
     ("800-172", "nist-800-172"),
     ("800-137", "nist-800-137"),
@@ -148,6 +161,17 @@ FRAMEWORK_ALIASES: tuple[tuple[str, str], ...] = (
     ("iso/iec 27002", "iso-27002"),
     ("pci dss", "pci-dss"),
 )
+# **ONC is deliberately absent** (#176). Every ONC name keys to the bare
+# `onc` today -- "ONC Certification Criteria", "ONC Health IT Certification
+# Program", "ONC Certification Program Requirements" -- which is harmless
+# while only one ONC catalog exists and becomes a collision the day a second
+# lands (Part 170's Subparts D and E are also "ONC ... Certification"). They
+# are not pre-pinned because their declared names are a guess until someone
+# reads the regulation: this table is for names that have been READ, and a
+# pin written in anticipation reads as decided. `test_onc_siblings_share_
+# the_bare_key` pins today's behaviour, so the next ONC catalog meets this
+# decision instead of the gap. The structural remedy -- a key the catalog
+# declares -- is #295.
 
 #: The old name, kept because the table's first readers were the HITRUST
 #: importer's authoritative-source names. It is the same table; the catalog

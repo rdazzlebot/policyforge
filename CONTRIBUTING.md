@@ -305,7 +305,7 @@ their fixtures. Run the suite from a clone. Don't add `tests/` back to it.
 1. Update `Formula/policyforge.rb` in
    [rdazzlebot/homebrew-tap](https://github.com/rdazzlebot/homebrew-tap):
    point `url` at
-   `https://github.com/rdazzlebot/policyforge/archive/refs/tags/vX.Y.Z.tar.gz`
+   `https://github.com/rdazzleman/policyforge/archive/refs/tags/vX.Y.Z.tar.gz`
    and set `sha256` to that tarball's hash. Compute it from the URL **the
    formula names**, not from a tarball you already have: a hash that matches
    the wrong archive fails nothing and is wrong in the direction nobody sees.

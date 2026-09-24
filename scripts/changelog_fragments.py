@@ -68,27 +68,80 @@ def fragments(directory: Path | None = None) -> list[Path]:
     return sorted(p for p in directory.glob("*.md") if p.name not in NOT_A_FRAGMENT)
 
 
-def check(paths: list[Path]) -> list[str]:
-    """Complaints about fragments that would assemble into something wrong.
+#: An ATX heading at a level that cannot appear inside a release section.
+#: **By level, not by literal text.** The old rule was `startswith("## ")` —
+#: the level that was observed on #211, and not the level that was not.
+#: `# ` sits even higher and was accepted. `###` and deeper are legitimate
+#: sub-structure inside a fragment and must keep passing.
+_TOO_HIGH = re.compile(r"^(#{1,2})(?:\s|$)")
 
-    Deliberately few, and each is a thing that produced a real defect:
-    an empty fragment means someone opened the file and did not write the
-    entry; a `## ` heading would create a second release section inside the
-    one being cut; a CR is the 1,768-line conversion in miniature.
+#: A fenced block opens or closes here. What is inside a fence is an
+#: example, not structure: a fragment showing what an assembled changelog
+#: looks like is a legitimate thing to write, and the old line-oriented
+#: scan refused it.
+_FENCE = re.compile(r"^\s*(?:```|~~~)")
+
+
+def strays(directory: Path | None = None) -> list[Path]:
+    """Files sitting in `changelog.d/` that `fragments()` will never return.
+
+    **The silent-drop half of #217.** `changelog.d/my-fix.txt` is written,
+    committed, passes the gate green and passes CI green — and the entry
+    never reaches the changelog, because `fragments()` globs `*.md` and
+    nothing anywhere says a file was ignored.
+    """
+    directory = directory or FRAGMENT_DIR
+    if not directory.is_dir():
+        return []
+    return sorted(
+        p
+        for p in directory.iterdir()
+        if p.is_file() and p.suffix != ".md" and p.name not in NOT_A_FRAGMENT
+    )
+
+
+def check(directory: Path | None = None) -> list[str]:
+    """Complaints about anything in `changelog.d/` that would not assemble.
+
+    Deliberately few, and each is a thing that produced a real defect: an
+    empty fragment means someone opened the file and did not write the
+    entry; a heading above `###` creates a second release section inside
+    the one being cut; a CR is the 1,768-line conversion in miniature; and
+    a non-`.md` file is an entry nobody will ever read.
+
+    **It takes the DIRECTORY rather than a list of paths, and that is a fix
+    rather than a matter of taste.** The old signature was `check(paths)`,
+    and every caller and every test spelled it `check(fragments(...))` — so
+    a stray file was filtered out one call before the check could see it,
+    and no test written that way could have caught it. **A check handed its
+    population cannot guard that population.** This one derives its own.
     """
     problems = []
-    for path in paths:
+    for path in strays(directory):
+        problems.append(
+            f"{path.name}: is in {FRAGMENT_DIR.name}/ and is not a `.md` fragment, so it "
+            "will never be assembled. Rename it to `.md` or move it out."
+        )
+    for path in fragments(directory):
         raw = path.read_bytes()
         text = raw.decode("utf-8", errors="replace")
         if not text.strip():
             problems.append(f"{path.name}: empty — write the entry or delete the file")
         if b"\r" in raw:
             problems.append(f"{path.name}: contains CR; write it with LF endings")
+        fenced = False
         for line in text.splitlines():
-            if line.startswith("## "):
+            if _FENCE.match(line):
+                fenced = not fenced
+                continue
+            if fenced:
+                continue
+            match = _TOO_HIGH.match(line)
+            if match:
                 problems.append(
-                    f"{path.name}: starts a `## ` section. A fragment is the prose that "
-                    "goes *under* a release heading; the heading is added at assembly."
+                    f"{path.name}: has a `{match.group(1)} ` heading. A fragment is the "
+                    "prose that goes *under* a release heading; the heading is added at "
+                    "assembly, and anything at this level splits the section being cut."
                 )
                 break
     return problems
@@ -116,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv or [])
 
     found = fragments()
-    problems = check(found)
+    problems = check()
 
     # The size of what was examined, always — a check that found nothing and
     # a check that ran over nothing are the same output otherwise.

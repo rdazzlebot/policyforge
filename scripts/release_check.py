@@ -4,7 +4,7 @@ Every check in this repository looks *inside* the repository. On 2026-09-19
 three sessions declared 1.4.0 done — the tag was right, the version triple
 agreed, the changelog was correct, the gate was green, the release notes
 were published — and for roughly three hours `brew install
-rdazzlebot/tap/policyforge`, the first command in this project's own README,
+rdazzleman/tap/policyforge`, the first command in this project's own README,
 installed **1.3.0**. Every individual check passed. None of them looked at
 the artefact a user receives.
 
@@ -68,7 +68,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 FORMULA_URL = (
-    "https://raw.githubusercontent.com/rdazzlebot/homebrew-tap/main/Formula/policyforge.rb"
+    "https://raw.githubusercontent.com/rdazzleman/homebrew-tap/main/Formula/policyforge.rb"
 )
 
 #: The lock the formula's resources must agree with. `runtime.txt` rather
@@ -178,9 +178,9 @@ def lock_pins(text: str) -> dict[str, str]:
 #: until somebody checks which**, so the correct sequence is pinned here
 #: rather than retyped from memory each time.
 INSTALL_STEPS: tuple[tuple[str, str], ...] = (
-    ("tap", "brew tap rdazzlebot/tap"),
-    ("install", "brew install --build-from-source rdazzlebot/tap/policyforge"),
-    ("audit", "brew audit --strict --online rdazzlebot/tap/policyforge"),
+    ("tap", "brew tap rdazzleman/tap"),
+    ("install", "brew install --build-from-source rdazzleman/tap/policyforge"),
+    ("audit", "brew audit --strict --online rdazzleman/tap/policyforge"),
     ("init", "cd /tmp/pf && policyforge init"),
     ("frameworks", "cd /tmp/pf && policyforge frameworks"),
 )

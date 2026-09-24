@@ -496,31 +496,172 @@ def test_an_agreeing_population_proceeds(commits, monkeypatch, capsys):
 # --- stale blocks --------------------------------------------------------
 
 
-def test_a_stale_block_is_warned_about(commits, monkeypatch, capsys):
-    """An expiring approval is safe; an expiring block is not. A push about
-    something else does not answer an objection."""
-    comments = [
-        _comment(commits["ancestor"], "changes-requested", "policyforge-9b"),
-        _comment(commits["head"], "approved", "policyforge-80"),
-    ]
-    monkeypatch.setattr(review_lines, "fetch", lambda n, r: (commits["head"], comments, 2))
+def _report(monkeypatch, capsys, head, comments) -> str:
+    monkeypatch.setattr(review_lines, "fetch", lambda n, r: (head, comments, len(comments)))
     review_lines.report(1, "x/y")
-    out = capsys.readouterr().out
-    assert "STALE BLOCK" in out
-    assert "policyforge-9b" in out
+    return capsys.readouterr().out
 
 
-def test_a_block_the_same_reviewer_later_cleared_is_not_warned_about(commits, monkeypatch, capsys):
+def _section(out: str, marker: str) -> str:
+    """The lines of one report section, so an assertion cannot pass on text
+    that another section printed."""
+    if marker not in out:
+        return ""
+    return out.split(marker, 1)[1].split("\n\n", 1)[0]
+
+
+def test_another_reviewers_approval_does_not_answer_an_objection(commits, monkeypatch, capsys):
+    """**#237's own fail-on-purpose case.** A block, a push, and an approval
+    from somebody ELSE: the objection is still open. A push about something
+    else does not answer it, and neither does a different reader's consent."""
+    out = _report(
+        monkeypatch,
+        capsys,
+        commits["head"],
+        [
+            _comment(commits["ancestor"], "changes-requested", "policyforge-9b"),
+            _comment(commits["head"], "approved", "policyforge-80"),
+        ],
+    )
+    assert "policyforge-9b" in _section(out, "OPEN OBJECTION(S)")
+
+
+def test_a_block_the_same_reviewer_later_cleared_at_head_is_silent(commits, monkeypatch, capsys):
     """**What it must NOT do.** A warning that fires on resolved objections
     trains the reader to ignore it, which costs more than the warning saves.
     """
-    comments = [
-        _comment(commits["ancestor"], "changes-requested", "policyforge-9b"),
-        _comment(commits["head"], "approved", "policyforge-9b"),
-    ]
-    monkeypatch.setattr(review_lines, "fetch", lambda n, r: (commits["head"], comments, 2))
-    review_lines.report(1, "x/y")
-    assert "STALE BLOCK" not in capsys.readouterr().out
+    out = _report(
+        monkeypatch,
+        capsys,
+        commits["head"],
+        [
+            _comment(commits["ancestor"], "changes-requested", "policyforge-9b"),
+            _comment(commits["head"], "approved", "policyforge-9b"),
+        ],
+    )
+    assert "OPEN OBJECTION" not in out
+    assert "retired by their own reviewer" not in out
+
+
+def test_answered_then_the_head_moved_is_not_reported_as_ignored(commits, monkeypatch, capsys):
+    """**Answered vs ignored, #237.** The objector approved at a commit that
+    is no longer head. The reader used to print the same STALE BLOCK here as
+    for an objection nobody answered. It is a re-read, not an alarm."""
+    out = _report(
+        monkeypatch,
+        capsys,
+        commits["head"],
+        [
+            _comment(commits["ancestor"], "changes-requested", "policyforge-9b"),
+            _comment(commits["ancestor"], "approved", "policyforge-9b"),
+        ],
+    )
+    assert "OPEN OBJECTION" not in out
+    retired = _section(out, "retired by their own reviewer")
+    assert "policyforge-9b objected at" in retired
+    assert "(STALE)" in retired, "the approval that retired it is itself stale; say so"
+
+
+def test_a_later_approval_at_head_settles_an_earlier_retirement(commits, monkeypatch, capsys):
+    """**Found by running the reader on #273, not by a fixture.** Object,
+    approve at a stale head, object again, approve at head: the objector's
+    last word is an approval at head, so nothing is left to re-read. The
+    first version retired the first objection with the FIRST approval it
+    found -- the stale one -- and printed a notice about a settled question.
+    """
+    out = _report(
+        monkeypatch,
+        capsys,
+        commits["head"],
+        [
+            _comment(commits["ancestor"], "changes-requested", "policyforge-9b"),
+            _comment(commits["ancestor"], "approved", "policyforge-9b"),
+            _comment(commits["ancestor"], "changes-requested", "policyforge-9b"),
+            _comment(commits["head"], "approved", "policyforge-9b"),
+        ],
+    )
+    assert "OPEN OBJECTION" not in out
+    assert "retired by their own reviewer" not in out
+
+
+def test_a_block_posted_after_the_reviewers_own_approval_is_open(commits, monkeypatch, capsys):
+    """**Order decides, not position.** The reader used to suppress this,
+    because the reviewer had an approval at head. Their LATEST word is an
+    objection, which is the unsafe direction to get wrong."""
+    out = _report(
+        monkeypatch,
+        capsys,
+        commits["head"],
+        [
+            _comment(commits["head"], "approved", "policyforge-9b"),
+            _comment(commits["ancestor"], "changes-requested", "policyforge-9b"),
+        ],
+    )
+    assert "policyforge-9b" in _section(out, "OPEN OBJECTION(S)")
+
+
+def test_an_open_objection_at_head_is_reported_too(commits, monkeypatch, capsys):
+    """OPEN is shown whatever its SHA. A block at head is the most current
+    objection there is, and a report that listed only stale ones would make
+    the live one the easiest to miss."""
+    out = _report(
+        monkeypatch,
+        capsys,
+        commits["head"],
+        [_comment(commits["head"], "blocked", "policyforge-9b")],
+    )
+    assert "(AT HEAD)" in _section(out, "OPEN OBJECTION(S)")
+
+
+def test_a_malformed_approval_does_not_retire_an_objection(commits, monkeypatch, capsys):
+    """Only a well-formed approval retires. A malformed one may be crediting
+    a review that was not there, so the objection stays OPEN -- the safe
+    direction. Twin: the same approval well-formed retires it (the test
+    above that is silent)."""
+    out = _report(
+        monkeypatch,
+        capsys,
+        commits["head"],
+        [
+            _comment(commits["ancestor"], "changes-requested", "policyforge-9b"),
+            # Same reviewer, so the string match succeeds and ONLY the shape
+            # guard can keep this open. (A malformed reviewer would fail the
+            # match on its own and test nothing about the guard.)
+            _comment(commits["head"][:12] + "…", "approved", "policyforge-9b"),
+        ],
+    )
+    assert not review_lines.shape_of(commits["head"][:12] + "…", "approved").well_formed
+    assert "policyforge-9b" in _section(out, "OPEN OBJECTION(S)")
+
+
+def test_a_perishable_session_name_is_named_not_silently_counted(commits, monkeypatch, capsys):
+    """**The rename case (#237's comment).** A block signed with a session
+    name and an approval signed with the handle are the same reader to a
+    person and two to a string match. The report says so, by name."""
+    out = _report(
+        monkeypatch,
+        capsys,
+        commits["head"],
+        [
+            _comment(commits["ancestor"], "changes-requested", "policyforge-78"),
+            _comment(commits["head"], "approved", "policyforge-1d"),
+        ],
+    )
+    assert "policyforge-78" in _section(out, "OPEN OBJECTION(S)")
+    assert "policyforge-78" in _section(out, "not a stable handle")
+    assert "policyforge-1d" not in _section(out, "not a stable handle")
+
+
+def test_every_stable_handle_passes_without_a_notice(commits, monkeypatch, capsys):
+    """The quiet twin: lines signed with the six handles raise no notice."""
+    out = _report(
+        monkeypatch,
+        capsys,
+        commits["head"],
+        [_comment(commits["head"], "approved", h) for h in sorted(review_lines.STABLE_HANDLES)],
+    )
+    assert len(review_lines.STABLE_HANDLES) == 6
+    assert "not a stable handle" not in out
 
 
 def test_no_verdicts_is_not_reported_as_no_objection(commits, monkeypatch, capsys):

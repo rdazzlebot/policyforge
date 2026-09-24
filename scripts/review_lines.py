@@ -56,10 +56,33 @@ is the safe direction -- the work changed, read it again. An expiring
 `changes-requested` is the unsafe one: the author pushes something unrelated
 and an unanswered objection silently becomes `blocking verdicts at head: 0`.
 That exact line told policyforge-1d nothing was sitting with them on #221
-while 9b's block stood untouched. Stale blocks are therefore warned about
-separately -- and the warning is suppressed when *that same reviewer* later
-approved at head, because a warning that fires on resolved objections trains
-the reader to ignore it.
+while 9b's block stood untouched.
+
+ONLY THE OBJECTOR RETIRES AN OBJECTION, AND ORDER DECIDES (#237). Each
+reviewer's lines are walked in posting order. A block is retired only by a
+LATER approval from the SAME reviewer, at any SHA, so an approval from
+anyone else never retires it and silence stays silence. That gives three
+states, reported apart:
+
+    OPEN                      nothing retired it -- shown whatever its SHA
+    RETIRED, approval stale   the objector answered it, then the head moved:
+                              re-read, which is the safe direction
+    RETIRED at head           silent; a warning that fires on resolved
+                              objections trains the reader to ignore it
+
+This used to be decided by position alone: a block was suppressed when its
+reviewer had any approval at head. So "answered, and the head moved on"
+printed the same STALE BLOCK as "never answered", and a block posted AFTER
+its reviewer's own approval was suppressed -- the unsafe direction.
+
+No field in the line names which objection an approval answers, and none is
+needed: only the objector can retire one, and an objector who approves while
+another concern stands can post `changes-requested` last.
+
+RETIREMENT MATCHES `reviewer=` AS A STRING, so it only works across a
+session rename if both lines carry the same stable handle. A line signed
+with anything else -- a per-run session name -- is flagged by name rather
+than silently treated as a new reviewer.
 
 THE POPULATION IS CHECKED AGAINST A SECOND DERIVATION IN THE SAME UNIT.
 A reader that fetches 3 of 8 comments and reports those 3 cleanly would put
@@ -140,6 +163,15 @@ _VERDICT = re.compile(
 _TRAILING_NOISE = "*_`.,;:)]}…"
 
 VERDICTS = ("approved", "changes-requested", "blocked")
+OBJECTIONS = ("changes-requested", "blocked")
+
+#: The team's stable reviewer handles (convention of 2026-09-23): the name
+#: each session had before its first rename. Session names change every run,
+#: so a verdict signed with one cannot be matched to the same reader's other
+#: verdicts. A handle added to the team is added here.
+STABLE_HANDLES = frozenset(
+    f"policyforge-{handle}" for handle in ("80", "1d", "9b", "ba", "b5", "5b")
+)
 
 
 def _gh(*args: str) -> str:
@@ -361,6 +393,41 @@ def verdict_lines(comments: list[dict]) -> list[Line]:
     return found
 
 
+def objection_states(lines: list[Line]) -> list[tuple[Line, str, Line | None]]:
+    """Every objection, in posting order, with its state and what retired it.
+
+    `lines` must be in posting order. The state is `OPEN`, `RETIRED STALE`
+    or `RETIRED AT HEAD`. Only a well-formed approval retires: a malformed
+    one might be crediting a review that was not there, so it leaves the
+    objection OPEN, which is the safe direction.
+
+    Every later approval from the objector is considered, not the first
+    one. On #273 the objector approved at a stale head, objected again, then
+    approved at head: the first approval alone called the first objection
+    "retired, approval stale" -- a re-read notice about a question its own
+    reviewer had since settled at head.
+    """
+    states = []
+    for index, line in enumerate(lines):
+        if line.verdict not in OBJECTIONS:
+            continue
+        retiring = [
+            later
+            for later in lines[index + 1 :]
+            if later.reviewer == line.reviewer
+            and later.verdict == "approved"
+            and later.shape.well_formed
+        ]
+        at_head = [later for later in retiring if later.counts]
+        if at_head:
+            states.append((line, "RETIRED AT HEAD", at_head[-1]))
+        elif retiring:
+            states.append((line, "RETIRED STALE", retiring[-1]))
+        else:
+            states.append((line, "OPEN", None))
+    return states
+
+
 def fetch(number: int, repo: str) -> tuple[str, list[dict], int]:
     """Return (head, comments, the count GitHub reports).
 
@@ -421,24 +488,40 @@ def report(number: int, repo: str) -> int:
         marks = [line.location.label, *line.shape.faults]
         print(f"  {line.sha[:12]:14} {line.verdict:18} {line.reviewer:16} {' + '.join(marks)}")
 
-    # Stale blocks, and only the ones nobody answered.
-    at_head_approvals = {
-        line.reviewer for line in lines if line.counts and line.verdict == "approved"
-    }
-    stale_blocks = [
-        line
-        for line in lines
-        if line.verdict in ("changes-requested", "blocked")
-        and not line.counts
-        and line.reviewer not in at_head_approvals
-    ]
-    if stale_blocks:
+    # Objections by state (#237). Only the objector's own later approval
+    # retires one; nothing about the SHA does.
+    states = objection_states(lines)
+    still_open = [line for line, state, _ in states if state == "OPEN"]
+    answered_then_moved = [(line, by) for line, state, by in states if state == "RETIRED STALE"]
+    if still_open:
         print(
-            f"\n!! {len(stale_blocks)} STALE BLOCK(S) — expiry is not resolution.\n"
-            f"   A push about something else does not answer an objection."
+            f"\n!! {len(still_open)} OPEN OBJECTION(S) — no later approval from the objector.\n"
+            f"   Expiry is not resolution, and another reviewer's approval does not answer it."
         )
-        for line in stale_blocks:
+        for line in still_open:
             print(f"     {line.reviewer} at {line.sha[:12]} ({line.location.label})")
+    if answered_then_moved:
+        print(
+            f"\n   {len(answered_then_moved)} objection(s) retired by their own reviewer at a "
+            f"commit that is no longer head.\n"
+            f"   Answered, then the code moved: read the delta again."
+        )
+        for line, by in answered_then_moved:
+            print(
+                f"     {line.reviewer} objected at {line.sha[:12]}, approved at {by.sha[:12]} "
+                f"({by.location.label})"
+            )
+
+    # Retirement matches `reviewer=` as a string, so a perishable name makes
+    # the matching partial. Said, so it is not read as whole.
+    unknown = sorted({line.reviewer for line in lines if line.reviewer not in STABLE_HANDLES})
+    if unknown:
+        print(
+            f"\n?? {len(unknown)} reviewer name(s) that are not a stable handle: "
+            f"{', '.join(unknown)}\n"
+            f"   A line signed this way can neither retire nor be retired by a "
+            f"handle-signed line."
+        )
 
     print("\n  This is a report. It does not compute consent, and no count")
     print("  below is an authorisation -- a person decides.")

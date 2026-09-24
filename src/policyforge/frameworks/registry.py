@@ -190,10 +190,11 @@ def is_tracked(path: Path) -> bool | None:
         # Fixed argv and no shell; the only variable part is a path the
         # caller already has. `git` resolves from PATH on purpose, since
         # pinning an absolute path would break every platform but one.
+        # Bytes: only emptiness is read, so nothing is decoded and nothing
+        # can fail to decode (#287).
         result = subprocess.run(  # nosec B603 B607
             ["git", "ls-files", "--", str(path)],
             capture_output=True,
-            text=True,
             timeout=15,
             check=False,
         )
@@ -221,10 +222,10 @@ def is_ignored(path: Path) -> bool | None:
     try:
         # Fixed argv and no shell; the only variable part is a path the
         # caller already has.
+        # Bytes: `-q` prints nothing and only the return code is read (#287).
         result = subprocess.run(  # nosec B603 B607
             ["git", "check-ignore", "-q", "--no-index", str(path)],
             capture_output=True,
-            text=True,
             timeout=15,
             check=False,
         )

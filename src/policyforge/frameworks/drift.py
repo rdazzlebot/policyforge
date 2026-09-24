@@ -335,17 +335,20 @@ def read_committed(path: Path, *, revision: str = "HEAD") -> str | None:
     anybody having to snapshot anything first: the ETL overwrites the
     catalog in place and git is still holding the version you had.
     """
+    from policyforge.child_output import strict_text
+
+    argv = ["git", "show", f"{revision}:{Path(path).as_posix()}"]
     try:
-        result = subprocess.run(  # nosec B603 B607
-            ["git", "show", f"{revision}:{Path(path).as_posix()}"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
+        result = subprocess.run(argv, capture_output=True, timeout=60, check=False)  # nosec B603 B607
     except (OSError, subprocess.SubprocessError):
         return None
-    return result.stdout if result.returncode == 0 and result.stdout.strip() else None
+    if result.returncode != 0:
+        return None
+    # DATA: parsed as the committed catalog a drift is measured against.
+    # Before #287 a committed `café` read back as `cafÃ©`, and a byte cp1252
+    # leaves undefined crashed with an AttributeError on None.
+    text = strict_text(result.stdout, site="drift (committed catalog)", argv=argv)
+    return text if text.strip() else None
 
 
 def _controls_from_json(text: str):

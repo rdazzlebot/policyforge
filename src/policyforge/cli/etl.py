@@ -616,6 +616,8 @@ def etl_ai_rmf(out: Path, html: Path | None):
 
     from policyforge.ingest.ai_rmf import (
         SOURCE_URL,
+        AiRmfParseError,
+        expected_shape,
         fetch_core_html,
         parse_ai_rmf,
     )
@@ -627,7 +629,18 @@ def etl_ai_rmf(out: Path, html: Path | None):
     else:
         page = fetch_core_html()
 
-    controls = parse_ai_rmf(page)
+    # The pin comes from the catalog being regenerated; a scratch --out falls
+    # back to the bundled catalog's (#189). Neither -> a loud refusal, since a
+    # parse with no expected shape would accept any.
+    pinned = out.parent / "framework.yaml"
+    if not pinned.exists():
+        bundled = [d / "nist-ai-rmf" / "framework.yaml" for d in _bundled_catalog_dirs()]
+        pinned = next((p for p in bundled if p.exists()), pinned)
+    # A refusal is the guard working, so it reads as a sentence, not a traceback.
+    try:
+        controls = parse_ai_rmf(page, expected_shape=expected_shape(pinned))
+    except AiRmfParseError as exc:
+        raise click.ClickException(str(exc)) from exc
     out.parent.mkdir(parents=True, exist_ok=True)
     write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
 

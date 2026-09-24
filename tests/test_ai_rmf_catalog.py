@@ -21,6 +21,7 @@ from policyforge.ingest.ai_rmf import (
     FRAMEWORK_VERSION,
     FUNCTIONS,
     AiRmfParseError,
+    expected_shape,
     parse_ai_rmf,
 )
 from policyforge.mapping.crosswalk import normalize_framework
@@ -29,6 +30,8 @@ from policyforge.topics.satisfies import split_citation
 ROOT = Path(__file__).resolve().parent.parent
 CATALOG = ROOT / "data" / "frameworks" / "nist-ai-rmf"
 FIXTURE = ROOT / "tests" / "fixtures" / "airc_ai_rmf_core.html"
+#: The shape pin as the catalog states it (#189) -- read, not restated.
+PIN = expected_shape(CATALOG / "framework.yaml")
 
 
 @pytest.fixture(scope="module")
@@ -38,7 +41,7 @@ def controls() -> list[dict]:
 
 @pytest.fixture(scope="module")
 def parsed():
-    return parse_ai_rmf(FIXTURE.read_text(encoding="utf-8", errors="replace"))
+    return parse_ai_rmf(FIXTURE.read_text(encoding="utf-8", errors="replace"), expected_shape=PIN)
 
 
 # --- what the catalog is ------------------------------------------------
@@ -165,7 +168,7 @@ def _declared_names() -> set[str]:
 
 def test_a_page_that_is_not_the_core_raises(parsed):
     with pytest.raises(AiRmfParseError, match=r"parser failure"):
-        parse_ai_rmf("<html><body>AIRC is down for maintenance.</body></html>")
+        parse_ai_rmf("<html><body>AIRC is down for maintenance.</body></html>", expected_shape=PIN)
 
 
 def test_a_restyle_that_drops_every_row_raises():
@@ -173,7 +176,7 @@ def test_a_restyle_that_drops_every_row_raises():
     identifier rather than on the class."""
     html = FIXTURE.read_text(encoding="utf-8", errors="replace")
     with pytest.raises(AiRmfParseError):
-        parse_ai_rmf(html.replace("</th>", "</td>"))
+        parse_ai_rmf(html.replace("</th>", "</td>"), expected_shape=PIN)
 
 
 def test_a_missing_category_orphans_its_subcategories():
@@ -193,7 +196,7 @@ def test_a_missing_category_orphans_its_subcategories():
     mutated = re.sub(r'<span class="[^"]*">\s*Govern 6\s*</span>', "<span>x</span>", html)
     assert mutated != html, "the mutation did not apply; the fixture changed shape"
     with pytest.raises(AiRmfParseError, match=r"parent"):
-        parse_ai_rmf(mutated)
+        parse_ai_rmf(mutated, expected_shape=PIN)
 
 
 def test_a_gap_in_the_numbering_raises():
@@ -212,7 +215,7 @@ def test_a_gap_in_the_numbering_raises():
     mutated = re.sub(r'<span class="[^"]*">\s*Govern 5(?:\.\d+)?\s*</span>', "<span>x</span>", html)
     assert mutated != html, "the mutation did not apply; the fixture changed shape"
     with pytest.raises(AiRmfParseError, match=r"contiguous"):
-        parse_ai_rmf(mutated)
+        parse_ai_rmf(mutated, expected_shape=PIN)
 
 
 def test_an_unknown_function_name_raises():
@@ -235,7 +238,7 @@ def test_an_unknown_function_name_raises():
     ):
         assert mutated != html
         with pytest.raises(AiRmfParseError, match=r"unrecognised AI RMF function"):
-            parse_ai_rmf(mutated)
+            parse_ai_rmf(mutated, expected_shape=PIN)
 
 
 def test_a_row_with_no_text_raises():
@@ -261,7 +264,7 @@ def test_a_row_with_no_text_raises():
     assert mutated != html, "the mutation did not apply; the fixture changed shape"
 
     with pytest.raises(AiRmfParseError, match=r"no text"):
-        parse_ai_rmf(mutated)
+        parse_ai_rmf(mutated, expected_shape=PIN)
 
 
 def test_parsing_more_than_nist_publishes_raises():
@@ -290,8 +293,8 @@ def test_parsing_more_than_nist_publishes_raises():
     ]:
         mutated = html.replace("</table>", extra + "</table>", 1)
         assert mutated != html, f"{label}: the mutation did not apply"
-        with pytest.raises(AiRmfParseError, match=r"revision 1\.0 has"):
-            parse_ai_rmf(mutated)
+        with pytest.raises(AiRmfParseError, match=r"revision 1\.0 is pinned at 19 and 72"):
+            parse_ai_rmf(mutated, expected_shape=PIN)
 
 
 def test_the_shape_guard_allows_the_real_page():
@@ -300,7 +303,123 @@ def test_the_shape_guard_allows_the_real_page():
     A pinned shape is one typo away from refusing everything, and a guard
     that refuses its own source is indistinguishable from a broken parser.
     """
-    from policyforge.ingest.ai_rmf import EXPECTED_SHAPE
+    controls = parse_ai_rmf(
+        FIXTURE.read_text(encoding="utf-8", errors="replace"), expected_shape=PIN
+    )
+    assert (len(controls), sum(len(c.enhancements) for c in controls)) == PIN
 
-    controls = parse_ai_rmf(FIXTURE.read_text(encoding="utf-8", errors="replace"))
-    assert (len(controls), sum(len(c.enhancements) for c in controls)) == EXPECTED_SHAPE
+
+# --- the pin itself, now data (#189) ----------------------------------------
+
+
+def test_the_pin_equals_the_shipped_catalog(controls):
+    """The yaml pin is DERIVED: it must equal the shape of the controls.json
+    beside it. A pin edited without regenerating, or a catalog regenerated
+    against a hand-widened pin, disagrees here."""
+    shipped = (len(controls), sum(len(c.get("enhancements") or []) for c in controls))
+    assert PIN == shipped == (19, 72)
+
+
+def test_the_parse_refuses_a_pin_that_disagrees_with_the_page():
+    """A stale pin fails LOUDLY: the real page against a pin one off, in
+    each direction and each field, is refused rather than absorbed."""
+    html = FIXTURE.read_text(encoding="utf-8", errors="replace")
+    for wrong in ((18, 72), (20, 72), (19, 71), (19, 73)):
+        with pytest.raises(AiRmfParseError, match=r"parsed to 19 categories and 72"):
+            parse_ai_rmf(html, expected_shape=wrong)
+
+
+@pytest.mark.parametrize(
+    "body, reason",
+    [
+        ("id: nist-ai-rmf\n", "no shape key"),
+        ("shape: 19\n", "shape not a mapping"),
+        ("shape:\n  categories: 19\n", "subcategories missing"),
+        ("shape:\n  categories: '19'\n  subcategories: 72\n", "a string"),
+        ("shape:\n  categories: true\n  subcategories: 72\n", "a bool"),
+        ("shape:\n  categories: 0\n  subcategories: 72\n", "zero"),
+        ("", "empty file"),
+    ],
+)
+def test_expected_shape_refuses_a_missing_or_malformed_pin(tmp_path, body, reason):
+    path = tmp_path / "framework.yaml"
+    path.write_text(body, encoding="utf-8")
+    with pytest.raises(AiRmfParseError, match=r"shape"):
+        expected_shape(path)
+
+
+def test_expected_shape_refuses_a_missing_file(tmp_path):
+    with pytest.raises(AiRmfParseError, match=r"no `shape:` pin"):
+        expected_shape(tmp_path / "framework.yaml")
+
+
+def test_expected_shape_reads_what_a_valid_pin_says(tmp_path):
+    """The passing case, with values unlike the real ones, so a reader that
+    returned a constant could not pass."""
+    path = tmp_path / "framework.yaml"
+    path.write_text("shape:\n  categories: 3\n  subcategories: 11\n", encoding="utf-8")
+    assert expected_shape(path) == (3, 11)
+
+
+def test_the_provenance_rerun_leaves_the_pin_untouched(tmp_path):
+    """The ETL records provenance into this same file. The pin is not one of
+    the keys it owns, so a re-run must leave it exactly as a person wrote it:
+    a guard the guarded run could rewrite would be no guard."""
+    from policyforge.ingest.provenance import PROVENANCE_KEYS, record_source_provenance
+
+    assert "shape" not in PROVENANCE_KEYS
+    catalog = tmp_path / "nist-ai-rmf"
+    catalog.mkdir()
+    (catalog / "framework.yaml").write_bytes((CATALOG / "framework.yaml").read_bytes())
+    (catalog / "controls.json").write_bytes((CATALOG / "controls.json").read_bytes())
+    record_source_provenance(
+        catalog / "controls.json",
+        source_ref="AI RMF 1.0",
+        source_url="https://example.invalid/core",
+        content=b"changed upstream bytes",
+    )
+    assert expected_shape(catalog / "framework.yaml") == PIN
+
+
+def test_the_etl_reads_the_pin_from_the_catalog_it_regenerates(tmp_path):
+    """On the user's path: `etl-ai-rmf --out <catalog>/controls.json` reads
+    `<catalog>/framework.yaml`. A pin edited there to disagree with the page
+    refuses the run and writes nothing."""
+    from click.testing import CliRunner
+
+    from policyforge import cli as cli_mod
+
+    catalog = tmp_path / "nist-ai-rmf"
+    catalog.mkdir()
+    pin = (CATALOG / "framework.yaml").read_text(encoding="utf-8")
+    assert pin.count("subcategories: 72") == 1
+    (catalog / "framework.yaml").write_text(
+        pin.replace("subcategories: 72", "subcategories: 73"), encoding="utf-8"
+    )
+    out = catalog / "controls.json"
+    result = CliRunner().invoke(
+        cli_mod.cli, ["etl-ai-rmf", "--html", str(FIXTURE), "--out", str(out)]
+    )
+    assert result.exit_code == 1, result.output
+    assert "Error: the Core parsed to 19 categories and 72" in result.output
+    assert "pinned at 19 and 73" in result.output
+    assert "Traceback" not in result.output
+    assert not out.exists(), "a refused parse wrote a catalog"
+
+
+def test_a_scratch_out_falls_back_to_the_bundled_pin(tmp_path):
+    """`--out` in a scratch directory has no framework.yaml beside it; the
+    bundled catalog's pin applies, the parse succeeds, and nothing is
+    stamped into the scratch directory."""
+    from click.testing import CliRunner
+
+    from policyforge import cli as cli_mod
+
+    out = tmp_path / "scratch" / "controls.json"
+    result = CliRunner().invoke(
+        cli_mod.cli, ["etl-ai-rmf", "--html", str(FIXTURE), "--out", str(out)]
+    )
+    assert result.exit_code == 0, result.output
+    shipped = (CATALOG / "controls.json").read_bytes().replace(b"\r\n", b"\n")
+    assert out.read_bytes() == shipped
+    assert not (out.parent / "framework.yaml").exists()

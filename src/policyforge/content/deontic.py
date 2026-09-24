@@ -290,7 +290,78 @@ def _opener_end(plain: str) -> int:
     return 0
 
 
-def framed_as_nists(sentence: str) -> bool:
+#: The shortest run quoted from a cited action that can carry a binding word
+#: past the check (#320, 80's ruling). **The bound, stated:** at least this
+#: many consecutive words, compared case-insensitively on whitespace-split
+#: tokens (so punctuation is part of a word, and "preserved," is not
+#: "preserved"), occurring verbatim in the text of a Playbook action the
+#: SAME sentence cites, looked up in the shipped catalog. A binding word
+#: outside every such run still binds. A paraphrase does not qualify, so a
+#: model gets no licence to write its own "must".
+QUOTE_MIN_WORDS = 6
+
+_PLAYBOOK_ACTIONS: dict[str, list[str]] | None = None
+
+
+def _playbook_actions() -> dict[str, list[str]]:
+    """Each shipped Playbook action's text as lower-cased tokens, by id."""
+    global _PLAYBOOK_ACTIONS
+    if _PLAYBOOK_ACTIONS is None:
+        import json
+
+        from policyforge.scaffold import bundled_root
+
+        rows = json.loads(
+            bundled_root()
+            .joinpath("frameworks", "nist-ai-rmf-playbook", "controls.json")
+            .read_text(encoding="utf-8")
+        )
+        _PLAYBOOK_ACTIONS = {
+            " ".join(e["enhancement_id"].split()).lower(): (e.get("description") or "")
+            .lower()
+            .split()
+            for row in rows
+            for e in row.get("enhancements") or []
+        }
+    return _PLAYBOOK_ACTIONS
+
+
+def _cited_actions(citations) -> list[list[str]]:
+    """The token lists of the Playbook actions these citation tags name."""
+    actions = _playbook_actions()
+    cited = []
+    for tag in citations:
+        for part in _parts(tag):
+            if _is_playbook(part):
+                key = " ".join(part[len(_PLAYBOOK) :].split()).lower()
+                if key in actions:
+                    cited.append(actions[key])
+    return cited
+
+
+def _unquoted(plain: str, quoted_from: list[list[str]]) -> str:
+    """`plain` with every run of QUOTE_MIN_WORDS+ words found verbatim in
+    one of `quoted_from` blanked, so `classify` sees only the rest."""
+    tokens = plain.split()
+    lowered = [t.lower() for t in tokens]
+    covered = [False] * len(tokens)
+    for action in quoted_from:
+        for i in range(len(lowered)):
+            for j in range(len(action)):
+                length = 0
+                while (
+                    i + length < len(lowered)
+                    and j + length < len(action)
+                    and lowered[i + length] == action[j + length]
+                ):
+                    length += 1
+                if length >= QUOTE_MIN_WORDS:
+                    for k in range(i, i + length):
+                        covered[k] = True
+    return " ".join("_" if c else t for t, c in zip(tokens, covered, strict=True))
+
+
+def framed_as_nists(sentence: str, citations=()) -> bool:
     """Whether a sentence speaks as NIST describing or suggesting (#300).
 
     **An allow-list on the subject, not a deny-list of obligation verbs**
@@ -307,12 +378,20 @@ def framed_as_nists(sentence: str) -> bool:
     The subject may follow one opener from `_OPENERS` (#319), such as "Among
     the 7 actions NIST suggests for Govern 1.4, NIST suggests ...". The
     binding check below still reads the WHOLE sentence, opener included.
+
+    **Except NIST's own words (#320).** With `citations` given, a binding
+    word inside a run of `QUOTE_MIN_WORDS`+ words quoted verbatim from a
+    Playbook action those citations name is NIST's text, not the
+    organization's obligation, and is not counted. Without citations
+    nothing is exempt.
     """
     plain = _LEADING_MARKER.sub("", _MARKUP_RE.sub("", sentence).strip())
     match = _NIST_SUBJECT.match(plain[_opener_end(plain) :])
     if not match or match.group(1).lower() in _NIST_OBLIGES:
         return False
-    return classify(plain) not in BINDING
+    if classify(plain) not in BINDING:
+        return True
+    return classify(_unquoted(plain, _cited_actions(citations))) not in BINDING
 
 
 def playbook_tagged_headings(text: str) -> list[tuple[int, str]]:
@@ -350,7 +429,11 @@ def playbook_obligations(text: str) -> list[Statement]:
     Playbook ...]` -- carries that source's obligation, and the requirement
     strength rule governs it instead.
     """
-    return [s for s in analyze(text) if s.cites_only_the_playbook and not framed_as_nists(s.text)]
+    return [
+        s
+        for s in analyze(text)
+        if s.cites_only_the_playbook and not framed_as_nists(s.text, s.citations)
+    ]
 
 
 def classify(sentence: str) -> str:

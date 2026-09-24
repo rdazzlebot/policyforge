@@ -56,26 +56,17 @@ def test_the_stored_run_opens_every_sentence_with_among():
     assert all(s.text.startswith("Among the ") for s in _stored())
 
 
-def test_sixteen_stored_sentences_pass_and_govern_1_7_is_flagged_for_its_must():
-    """16 of 17 pass on the opener fix. **The 17th fails for a different,
-    pre-existing reason**, pinned here so it is not mistaken for the opener:
-    it restates Playbook Govern 1.7 Action 4's own words, "artifacts that
-    must be preserved", and #309's whole-sentence check refuses any binding
-    word in a Playbook sentence. 80 chose, on #319, to keep this PR to the
-    opener and pin that one as a documented false alarm; whether a quoted
-    NIST "must" is exempt is #320's ruling."""
-    flagged = {
-        _subcategory(s.text) for s in playbook_obligations(FIXTURE.read_text(encoding="utf-8"))
-    }
-    passed = {_subcategory(s.text) for s in _stored()} - flagged
-    assert flagged == {"Govern 1.7"}
-    assert len(passed) == 16
+def test_all_seventeen_stored_sentences_pass():
+    """17 of 17. On #319 alone it was 16: Govern 1.7 restates Playbook
+    Govern 1.7 Action 4's own words, "artifacts that must be preserved",
+    which #309's whole-sentence check refused. #320 exempts a binding word
+    quoted verbatim from an action the sentence cites, which this is."""
+    assert playbook_obligations(FIXTURE.read_text(encoding="utf-8")) == []
 
     (govern_1_7,) = [s for s in _stored() if _subcategory(s.text) == "Govern 1.7"]
     assert "artifacts that must be preserved" in govern_1_7.text
     assert classify(govern_1_7.text) == "obligation"
-    # The opener is not why: with the "must" removed, the same sentence passes.
-    assert not _flagged(govern_1_7.text.replace("must be preserved", "are preserved"))
+    assert "NIST AI RMF Playbook Govern 1.7 Action 4" in " ".join(govern_1_7.citations)
 
 
 # -- the four shapes pass ----------------------------------------------------------------

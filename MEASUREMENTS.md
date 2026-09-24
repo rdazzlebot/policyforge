@@ -19,6 +19,54 @@ python scripts/eval_zardoz.py --model <litellm model string> \
 
 ______________________________________________________________________
 
+## What this file rests on — rewritten 2026-09-24 (#207)
+
+**Most of this file cannot be re-derived, and it says so section by
+section.** The runs behind epochs 1–20, 22 and 23, the nine-model comparison
+and the 2026-09-13 baseline wrote their ledgers into session scratch
+directories that did not survive. Those sections are kept as they were
+recorded, because they are the only record, and each now opens with a
+marker saying its source was not retained. **Only the figures below are
+re-derived**, from files preserved in [`docs/measurements/ledgers/`](docs/measurements/ledgers/README.md). Nothing was
+re-run: this rewrite made no model calls (the user's decision, recorded on
+#207). The full-cost rerun is #291, and it spends nothing until the user
+approves an estimate.
+
+### What was measured, per provider — re-derived
+
+| path       | model                         | what                                                            | cost                                                       | time    |
+| ---------- | ----------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------- | ------- |
+| OpenRouter | `z-ai/glm-5.3-flash`          | 20 topics, synthesize + three tiers (epoch 21, 2026-09-17)      | $0.2798, **$0.0140 per topic**                             | 103 min |
+| OpenRouter | `anthropic/claude-sonnet-5`   | 5 topics, the same pipeline (epoch 21)                          | $3.0875, **$0.6175 per topic**                             | 37 min  |
+| OpenRouter | `anthropic/claude-sonnet-4.5` | 25 topics, synthesize + Standard (epoch 24, 2026-09-21)         | $6.1487, mean **$0.2459 per topic**                        | 1.26 h  |
+| OpenRouter | `z-ai/glm-5.3-flash`          | 3 synthesize calls, paired by topic with epoch 21 (2026-09-24)  | $0.0086, $0.0020–$0.0046 per call                          | —       |
+| OpenRouter | glm and `deepseek-v4-flash`   | eval-harness calls, 2026-09-18/19, attached to no written epoch | glm $0.00015–$0.00018 per call; deepseek $0.00009–$0.00010 | —       |
+
+**A per-call rate is a rate for that kind of call.** A glm `synthesize` call
+averaged $0.0054 across epoch 21's twenty; a glm eval call cost about $0.0002.
+A figure of *$0.0002 per call* once circulated as glm's rate for synthesis
+(#186). It is an eval-call rate, 27x below the synthesize mean ($0.0054 / $0.0002).
+
+### What was not measured, and why
+
+- **Claude through its direct API.** Not authorised for this release (the
+  user, 2026-09-21). **Every Claude figure in this file went through
+  OpenRouter**; the two paths are different code, and nothing here measures
+  the direct one.
+- **Gemini through its direct API.** Never measured. Gemini appears only via
+  OpenRouter, in the 2026-09-12 comparison, whose source was not retained.
+- **Local models through `openai-compat`.** Never measured. One
+  `ollama_chat/qwen3:14b` row exists, from 2026-09-12 and before the
+  `qwen3:14b-pf` variant, and its source was not retained.
+- **The full three-tier matrix across providers, and a second paid
+  provider.** Refused by the user on 2026-09-21. Epoch 24 is the authorised
+  partial: one provider, one tier.
+- **Eval-suite scores.** Every score in this file comes from a run whose
+  results were not retained. The 2026-09-18/19 ledgers record calls, not
+  grades, so no score can be re-derived from them.
+
+______________________________________________________________________
+
 ## Method, and what to distrust
 
 - **`--repeat 3`** unless noted. The harness reports a *rate*, not a
@@ -126,6 +174,8 @@ ______________________________________________________________________
 
 ## Current baseline — 2026-09-13
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 After the budget, prompt and check fixes described in the epochs below.
 Only these three models have been re-measured since; every other row in
 this file predates those changes.
@@ -148,6 +198,8 @@ across every suite measured, at roughly a fifteenth of the cost.
 ______________________________________________________________________
 
 ## The nine-model comparison — 2026-09-12
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 Original configuration: budgets 64/150/200, prompts before the router and
 resolution fixes. **These are the numbers the recommendation was made
@@ -249,10 +301,14 @@ What changed, and therefore which numbers may be compared.
 
 ### 1. Original — up to 2026-09-12
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 Budgets 64/150/200. Router prompt relying on two default-to-documents
 rules. `check_answer` without the placeholder and provenance checks.
 
 ### 2. Raised budgets — 2026-09-12
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 800/1500/2000, after measuring that a tight budget does not degrade an
 answer but deletes one, and costs more doing it.
@@ -267,6 +323,8 @@ had been paying a retry tax invisibly.
 
 ### 3. `check_answer` fixes — 2026-09-13
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 Two false positives were costing about five points on *every* model's
 answering score, with nothing pointing at the checker.
 
@@ -278,6 +336,8 @@ answering score, with nothing pointing at the checker.
 `deepseek-v4-flash` answering: 91 → **96**.
 
 ### 4. Router and resolution prompts — 2026-09-13
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 Each analysis given positive and negative criteria so routing does not
 depend on the default.
@@ -298,11 +358,15 @@ three-model panel revealed it.
 
 ### 5. Structured outputs — 2026-09-13
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 Routing constrained by an enum schema where the model supports one, falling
 back to prose otherwise. No regression: `glm-5.3-flash` 100 routing and
 **198/198** paraphrase; `deepseek-v4-flash` held at its 99 baseline.
 
 ### 6. Fenced passages — 2026-09-14
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 Each retrieved passage wrapped in a per-request delimiter, with the contract
 naming it stated in full before the passages and again after them. Three
@@ -343,6 +407,8 @@ it with a single clause cost `deepseek-v4-flash` a point and put
 restatement is doing work, not taking up room. Reverted.
 
 ### 7. The write path — 2026-09-15
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 First epoch for `edit_plan` and `edit_apply`, so nothing here compares with
 the Zardoz suites. The edit prompts now fence the page (S-01) with the same
@@ -409,6 +475,8 @@ now counts markers against the source, and the re-run is the 1/3 above.
 
 ### 8. Refusal read by equality, identifiers need a cue — 2026-09-15
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 No prompt changed. Two changes to how Zardoz reads its inputs and outputs:
 a reply is a refusal only when it *is* `INSUFFICIENT_CONTEXT` (S-07), and a
 HITRUST- or CFR-shaped token gates retrieval only when it is cued or cited
@@ -445,6 +513,8 @@ suite 27 cases and totals after this epoch not comparable with the ones
 above.
 
 ### 9. The drafting prompts, measured for the first time — 2026-09-15
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 First epoch for `generation`, and the largest gap the review found: every
 prompt that actually writes policy was unmeasured. Six cases over one fixed
@@ -496,6 +566,8 @@ against a document set it is the difference worth knowing before choosing.
 
 ### 10. Schemas on the two prose parsers — 2026-09-15
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 `build_edit_plan` and `cluster_leftovers` both described a shape in the
 system prompt and recovered it with a parser. Both now send a JSON Schema
 where the provider can honour one, keeping the parser and the prompt for
@@ -539,6 +611,8 @@ Titles with delimiters are not a contrived case — `Backup | Restore` and
 
 ### 11. Native citations — 2026-09-15, unverified against the real endpoint
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 `answer_question` now sends its passages as document blocks when the
 provider can, and reads back the spans the API says were quoted.
 `citation_disagreements` compares those against the model's own `[n]`
@@ -579,6 +653,8 @@ or would only train readers to ignore warnings — which is the reason it is
 not one today.
 
 ### 12. Full-suite baseline: `moonshotai/kimi-k3` — 2026-09-15
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 First full run of `openrouter/moonshotai/kimi-k3` across every suite
 (`--min-interval 6`, after the rate limit voided the two earlier attempts
@@ -657,6 +733,8 @@ number; the 0/5 says nothing about kimi-k3.
 
 ### 13. Two more skills on the router — 2026-09-16
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 `bundle` (everything one team owns) and `addresses` (who answers for one
 requirement, and which document says so) ship as CLI commands and as Zardoz
 skills, so each arrives with routing cases rather than being added to the
@@ -687,6 +765,8 @@ Not comparable with epoch 12's routing row: the suite gained six cases, so
 the denominator changed.
 
 ### 14. Routing that carries the scope — 2026-09-16
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 The router returned an analysis name and nothing else, and the shell ran
 that analysis with no arguments at all. "Which controls are orphaned in the
@@ -760,6 +840,8 @@ was actually broken.
 
 ### 15. The harness was measuring the fallback — and chaining — 2026-09-16
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 *Provider path:* `eval_zardoz.py --model`, LiteLLM built directly, so schema
 and effort were both used. A config-built run in this window reached the
 schema path too — `supports_schema` was forwarded — but sent no effort; see
@@ -816,6 +898,8 @@ so single-intent cases grade the count strictly.
 Cost was not captured for this run.
 
 ### 16. The production request, re-measured — 2026-09-16
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 *Provider path:* `eval_zardoz.py --model`, LiteLLM built directly. "The
 production request" below means the request the code builds for a provider
@@ -948,6 +1032,8 @@ nine match.
 
 ### 17. The other four suites through the fixed meter — 2026-09-16
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 Measured by policyforge-ba from a worktree at `b39a102`, `--repeat 3 --min-interval 1`; every suite printed `Code: b39a102`, and the prompt texts
 match the epoch 16 fingerprints. Output was searched for 429, rate-limit,
 API errors, exceptions, tracebacks and timeouts, and none were found, so no
@@ -1001,6 +1087,8 @@ generation result is the open quality problem this epoch adds, and it is
 not yet explained.
 
 ### 18. Drafting prompts that may not invent a value or a hedge — 2026-09-16
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 Epoch 17's open problem, explained and fixed by policyforge-ba. Prompts:
 `generate.standard` v3 (`e1b15e2b94b0`) and `generate.procedure` v2
@@ -1063,6 +1151,8 @@ omitting Okta. The vendor case is flaky on both flash models and is open.
 
 ### 19. Generation graded the way the CLI generates — 2026-09-17
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 policyforge-ba's fix for epoch 18's open vendor case, merged as `571a593`
 and measured at `c6373d7`, which differs from the merged code only by one
 reordered import in `evals/runner.py`. No prompt changed: `generate.standard`
@@ -1119,6 +1209,8 @@ Standard; it did so in both of its failing runs here. glm still sometimes
 settles the undecided lockout count.
 
 ### 20. Mapping a framework onto 800-53 — 2026-09-16
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 A new suite and a new prompt (`crosswalk.propose` v1, `dc1342fdc46a`), so
 nothing here compares with the epochs above.
@@ -1301,6 +1393,8 @@ than written to `relationship` (R1).
   changes no report.
 
 ### 21. What a policy set costs — 2026-09-17
+
+> **Source retained** (#207): [`docs/measurements/ledgers/`](docs/measurements/ledgers/README.md), the three 2026-09-17 ledgers and their step records. Re-derived on 2026-09-24: the table (topics, calls, tokens, cost, wall clock), the per-topic and per-site figures, and the pre-1.2.1 run's $0.2141 and its 15, 11 and 4 truncations. The 19x answering ratio comes from the nine-model comparison and is not re-derivable.
 
 The number a buyer asks first, and the first measurement of the whole
 pipeline rather than one prompt. Not comparable with any suite row above: no
@@ -1489,6 +1583,8 @@ than archaeological.
 
 ### Output headroom, before the 1.2.1 budgets
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 Measured on `553d430`, the last commit before the fix, through
 `eval_zardoz.py --model` (so effort was sent): the generation and answering
 suites, `--repeat 3`, on `glm-5.3-flash` and `deepseek-v4-flash`. 200 calls,
@@ -1521,6 +1617,8 @@ so the procedure case has room; the answering site's 1,024 is unchanged and
 is queued for sizing.
 
 ### 22. The entailment judge, after its input was fixed — 2026-09-18
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 The entailment check judges every cited sentence in an answer against the
 passage it cites. It was measured once before and **the measurement was
@@ -1650,6 +1748,8 @@ scheme fixes that — it needs the harness to emit every judged claim with
 its verdict, which is sequenced after this run.
 
 ### 23. Whether the prompt alone stops short-form NIST citations — 2026-09-20
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived The one exception is the null-run cost correction, which rests on [`docs/measurements/ledgers/`](docs/measurements/ledgers/README.md).
 
 **Pre-registered before the data existed** (design, thresholds and the
 blocking prerequisite fixed 2026-09-18, held by 1d), and run once 800-171
@@ -1796,6 +1896,8 @@ and `FedRAMP CM-2` attributes an 800-53 id to a framework that is not
 characterise exactly, and nothing here was designed to detect it.
 
 ### 24. What a document set costs, one provider — 2026-09-21
+
+> **Source retained** (#207): [`docs/measurements/ledgers/2026-09-21-document-set-sonnet-4.5.jsonl`](docs/measurements/ledgers/2026-09-21-document-set-sonnet-4.5.jsonl). Every figure in this section's tables was re-derived on 2026-09-24.
 
 **Authorised in advance at ~$8.70 and 25 topics**, one provider, Standard
 tier only. The full three-tier matrix and a second provider were **not**

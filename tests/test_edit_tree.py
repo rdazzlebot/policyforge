@@ -50,7 +50,13 @@ def _write(path: Path, text: str) -> Path:
 
 def _git(cwd: Path, *args: str) -> str:
     return subprocess.run(
-        ["git", *args], cwd=cwd, capture_output=True, text=True, check=True
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=True,
     ).stdout
 
 

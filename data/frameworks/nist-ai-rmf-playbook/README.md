@@ -12,10 +12,17 @@ action. It must never say NIST requires one.** In NIST's own words:
   suggestions or to go through it as an ordered series of steps."
   ([AIRC FAQ](https://airc.nist.gov/airmf-resources/playbook/faq/))
 
-**Generation does not enforce this yet.** Nothing in PolicyForge currently
-stops a generated sentence from citing a Playbook action as a requirement. The
-guard for that is #300. Until it lands, read any generated text that cites
-this catalog with that in mind.
+**How PolicyForge holds to this (#300).** The Standard and Procedure prompts
+tell the model to write a Playbook-tagged action as NIST suggesting it, and to
+put any requirement the organization adopts in a separate sentence without
+the Playbook tag. `policyforge check` then reports, **as an error**, any
+sentence that cites only the Playbook and binds: "must", "shall", "is
+required to", or "needs to", "has to", "is expected to". Two limits:
+
+- A merged tag that also cites a binding source (`[NIST 800-53 CM-8 | NIST AI RMF Playbook ...]`) is held to that source's rule instead, so it may bind.
+- Obligation wording outside those phrases, such as "it is mandatory to",
+  is not caught. Read generated text that cites this catalog with that in
+  mind.
 
 ## What this catalog is
 

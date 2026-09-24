@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .deontic import NONE, weakened_citations
+from .deontic import NONE, playbook_obligations, weakened_citations
 from .tags import source_tags
 from .tree import ContentDocument, load_content_tree
 
@@ -337,6 +337,32 @@ def _check_requirement_strength(documents: list[ContentDocument]) -> list[Findin
     return findings
 
 
+def _check_playbook_obligations(documents: list[ContentDocument]) -> list[Finding]:
+    """A sentence that cites the NIST AI RMF Playbook and binds (#300).
+
+    **An error, not a warning** (80's ruling). The sibling checks warn so that
+    a tree mid-migration is not blocked, but this one cannot be tripped by an
+    unmapped document: only by one that cites the Playbook and turns its
+    voluntary suggestion into an obligation -- asserting what NIST withheld,
+    which the project's own ruling forbids. Every tier, since the claim is
+    wrong wherever it is made.
+    """
+    findings: list[Finding] = []
+    for doc in documents:
+        for statement in playbook_obligations(doc.body):
+            findings.append(
+                Finding(
+                    doc.relative_path,
+                    f"line {statement.line}: cites the NIST AI RMF Playbook, which is "
+                    "voluntary, as an obligation -- write it as NIST suggesting the action, "
+                    "and state any requirement the organization adopts in its own sentence "
+                    f'without the Playbook tag — "{statement.text[:70]}"',
+                    ERROR,
+                )
+            )
+    return findings
+
+
 def _check_unanchored(documents: list[ContentDocument]) -> list[Finding]:
     """An obligation that binds while citing nothing, beside ones that cite.
 
@@ -389,6 +415,7 @@ def check_tree(root: Path, *, synthesis_dir: Path | None = None) -> CheckReport:
     report.findings.extend(_check_uncited(documents))
     report.findings.extend(_check_unanchored(documents))
     report.findings.extend(_check_requirement_strength(documents))
+    report.findings.extend(_check_playbook_obligations(documents))
     if synthesis_dir is not None:
         report.findings.extend(_check_citations(documents, synthesis_dir))
 

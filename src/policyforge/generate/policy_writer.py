@@ -74,7 +74,7 @@ class TopicContext:
 _STANDARD_SYSTEM_PROMPT = register(
     Prompt(
         name="generate.standard",
-        version=3,
+        version=4,
         text="""You are a compliance policy drafting engine. \
 Turn a set of already-synthesized, source-tagged requirement statements \
 into a formal information security STANDARD document for one \
@@ -92,6 +92,13 @@ Rules:
 - Preserve each requirement's inline source tag (e.g. `[NIST 800-53 IA-5 |
   GovRAMP IA-5]`) so the document stays traceable back to the frameworks it
   was drawn from.
+- A requirement tagged `[NIST AI RMF Playbook ...]` is NIST's voluntary
+  suggestion, not a requirement. Write it as NIST suggesting the action
+  ("NIST suggests ..."), keep its tag, and never give that sentence "must",
+  "shall", "is required to" or any other obligation: this overrides the
+  formal-language rule for these sentences only. If the organization adopts
+  the action as its own requirement, say so in a SEPARATE sentence that does
+  not carry the Playbook tag.
 - Where a requirement is vendor/tool-specific: if the tool list below fills
   that role, use that tool's actual name. If not, write the role itself in
   square brackets (`[Identity Provider]`, `[Ticketing System]`, `[Backup
@@ -170,7 +177,7 @@ Rules:
 _PROCEDURE_SYSTEM_PROMPT = register(
     Prompt(
         name="generate.procedure",
-        version=2,
+        version=3,
         text="""You are a compliance policy drafting engine. \
 Turn a set of already-synthesized, source-tagged requirement statements \
 into a formal information security PROCEDURE document for one \
@@ -198,6 +205,13 @@ Rules:
   requirement's inline source tag (e.g. `[NIST 800-53 IA-5 | GovRAMP IA-5]`) at the
   end of its subsection heading or its first step, so the document stays
   traceable back to the frameworks it was drawn from.
+- A requirement tagged `[NIST AI RMF Playbook ...]` is NIST's voluntary
+  suggestion, not a requirement. Write it as NIST suggesting the action
+  ("NIST suggests ..."), keep its tag, and never give that sentence "must",
+  "shall", "is required to" or any other obligation: this overrides the
+  formal-language rule for these sentences only. If the organization adopts
+  the action as its own requirement, say so in a SEPARATE sentence that does
+  not carry the Playbook tag.
 - Steps invite deadlines. Never state a frequency, deadline, duration or count that is not given
   in the input requirements or in the organization context below — no
   "within 5 business days", "annually", "after 30 days" of your own. Where

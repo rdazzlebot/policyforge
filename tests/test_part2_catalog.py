@@ -107,8 +107,27 @@ def test_the_readme_claims_only_what_the_search_found(readme):
     where NIST publishes the mapping in the file the catalog is built from.
     A search of 2026-09-24 (policyforge-f8, handle 5b) found none for Part 2,
     but could not enumerate NIST OLIR, where one would be registered. So the
-    README may say "not found" and must say what was not searched."""
-    assert "there is no equivalent" not in readme, "stronger than the search (#264)"
-    assert "was found" in readme, "the claim the search supports"
-    assert "OLIR" in readme, "the limit that stops 'not found' reading as 'does not exist'"
-    assert "Subpart C" in readme, "why the HIPAA crosswalk does not reach Part 2"
+    README may say "not found" and must say what was not searched.
+
+    **Whole sentences, after collapsing whitespace and emphasis**, because
+    a fragment check passed two mutants (policyforge-78, handle 1d): the
+    inverted "An equivalent mapping ... was found" contains "was found",
+    and the old sentence wrapped across a line break evades a literal
+    "not in". The HIPAA sentence names all three provisions § 2.16 cites,
+    because an earlier draft said "only" and omitted part 160 -- which
+    controls.json ships in § 2.16(b)."""
+    text = " ".join(readme.replace("**", "").split())
+    assert "there is no equivalent authority mapping Part 2" not in text, (
+        "stronger than the search (#264)"
+    )
+    assert "No equivalent mapping for Part 2 was found." in text, "the claim the search supports"
+    assert "the NIST OLIR and CPRT catalogs could not be listed" in text, (
+        "the limit that stops 'not found' reading as 'does not exist'"
+    )
+    assert (
+        "§ 2.16 cites three HIPAA provisions: 45 CFR 164.514(b) (de-identification), "
+        "and 45 CFR part 160 with part 164 Subpart D" in text
+    ), "every HIPAA provision § 2.16 cites, as controls.json ships them"
+    assert "Part 2 cites nothing in Subpart C" in text, (
+        "why the HIPAA crosswalk does not reach Part 2"
+    )

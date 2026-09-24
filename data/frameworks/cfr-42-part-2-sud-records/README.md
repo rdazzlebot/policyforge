@@ -191,11 +191,13 @@ Part 2 was found.** A crosswalk invented here would be this project's
 opinion wearing the source's authority, so the mapping is left to
 `crosswalk propose` and a human reviewer, where its provenance is visible.
 
-**The HIPAA crosswalk does not reach Part 2 indirectly.** § 2.16 points at
-HIPAA only through 45 CFR 164.514(b) (de-identification) and Subpart D
-(breach notification). The published HIPAA mappings, NIST SP 800-66r2 and
-the OCR crosswalk, map the Security Rule, which is Subpart C. So Part 2
-gets no 800-53 mapping through them.
+**The HIPAA crosswalk does not reach Part 2 indirectly.** § 2.16 cites
+three HIPAA provisions: 45 CFR 164.514(b) (de-identification), and 45 CFR
+part 160 with part 164 Subpart D (general administrative rules and breach
+notification). § 2.19 cites none. The published HIPAA mappings, NIST SP
+800-66r2 and the OCR crosswalk, map the Security Rule, which is part 164
+Subpart C. Part 2 cites nothing in Subpart C, so it gets no 800-53
+mapping through them.
 
 **What "not found" rests on** (searched 2026-09-24 UTC, #264):
 

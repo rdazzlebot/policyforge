@@ -268,7 +268,12 @@ def _doc_shell_blocks(path: str, text: str) -> list[Source]:
 #: above: two derivations of one fact are what let them disagree, and a
 #: census computed by the parser would agree with the parser by construction.
 _SIGNALS = {
-    "script": (("*.sh",), re.compile(r"\S", re.S)),
+    # Matches at most ONCE per file: a script is one source, and the
+    # census counts BLOCKS. `\S` would have counted every non-space
+    # character as a block the moment a *.sh was committed -- latent,
+    # because the repository has none today, and it would have reported
+    # a forty-character script as forty missing blocks.
+    "script": (("*.sh",), re.compile(r"\A\s*\S", re.S)),
     # Both extensions, matching `population()`. With only `*.yml` a
     # `.yaml` workflow is read by the parser and invisible to the census,
     # so the one file the census exists to notice could be the one it
@@ -281,7 +286,7 @@ _SIGNALS = {
 }
 
 
-def census() -> dict[str, set[str]]:
+def census() -> dict[str, dict[str, int]]:
     """How many files of each kind *look like* they should yield sources.
 
     **This is the second derivation, and it exists because of a real hole.**
@@ -313,14 +318,15 @@ def census() -> dict[str, set[str]]:
     **A second derivation raises the cost of going blind; it does not make
     it impossible.**
     """
-    found: dict[str, set[str]] = {}
+    found: dict[str, dict[str, int]] = {}
     for kind, (patterns, signal) in _SIGNALS.items():
-        hits = set()
+        hits: dict[str, int] = {}
         for pattern in patterns:
             for path in tracked(pattern):
                 text = (REPO_ROOT / path).read_text(encoding="utf-8", errors="replace")
-                if signal.search(text):
-                    hits.add(path)
+                blocks = len(signal.findall(text))
+                if blocks:
+                    hits[path] = blocks
         found[kind] = hits
     return found
 
@@ -500,20 +506,55 @@ def main(argv: list[str]) -> int:
     # rather than out of existence. Not done here: one edit is the
     # accident-shaped case, two coordinated edits in the same direction
     # forty lines apart is not.
-    produced = {kind: {s.path for s in sources if s.kind == kind} for kind in _SIGNALS}
+    # **Compared in BLOCKS, per file.** The previous version compared FILE
+    # SETS -- census files minus produced files. That catches a file falling
+    # out of the derivation entirely and is blind to a file producing FEWER
+    # BLOCKS than it holds: capping run-blocks at one per file took the
+    # population 34 -> 3, a 91% loss, every file still produced something,
+    # so the set difference was empty and this exited 0 saying `clean`. A
+    # real violation inside a dropped block was invisible, not merely
+    # uncounted.
+    #
+    # Found by policyforge-9b; confirmed by policyforge-ba, who seeded a
+    # real `| tail -4 && git push` inside a dropped block and watched it go
+    # from exit 1 to exit 0.
+    #
+    # **The unit is the whole fix, and ba named the trap that was waiting
+    # for me**: classifying FILES and counting BLOCKS reproduces this a
+    # third time, and it would look like a remedy. Both sides count blocks.
+    produced: dict[str, dict[str, int]] = {kind: {} for kind in _SIGNALS}
+    for source in sources:
+        produced[source.kind][source.path] = produced[source.kind].get(source.path, 0) + 1
+
+    # A FLOOR rather than equality: the parser finding MORE than the crude
+    # signal is not a shrink, and the danger has one direction. Measured on
+    # this tree they agree exactly, file by file -- 15/15, 8/8, 11/11 across
+    # the workflows -- so the floor is not slack hiding anything today.
     silent = {
-        kind: sorted(paths - produced[kind])
-        for kind, paths in census().items()
-        if paths - produced[kind]
+        kind: rows
+        for kind, rows in (
+            (
+                kind,
+                sorted(
+                    (path, blocks, produced[kind].get(path, 0))
+                    for path, blocks in counts.items()
+                    if produced[kind].get(path, 0) < blocks
+                ),
+            )
+            for kind, counts in census().items()
+        )
+        if rows
     }
     if silent:
-        for kind, paths in silent.items():
+        for kind, rows in silent.items():
+            missing = sum(blocks - got for _, blocks, got in rows)
             print(
-                f"shell_status: {len(paths)} {kind} file(s) look like they contain "
-                f"shell and the {kind} derivation produced nothing for them.\n"
-                f"  That is not 'no problems'; it is a broken derivation -- most "
-                f"likely a pathspec in this file that stopped matching:\n"
-                + "\n".join(f"    {path}" for path in paths),
+                f"shell_status: {missing} {kind} block(s) went missing "
+                f"across {len(rows)} file(s).\n"
+                f"  That is not 'no problems'; it is a broken derivation\n"
+                f"  -- a pathspec, or a block parser, that stopped matching.\n"
+                f"  Each row is file, blocks signalled, blocks parsed:\n"
+                + "\n".join(f"    {path}  {blocks} -> {got}" for path, blocks, got in rows),
                 file=sys.stderr,
             )
         return 2

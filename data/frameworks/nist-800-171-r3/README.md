@@ -125,10 +125,14 @@ NIST-800-171 reachable via the crosswalk
   0 of 97 requirements map to an owned NIST control
 ```
 
-**Zero here means nobody has published a rev 3 to 800-53 mapping**, not
-that 97 requirements are unaddressed. The report says which of those two
-it means for every framework that reports zero, because they want
-opposite responses — *go and map it* against *mapping it would be wrong*.
+**Zero here is a gap in PolicyForge, not in the source.** NIST's OSCAL
+file for rev 3, the one this catalog is built from, links every one of
+the 97 requirements to the 800-53 controls it was derived from: 157
+links. This catalog does not ingest them yet (#259), so nothing reaches
+800-53 through it. It does not mean 97 requirements are unaddressed, and
+it does not mean nobody has mapped them. **Do not hand-map them with
+`crosswalk seed`**, because the source already asserts the mapping and a
+hand-made one would compete with it.
 
 ## Regenerating it
 
@@ -151,9 +155,12 @@ template produces both; only literals do.
 
 ## Crosswalk
 
-This catalog seeds normally. It ships without a `source_crosswalk` because
-no authority publishes a rev 3 to 800-53 mapping this project ingests — a
-different thing from being unmappable, and the same position
-`cfr-42-part-2-sud-records` is in. The framework key is `nist-800-171`,
+This catalog seeds normally. It ships without a `source_crosswalk`
+**because the ETL does not read the links NIST publishes**, not because
+none exist. Each rev 3 requirement links to its 800-53 source controls
+as `rel="reference"` entries in the catalog's back-matter, in the same
+list as its literature references (`IR 7874`, `SP 800-63-3`). 800-53
+uses `rel="related"`, which is the only kind `oscal_loader` reads.
+Ingesting them is #259. The framework key is `nist-800-171`,
 which `mapping/crosswalk.FRAMEWORK_ALIASES` already carried before this
 catalog existed.

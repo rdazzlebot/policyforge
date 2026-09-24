@@ -45,7 +45,11 @@ PRESERVES = [
 ]
 
 #: `[NIST` not followed by a catalog-qualifying token.
-BARE_NIST = re.compile(r"\[NIST\s+(?![0-9]|[Cc]ybersecurity|CSF)")
+# "AI RMF" is a qualified catalog name, not a bare family: `NIST AI RMF` and
+# `NIST AI RMF Playbook` each key to their own catalog. Measured with
+# `normalize_framework` on #300, which also showed that "NIST AI" alone keys
+# to the shared `nist` bucket, so the exemption is "AI RMF", not "AI".
+BARE_NIST = re.compile(r"\[NIST\s+(?![0-9]|[Cc]ybersecurity|CSF|AI RMF\b)")
 
 
 def test_qualifying_nist_changes_what_it_resolves_to() -> None:

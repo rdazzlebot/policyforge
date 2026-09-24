@@ -12,10 +12,38 @@ action. It must never say NIST requires one.** In NIST's own words:
   suggestions or to go through it as an ordered series of steps."
   ([AIRC FAQ](https://airc.nist.gov/airmf-resources/playbook/faq/))
 
-**Generation does not enforce this yet.** Nothing in PolicyForge currently
-stops a generated sentence from citing a Playbook action as a requirement. The
-guard for that is #300. Until it lands, read any generated text that cites
-this catalog with that in mind.
+**How PolicyForge holds to this (#300).** The Standard and Procedure prompts
+tell the model to write a Playbook-tagged action as NIST suggesting it, and to
+put any requirement the organization adopts in a separate sentence without
+the Playbook tag. `policyforge check` then reports, **as an error**, any
+sentence that cites only the Playbook and is not framed as NIST's: its
+subject must be NIST or the Playbook ("NIST suggests ...", "The Playbook
+lists ..."), its verb must not be "requires", "mandates", "obliges" or
+"directs", and it must not bind. **Anything else fails**, however it is
+worded, so a new paraphrase of an obligation is caught by default. **No
+heading may cite the Playbook**, not even in a merged tag: a heading's tag
+covers every step beneath it, which turns a suggestion into an instruction by
+position. `policyforge check` reports a Playbook-tagged heading as an error
+too. Limits:
+
+- A merged tag that also cites a binding source (`[NIST 800-53 CM-8 | NIST AI RMF Playbook ...]`) is held to that source's rule instead, so it may bind.
+- The subject is read from the start of the sentence. A sentence about NIST
+  with another subject, such as "One action NIST lists is ...", fails even
+  though it asserts nothing; reword it with NIST or the Playbook as subject.
+- An obligation the organization adopts, in its own sentence beside a
+  Playbook citation, is reported by `policyforge check` as a binding
+  sentence that cites nothing, for a person to confirm. It is seen only if
+  it binds in the usual words ("must", "shall", "is required to"); one
+  phrased "Acme Health requires ..." is not.
+- A NIST-subject sentence that states an obligation in the passive, such as
+  "NIST recommends that inventories are required for every system", passes:
+  "are required for" is not one of the binding forms the check recognises.
+- **Procedures.** A Procedure's steps are instructions, so a Playbook action
+  under one reads as NIST's instruction wherever its tag sits. In a local
+  test, a generated Procedure moved every Playbook tag onto its steps, and the
+  check above reports every one. No bundled topic anchors Playbook actions
+  yet. When the AI topics do (#301), the Procedure tier is to be left
+  without them, citing its Standard and binding sources instead.
 
 ## What this catalog is
 

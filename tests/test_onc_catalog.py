@@ -201,6 +201,32 @@ def test_a_criterion_citation_resolves_to_this_catalog(parsed):
     assert [(f, r) for f, r, _, _ in found] == [(FRAMEWORK, "170.315(g)(10)")]
 
 
+def test_the_pending_proposal_is_described_as_a_subset_and_its_examples_are_live(parsed):
+    """The README records ONC's pending proposed rule (90 FR 60970) (#179, 80).
+    **Its first version said ONC proposed removing (a)(14), (h)(1) and
+    (h)(2)** -- the three the FY2027 IPPS rule names for the Base EHR
+    definition -- which read as the whole proposal; the rule marks many more
+    (policyforge-9b, on #307). So the paragraph must cite the rule, call the
+    three a subset, and give no count nobody has measured; and the three it
+    names must still be live, so a re-pin applying the final rule fails here
+    and the paragraph is rewritten in the same change."""
+    import re
+
+    readme = " ".join((CATALOG / "README.md").read_text(encoding="utf-8").split())
+    start = readme.index("Pending, and not applied:")
+    paragraph = readme[start : readme.index("absorbing it.", start)]
+    assert "90 FR 60970" in paragraph, paragraph
+    # Not "HTI-5": the rule never names itself so (80, on #307, reading its
+    # text); a label nobody can source is not written as fact.
+    assert "HTI-5" not in paragraph, paragraph
+    assert "subset, not the whole proposal" in paragraph, paragraph
+    assert "No count of the proposed removals is given" in paragraph, paragraph
+    named = {f"170.315{n}" for n in re.findall(r"\([a-z]\)\(\d+\)", paragraph)}
+    live = {c.control_id for c in parsed[0]}
+    assert named == {"170.315(a)(14)", "170.315(h)(1)", "170.315(h)(2)"}, named
+    assert named <= live, f"no longer live, so rewrite the pending paragraph: {named - live}"
+
+
 def test_the_readme_s_counts_are_the_catalog_s(parsed):
     readme = " ".join((CATALOG / "README.md").read_text(encoding="utf-8").split())
     controls = parsed[0]

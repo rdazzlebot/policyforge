@@ -304,4 +304,8 @@ def test_etl_on_the_pinned_export_writes_the_shipped_catalog(tmp_path):
         cli_mod.cli, ["etl-ai-rmf-playbook", "--json", str(FIXTURE), "--out", str(out)]
     )
     assert result.exit_code == 0, result.output
-    assert out.read_bytes() == (CATALOG / "controls.json").read_bytes()
+    # CRLF folded first, as `provenance.content_digest` does: a Windows
+    # checkout with core.autocrlf=true hands the shipped file over as CRLF,
+    # and the ETL writes LF on every platform.
+    shipped = (CATALOG / "controls.json").read_bytes().replace(b"\r\n", b"\n")
+    assert out.read_bytes() == shipped

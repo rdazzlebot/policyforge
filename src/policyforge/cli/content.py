@@ -20,7 +20,7 @@ from policyforge.cli._common import (
 from policyforge.textfile import write_text_lf
 
 
-def history_hint(*, tier: str, name: str, previous: str, current: str) -> str:
+def history_hint(*, tier: str, name: str, previous: int | str, current: int | str) -> str:
     """The `history` invocation that shows what changed, as printed.
 
     **Extracted so the quoting is reachable from a test.** It was inline
@@ -32,7 +32,16 @@ def history_hint(*, tier: str, name: str, previous: str, current: str) -> str:
     A document name is user-authored: `Ryan's Access Policy` inside
     hand-written quotes produces a valid command naming a different
     document, silently. Same defect as a page title, different caller.
+
+    **The versions arrive as ints** (`VersionRecord.version`) and
+    `shlex.quote` takes only strings, so they are `str()`ed here. Without
+    that, every import that differed from a recorded version crashed after
+    it had written its file (#310). The first test of this helper passed
+    `"v1"`, a value no caller sends.
     """
+    # Converted before the f-string, so the quoted expressions keep the text
+    # `test_printed_commands_run` pins them by.
+    previous, current = str(previous), str(current)
     return (
         f"Run `policyforge history "
         f"--tier {shlex.quote(tier)} --name {shlex.quote(name)} "

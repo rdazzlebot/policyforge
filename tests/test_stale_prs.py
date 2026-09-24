@@ -579,3 +579,58 @@ def test_unreadable_check_runs_are_none(monkeypatch):
     assert stale_prs.head_checks(HEAD, "o/r") is None
     _check_runs(monkeypatch, [])
     assert stale_prs.head_checks(HEAD, "o/r") is None
+
+
+def test_newest_first_api_order_with_a_red_newest_run_is_failing(monkeypatch):
+    """**b5's finding on #299.** The check-runs API lists the NEWEST run first
+    (measured on #234's head). Both earlier latest-run fixtures listed it
+    second, so "the last run in list order wins" passed every test -- and on
+    real API order it resolves to the OLDEST run, a stale green masking a
+    current red (#232). Here the newest run is red and listed first."""
+    _check_runs(
+        monkeypatch,
+        [
+            {
+                "name": "pytest",
+                "status": "completed",
+                "conclusion": "failure",
+                "started_at": "2026-09-24T11:00:00Z",
+            },
+            {
+                "name": "pytest",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-09-24T10:00:00Z",
+            },
+        ],
+    )
+    assert stale_prs.head_checks(HEAD, "o/r") == (0, 1)
+
+
+def test_the_real_234_shape_reads_as_green(monkeypatch):
+    """#234's `changelog` check, as the API returned it: success, then an
+    earlier failure, then an older skip. The newest is green, so it passes."""
+    _check_runs(
+        monkeypatch,
+        [
+            {
+                "name": "changelog",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-09-24T00:15:19Z",
+            },
+            {
+                "name": "changelog",
+                "status": "completed",
+                "conclusion": "failure",
+                "started_at": "2026-09-24T00:14:36Z",
+            },
+            {
+                "name": "changelog",
+                "status": "completed",
+                "conclusion": "skipped",
+                "started_at": "2026-09-21T20:18:52Z",
+            },
+        ],
+    )
+    assert stale_prs.head_checks(HEAD, "o/r") == (0, 0)

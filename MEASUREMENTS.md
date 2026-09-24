@@ -1739,6 +1739,127 @@ and `FedRAMP CM-2` attributes an 800-53 id to a framework that is not
 800-53. **Fabrication is not mis-formation**, six is small enough to
 characterise exactly, and nothing here was designed to detect it.
 
+### 24. What a document set costs, one provider — 2026-09-21
+
+**Authorised in advance at ~$8.70 and 25 topics**, one provider, Standard
+tier only. The full three-tier matrix and a second provider were **not**
+authorised. Run from a worktree pinned to `6244fb1`, against
+`openrouter/anthropic/claude-sonnet-4.5`.
+
+|            |                                                           |
+| ---------- | --------------------------------------------------------- |
+| topics     | **25 of 25**                                              |
+| calls      | 50 — a synthesis per *topic*, a generation per *document* |
+| **actual** | **$6.1487**                                               |
+| estimate   | $8.70                                                     |
+| difference | **−$2.5513 (−29%)**                                       |
+| wall clock | 1.26 h against ~2.3 h                                     |
+| hard stop  | did not fire                                              |
+
+Per topic: mean **$0.2459**, median $0.2444, range $0.0747–$0.4227.
+
+**Which population the control counts describe**, because two readings of one
+registry disagree by a factor of three and both are correct:
+
+| per topic                                  | median | range    | probe topic |
+| ------------------------------------------ | ------ | -------- | ----------- |
+| anchor ids in `config/topics.example.yaml` | 7      | 3–19     | 10          |
+| **controls after crosswalk expansion**     | **18** | **3–45** | **28**      |
+
+Every count in this entry is the **second** row — what `build_synthesis_topic`
+returns once each anchor has pulled in the controls other frameworks map to it.
+The crosswalk was built **in-process by `build_crosswalk()` over the catalogs
+named below**, not read from `crosswalk.json`; that file is produced by
+`policyforge map`, is not tracked, and a clean clone has none. **A re-run with
+an empty crosswalk resolves each anchor to one control and reproduces the first
+row exactly** — which is how policyforge-d8 found this gap in review: their
+counts matched the anchor distribution identically, and two supposedly different
+quantities agreeing exactly is the tell that both were the same thing.
+
+To reproduce the second row: load `nist-800-53-r5`, `nist-ai-rmf`,
+`hipaa-security-rule`, `fedramp` and `arc-ampe`, pass them to
+`build_crosswalk()`, then to `build_synthesis_topic()` per topic.
+
+**The two passes used different catalog sets, and that did not move the
+numbers.** The first 20 topics ran without `nist-ai-rmf`; re-deriving them with
+it gives identical control counts, and both match the ledger. The AI RMF
+contributes no crosswalk rows, so adding it changes only the five topics that
+anchor on it.
+
+#### The first pass came in 34% under, and the underspend WAS the defect
+
+It covered **20 of 25**. The five missing were every AI topic — they anchor
+on `Govern 1`, `Map 1`, `Measure 1`, `Manage 1`, and the catalog set I chose
+omitted `nist-ai-rmf`, so each resolved zero controls and was skipped.
+
+**A 20% population loss presenting as a 34% cost saving**, and the lost
+topics were 1.6's headline feature. The number was right for what ran; the
+population was wrong — and *under* is the direction nobody investigates,
+because an underspend harms no one and reads as efficiency.
+
+It surfaced only because the run printed **requested beside completed**. A
+report of "$5.74 spent, 20 documents written" is true, complete-looking, and
+says nothing about the five. **The completion pass cost $0.4113.**
+
+#### A rate from one topic is a rate for that topic
+
+The estimate came from a single probe topic at $0.3477 — *Identity Lifecycle
+& Access Review*, 28 controls. By control count that topic sits at the **60th
+percentile** of the 25: 15 of 25 have strictly fewer, against a median of 18.
+
+```
+25 x $0.3477 (one topic)   =  $8.69      the estimate
+actual across 25 topics    =  $6.1487    −29%
+```
+
+**The same topic cost $0.3879 in this run — 12% more than in the probe, on
+identical input.** That is the spread a single measurement cannot show, now
+measured rather than argued: the probe was not merely unrepresentative of the
+other 24 topics, **its own figure was one draw from a distribution with at
+least 12% of width.** So it was wrong in two directions at once — an
+above-median topic, and a draw that happened to land low.
+
+This entry first said the **72nd** percentile. That placed the probe's cost
+from the *separate* rate-probe run into *this* run's cost distribution — two
+runs in one comparison — and then set the result beside a median of
+**controls**, so the sentence compared a cost rank with a control count.
+policyforge-f2 recomputed from the table and got the 60th; policyforge-d8,
+who had approved having checked the table but not the figure derived from
+it, agreed. **Every way the figure can be taken:**
+
+| quantity                                  | strictly below | at or below |
+| ----------------------------------------- | -------------- | ----------- |
+| **controls** (what the sentence is about) | **60th**       | 64th        |
+| cost, this run's value ($0.3879)          | 88th           | 92nd        |
+| cost, rate-probe value ($0.3477)          | 72nd           | 72nd        |
+
+The conclusion survives on every row — the probe was above the middle — but
+only the first row answers the sentence it sits in.
+
+This is the same shape as the earlier fixture error one level in: that probe
+under-stated by 13x by measuring a 647-character synthesis; this one
+over-stated by 29% by measuring an above-median topic once. **Both are "the
+population is one".**
+
+#### What could not be measured, and why
+
+**Claude-direct was not authorised for this release.** It is the most
+informative cell in the matrix — direct against via-OpenRouter differ by
+*code path*, so a difference between them is a finding about this project
+rather than about a model — and it is absent by decision rather than by
+oversight.
+
+**Stated because a missing row has no incoherence to notice.** The totals
+are correct, every figure present is true, and nothing inside the artefact
+contradicts anything else. A reader cannot detect it by reading; only the
+person who knew what was requested can record what did not happen, at the
+time of the run.
+
+**Not "absent because no key exists"** — that phrasing is false and invites
+the wrong remedy. A reader who goes looking may find an `ANTHROPIC_API_KEY`
+in some environment and conclude the row can simply be re-run; a credential
+that happens to be reachable is not an authorisation to spend against it.
+
 ______________________________________________________________________
 
 ## Two ways a run can lie, found the hard way

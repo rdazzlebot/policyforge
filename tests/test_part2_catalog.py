@@ -128,6 +128,13 @@ def test_the_readme_claims_only_what_the_search_found(readme):
         "§ 2.16 cites three HIPAA provisions: 45 CFR 164.514(b) (de-identification), "
         "and 45 CFR part 160 with part 164 Subpart D" in text
     ), "every HIPAA provision § 2.16 cites, as controls.json ships them"
-    assert "Part 2 cites nothing in Subpart C" in text, (
-        "why the HIPAA crosswalk does not reach Part 2"
+    assert "Neither section this catalog ships cites anything in Subpart C" in text, (
+        "why the HIPAA crosswalk does not reach this catalog"
     )
+    assert "The rest of Part 2 was not read for this" in text, (
+        "the measurement covers the two shipped sections, not the regulation"
+    )
+    # Measured on controls.json (2.16 and 2.19 only), so no sentence may
+    # speak for all of Part 2 (policyforge-78, handle 1d, second round).
+    for overclaim in ("Part 2 cites nothing", "does not reach Part 2"):
+        assert overclaim not in text, f"{overclaim!r} speaks for sections nobody read"

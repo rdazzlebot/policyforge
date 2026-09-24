@@ -756,6 +756,94 @@ def run_shell(
             write(state.voice["interrupt"])
             continue
 
-        output = dispatch(line, state)
+        # A skill that raises used to end the session with a traceback, and
+        # the state with it (#302). Caught here, around `dispatch` only, and
+        # never silently: a refusal prints its class and message, anything
+        # else prints its whole traceback, and either way the next line says
+        # the command FAILED -- nothing a skill produced before raising is
+        # shown, so a failure cannot read as the command having worked.
+        # `Exception`, not `BaseException`: Ctrl-C and `SystemExit` keep
+        # their meaning.
+        try:
+            output = dispatch(line, state)
+        except Exception as exc:  # noqa: BLE001 - every failure reported; see above
+            write(describe_failure(exc, state))
+            continue
         if output:
             write(output)
+
+
+def refusal_types() -> tuple[type[BaseException], ...]:
+    """Exceptions the product raises on purpose, with a message for the user.
+
+    A refusal prints as its class and message; anything else prints a full
+    traceback, because it is a bug and must stay visible. Imported here, on
+    failure, rather than at module load: several of these live beside
+    exporters and loaders the shell does not otherwise need.
+
+    **The classification only decides presentation.** A refusal missing from
+    this list still surfaces, with a traceback, so the list can be wrong in
+    the safe direction only. `tests/test_zardoz_skill_failure.py` derives
+    every exception class the package defines and requires each one to be
+    classified, so a new one cannot be forgotten.
+
+    `ConcurrentEditError` is absent on purpose: it belongs to the Confluence
+    publish path, which this package may not import at all
+    (`test_zardoz_cannot_reach_the_confluence_publish_path`), so no skill can
+    raise it.
+    """
+    import click
+
+    from policyforge.child_output import UndecodableOutput
+    from policyforge.content.tree import ContentError
+    from policyforge.crosswalk.overlay import OverlayError
+    from policyforge.edit.apply import EchoedFenceError
+    from policyforge.edit.tree import TreeEditError
+    from policyforge.export.confluence_search import SearchLimitExceeded
+    from policyforge.ingest.ai_rmf import AiRmfParseError
+    from policyforge.ingest.govramp_export import ExportFormatError as GovRampFormatError
+    from policyforge.ingest.hitrust_export import ExportFormatError as HitrustFormatError
+    from policyforge.llm._inline_thinking import ReasoningBudgetExhausted
+    from policyforge.llm.base import (
+        EmptyReply,
+        ProviderRejected,
+        SchemaReplyError,
+        TruncatedResponse,
+    )
+    from policyforge.llm.batch import BatchError
+    from policyforge.llm.boundary import BoundaryViolation
+    from policyforge.topics.registry import TopicRegistryError
+
+    return (
+        click.ClickException,
+        UndecodableOutput,
+        ContentError,
+        OverlayError,
+        EchoedFenceError,
+        TreeEditError,
+        SearchLimitExceeded,
+        AiRmfParseError,
+        GovRampFormatError,
+        HitrustFormatError,
+        ReasoningBudgetExhausted,
+        EmptyReply,
+        ProviderRejected,
+        SchemaReplyError,
+        TruncatedResponse,
+        BatchError,
+        BoundaryViolation,
+        TopicRegistryError,
+    )
+
+
+def describe_failure(exc: Exception, state: ShellState) -> str:
+    """What a failed command prints: the refusal or the traceback, then a
+    line saying it failed and that the session goes on."""
+    import traceback
+
+    if isinstance(exc, refusal_types()):
+        message = exc.format_message() if hasattr(exc, "format_message") else str(exc)
+        head = f"{type(exc).__name__}: {message}"
+    else:
+        head = "".join(traceback.format_exception(exc)).rstrip()
+    return f"{head}\n{state.voice['command_failed']}"

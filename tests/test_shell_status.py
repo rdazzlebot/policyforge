@@ -484,21 +484,53 @@ def test_the_same_step_in_block_style_is_a_finding_and_clean_block_style_passes(
     assert shell_status.main([]) == 0
 
 
-def test_a_committed_fence_the_parser_cannot_read_is_refused(tmp_path, monkeypatch, capsys):
-    """The doc half of the acceptance test, end to end.
+#: Shell languages a fence might name, written from the domain rather than
+#: read from either instrument. The ORACLE for the doc census is the parser:
+#: every language the parser reads, the census must count. Parametrising
+#: over `_SHELL_FENCES` instead would put one constant on both sides of the
+#: comparison, and removing a language from it would remove the case that
+#: tests it (policyforge-80's `~~~sh` survivor on #326).
+_SHELL_LANGUAGE_CANDIDATES = (
+    "bash", "sh", "shell", "console", "zsh", "ksh", "fish",
+    "powershell", "pwsh", "ps1", "bat", "cmd", "text",
+)  # fmt: skip
 
-    **Written because the unit test above was not enough, measured:**
-    pointing `_SIGNALS["doc"]` back at the old regex left every test green,
-    because `test_the_doc_census_reads_fences_the_parser_does_not` calls
-    `_count_doc_fences` directly and never asks whether `census()` uses it.
-    A `~~~bash` fence holding a swallowed status must fail the lint.
+
+def _parser_reads(language: str) -> bool:
+    fence = f"```{language}\necho hi\n```\n"
+    return len(shell_status._doc_shell_blocks("seeded.md", fence)) == 1
+
+
+_PARSED_LANGUAGES = [c for c in _SHELL_LANGUAGE_CANDIDATES if _parser_reads(c)]
+
+
+def test_the_parser_reads_a_real_set_of_shell_languages():
+    """Guards the parametrisation below from going vacuous: if the parser
+    read nothing, the per-language tests would collect zero cases and pass."""
+    assert len(_PARSED_LANGUAGES) >= 4, _PARSED_LANGUAGES
+
+
+@pytest.mark.parametrize("language", _PARSED_LANGUAGES)
+def test_a_committed_fence_the_parser_cannot_read_is_refused(
+    language, tmp_path, monkeypatch, capsys
+):
+    """The doc half of the acceptance test, end to end, for EVERY language
+    the parser reads.
+
+    **Written because the unit test above was not enough, measured twice.**
+    Pointing `_SIGNALS["doc"]` back at the old regex left every test green,
+    because the unit test calls `_count_doc_fences` directly and never asks
+    whether `census()` uses it. Then, with this test covering only `bash`,
+    policyforge-80 removed `sh` from `_SHELL_FENCES` and all 37 still passed.
+    A `~~~<language>` fence holding a swallowed status must fail the lint,
+    for each language the parser would have read as ```` ```<language> ````.
     """
     _repo(
         tmp_path,
         monkeypatch,
         {
             ".github/workflows/block.yml": _CLEAN_BLOCK_STEP,
-            "README.md": "~~~bash\npython scripts/check.py | tail -4 && git push\n~~~\n",
+            "README.md": f"~~~{language}\npython scripts/check.py | tail -4 && git push\n~~~\n",
         },
     )
     assert shell_status.main([]) == 2

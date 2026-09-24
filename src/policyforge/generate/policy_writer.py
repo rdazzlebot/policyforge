@@ -77,11 +77,20 @@ class TopicContext:
     playbook: list[dict] = field(default_factory=list)
 
 
+#: The one sentence form a Standard uses for a Playbook subcategory (#301).
+#: One constant, read by the prompt below and by the test that runs a sentence
+#: in this form through the #309 gate, so the two cannot disagree again: the
+#: first wording, "Among the N actions NIST suggests ...", began with "Among",
+#: the gate reads the subject from the sentence start, and a measured run
+#: flagged every compliant sentence (17 of 17).
+PLAYBOOK_SENTENCE_FORM = "NIST suggests, among its N actions for <subcategory>, ..."
+
+
 _STANDARD_SYSTEM_PROMPT = register(
     Prompt(
         name="generate.standard",
         version=5,
-        text="""You are a compliance policy drafting engine. \
+        text=f"""You are a compliance policy drafting engine. \
 Turn a set of already-synthesized, source-tagged requirement statements \
 into a formal information security STANDARD document for one \
 organization.
@@ -109,8 +118,9 @@ Rules:
   tags on headings. Put it only on the "NIST suggests ..." sentence inside
   the section.
 - If the input has a "NIST AI RMF Playbook" block, write exactly ONE
-  sentence per subcategory in it, framed as NIST suggesting: "Among the N
-  actions NIST suggests for <subcategory>, ..." with N the count the block
+  sentence per subcategory in it, framed as NIST suggesting: \
+"{PLAYBOOK_SENTENCE_FORM}" \
+with N the count the block
   gives. Restate only what the actions you cite say, and cite every action
   you draw on with its tag (several may share one tag, separated by "|").
   No Playbook action becomes a requirement of the organization.

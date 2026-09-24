@@ -245,3 +245,36 @@ def test_generate_gives_the_block_to_the_standard_only(tmp_path, monkeypatch, ti
         assert carried == expected
     else:
         assert carried == set()
+
+
+# --------------------------------------------------------------------------
+# The prompt's sentence form and the #309 gate cannot disagree
+# --------------------------------------------------------------------------
+
+
+def test_the_prompts_own_sentence_form_passes_the_gate():
+    """**Measured failure this pins** (#301). The first wording, "Among the N
+    actions NIST suggests for ...", starts with "Among"; the gate reads the
+    subject from the sentence start; a real run flagged all 17 compliant
+    sentences. The form is one constant, filled in here and gated."""
+    from policyforge.content.deontic import playbook_obligations
+    from policyforge.generate.policy_writer import _STANDARD_SYSTEM_PROMPT, PLAYBOOK_SENTENCE_FORM
+
+    assert PLAYBOOK_SENTENCE_FORM in _STANDARD_SYSTEM_PROMPT
+    sentence = (
+        PLAYBOOK_SENTENCE_FORM.replace(" N ", " 7 ")
+        .replace("<subcategory>", "Govern 1.4")
+        .replace("...", "documenting AI actor contact information.")
+    )
+    tag = "[NIST AI RMF Playbook Govern 1.4 Action 1]"
+
+    assert playbook_obligations(f"{sentence} {tag}\n") == []
+
+
+def test_the_first_wording_is_the_one_the_gate_refuses():
+    """The other arm, so the test above is known to distinguish the forms."""
+    from policyforge.content.deontic import playbook_obligations
+
+    old = "Among the 7 actions NIST suggests for Govern 1.4, NIST suggests documenting contacts."
+
+    assert len(playbook_obligations(f"{old} [NIST AI RMF Playbook Govern 1.4 Action 1]\n")) == 1

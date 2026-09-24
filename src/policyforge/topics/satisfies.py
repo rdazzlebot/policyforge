@@ -229,7 +229,13 @@ def split_citation(part: str, frameworks: list[str], ids=None) -> tuple[str, str
     truncation this function invented.
     """
     lowered = part.casefold()
-    for name in frameworks:
+    # Longest first HERE, not only in `parse_citations`: this docstring says
+    # the split is longest-first, and a caller passing names in any other
+    # order got the SHORTER one the day a catalog name became a prefix of
+    # another -- "NIST AI RMF" of "NIST AI RMF Playbook", whose actions then
+    # split as the Core with id "Playbook ..." (#177). Ordering here makes
+    # the contract the function's, not every caller's.
+    for name in sorted(frameworks, key=len, reverse=True):
         if lowered.startswith(name.casefold()) and part[len(name) : len(name) + 1].isspace():
             framework, rest = name, part[len(name) :].strip()
             break

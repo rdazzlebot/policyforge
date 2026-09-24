@@ -131,6 +131,20 @@ NOT_CROSSWALK_ANCHORABLE: dict[str, str] = {
         "fully traceable and still commit nobody to anything. See "
         "data/frameworks/nist-ai-rmf/README.md."
     ),
+    # Added with the Playbook catalog (#177), for the reason the Core's entry
+    # gives and one more: its entries are NIST's VOLUNTARY suggestions toward
+    # an outcome, so mapping one to an 800-53 control would assert an
+    # equivalence NIST has not published, between a suggestion and an
+    # obligation. `/coverage` otherwise printed "seed one" for it.
+    "NIST AI RMF Playbook": (
+        "The NIST AI RMF Playbook lists NIST's voluntary suggested actions toward "
+        "each AI RMF outcome -- suggestions, not obligations, and NIST says so. A "
+        "crosswalk entry from a suggested action to an 800-53 control would assert "
+        "an equivalence NIST has not published, between a suggestion and a "
+        "requirement. Cite it instead -- `[NIST AI RMF Playbook Govern 1.1 Action "
+        "1]` -- as something NIST suggests, never requires. See "
+        "data/frameworks/nist-ai-rmf-playbook/README.md."
+    ),
 }
 
 

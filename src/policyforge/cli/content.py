@@ -853,28 +853,91 @@ def import_confluence_cmd(
     markdown, and record it into the same local version-history stream
     `generate` uses for --tier/--name - so you can diff what this tool last
     generated against what's actually live (e.g. after a manual edit)."""
-    from policyforge.export.confluence_importer import import_from_confluence
+    from datetime import datetime, timezone
+
+    from policyforge.content.provenance import (
+        PREVIOUSLY_GENERATED_BY,
+        carried_content_class,
+        declared_content_class,
+        import_metadata,
+        read_generated_by,
+    )
+    from policyforge.content.tree import ContentError, parse_document, render_document
+    from policyforge.export.confluence_importer import (
+        confluence_to_markdown,
+        fetch_confluence_page,
+    )
     from policyforge.history.version_store import load_history, record_version
 
     # Checked before the network call, not after: a name that cannot be
     # stored is not worth fetching a page for.
     name = _checked_slug(name)
 
-    markdown_text = import_from_confluence(space=space, title=title, host=host)
+    page = fetch_confluence_page(space=space, title=title, host=host)
+    markdown_text = confluence_to_markdown(page.storage_body)
 
     out_path = out or Path(f"output/{tier}s") / f"{name}.imported.md"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    write_text_lf(out_path, markdown_text)
-    click.echo(f"Imported {title!r} from Confluence -> {out_path}")
-
     slug = f"{tier}/{name}"
     previous = load_history(history_dir, slug)
+
+    # What the local predecessors said about this document, read BEFORE
+    # anything is written, because --out may be one of them (#197). The
+    # generated file, and whatever sits at --out already (usually the last
+    # import), then every recorded version.
+    classes: list[str] = []
+    earlier_generation: dict = {}
+    for candidate in (Path(f"output/{tier}s") / f"{name}.md", out_path):
+        try:
+            metadata = parse_document(
+                candidate.read_text(encoding="utf-8"), path=candidate, root=candidate.parent
+            ).metadata
+        except (OSError, UnicodeDecodeError, ContentError):
+            continue
+        classes.append(declared_content_class(metadata))
+        earlier_generation = earlier_generation or (
+            read_generated_by(metadata) or dict(metadata.get(PREVIOUSLY_GENERATED_BY) or {})
+        )
+    classes += [str(v.metadata.get("content_class") or "") for v in previous]
+    content_class = carried_content_class(classes)
+
+    imported_from = {
+        "space": space,
+        "title": title,
+        "page_version": page.version,
+        "date": datetime.now(timezone.utc).date().isoformat(),
+    }
+    # No `generated_by` block, ever: the page may have been edited by a
+    # person. The earlier generation is kept whole under
+    # `previously_generated_by`, which attribution does not read, so it is
+    # history rather than a claim about this text.
+    metadata = import_metadata(
+        imported_from=imported_from,
+        content_class=content_class,
+        previously_generated_by=earlier_generation,
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    write_text_lf(out_path, render_document(metadata, markdown_text))
+    click.echo(f"Imported {title!r} from Confluence -> {out_path}")
+    if content_class:
+        click.echo(f"Content class {content_class!r}, carried from the local predecessor.")
+    else:
+        click.echo(
+            "Content class unknown: this document is governed by the wiki's visibility "
+            "rule until one is set. No local predecessor says what it was drawn from, "
+            "and the import does not guess."
+        )
+
     record = record_version(
         history_dir,
         slug,
         markdown_text,
         source="confluence-import",
-        metadata={"space": space, "title": title},
+        metadata={
+            "space": space,
+            "title": title,
+            "page_version": page.version,
+            **({"content_class": content_class} if content_class else {}),
+        },
     )
 
     if record is None:

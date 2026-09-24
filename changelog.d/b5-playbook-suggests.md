@@ -3,8 +3,11 @@ NIST suggesting it, never as a requirement, and `policyforge check` reports
 one that does not as an error.** The Playbook is voluntary, but the
 generation prompts told the model to write in "must" and "shall", so a
 Playbook-cited action came out as an obligation. In a local test before this
-change, every one of ten did. With the new prompt rule, nine of nine read
-"NIST suggests". If your organization adopts a suggested action as its own
+change, every one of ten did. **The new prompt rule reduces this but does not
+stop it:** in five local runs with it, two wrote every Playbook action as
+"NIST suggests" and three still wrote most as "must". `policyforge check`
+reported every one of those, which is why the check exists beside the prompt
+rule. If your organization adopts a suggested action as its own
 requirement, the document states it in a separate sentence without the
 Playbook tag, and `policyforge check` reports that sentence for a person to
 confirm.

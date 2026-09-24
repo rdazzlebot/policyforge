@@ -241,6 +241,26 @@ def framed_as_nists(sentence: str) -> bool:
     return classify(plain) not in BINDING
 
 
+def playbook_tagged_headings(text: str) -> list[tuple[int, str]]:
+    """Headings that carry a Playbook citation, as (line, heading) (#309).
+
+    **A heading may not cite the Playbook at all**, even merged with a
+    binding source (80's ruling on #309). A heading tag scopes every step
+    beneath it, so it turns a suggestion into an instruction by position,
+    whatever the heading says. `analyze` blanks headings on purpose, so the
+    sentence check never saw these: measured on a generated Procedure, all
+    9 of its 9 Playbook tags sat on headings, and the gate reported none.
+    """
+    found = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        if not _HEADING_LINE_RE.match(line):
+            continue
+        tags = _CITATION_RE.findall(line)
+        if any(_is_playbook(part) for tag in tags for part in _parts(tag)):
+            found.append((number, line.strip()))
+    return found
+
+
 def playbook_obligations(text: str) -> list[Statement]:
     """Sentences citing only the NIST AI RMF Playbook, not framed as NIST's.
 

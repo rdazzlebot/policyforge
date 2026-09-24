@@ -6,9 +6,11 @@ Playbook for it, asserts something NIST did not say. 80's ruling (A): a
 Playbook-cited sentence never binds, whatever its subject; an obligation the
 organization adopts goes in its own sentence, without the Playbook tag.
 
-Measured before writing this ($0, local `qwen3:14b-pf`): on the prompts
-before this change, 10 of 10 Playbook-cited sentences read "The organization
-must ...". With the prompt rule, 9 of 9 read "NIST suggests ...".
+Measured ($0, local `qwen3:14b-pf`, one Standard per run): before the prompt
+rule, 10 of 10 Playbook-cited sentences read "The organization must ...".
+With it, five runs flagged 0/9, 9/10, 7/9, 0/9 and 9/14 -- the rule reduces
+the failure and does not remove it, and the check caught every instance.
+A first report of "9 of 9 NIST suggests" was one run, stated as a result.
 """
 
 from __future__ import annotations
@@ -18,7 +20,12 @@ from pathlib import Path
 import pytest
 
 from policyforge.content.check import ERROR, check_tree
-from policyforge.content.deontic import analyze, playbook_obligations, weakened_citations
+from policyforge.content.deontic import (
+    analyze,
+    playbook_obligations,
+    playbook_tagged_headings,
+    weakened_citations,
+)
 from policyforge.content.grounding import unanchored
 
 TAG = "[NIST AI RMF Playbook Govern 1.1 Action 1]"
@@ -239,6 +246,44 @@ def test_an_adoption_phrased_as_requires_is_reported_by_neither():
 
 
 # --------------------------------------------------------------------------
+# Headings may not cite the Playbook (80's ruling on #309)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "heading",
+    [
+        # 9b's two probes: each passed, because `analyze` blanks headings.
+        f"### NIST requires an AI inventory {TAG}",
+        f"### The organization must keep an AI inventory {TAG}",
+        # What a generated Procedure actually wrote, 9 times of 9.
+        f"### 1. Maintain Awareness of Legal Requirements {TAG}",
+    ],
+)
+def test_a_heading_citing_the_playbook_is_refused(heading):
+    """A heading tag scopes every step beneath it, so it makes a suggestion
+    an instruction by position, whatever the heading says."""
+    (found,) = playbook_tagged_headings(f"{heading}\n\n1. Keep the inventory.\n")
+    assert found[0] == 1
+
+
+def test_a_mixed_heading_is_refused_too():
+    """Even merged with a binding source: the ruling makes no exception."""
+    mixed = "[NIST 800-53 CM-8 | NIST AI RMF Playbook Govern 1.6 Action 1]"
+
+    assert len(playbook_tagged_headings(f"### Inventory {mixed}\n")) == 1
+
+
+def test_a_heading_citing_only_a_binding_source_passes():
+    """The twin: headings may still carry an ordinary framework tag."""
+    assert playbook_tagged_headings("### Inventory [NIST 800-53 CM-8]\n\n1. Keep it.\n") == []
+
+
+def test_a_playbook_tag_in_the_body_is_not_a_heading():
+    assert playbook_tagged_headings(f"## Inventory\n\nNIST suggests an inventory. {TAG}\n") == []
+
+
+# --------------------------------------------------------------------------
 # Through the content check
 # --------------------------------------------------------------------------
 
@@ -261,6 +306,16 @@ def test_the_content_check_reports_it_as_an_error(tmp_path):
     playbook = [f for f in report.findings if "NIST AI RMF Playbook" in f.message]
     assert len(playbook) == 1
     assert playbook[0].severity == ERROR
+
+
+def test_the_content_check_reports_a_tagged_heading_as_an_error(tmp_path):
+    report = check_tree(_tree(tmp_path, f"### Keep an inventory {TAG}\n\n1. Keep it.\n"))
+
+    headings = [
+        f for f in report.findings if "a heading cites the NIST AI RMF Playbook" in f.message
+    ]
+    assert len(headings) == 1
+    assert headings[0].severity == ERROR
 
 
 def test_the_content_check_passes_the_correct_form(tmp_path):

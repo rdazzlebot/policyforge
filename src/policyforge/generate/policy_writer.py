@@ -98,7 +98,10 @@ Rules:
   "shall", "is required to" or any other obligation: this overrides the
   formal-language rule for these sentences only. If the organization adopts
   the action as its own requirement, say so in a SEPARATE sentence that does
-  not carry the Playbook tag.
+  not carry the Playbook tag. NEVER put a Playbook tag on a heading, not even
+  merged with another framework's tag: this overrides any rule that places
+  tags on headings. Put it only on the "NIST suggests ..." sentence inside
+  the section.
 - Where a requirement is vendor/tool-specific: if the tool list below fills
   that role, use that tool's actual name. If not, write the role itself in
   square brackets (`[Identity Provider]`, `[Ticketing System]`, `[Backup
@@ -211,7 +214,10 @@ Rules:
   "shall", "is required to" or any other obligation: this overrides the
   formal-language rule for these sentences only. If the organization adopts
   the action as its own requirement, say so in a SEPARATE sentence that does
-  not carry the Playbook tag.
+  not carry the Playbook tag. NEVER put a Playbook tag on a heading, not even
+  merged with another framework's tag: this overrides any rule that places
+  tags on headings. Put it only on the "NIST suggests ..." sentence inside
+  the section.
 - Steps invite deadlines. Never state a frequency, deadline, duration or count that is not given
   in the input requirements or in the organization context below — no
   "within 5 business days", "annually", "after 30 days" of your own. Where

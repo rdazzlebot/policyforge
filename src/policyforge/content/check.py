@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .deontic import NONE, playbook_obligations, weakened_citations
+from .deontic import NONE, playbook_obligations, playbook_tagged_headings, weakened_citations
 from .tags import source_tags
 from .tree import ContentDocument, load_content_tree
 
@@ -358,6 +358,16 @@ def _check_playbook_obligations(documents: list[ContentDocument]) -> list[Findin
                     'subject ("NIST suggests ..."), never "NIST requires", '
                     "and state any requirement the organization adopts in its own sentence "
                     f'without the Playbook tag — "{statement.text[:70]}"',
+                    ERROR,
+                )
+            )
+        for line, heading in playbook_tagged_headings(doc.body):
+            findings.append(
+                Finding(
+                    doc.relative_path,
+                    f"line {line}: a heading cites the NIST AI RMF Playbook, which makes every "
+                    "step beneath it read as NIST's instruction -- put the Playbook citation "
+                    f'on a "NIST suggests ..." sentence inside the section — "{heading[:70]}"',
                     ERROR,
                 )
             )

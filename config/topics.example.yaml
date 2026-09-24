@@ -253,6 +253,20 @@ topics:
   # nobody to anything - read data/frameworks/nist-ai-rmf/README.md before
   # writing against these, and judge a draft by what someone would have to
   # do differently tomorrow.
+  #
+  # So a document generated from one of these topics describes OUTCOMES:
+  # what good AI risk management looks like. It does not, by itself, tell
+  # anyone what they must do. The obligations an AI programme draws on come
+  # from the security topics above that own the 800-53 controls, for
+  # example Security Program Governance, Risk Assessment & Authorization,
+  # Secure Development Lifecycle, Workforce Security Training, Business
+  # Associate & Vendor Risk and Incident Response. They are not anchored
+  # here as well because every control has exactly one owning topic.
+  #
+  # PolicyForge does NOT claim those controls achieve the AI RMF outcomes.
+  # NIST declined to make that claim, and there is deliberately no
+  # crosswalk. Which obligations serve which outcome is your organisation's
+  # decision (#188).
 
   - name: AI Governance & Accountability
     owner: AI Risk / GRC

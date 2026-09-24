@@ -1756,8 +1756,35 @@ authorised. Run from a worktree pinned to `6244fb1`, against
 | wall clock | 1.26 h against ~2.3 h                                     |
 | hard stop  | did not fire                                              |
 
-Per topic: mean **$0.2459**, median $0.2444, range $0.0747–$0.4227 over 3–45
-controls.
+Per topic: mean **$0.2459**, median $0.2444, range $0.0747–$0.4227.
+
+**Which population the control counts describe**, because two readings of one
+registry disagree by a factor of three and both are correct:
+
+| per topic                                  | median | range    | probe topic |
+| ------------------------------------------ | ------ | -------- | ----------- |
+| anchor ids in `config/topics.example.yaml` | 7      | 3–19     | 10          |
+| **controls after crosswalk expansion**     | **18** | **3–45** | **28**      |
+
+Every count in this entry is the **second** row — what `build_synthesis_topic`
+returns once each anchor has pulled in the controls other frameworks map to it.
+The crosswalk was built **in-process by `build_crosswalk()` over the catalogs
+named below**, not read from `crosswalk.json`; that file is produced by
+`policyforge map`, is not tracked, and a clean clone has none. **A re-run with
+an empty crosswalk resolves each anchor to one control and reproduces the first
+row exactly** — which is how policyforge-d8 found this gap in review: their
+counts matched the anchor distribution identically, and two supposedly different
+quantities agreeing exactly is the tell that both were the same thing.
+
+To reproduce the second row: load `nist-800-53-r5`, `nist-ai-rmf`,
+`hipaa-security-rule`, `fedramp` and `arc-ampe`, pass them to
+`build_crosswalk()`, then to `build_synthesis_topic()` per topic.
+
+**The two passes used different catalog sets, and that did not move the
+numbers.** The first 20 topics ran without `nist-ai-rmf`; re-deriving them with
+it gives identical control counts, and both match the ledger. The AI RMF
+contributes no crosswalk rows, so adding it changes only the five topics that
+anchor on it.
 
 #### The first pass came in 34% under, and the underspend WAS the defect
 

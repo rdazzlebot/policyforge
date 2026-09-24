@@ -265,8 +265,11 @@ def test_a_kind_with_nothing_to_find_stays_silent():
 def test_the_census_is_a_second_derivation_not_the_parser_again():
     """A census computed by the block parser would agree with it by
     construction — the `arc_ampe` defect, and the thing that makes a check
-    unable to fail. These are crude regexes over the raw file text, so the
-    two derivations are free to disagree.
+    unable to fail. Since #256 the workflow and doc censuses are a YAML load
+    and a CommonMark parse, not regexes, so they are free to disagree with
+    the line-walking parsers on inputs a regex would miss on both sides.
+    `test_a_flow_style_step_is_seen_by_one_instrument_and_not_the_other`
+    holds that.
 
     **Independence is a property of the METHOD, not of the units, and the
     earlier version of this test confused the two.** It asserted
@@ -311,8 +314,8 @@ def test_the_census_is_a_second_derivation_not_the_parser_again():
     # blocks and agree exactly, 34 and 34, which is the point.
     #
     # So independence is asserted where it actually lives: the census is a
-    # crude regex over raw text, the parser is a structural walk, and a
-    # census that returned everything it globbed would be a list rather
+    # YAML load or a CommonMark parse (#256), the parser is a line walk, and
+    # a census that returned everything it globbed would be a list rather
     # than a detection.
     tracked_workflows = set(shell_status.tracked(".github/workflows/*.yml"))
     assert set(signalled["workflow"]) < tracked_workflows, (
@@ -335,11 +338,237 @@ def test_the_census_does_not_follow_the_parser(monkeypatch):
     """
     before = shell_status.census()
     monkeypatch.setattr(shell_status, "_workflow_run_blocks", lambda path, text: [])
+    monkeypatch.setattr(shell_status, "_doc_shell_blocks", lambda path, text: [])
     after = shell_status.census()
     assert after == before, "the census changed when only the parser was broken"
-    assert sum(after["workflow"].values()) > 0, (
-        "the census reports no workflow blocks, so holding steady proves nothing"
+    for kind in ("workflow", "doc"):
+        assert sum(after[kind].values()) > 0, (
+            f"the census reports no {kind} blocks, so holding steady proves nothing"
+        )
+
+
+# --- #256: the census reaches the population by a different MECHANISM ----------
+
+_FLOW_STEP = """\
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - { name: x, run: "python scripts/check.py | tail -4 && git push" }
+"""
+
+_BLOCK_STEP = """\
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: x
+        run: python scripts/check.py | tail -4 && git push
+"""
+
+_CLEAN_BLOCK_STEP = """\
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: x
+        run: python scripts/check.py
+"""
+
+
+def test_a_flow_style_step_is_seen_by_one_instrument_and_not_the_other():
+    """**policyforge-b5's case on #256, and the property the census exists for.**
+
+    Before #256 the census was `^\\s*-?\\s*run:` and the parser an
+    indentation walk. Both counted this step 0, so they agreed and the floor
+    could not fire. The old regex is kept here to show that its blindness
+    was shared: that is the defect, and a census that agrees with the parser
+    on it is the parser again.
+    """
+    old_census_regex = re.compile(r"^\s*-?\s*run:", re.M)
+    assert len(old_census_regex.findall(_FLOW_STEP)) == 0, "premise: the old census missed it"
+    assert shell_status._workflow_run_blocks("seeded.yml", _FLOW_STEP) == [], (
+        "premise: the parser misses flow style; if it now reads it, this test's "
+        "disagreement is gone and the end-to-end test below should expect exit 1"
     )
+    assert shell_status._count_workflow_steps(_FLOW_STEP) == 1
+
+
+def test_the_workflow_census_counts_steps_and_not_their_lookalikes():
+    """What the census must NOT count, measured on the real `ci.yml` shape.
+
+    `defaults: run:` is a mapping, not a script, and a step input called
+    `run` under `with:` belongs to the action. Counting either would make
+    the census exceed the parser on a clean tree, and that is a false alarm
+    that gets a guard switched off.
+    """
+    text = """\
+on: push
+defaults:
+  run:
+    shell: bash
+jobs:
+  a:
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: some/action@v1
+        with:
+          run: not-a-shell
+      - run: echo one
+      - name: two
+        run: |
+          echo two
+"""
+    assert shell_status._count_workflow_steps(text) == 2
+    assert shell_status._count_workflow_steps("") == 0
+
+
+@pytest.mark.parametrize(
+    ("fence", "parsed"),
+    [
+        ("```bash\necho hi\n```\n", 1),
+        ("~~~bash\necho hi\n~~~\n", 0),
+        ("```bash title=x\necho hi\n```\n", 0),
+        ("> ```bash\n> echo hi\n> ```\n", 0),
+    ],
+)
+def test_the_doc_census_reads_fences_the_parser_does_not(fence: str, parsed: int):
+    """The CommonMark census counts every shell fence a renderer would. The
+    line parser reads only an exact ```` ```bash ````, so each other form is
+    now a disagreement, and so a failure, where before both regexes missed
+    it and agreed."""
+    assert shell_status._count_doc_fences(fence) == 1
+    assert len(shell_status._doc_shell_blocks("seeded.md", fence)) == parsed
+
+
+def _repo(tmp_path: Path, monkeypatch, files: dict[str, str]) -> None:
+    """A real git index, so `tracked()` and both derivations run unpatched."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    for name, text in files.items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8", newline="\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    monkeypatch.setattr(shell_status, "REPO_ROOT", tmp_path)
+
+
+def test_a_committed_flow_style_step_is_refused(tmp_path, monkeypatch, capsys):
+    """**The issue's own acceptance test: commit it and confirm the lint refuses.**
+
+    Before #256 this exited 0: the census and parser both found nothing,
+    and the swallowed status went unexamined. Now the census counts the step
+    and the parser does not, so it exits 2 and names the file.
+    """
+    _repo(tmp_path, monkeypatch, {".github/workflows/flow.yml": _FLOW_STEP})
+    assert shell_status.main([]) == 2
+    assert ".github/workflows/flow.yml  1 -> 0" in capsys.readouterr().err
+
+
+def test_the_same_step_in_block_style_is_a_finding_and_clean_block_style_passes(
+    tmp_path, monkeypatch
+):
+    """The two arms beside the refusal. The block-style twin is read by the
+    parser and reported as the finding it is (exit 1). A clean block-style
+    step passes (exit 0), so the floor does not fire on a healthy tree."""
+    _repo(tmp_path, monkeypatch, {".github/workflows/block.yml": _BLOCK_STEP})
+    assert shell_status.main([]) == 1
+
+    clean = tmp_path.parent / (tmp_path.name + "-clean")
+    clean.mkdir()
+    _repo(clean, monkeypatch, {".github/workflows/block.yml": _CLEAN_BLOCK_STEP})
+    assert shell_status.main([]) == 0
+
+
+#: Shell languages a fence might name, written from the domain rather than
+#: read from either instrument. The ORACLE for the doc census is the parser:
+#: every language the parser reads, the census must count. Parametrising
+#: over `_SHELL_FENCES` instead would put one constant on both sides of the
+#: comparison, and removing a language from it would remove the case that
+#: tests it (policyforge-80's `~~~sh` survivor on #326).
+_SHELL_LANGUAGE_CANDIDATES = (
+    "bash", "sh", "shell", "console", "zsh", "ksh", "fish",
+    "powershell", "pwsh", "ps1", "bat", "cmd", "text",
+)  # fmt: skip
+
+
+def _parser_reads(language: str) -> bool:
+    fence = f"```{language}\necho hi\n```\n"
+    return len(shell_status._doc_shell_blocks("seeded.md", fence)) == 1
+
+
+_PARSED_LANGUAGES = [c for c in _SHELL_LANGUAGE_CANDIDATES if _parser_reads(c)]
+
+
+def test_the_parser_reads_a_real_set_of_shell_languages():
+    """Guards the parametrisation below from going vacuous: if the parser
+    read nothing, the per-language tests would collect zero cases and pass."""
+    assert len(_PARSED_LANGUAGES) >= 4, _PARSED_LANGUAGES
+
+
+@pytest.mark.parametrize("language", _PARSED_LANGUAGES)
+def test_a_committed_fence_the_parser_cannot_read_is_refused(
+    language, tmp_path, monkeypatch, capsys
+):
+    """The doc half of the acceptance test, end to end, for EVERY language
+    the parser reads.
+
+    **Written because the unit test above was not enough, measured twice.**
+    Pointing `_SIGNALS["doc"]` back at the old regex left every test green,
+    because the unit test calls `_count_doc_fences` directly and never asks
+    whether `census()` uses it. Then, with this test covering only `bash`,
+    policyforge-80 removed `sh` from `_SHELL_FENCES` and all 37 still passed.
+    A `~~~<language>` fence holding a swallowed status must fail the lint,
+    for each language the parser would have read as ```` ```<language> ````.
+    """
+    _repo(
+        tmp_path,
+        monkeypatch,
+        {
+            ".github/workflows/block.yml": _CLEAN_BLOCK_STEP,
+            "README.md": f"~~~{language}\npython scripts/check.py | tail -4 && git push\n~~~\n",
+        },
+    )
+    assert shell_status.main([]) == 2
+    assert "README.md  1 -> 0" in capsys.readouterr().err
+
+
+def test_an_aliased_run_agrees_on_count_and_is_not_linted(tmp_path, monkeypatch):
+    """**A known limit, pinned so it is not mistaken for coverage** (9b, #326).
+
+    Census and parser both count the aliased step, so the floor is satisfied,
+    and the parser lints the literal `*cmd`. The anchored step IS reported,
+    and the aliased copy of the same command is not. If the parser is ever
+    handed resolved strings, this test fails, and it should then assert 2
+    findings instead of 1.
+    """
+    text = """\
+on: push
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - run: &cmd "python scripts/check.py | tail -4 && git push"
+      - run: *cmd
+"""
+    assert shell_status._count_workflow_steps(text) == 2
+    assert len(shell_status._workflow_run_blocks("seeded.yml", text)) == 2
+    _repo(tmp_path, monkeypatch, {".github/workflows/alias.yml": text})
+    swallowed = [
+        f for f in shell_status.findings(shell_status.population()) if f.rule == "swallowed-status"
+    ]
+    assert [f.line for f in swallowed] == [6], swallowed
+
+
+def test_a_workflow_the_census_cannot_parse_fails(tmp_path, monkeypatch, capsys):
+    """A census that cannot read a file cannot vouch for it."""
+    _repo(tmp_path, monkeypatch, {".github/workflows/bad.yml": "jobs: [unclosed\n"})
+    assert shell_status.main([]) == 2
+    assert "could not count" in capsys.readouterr().err
 
 
 def test_a_shrunk_population_fails_rather_than_passes(monkeypatch):

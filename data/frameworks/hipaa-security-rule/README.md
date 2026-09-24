@@ -16,8 +16,8 @@ sections open with the same framing sentence before their first standard:
 §§ 164.308(a), 164.310, 164.312 and 164.316 each begin *"A covered entity
 or business associate must, in accordance with § 164.306:"*. The loader
 drops that sentence, deliberately, so each control's statement reads as the
-regulation's own requirement (*"Implement …"*) rather than repeating it 34
-times. Two things are therefore **not** visible on those controls:
+regulation's own requirement (*"Implement …"*) rather than repeating it on each of the
+20 standards those sections hold. Two things are therefore **not** visible on those controls:
 
 - **who the obligation runs to**, a covered entity or business associate;
 - **that it applies "in accordance with § 164.306"**: the general rules,

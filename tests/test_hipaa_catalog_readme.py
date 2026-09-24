@@ -159,3 +159,15 @@ def test_the_readme_names_every_section_whose_lead_in_is_dropped(readme, control
     shipped = sorted(c["control_id"] for c in controls if c["control_id"].startswith("164.306"))
     assert shipped == [f"164.306({x})" for x in "abcde"], shipped
     assert "ships as five controls" in text
+    # The count of standards those sections hold, derived from the catalog:
+    # a lead-in in 164.308 governs only paragraph (a), so 164.308(b) is not
+    # counted. The first draft said "34", the whole catalog (9b, on #324).
+    held = [
+        c
+        for c in controls
+        if any(
+            c["control_id"].startswith(s + ("(a)" if s == "164.308" else ""))
+            for s in (f.replace("(a)", "") for f in framed)
+        )
+    ]
+    assert f"each of the {len(held)} standards those sections hold" in text, len(held)

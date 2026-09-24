@@ -803,6 +803,7 @@ def refusal_types() -> tuple[type[BaseException], ...]:
     from policyforge.ingest.ai_rmf import AiRmfParseError
     from policyforge.ingest.govramp_export import ExportFormatError as GovRampFormatError
     from policyforge.ingest.hitrust_export import ExportFormatError as HitrustFormatError
+    from policyforge.ingest.onc_loader import OncParseError
     from policyforge.llm._inline_thinking import ReasoningBudgetExhausted
     from policyforge.llm.base import (
         EmptyReply,
@@ -825,6 +826,7 @@ def refusal_types() -> tuple[type[BaseException], ...]:
         AiRmfParseError,
         GovRampFormatError,
         HitrustFormatError,
+        OncParseError,
         ReasoningBudgetExhausted,
         EmptyReply,
         ProviderRejected,

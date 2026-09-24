@@ -211,6 +211,50 @@ def _upstream_reason(framework: str) -> str | None:
     return None
 
 
+#: Frameworks someone SEARCHED for a published 800-53 mapping and found none.
+#: The fourth kind of zero: seeding by hand is the right advice, and the report
+#: may say "found" because a search was actually made. (Product ruling, 80, on
+#: #264, corrected there after `ba` measured that the generic branch prints for
+#: every catalog in no table -- including BYOC ones nobody searched for.)
+#:
+#: **The value is the search record, and it is never printed.** A date and a
+#: list of sources in CLI output rot; here they sit beside the claim so it can
+#: be re-checked rather than trusted. A negative search result is only as good
+#: as its denominator, so each record says what was NOT searched too.
+#:
+#: Same matching and the same rename guard as `PUBLISHED_UPSTREAM`
+#: (`test_every_searched_framework_names_a_shipped_catalog`): if a key stops
+#: matching, the row falls to the generic branch, which claims no search.
+SEARCHED_NONE_FOUND: dict[str, str] = {
+    "Substance Use Disorder Records": (
+        # 42 CFR Part 2. Searched by `policyforge-f8` (5b) from about 02:30 UTC
+        # on 2026-09-24; the full record, with its contamination notes, is on
+        # #264. Searched: 42 CFR 2.16 text (eCFR, point-in-time 2026-09-17);
+        # the 2024 final rule 89 FR 12472 and the 2020 rules; the HITRUST CSF
+        # v11.7.0 authoritative-sources list; NIST SP 800-66r2; site searches
+        # of nist.gov, csrc.nist.gov, hhs.gov, samhsa.gov, healthit.gov and
+        # 405d.hhs.gov. NOT enumerated: NIST OLIR/CPRT, which is where a
+        # formal mapping would be registered. The published HIPAA crosswalks
+        # map the Security Rule, which 2.16 does not incorporate, so they do
+        # not reach Part 2 transitively.
+        "searched 2026-09-24 UTC by policyforge-f8; NIST OLIR/CPRT not enumerated; record on #264"
+    ),
+}
+
+
+def _searched_none_found(framework: str) -> str | None:
+    """The search record for `framework` if one found no mapping, or None.
+
+    Checked AFTER `_refusal_reason` and `_upstream_reason`: a refusal or a
+    publisher's own mapping outranks a search that came back empty.
+    """
+    wanted = _canonical(framework)
+    for name, record in SEARCHED_NONE_FOUND.items():
+        if _canonical(name) == wanted:
+            return record
+    return None
+
+
 def _tokens(name: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", name.casefold()))
 

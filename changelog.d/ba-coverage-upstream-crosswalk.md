@@ -9,11 +9,9 @@ The row now says what is true: NIST publishes the mapping, this release does
 not read it, and **the zero is a gap in PolicyForge, not in the source.** It
 suggests nothing to run, because nothing a user can run reads those links yet.
 
-The note above the rows changed too. It sorted every zero into two kinds — a
-mapping that would be wrong to make, or one nobody has published — and had no
-place for a third: one the source publishes that this release does not yet
-read. It now names all three.
+The note above the rows changed too. It sorted every zero into two kinds and
+had no place for one the source publishes that this release does not yet read;
+the rows now name that kind among the others.
 
-**Nothing else changes.** The 800-171 figures are the same, the other two zero
-rows read as before, and `crosswalk seed` still accepts 800-171 if you choose to
+**Nothing else changes.** The 800-171 figures are the same, and `crosswalk seed` still accepts 800-171 if you choose to
 run it; the report simply no longer recommends it.

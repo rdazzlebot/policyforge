@@ -386,7 +386,7 @@ def _unquoted(plain: str, quoted_from: list[list[str]]) -> str:
 #: Where a Playbook sentence can open a second clause (#323, 80's ruling (B)):
 #: `, and` / `, but` / `, so`, a semicolon (optionally followed by one of those
 #: words) or an em dash. Closed.
-_JOINER = r"(?:,\s+(?:and|but|so)\s+|;\s+(?:(?:and|but|so)\s+)?|\s*—\s*(?:(?:and|but|so)\s+)?)"
+_JOINER = r"(?:,\s+(?:and|but|so)\s+|;\s+(?:(?:and|but|so)\s+)?|\s*\u2014\s*(?:(?:and|but|so)\s+)?)"
 
 #: Subjects that commit the organization when they open a clause after a
 #: joiner. Closed and case-insensitive. **"management" is deliberately NOT

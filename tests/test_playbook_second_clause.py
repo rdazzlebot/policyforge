@@ -56,7 +56,7 @@ def test_the_real_corpus_raises_no_false_alarm(org_actors):
 
 # -- each joiner: an organization actor fails, NIST passes -----------------------
 
-JOINERS = [", and ", ", but ", ", so ", "; ", "; and ", " — ", "—"]
+JOINERS = [", and ", ", but ", ", so ", "; ", "; and ", " \u2014 ", "\u2014"]
 
 
 @pytest.mark.parametrize("joiner", JOINERS)

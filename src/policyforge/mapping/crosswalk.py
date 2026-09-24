@@ -281,6 +281,11 @@ def build_crosswalk(controls: list[Control]) -> dict[str, dict[str, list[str]]]:
         for nist_id, source_crosswalk in _crosswalk_sources(control):
             entry = crosswalk.setdefault(nist_id, {})
             for framework, raw in source_crosswalk.items():
+                # Keyed as the other two loops key it. The raw name ("HIPAA
+                # Security Rule") never matched coverage's normalised key
+                # ("hipaa"), so a mapping carried on the 800-53 side was in
+                # the crosswalk and invisible to every reader of it (#278).
+                framework = normalize_framework(framework)
                 for id_ in _extract_ids(raw):
                     ids = entry.setdefault(framework, [])
                     if id_ not in ids:

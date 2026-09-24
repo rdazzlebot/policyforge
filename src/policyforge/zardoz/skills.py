@@ -681,17 +681,22 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
     # Frameworks whose catalog carries any 800-53 mapping, at either level --
     # NIST's HIPAA crosswalk maps implementation specifications separately
     # from their Standards, so a control-level check alone would miss some.
-    # Per framework, the requirement ids -- controls and enhancements, the
-    # same ids `FrameworkCoverage` lists -- that carry a mapping of their own.
-    mapped: dict[str, set[str]] = {}
     for control in controls:
-        key = _framework_key(control.framework)
-        declared.setdefault(key, control.framework)
-        if control.source_crosswalk:
-            mapped.setdefault(key, set()).add(control.control_id)
-        for enhancement in control.enhancements:
-            if enhancement.source_crosswalk:
-                mapped.setdefault(key, set()).add(enhancement.enhancement_id)
+        declared.setdefault(_framework_key(control.framework), control.framework)
+
+    # Per framework, the requirement ids the crosswalk maps to 800-53 -- read
+    # from `build_crosswalk`, the instrument coverage itself uses, so the R/N
+    # split and the covered count pass through ONE instrument (#278). It
+    # takes in all three places a mapping can live: a catalog's own
+    # `source_crosswalk`, an 800-53 control naming another framework's ids,
+    # and HITRUST's level-scoped requirement mappings ("01.a Level 1").
+    # Reading only the first made the other two print "carry no mapping".
+    from policyforge.mapping.crosswalk import build_crosswalk
+
+    mapped: dict[str, set[str]] = {}
+    for by_framework in build_crosswalk(controls).values():
+        for framework_key, ids in by_framework.items():
+            mapped.setdefault(framework_key, set()).update(ids)
 
     path_for = _paths_by_framework(catalog_paths or [])
     anchor_path = path_for.get(_framework_key("NIST 800-53"))

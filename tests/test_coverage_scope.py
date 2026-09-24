@@ -13,6 +13,8 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 # ---- the coverage skill's zero rows -----------------------------------------
 
 
@@ -818,3 +820,172 @@ def test_a_purely_partial_catalog_prints_only_the_partial_clause():
 
     assert _clauses(row) == {"P": 3, "R": 0, "N": 0}, row
     assert "seed" not in row, row
+
+
+# ---- #282 + #278: coverage counts in the crosswalk's unit, one instrument ---
+
+
+def _hitrust_01a():
+    """A HITRUST control built by the importer itself: Level 1 maps to AC-2,
+    Level 2 to AC-3 -- ba's reproduction on #282."""
+    from policyforge.ingest import hitrust
+
+    base = {
+        "category": "01.0 - Example Category",
+        "objective": "01.01 Example Objective",
+        "objective_statement": "To do the example thing.",
+        "reference": "01.a Example Control",
+        "specification": "The organization shall do the example thing.",
+        "factor_type": "Organizational",
+        "statement": "The example thing is documented.",
+    }
+    return hitrust.build_controls(
+        [
+            hitrust.Record(**base, level="Level 1", mapping="NIST SP 800-53 r5 AC-2"),
+            hitrust.Record(**base, level="Level 2", mapping="NIST SP 800-53 r5 AC-3"),
+        ]
+    )
+
+
+def _run_coverage_cli(tmp_path, anchors: list[str], controls_json) -> str:
+    import dataclasses
+
+    from click.testing import CliRunner
+
+    from policyforge import cli as cli_mod
+
+    hitrust_file = tmp_path / "hitrust.json"
+    hitrust_file.write_text(
+        json.dumps([dataclasses.asdict(c) for c in controls_json]), encoding="utf-8"
+    )
+    topics = tmp_path / "topics.yaml"
+    topics.write_text(
+        "topics:\n  - name: access\n    owner: team-a\n"
+        f"    nist_controls: [{', '.join(anchors)}]\n"
+        "    cadence: annual\n    description: d\n",
+        encoding="utf-8",
+    )
+    root = Path(__file__).resolve().parent.parent
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        [
+            "coverage",
+            "--topics",
+            str(topics),
+            "--controls",
+            str(root / "data" / "frameworks" / "nist-800-53-r5" / "controls.json"),
+            "--controls",
+            str(hitrust_file),
+        ],
+    )
+    assert result.exit_code in (0, 1), result.output
+    return result.output
+
+
+@pytest.mark.parametrize(
+    ("anchors", "expected"), [(["AC-2", "AC-3"], "2 of 2"), (["AC-2"], "1 of 2")]
+)
+def test_hitrust_coverage_counts_level_requirements(tmp_path, anchors, expected):
+    """**#282, through the real `policyforge coverage`.** HITRUST's crosswalk
+    is recorded per level ("01.a Level 1"); coverage listed the control
+    ("01.a"), so the two never met and HITRUST read 0 of 1 whatever the
+    topics owned. Counted per level, all levels, and the report says so."""
+    output = _run_coverage_cli(tmp_path, anchors, _hitrust_01a())
+    block = output[output.index("HITRUST-CSF reachable via the crosswalk") :]
+
+    assert f"  {expected} requirements map to an owned NIST control" in block, block
+    assert "counted per level requirement (all levels in the catalog)" in block, block
+
+
+def test_a_mapping_carried_on_the_800_53_side_reaches_coverage():
+    """**#278, 9b's path.** An 800-53 control naming another framework's id,
+    under the name a person writes ("Example Framework"). `build_crosswalk`
+    kept the raw name as the key, coverage looked it up normalised, and the
+    mapping was in the crosswalk yet reached nothing."""
+    import dataclasses
+    from types import SimpleNamespace  # noqa: F401
+
+    from policyforge.ingest.schema import Control
+    from policyforge.mapping.crosswalk import build_crosswalk
+    from policyforge.topics.coverage import analyze_coverage
+    from policyforge.topics.registry import load_topics
+
+    root = Path(__file__).resolve().parent.parent
+    topic = dataclasses.replace(
+        load_topics(root / "config" / "topics.example.yaml")[0], nist_controls=["AC-2"]
+    )
+    nist = [
+        Control(
+            control_id="AC-2",
+            title="t",
+            framework="NIST 800-53",
+            framework_version="r5",
+            source_crosswalk={"Example Framework": "REQ-1"},
+        )
+    ]
+    other = [
+        Control(control_id="REQ-1", title="t", framework="Example Framework", framework_version="1")
+    ]
+    report = analyze_coverage(
+        [topic], nist, other_controls=other, crosswalk=build_crosswalk(nist + other)
+    )
+
+    (framework,) = report.framework_coverage
+    assert framework.covered == ["REQ-1"], framework
+
+
+def test_the_zero_row_reads_every_place_a_mapping_can_live():
+    """**#278.** A catalog that reads zero, with one requirement mapped on
+    each of the three paths the crosswalk has -- its own `source_crosswalk`,
+    the 800-53 side, and HITRUST's level scope -- and one mapped nowhere.
+    Three are R, one is N, and P + R + N is the whole count. Reading only
+    `source_crosswalk` (the #270 code) counts the other two as N."""
+    from types import SimpleNamespace
+
+    from policyforge.ingest.schema import Control
+    from policyforge.zardoz.skills import _zero_row_reasons
+
+    nist = [
+        Control(
+            control_id="AC-2",
+            title="t",
+            framework="NIST 800-53",
+            framework_version="r5",
+            source_crosswalk={"Example Framework": "EXF-2"},
+        )
+    ]
+    other = [
+        Control(
+            control_id="EXF-1",
+            title="t",
+            framework="Example Framework",
+            framework_version="1",
+            source_crosswalk={"NIST 800-53": "AC-2"},
+        ),
+        Control(
+            control_id="EXF-2", title="t", framework="Example Framework", framework_version="1"
+        ),
+        Control(
+            control_id="EXF-3", title="t", framework="Example Framework", framework_version="1"
+        ),
+    ]
+    hitrust_controls = _hitrust_01a()
+    level_ids = [r.requirement_id for c in hitrust_controls for r in c.requirements]
+
+    coverage = [
+        SimpleNamespace(
+            framework="example", covered=[], partial=[], uncovered=["EXF-1", "EXF-2", "EXF-3"]
+        ),
+        SimpleNamespace(framework="hitrust-csf", covered=[], partial=[], uncovered=level_ids),
+    ]
+    rows = "\n".join(
+        _zero_row_reasons(
+            nist + other + hitrust_controls, SimpleNamespace(framework_coverage=coverage)
+        )
+    )
+
+    example = _clauses(_row(rows, "EXAMPLE"))
+    assert example == {"P": 0, "R": 2, "N": 1}, example
+    hitrust_row = _clauses(_row(rows, "HITRUST-CSF"))
+    assert hitrust_row == {"P": 0, "R": 2, "N": 0}, hitrust_row
+    assert sum(example.values()) == 3 and sum(hitrust_row.values()) == len(level_ids)

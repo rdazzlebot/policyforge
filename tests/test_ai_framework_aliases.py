@@ -150,30 +150,51 @@ def test_the_rmf_document_number_keys_to_the_rmf(written: str):
     assert normalize_framework(written) == "nist-ai-rmf"
 
 
-@pytest.mark.parametrize(
-    "written", ["NIST AI 100-2", "NIST AI 100-2 E2023", "NIST AI Taxonomy", "AI Taxonomy"]
-)
-def test_every_nist_spelling_of_the_ai_taxonomy_keys_to_one_catalog(written: str):
-    """Both fell to an orphan before #176 -- `nist`, and for the unprefixed
-    spelling a second orphan, `ai` -- and neither is the RMF's key."""
+@pytest.mark.parametrize("written", ["NIST AI 100-2", "NIST AI 100-2 E2023", "AI 100-2"])
+def test_the_ai_taxonomy_keys_by_its_document_number(written: str):
+    """Fell to bare `nist` before #176, and is not the RMF's key. Pinned by
+    document number only -- the one spelling no other publisher shares."""
     key = normalize_framework(written)
     assert key == "nist-ai-100-2"
     assert key != normalize_framework("NIST AI RMF")
 
 
-def test_the_taxonomy_title_words_are_deliberately_not_pinned():
-    """**A decision, recorded where the next person will meet it.** Other
-    publishers use "adversarial machine learning", and a needle would file
-    their catalog under NIST's key. If this starts returning
-    `nist-ai-100-2`, someone pinned a phrase nobody has read in a catalog
-    name -- the table's comment says why not."""
-    assert normalize_framework("Adversarial Machine Learning") != "nist-ai-100-2"
+@pytest.mark.parametrize(
+    "written",
+    [
+        "Adversarial Machine Learning",
+        "AI Taxonomy",
+        "OECD AI Taxonomy",
+        "OECD Framework for the Classification of AI Systems",
+        "Microsoft AI Taxonomy",
+        "MITRE ATLAS",
+    ],
+)
+def test_other_publishers_ai_taxonomies_are_not_filed_under_nist(written: str):
+    """**Decisions, recorded where the next person will meet them** (1d, on
+    #296). OECD, the EU, ISO, Microsoft and MITRE all publish an "AI
+    Taxonomy" and use "adversarial machine learning"; a needle on either
+    phrase merged them into NIST's key. If one of these starts returning
+    `nist-ai-100-2`, someone pinned a shared phrase -- the table's comment
+    says why not. The unprefixed "AI Taxonomy" keeps the bare `ai` orphan
+    until #295 keys catalogs by what they declare."""
+    assert normalize_framework(written) != "nist-ai-100-2"
+
+
+def test_nist_ai_taxonomy_is_not_pinned_without_a_source():
+    """**Pinned behaviour, not an endorsement** (1d, on #296). "NIST AI
+    Taxonomy" is not a spelling any NIST source has been found to declare --
+    CPRT's `AITAXONOMY` is a code identifier -- so it is not pinned, and it
+    keeps the bare `nist` orphan until #295. If a NIST publication or CPRT
+    name is found that declares it, pinning it is right: change this test in
+    the same commit, and name the source in the table's comment."""
+    assert normalize_framework("NIST AI Taxonomy") == "nist"
 
 
 def test_the_taxonomy_is_citable():
     """Capital-initial, like the other AI names, so the digit-initial trap
     that made two CFR catalogs uncitable does not recur here either."""
-    for tag in ("[NIST AI 100-2 NISTAML.01]", "[NIST AI Taxonomy NISTAML.01]"):
+    for tag in ("[NIST AI 100-2 NISTAML.01]",):
         assert source_tags(tag) == [tag], f"{tag} is not a legal source tag"
 
 

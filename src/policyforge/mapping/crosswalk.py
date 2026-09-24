@@ -137,15 +137,16 @@ FRAMEWORK_ALIASES: tuple[tuple[str, str], ...] = (
     # uses as its id (`AI_100_1`). Without it `NIST AI 100-1` fell to the
     # bare `nist` key while both prose spellings were pinned (#176).
     ("ai 100-1", "nist-ai-rmf"),
-    # Its sibling, AI 100-2, the Adversarial ML Taxonomy -- published beside
-    # the RMF, and declared on the adjacent line of CPRT's bundle
-    # (`AITAXONOMY`). Both NIST spellings are pinned; each fell to `nist`,
-    # and `AI Taxonomy` without the prefix to a second orphan, `ai` (#176).
-    # **Not pinned: the title words "adversarial machine learning".** Other
-    # publishers use that phrase, and a needle would file their catalog under
-    # NIST's key -- a wrong pin reads as decided.
+    # Its sibling, AI 100-2, the Adversarial ML Taxonomy, published beside the
+    # RMF. Pinned by its DOCUMENT NUMBER only, which no other publisher uses.
+    # **Not pinned, deliberately** (1d, on #296): "ai taxonomy" -- OECD, the
+    # EU, ISO, Microsoft and MITRE ATLAS all publish an "AI Taxonomy", and a
+    # needle would merge them into NIST's key -- nor "nist ai taxonomy", which
+    # no NIST source has been found to declare (CPRT's `AITAXONOMY` is a code
+    # identifier, not a name). Nor the title words "adversarial machine
+    # learning", for the same reason as "ai taxonomy". A catalog named only
+    # "AI Taxonomy" keeps the bare `ai` orphan; keying it is #295's job.
     ("ai 100-2", "nist-ai-100-2"),
-    ("ai taxonomy", "nist-ai-100-2"),
     ("hitrust ai", "hitrust-ai"),
     ("800-172", "nist-800-172"),
     ("800-137", "nist-800-137"),

@@ -895,6 +895,22 @@ def test_hitrust_coverage_counts_level_requirements(tmp_path, anchors, expected)
 
     assert f"  {expected} requirements map to an owned NIST control" in block, block
     assert "counted per level requirement (all levels in the catalog)" in block, block
+    assert output.count("counted per level requirement") == 1, "the unit line printed elsewhere"
+
+
+def test_no_catalog_counted_per_control_carries_the_level_unit_line():
+    """**The quiet twin, b5's finding on #286.** `per_level=True` for every
+    framework survived the whole suite and printed the HITRUST unit line
+    under ARC-AMPE, FedRAMP, HIPAA and more on shipped data. No shipped
+    catalog carries level requirements, so through the real `/coverage` the
+    line must not appear at all -- while the rows it would sit under do."""
+    from policyforge.zardoz.skills import _coverage
+
+    output = _coverage(_coverage_state(), [])
+    assert "reachable via the crosswalk" in output, "no framework rows, so this checks nothing"
+    assert "counted per level requirement" not in output, (
+        "a catalog counted per control says it is counted per level requirement"
+    )
 
 
 def test_a_mapping_carried_on_the_800_53_side_reaches_coverage():

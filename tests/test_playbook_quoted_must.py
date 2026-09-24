@@ -116,11 +116,53 @@ def test_a_run_beginning_exactly_at_must_fails():
 
 def test_one_quoted_word_before_must_is_enough():
     """The boundary on the other side: "that" precedes "must" inside the
-    run, so NIST's own clause carries the modal."""
+    run, so the modal sits inside NIST's clause. That is all it shows: see
+    the stated limit below, where the antecedent of "that" is the writer's."""
     assert not _flagged(
         "NIST suggests keeping records that must be preserved for fulsome understanding.",
         CITES_1_7_4,
     )
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        # 9b's and 1d's measurements on #325: the run begins with NIST's
+        # relative pronoun, so it qualifies, but its antecedent is the writer's.
+        "NIST suggests keeping the organization's own records that must be preserved "
+        "for fulsome understanding or execution.",
+        "NIST suggests that the organization that must be preserved for fulsome "
+        "understanding or execution.",
+    ],
+)
+def test_the_stated_limit_a_relative_pronoun_passes(sentence):
+    """**A limit, pinned so it is seen rather than discovered** (80's ruling:
+    stated beside QUOTE_MIN_WORDS, not closed by a second word count, which
+    would only move the smuggle one word right). If this starts failing, the
+    rule was tightened and the comment beside the bound must change too."""
+    assert not _flagged(sentence, CITES_1_7_4)
+
+
+def test_the_exposure_is_the_three_playbook_actions_that_carry_a_binding_word():
+    """What the limit above can reach: only an action whose own text binds.
+    Pinned by id, not by count, so a catalog change names what it added (80
+    on #325). Today one "must" and two "may not" -- the latter are #321's
+    epistemic case. A new one fails here and the limit is revisited."""
+    from policyforge.content.deontic import BINDING, classify
+
+    rows = json.loads((CATALOG / "controls.json").read_text(encoding="utf-8"))
+    binding = {
+        e["enhancement_id"]: classify(e["description"])
+        for r in rows
+        for e in r["enhancements"]
+        if classify(e["description"]) in BINDING
+    }
+    assert sum(len(r["enhancements"]) for r in rows) == 459, "the population moved"
+    assert binding == {
+        "Govern 1.7 Action 4": "obligation",
+        "Measure 2.9 Action 6": "prohibition",
+        "Measure 3.2 Action 1": "prohibition",
+    }
 
 
 def test_the_quote_is_case_and_whitespace_insensitive():

@@ -25,7 +25,7 @@ were run start to finish on a clean directory: two model calls, $0.0070 and
 about 90 seconds on `openrouter/z-ai/glm-5.3-flash`.
 
 ```bash
-brew install rdazzlebot/tap/policyforge
+brew install rdazzleman/tap/policyforge
 # or, without Homebrew:
 # pipx install git+https://github.com/rdazzleman/policyforge@v1.6.0
 
@@ -105,11 +105,11 @@ any good.
 ### Installing the command (macOS and Linux)
 
 ```bash
-brew install rdazzlebot/tap/policyforge
+brew install rdazzleman/tap/policyforge
 ```
 
 That installs the `policyforge` command from the
-[rdazzlebot/homebrew-tap](https://github.com/rdazzlebot/homebrew-tap) tap,
+[rdazzleman/homebrew-tap](https://github.com/rdazzleman/homebrew-tap) tap,
 with the core providers; the optional extras (`bedrock`, `vertex`, `litellm`,
 `mcp`) are not included. Without Homebrew, `pipx install git+https://github.com/rdazzleman/policyforge@v1.6.0` does the same, and
 takes extras as `policyforge[mcp] @ git+…`.

@@ -303,7 +303,7 @@ their fixtures. Run the suite from a clone. Don't add `tests/` back to it.
 1. Merge that to `main`, then tag the merge commit `vX.Y.Z` and publish a
    GitHub Release from the tag.
 1. Update `Formula/policyforge.rb` in
-   [rdazzlebot/homebrew-tap](https://github.com/rdazzlebot/homebrew-tap):
+   [rdazzleman/homebrew-tap](https://github.com/rdazzleman/homebrew-tap):
    point `url` at
    `https://github.com/rdazzleman/policyforge/archive/refs/tags/vX.Y.Z.tar.gz`
    and set `sha256` to that tarball's hash. Compute it from the URL **the

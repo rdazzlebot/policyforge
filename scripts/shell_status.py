@@ -258,13 +258,45 @@ def _swallowed_at(line: str) -> int | None:
 #: Any pipe into a stream consumer, used for the pipefail requirement.
 _PIPES_TO_CONSUMER = re.compile(rf"{_PIPE}(?:{_CONSUMERS})\b")
 
-#: Any spelling that turns pipefail on, including after other options:
-#: `set -o pipefail`, `set -euo pipefail`, `set -e -o pipefail`, and
-#: `set -o errexit -o pipefail` (the last refused before #328, per ba).
-_PIPEFAIL = re.compile(
-    r"set\s+(?:-[a-zA-Z]+\s+|-o\s+\w+\s+)*(?:-o\s+pipefail|-[a-zA-Z]*o[a-zA-Z]*\s+pipefail)"
-)
-_PIPEFAIL_OFF = re.compile(r"set\s+\+o\s+pipefail")
+#: A `set` or `shopt` statement, up to the end of its statement.
+_SET_OR_SHOPT = re.compile(r"(?<![\w-])(set|shopt)\b([^;&|]*)")
+
+
+def _pipefail_changes(line: str) -> list[tuple[int, bool]]:
+    """Every place in `line` that turns pipefail on (True) or off (False).
+
+    **On and off are read by ONE interpreter of the options, not two
+    regexes**, because two regexes drifted. #328 taught the ON regex
+    `set -o errexit -o pipefail` and left OFF knowing only
+    `set +o pipefail`, so `set +eo pipefail`, `set +o errexit +o pipefail`
+    and `shopt -uo pipefail` (bash-verified to turn it OFF) left the lint
+    believing it was still on, and it cleared `x | tail && y`. That was
+    found by policyforge-9b, in the unsafe direction.
+
+    `set`: a flag word containing `o` (`-o`, `+o`, `-euo`, `+eo`) takes the
+    next word as the option name. The word's sign decides on or off.
+    `shopt`: the flags must include `o` (set-style options); `s` turns the
+    option on and `u` turns it off.
+    """
+    changes: list[tuple[int, bool]] = []
+    for match in _SET_OR_SHOPT.finditer(line):
+        command, words = match.group(1), match.group(2).split()
+        if command == "set":
+            j = 0
+            while j < len(words):
+                word = words[j]
+                if word[:1] in "-+" and len(word) > 1 and "o" in word[1:]:
+                    if j + 1 < len(words) and words[j + 1] == "pipefail":
+                        changes.append((match.start(), word[0] == "-"))
+                    j += 2
+                    continue
+                j += 1
+        else:
+            flags = "".join(w[1:] for w in words if w.startswith("-"))
+            if "o" in flags and "pipefail" in words and ("s" in flags) != ("u" in flags):
+                changes.append((match.start(), "s" in flags))
+    return changes
+
 
 #: `$?` read anywhere on a line.
 _READS_STATUS = re.compile(r"\$\?")
@@ -619,13 +651,9 @@ def _strip_comment(line: str) -> str:
 
 def _pipefail_at(state: bool, line: str, position: int) -> bool:
     """Whether pipefail is on at `position` in `line`, given its state
-    before the line: each `set -o pipefail` / `set +o pipefail` earlier in
+    before the line: each `set`/`shopt` that turns it on or off earlier in
     the line changes it, in order."""
-    changes = sorted(
-        [(m.start(), True) for m in _PIPEFAIL.finditer(line)]
-        + [(m.start(), False) for m in _PIPEFAIL_OFF.finditer(line)]
-    )
-    for start, value in changes:
+    for start, value in sorted(_pipefail_changes(line)):
         if start < position:
             state = value
     return state

@@ -45,9 +45,13 @@ typed command. The rules:
 - **empty-input-passes**: `xargs` without `-r` runs its command on an empty
   list, and many linters report no input as clean.
 
-`set -o pipefail`, set **before** the pipe in the same block, clears the
-first three. Set after the pipe, in another block, or turned off again with
-`set +o pipefail`, it does not.
+Pipefail, turned on **before** the pipe in the same block, clears the first
+three. It can be turned on with `set -o pipefail`, `set -euo pipefail`,
+`set -o errexit -o pipefail` or `shopt -so pipefail`. It does not clear them
+when set after the pipe, set in another block, or turned off again by any of
+`set +o pipefail`, `set +eo pipefail`, `set +o errexit +o pipefail` or
+`shopt -uo pipefail`. Each spelling was checked against real bash, not taken
+from documentation.
 
 **Measured before shipping (#213):** replaying one session's 2,742 typed
 commands found 57 findings. 25 were consequential: a push gated on `tail`, a
@@ -68,8 +72,9 @@ statement, and an `&&` inside awk's own quoted program.
   which is read line by line as if it were shell;
 - a workflow `run: *alias`, which is counted but linted as the literal
   alias;
-- `cmd | tail || handle`. The `||` runs on `tail`'s status too, but only
-  `&&` is refused today;
+- `cmd | tail || handle`, and a pipe used as a condition, such as
+  `if n=$(cmd | tail); then` or `while cmd | grep -q x`. Each branches on the
+  consumer's status too, but only `&&` is refused today;
 - the pattern inside a `printf` or `echo` argument that nothing executes.
   It is refused as if it ran, because a single-line quoted string is
   scanned on purpose (`bash -c '…'` does run it).

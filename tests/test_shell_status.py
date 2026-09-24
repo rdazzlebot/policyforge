@@ -903,14 +903,41 @@ def test_a_substitution_whose_status_is_masked_is_not_a_finding(command):
     assert shell_status.check_command(command) == []
 
 
-@pytest.mark.parametrize(
-    "spelling",
-    ["set -o errexit -o pipefail", "set -e -o pipefail", "set -euo pipefail", "set -o pipefail"],
+#: Each spelling was checked against real bash (`shopt -qo pipefail` after
+#: it) on #328, not taken from documentation.
+_PIPEFAIL_ON = (
+    "set +e -o pipefail",
+    "set -o pipefail",
+    "set -euo pipefail",
+    "set -e -o pipefail",
+    "set -o errexit -o pipefail",
+    "shopt -so pipefail",
+    "shopt -s -o pipefail",
 )
-def test_every_spelling_of_pipefail_clears_the_finding(spelling):
-    """`set -o errexit -o pipefail` was not recognised (ba on #328), which is
-    a false alarm on the lint's own recommended fix."""
-    assert (
-        shell_status.check_command(f"{spelling}; python scripts/check.py | tail -4 && git push")
-        == []
-    )
+_PIPEFAIL_OFF_AGAIN = (
+    "set +o pipefail",
+    "set +eo pipefail",
+    "set +o errexit +o pipefail",
+    "shopt -uo pipefail",
+    "shopt -u -o pipefail",
+)
+
+
+@pytest.mark.parametrize("spelling", _PIPEFAIL_ON)
+def test_each_bash_verified_on_spelling_clears_the_finding(spelling):
+    """ba on #328: `set -o errexit -o pipefail` was not recognised, a false
+    alarm on the lint's own recommended fix. `shopt -so` is the other
+    family."""
+    command = f"{spelling}; python scripts/check.py | tail -4 && git push"
+    assert shell_status.check_command(command) == []
+
+
+@pytest.mark.parametrize("spelling", _PIPEFAIL_OFF_AGAIN)
+def test_each_bash_verified_off_spelling_is_still_flagged(spelling):
+    """**The unsafe direction** (policyforge-9b on #328). After
+    `set -o pipefail`, each of these turns it OFF in bash, and the lint had
+    only known `set +o pipefail`. So it believed pipefail was still on and
+    CLEARED the pipe. Pinned so the on and off readings cannot drift apart
+    again."""
+    command = f"set -o pipefail; {spelling}; python scripts/check.py | tail -4 && git push"
+    assert "swallowed-status" in _rules(shell_status.check_command(command))

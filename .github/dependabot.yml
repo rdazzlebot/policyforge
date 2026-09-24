@@ -37,6 +37,27 @@ updates:
   # edits are never merged as they stand. The locks are regenerated with the
   # command in each header, together, and the pull requests are closed in
   # favour of that.
+  #
+  # **Pin the regeneration to the version Dependabot proposed.** The header
+  # command alone moves nothing -- uv keeps the pins already in the output
+  # file. The obvious fix, `--upgrade-package <name>`, upgrades to the
+  # LATEST release, which ignores the `cooldown` below entirely. Measured on
+  # 2026-09-23 against the filelock/virtualenv bumps (#239-#242):
+  #
+  #     --upgrade-package filelock     -> 4.0.3   a MAJOR bump, uploaded TODAY
+  #     --upgrade-package virtualenv   -> 21.11.1             uploaded TODAY
+  #     what Dependabot proposed       -> 3.32.7 / 21.7.10, 7-8 days old
+  #
+  # So this remedy, followed the natural way, is more dangerous than the edit
+  # it replaces. Name the version:
+  #
+  #     --upgrade-package "filelock==3.32.7"
+  #
+  # which reproduced Dependabot's edit byte-for-byte on that occasion.
+  #
+  # A bump to a DEV-only package arrives as two IDENTICAL PRs against ci.txt,
+  # not as a ci.txt/runtime.txt pair: the "/" entry above now reaches
+  # requirements/ci.txt too, so both entries propose the same change.
   - package-ecosystem: "pip"
     directory: "/requirements"
     ignore:

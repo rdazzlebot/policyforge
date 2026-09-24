@@ -841,7 +841,15 @@ def describe_failure(exc: Exception, state: ShellState) -> str:
     line saying it failed and that the session goes on."""
     import traceback
 
-    if isinstance(exc, refusal_types()):
+    # If the refusal list itself cannot load, every failure is shown as a bug
+    # -- a traceback plus the failed line -- rather than raising here, inside
+    # the loop's handler, and ending the session: #302 reached through its
+    # own fix (9b's finding on #303).
+    try:
+        kinds = refusal_types()
+    except Exception:  # noqa: BLE001 - the fallback is the full traceback, below
+        kinds = ()
+    if isinstance(exc, kinds):
         message = exc.format_message() if hasattr(exc, "format_message") else str(exc)
         head = f"{type(exc).__name__}: {message}"
     else:

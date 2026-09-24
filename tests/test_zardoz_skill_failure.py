@@ -133,6 +133,24 @@ def test_ctrl_c_inside_a_skill_is_not_swallowed(monkeypatch):
         _run(monkeypatch, interrupted, ["/boom"])
 
 
+def test_a_refusal_list_that_cannot_load_does_not_end_the_session(monkeypatch):
+    """**#302 reached through its own fix** (9b's finding). If an import
+    inside `refusal_types()` ever fails, the failure is reported as a bug,
+    with a traceback, instead of raising inside the loop's handler."""
+
+    def broken():
+        raise ImportError("an optional dependency went missing")
+
+    monkeypatch.setattr(shell, "refusal_types", broken)
+    _, written = _run(monkeypatch, _refuse, ["/boom", "/help"])
+
+    text = "\n".join(written)
+    assert "Traceback (most recent call last)" in text
+    assert "ClickException" in text
+    assert FAILED in text
+    assert any("Zardoz permits" in line for line in written), "the session went on"
+
+
 def test_the_plain_voice_says_it_failed_too():
     assert "failed" in PLAIN_VOICE["command_failed"]
     assert set(PLAIN_VOICE) == set(VOICE)

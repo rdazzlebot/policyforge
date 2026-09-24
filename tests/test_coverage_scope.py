@@ -337,3 +337,97 @@ def _hipaa_control(control_id):
             framework_version="45 CFR 164",
         )
     ]
+
+
+# ---- #260: the third kind of zero -------------------------------------------
+#
+# The report split every zero into two kinds -- refused by design, or nobody
+# has published a mapping -- and told 800-171 users "no published crosswalk
+# yet, `crosswalk seed` starts one". NIST publishes that mapping in the file
+# the catalog is built from: all 97 requirements, 157 links. The zero is a gap
+# in PolicyForge, not in the source.
+#
+# Each test asserts text ONLY the new branch writes. `_zero_row_reasons` has
+# two other branches that also name the framework, and one also suggests a
+# command, so a test matching the framework name alone would pass whichever
+# branch spoke.
+
+_UPSTREAM_TEXT = "a gap in PolicyForge, not in the source"
+
+
+def _row(output: str, heading: str) -> str:
+    rows = [ln for ln in output.splitlines() if ln.strip().startswith(f"{heading}:")]
+    assert len(rows) == 1, f"expected exactly one {heading} row, found {len(rows)}"
+    return rows[0]
+
+
+def test_800_171_says_the_source_publishes_the_mapping_and_offers_no_seed():
+    """**The row #260 is about.** It told users to rebuild by hand what NIST
+    already publishes. It must now say where the gap is, and suggest nothing
+    to run -- there is nothing a user can run to ingest it."""
+    from policyforge.zardoz.skills import _coverage
+
+    row = _row(_coverage(_coverage_state(), []), "NIST-800-171")
+
+    assert _UPSTREAM_TEXT in row, f"800-171 row does not say the gap is ours: {row!r}"
+    assert "no published crosswalk" not in row, "800-171 still claims no mapping is published"
+    assert "not mapped by design" not in row, "800-171 routed to the refusal branch"
+    assert "crosswalk seed" not in row, "800-171 still tells the user to seed by hand"
+
+
+def test_the_header_names_three_kinds_of_zero():
+    """The header was a two-way partition -- *work nobody has done* or *a
+    mapping that would be wrong* -- with no place for a zero the source has
+    already answered. Fixing the row alone would leave the header denying the
+    category the row now names."""
+    from policyforge.zardoz.skills import _coverage
+
+    output = _coverage(_coverage_state(), [])
+    header = output[output.index("Why those are zero") :].split("\n  CFR-")[0]
+
+    assert "one of three things" in header, header
+    assert "the source publishes that this release does not yet read" in header, header
+
+
+def test_an_upstream_crosswalk_is_not_a_refusal():
+    """**Never merge the two tables.** `NOT_CROSSWALK_ANCHORABLE` makes
+    `seed_overlay` refuse and prints "not mapped by design"; both are false
+    for a framework whose publisher mapped it. Seeding by hand is ADVISED
+    AGAINST in the report -- a hand-made mapping competes with the source's --
+    but not refused by the tool."""
+    from policyforge.crosswalk.overlay import (
+        NOT_CROSSWALK_ANCHORABLE,
+        PUBLISHED_UPSTREAM,
+        _canonical,
+        _refusal_reason,
+    )
+
+    refused = {_canonical(name) for name in NOT_CROSSWALK_ANCHORABLE}
+    for name in PUBLISHED_UPSTREAM:
+        assert _canonical(name) not in refused, f"{name!r} is in both tables"
+        assert _refusal_reason(name) is None, f"seeding {name!r} would be refused"
+
+
+def test_every_upstream_crosswalk_names_a_shipped_catalog():
+    """**A rename must not silently restore the false message.** The refusal
+    table was re-opened once by exactly that: a catalog renamed, a key that
+    stopped matching, and the old wording back with no test failing. Every
+    key here has to match a framework some shipped catalog declares."""
+    import json
+    from pathlib import Path
+
+    from policyforge.crosswalk.overlay import PUBLISHED_UPSTREAM, _canonical
+
+    root = Path(__file__).resolve().parent.parent / "data" / "frameworks"
+    declared = {
+        _canonical(row["framework"])
+        for path in root.glob("*/controls.json")
+        for row in json.loads(path.read_text(encoding="utf-8"))
+    }
+    assert PUBLISHED_UPSTREAM, "the table is empty, so the test below checks nothing"
+    for name in PUBLISHED_UPSTREAM:
+        assert _canonical(name) in declared, (
+            f"PUBLISHED_UPSTREAM names {name!r}, which no shipped catalog declares. "
+            "If the catalog was renamed, re-key this entry; otherwise its row falls "
+            "back to 'no published crosswalk yet', which is the false claim #260 removed."
+        )

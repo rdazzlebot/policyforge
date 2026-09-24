@@ -883,6 +883,66 @@ def test_import_confluence_writes_markdown_and_records_history(tmp_path, monkeyp
     assert history[0].source == "confluence-import"
 
 
+def test_an_import_that_drifted_prints_a_history_command_that_runs(tmp_path, monkeypatch):
+    """#310: the drift case is what the command is for, and it crashed.
+
+    `history_hint` passed the integer version numbers to `shlex.quote`, so
+    every import that differed from a recorded version exited 1. The
+    helper's own test passed strings no caller sends. This runs the real
+    command against a real recorded version and then runs the command it
+    printed, so both halves are measured on the user's path.
+    """
+    import re
+    import shlex
+    from pathlib import Path
+
+    import policyforge.export.confluence_importer as importer
+    from policyforge.cli import cli
+    from policyforge.export.confluence_importer import ConfluencePage
+    from policyforge.history.version_store import record_version
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        importer,
+        "fetch_confluence_page",
+        lambda **_: ConfluencePage(
+            id="1",
+            title="Access",
+            version=4,
+            storage_body="<h1>Edited in Confluence</h1>",
+            webui_url="/x",
+        ),
+    )
+    record_version(
+        Path("output/.history"), "standard/access", "# Drafted\n", source="generate", metadata={}
+    )
+    result = CliRunner().invoke(
+        cli,
+        [
+            "import-confluence",
+            "--tier",
+            "standard",
+            "--name",
+            "access",
+            "--space",
+            "ENG",
+            "--title",
+            "Access",
+            "--host",
+            "https://example.atlassian.net/wiki",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Differs from the last recorded version (v1)" in result.output
+
+    printed = re.search(r"Run `policyforge (history [^`]+)`", result.output)
+    assert printed, result.output
+    shown = CliRunner().invoke(cli, shlex.split(printed.group(1)))
+    assert shown.exit_code == 0, shown.output
+    assert "-# Drafted" in shown.output
+    assert "+# Edited in Confluence" in shown.output
+
+
 def test_history_command_lists_and_diffs_versions(tmp_path):
     from policyforge.cli import cli
     from policyforge.history.version_store import record_version

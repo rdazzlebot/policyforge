@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import subprocess
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -27,19 +28,21 @@ ENTRY_POINTS = frozenset({"run", "Popen", "call", "check_call", "check_output"})
 ALWAYS_LOCALE = frozenset({"getoutput", "getstatusoutput"})
 
 #: Product sites carried by #287, keyed by (path, enclosing function), NOT by
-#: line: a line key breaks on any edit above it. When #287 fixes one, its
-#: entry here goes -- the test fails on a stale entry, so the list cannot
-#: outlive what it exempts.
-DEFERRED_TO_287 = frozenset(
+#: line: a line key breaks on any edit above it. Each carries its COUNT, so
+#: the exemption covers these calls and not the function: a new call in an
+#: exempted function is still a violation. When #287 fixes one, its count
+#: drops here -- the test fails on a stale count, so the list cannot outlive
+#: what it exempts.
+DEFERRED_TO_287: Counter[tuple[str, str]] = Counter(
     {
-        ("src/policyforge/cli/crosswalk.py", "_reviewer"),
-        ("src/policyforge/edit/tree.py", "git"),
-        ("src/policyforge/edit/tree.py", "display_path"),
-        ("src/policyforge/export/github_wiki.py", "__call__"),
-        ("src/policyforge/frameworks/drift.py", "read_committed"),
-        ("src/policyforge/frameworks/registry.py", "is_tracked"),
-        ("src/policyforge/frameworks/registry.py", "is_ignored"),
-        ("src/policyforge/ingest/parser_gate.py", "trial_run"),
+        ("src/policyforge/cli/crosswalk.py", "_reviewer"): 1,
+        ("src/policyforge/edit/tree.py", "git"): 1,
+        ("src/policyforge/edit/tree.py", "display_path"): 1,
+        ("src/policyforge/export/github_wiki.py", "__call__"): 1,
+        ("src/policyforge/frameworks/drift.py", "read_committed"): 1,
+        ("src/policyforge/frameworks/registry.py", "is_tracked"): 1,
+        ("src/policyforge/frameworks/registry.py", "is_ignored"): 1,
+        ("src/policyforge/ingest/parser_gate.py", "trial_run"): 1,
     }
 )
 
@@ -71,13 +74,22 @@ def _decodes_without_encoding(node: ast.Call) -> bool:
         isinstance(keywords.get(name), ast.Constant) and keywords[name].value is True
         for name in ("text", "universal_newlines")
     )
-    return texty and "encoding" not in keywords
+    # `encoding=None` is the locale codec by another spelling (ba, on #290).
+    encoding = keywords.get("encoding")
+    named = encoding is not None and not (
+        isinstance(encoding, ast.Constant) and encoding.value is None
+    )
+    return texty and not named
 
 
-def violations(source: str, path: str) -> set[tuple[str, str]]:
-    """(path, innermost enclosing function) for each offending call."""
+def violations(source: str, path: str) -> Counter[tuple[str, str]]:
+    """How many offending calls sit in each (path, innermost function).
+
+    COUNTED, not a set (ba, on #290): an exemption keyed by function used to
+    cover any number of calls inside it, so a NEW locale-decoding call added
+    to an exempted function passed unseen."""
     tree = ast.parse(source)
-    found = set()
+    found: Counter[tuple[str, str]] = Counter()
 
     def visit(node: ast.AST, function: str) -> None:
         for child in ast.iter_child_nodes(node):
@@ -85,7 +97,7 @@ def violations(source: str, path: str) -> set[tuple[str, str]]:
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 name = child.name
             if isinstance(child, ast.Call) and _decodes_without_encoding(child):
-                found.add((path, name))
+                found[(path, name)] += 1
             visit(child, name)
 
     visit(tree, "<module>")
@@ -93,17 +105,19 @@ def violations(source: str, path: str) -> set[tuple[str, str]]:
 
 
 def test_no_subprocess_call_decodes_with_the_locale_codec():
-    found = set()
+    found: Counter[tuple[str, str]] = Counter()
     for path in _tracked_python():
-        found |= violations((ROOT / path).read_text(encoding="utf-8"), path)
+        found += violations((ROOT / path).read_text(encoding="utf-8"), path)
 
     new = found - DEFERRED_TO_287
     assert not new, (
         "subprocess output decoded with the locale codec (add encoding='utf-8', "
-        f"errors='replace'): {sorted(new)}"
+        f"errors='replace'): {sorted(new.items())}"
     )
     stale = DEFERRED_TO_287 - found
-    assert not stale, f"fixed, so remove from DEFERRED_TO_287 (and tick #287): {sorted(stale)}"
+    assert not stale, (
+        f"fixed, so lower or remove in DEFERRED_TO_287 (and tick #287): {sorted(stale.items())}"
+    )
 
 
 def test_the_subprocess_module_is_never_aliased():
@@ -131,6 +145,7 @@ def test_the_detector_catches_each_shape():
         "subprocess.check_output(['x'], universal_newlines=True)": True,
         "subprocess.Popen(['x'], stdout=1, text=True)": True,
         "subprocess.getoutput('x')": True,
+        "subprocess.run(['x'], text=True, encoding=None)": True,  # the locale, spelled out
         "subprocess.run(['x'], text=True, encoding='utf-8')": False,
         "subprocess.run(['x'], capture_output=True)": False,  # bytes: nothing decoded
         "subprocess.run(['x'], text=False)": False,
@@ -149,4 +164,18 @@ def test_a_violation_is_keyed_by_its_innermost_function():
         "        subprocess.run(['x'], text=True)\n"
         "    return inner\n"
     )
-    assert violations(source, "p.py") == {("p.py", "inner")}
+    assert violations(source, "p.py") == Counter({("p.py", "inner"): 1})
+
+
+def test_a_second_call_in_an_exempted_function_is_still_counted():
+    """ba's arm on #290: the same function holding two offending calls
+    counts 2, so an exemption for 1 does not cover the second."""
+    source = (
+        "import subprocess\n"
+        "def git():\n"
+        "    subprocess.run(['a'], text=True)\n"
+        "    subprocess.run(['b'], text=True)\n"
+    )
+    found = violations(source, "p.py")
+    assert found == Counter({("p.py", "git"): 2})
+    assert found - Counter({("p.py", "git"): 1}) == Counter({("p.py", "git"): 1})

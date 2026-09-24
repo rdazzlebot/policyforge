@@ -228,9 +228,19 @@ def test_the_readme_explains_that_the_coverage_move_is_gone(readme):
     What it must do instead is say what a zero in the crosswalk section
     means, because `0 of 97` reads as ninety-seven unaddressed
     requirements and is nothing of the kind.
+
+    **This test used to require the false explanation.** It asserted
+    "nobody has published" was present, while NIST's rev 3 OSCAL -- the
+    file this catalog is built from -- links all 97 requirements to 800-53
+    (157 links; found by policyforge-f8, handle 5b, re-measured by 80,
+    #260). So the test pinned the sentence that stopped anyone looking.
+    It now requires the true cause and refuses the old one.
     """
     assert "0 of 97" in readme, "the section the shell now emits"
-    assert "nobody has published" in readme, "what the zero means"
+    assert "gap in PolicyForge, not in the source" in readme, "what the zero means"
+    assert "#259" in readme, "where the gap is being closed"
+    assert "nobody has published" not in readme, "NIST published it (#260)"
+    assert "no authority publishes" not in readme, "NIST published it (#260)"
     assert "relative to everything on disk" not in readme, "that is no longer true"
 
 

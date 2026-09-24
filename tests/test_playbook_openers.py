@@ -61,8 +61,9 @@ def test_sixteen_stored_sentences_pass_and_govern_1_7_is_flagged_for_its_must():
     pre-existing reason**, pinned here so it is not mistaken for the opener:
     it restates Playbook Govern 1.7 Action 4's own words, "artifacts that
     must be preserved", and #309's whole-sentence check refuses any binding
-    word in a Playbook sentence. 80 is deciding on #319 whether that one
-    should be exempt; until then it is a documented false alarm."""
+    word in a Playbook sentence. 80 chose, on #319, to keep this PR to the
+    opener and pin that one as a documented false alarm; whether a quoted
+    NIST "must" is exempt is #320's ruling."""
     flagged = {
         _subcategory(s.text) for s in playbook_obligations(FIXTURE.read_text(encoding="utf-8"))
     }

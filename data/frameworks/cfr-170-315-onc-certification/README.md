@@ -57,14 +57,15 @@ or operates it.
   expired, as of the eCFR date. `170.315(a)(9)` expired on 1 January 2025.
 - **Reserved categories.** `170.315(i)` exists only as a reserved placeholder.
 
-**Pending, and not applied:** ONC's HTI-5 **proposed** rule (90 FR 60970)
+**Pending, and not applied:** the ASTP/ONC **proposed** rule *Deregulatory
+Actions To Unleash Prosperity* (90 FR 60970, 2025-12-29)
 would remove **many** § 170.315 criteria, across several categories. The FY2027 IPPS final rule
 (91 FR 49570, 2026-08-04) describes three of them, `170.315(a)(14)`, `(h)(1)`
 and `(h)(2)`, as proposed for removal from the Base EHR definition. That is a
 subset, not the whole proposal. **No count of the proposed removals is given
 here, because none has been independently measured.** No final rule amending
 § 170.315 has been published since HTI-4 (last amended 2025-10-01, per eCFR)
-as of 2026-09-24, so every criterion in this catalog is still live. **If HTI-5
+as of 2026-09-24, so every criterion in this catalog is still live. **If that rule
 is finalised, the framework-drift job goes red, and that is the job working.**
 A person then re-derives the agreed set (#179) and re-pins the catalog; the
 loader refuses a changed set rather than absorbing it.

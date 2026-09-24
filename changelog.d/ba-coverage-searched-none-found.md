@@ -8,16 +8,19 @@ publisher's mapping.
 
 The row now names the actual cause:
 
-- **A catalog that maps to 800-53** (HIPAA, FedRAMP, ARC-AMPE) reads zero
-  when none of the 800-53 controls it reaches belongs to one of your topics.
-  The row says so: the gap is in your topics, not the mapping. It suggests no
-  command and advises against seeding by hand, because a hand-made mapping
-  would compete with the publisher's.
-- **A catalog your topics reach only in part** reads zero when your
-  organisation's crosswalk overlay records every mapping your topics use as
-  `superset` or `intersects`. The row says your topics do own those controls
-  and that whether partial coverage is enough is a decision for a person. It
-  suggests nothing to run.
+- **A catalog that maps to 800-53** (HIPAA, FedRAMP, ARC-AMPE) now accounts
+  for every requirement, with a count for each reason it reads zero:
+  - how many your topics reach only in part, because your organisation's
+    crosswalk overlay records the mapping as `superset` or `intersects`.
+    Whether that is enough is a decision for a person;
+  - how many map to 800-53 controls none of your topics owns. That gap is in
+    your topics, so do not seed them by hand: a hand-made mapping would
+    compete with the publisher's;
+  - how many carry no mapping in the catalog's crosswalk at all. HIPAA has
+    9 of these, including the general rules in 164.306.
+
+  A reason with nothing to count is left out, and nothing on these rows
+  suggests a command.
 - **42 CFR Part 2** says *"no published crosswalk found"*, because a search
   was made. It covered NIST, HHS/OCR, SAMHSA rulemaking and HITRUST's source
   list, but not NIST's OLIR catalog, where a formal mapping would be

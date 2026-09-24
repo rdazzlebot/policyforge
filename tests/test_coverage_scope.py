@@ -555,15 +555,22 @@ def test_every_searched_framework_names_a_shipped_catalog():
         )
 
 
-# ---- #270: a catalog that carries a crosswalk is never told to seed one ----
+# ---- #270: a catalog that carries a crosswalk, read zero --------------------
 #
-# `covered` is the catalog joined to the user's topics, not a fact about the
-# file. Under the example registry every crosswalk-carrying catalog was
-# covered, so the seed branch's population looked like Part 2 alone; a
-# one-topic registry sends HIPAA and FedRAMP there too (1d, on #270).
+# `covered` is the catalog joined to the user's topics and overlay, not a fact
+# about the file. One sentence spoke for a mixed population three times on
+# #270 -- every catalog with a crosswalk told to seed; a partial-only catalog
+# told its owned controls were unowned; HIPAA's 9 unmapped requirements told
+# their gap was in the topics -- so the row is one counted clause per kind of
+# requirement (80's ruling), and the tests below CONSERVE: the clauses must
+# sum to every requirement the catalog has, derived from the raw files.
 
-_REACHES_TEXT = "none of the controls it reaches belongs to one of your topics"
 _ID_RE = re.compile(r"\b[A-Z]{2}-\d+(?:\(\d+\))?")
+_CLAUSE_RE = {
+    "P": re.compile(r"(\d+) reach controls your topics own, but only in part"),
+    "R": re.compile(r"(\d+) map to 800-53 controls none of your topics owns"),
+    "N": re.compile(r"(\d+) carry no mapping in this catalog's crosswalk"),
+}
 
 
 def _shipped_rows():
@@ -576,6 +583,35 @@ def _crosswalks(row) -> list[dict]:
     return [row.get("source_crosswalk") or {}] + [
         e.get("source_crosswalk") or {} for e in row.get("enhancements", [])
     ]
+
+
+def _requirements(framework_key: str) -> dict[str, bool]:
+    """`{requirement id: carries a mapping}` for one shipped framework, from
+    the raw `controls.json` -- controls and enhancements, the ids coverage
+    lists -- read by 800-53 id rather than by the loader's truthiness."""
+    from policyforge.zardoz.skills import _framework_key
+
+    found = {}
+    for row in _shipped_rows():
+        if _framework_key(row["framework"]) != framework_key:
+            continue
+        levels = [(row["control_id"], row.get("source_crosswalk") or {})] + [
+            (e["enhancement_id"], e.get("source_crosswalk") or {})
+            for e in row.get("enhancements", [])
+        ]
+        for requirement_id, crosswalk in levels:
+            found[requirement_id] = bool(_ID_RE.findall(" ".join(crosswalk.values())))
+    return found
+
+
+def _clauses(row: str) -> dict[str, int]:
+    """The counted clauses in a row; an absent clause is 0."""
+    counts = {}
+    for kind, pattern in _CLAUSE_RE.items():
+        matches = pattern.findall(row)
+        assert len(matches) <= 1, f"clause {kind} printed twice: {row!r}"
+        counts[kind] = int(matches[0]) if matches else 0
+    return counts
 
 
 def _zero_rows(output: str) -> dict[str, str]:
@@ -591,17 +627,27 @@ def _zero_rows(output: str) -> dict[str, str]:
     return rows
 
 
-def test_no_catalog_carrying_a_crosswalk_is_told_to_seed_one():
-    """**1d's test.** A registry anchored on one 800-53 control that no
-    shipped crosswalk reaches. Both sides are DERIVED from the raw
-    `controls.json` files -- not from the loader the code under test reads
-    -- so the catalogs are not listed by name and a new one is covered the
-    day it ships. Conservation: every cause row is classified, so a carrier
-    cannot leave the population by being mislabelled."""
+def _one_topic_state(anchor: str):
     import dataclasses
     from types import SimpleNamespace
 
     from policyforge.topics.registry import load_topics
+
+    root = Path(__file__).resolve().parent.parent
+    topic = dataclasses.replace(
+        load_topics(root / "config" / "topics.example.yaml")[0], nist_controls=[anchor]
+    )
+    return SimpleNamespace(topics=[topic], controls_paths=[], config={}, content_dir=None)
+
+
+def test_every_catalog_carrying_a_crosswalk_accounts_for_every_requirement():
+    """**1d's first case, generalised, and the pure-R twin.** One topic,
+    anchored on an 800-53 control no shipped crosswalk reaches, so nothing is
+    covered or partial. For every catalog that carries a crosswalk -- derived
+    from the raw files, none named -- the row must split its requirements
+    into R (mapped, unowned) and N (no mapping), with R + N the catalog's
+    whole count and N exactly the requirements the data leaves unmapped.
+    FedRAMP (N = 0) prints R alone; HIPAA (N = 9) prints both."""
     from policyforge.zardoz.skills import _coverage, _framework_key
 
     reached: set[str] = set()
@@ -620,31 +666,35 @@ def test_no_catalog_carrying_a_crosswalk_is_told_to_seed_one():
     assert carriers, "no shipped catalog carries a crosswalk, so this checks nothing"
     assert free, "every 800-53 control is reached by some crosswalk; pick another anchor"
 
-    root = Path(__file__).resolve().parent.parent
-    topic = dataclasses.replace(
-        load_topics(root / "config" / "topics.example.yaml")[0], nist_controls=[free[0]]
-    )
-    state = SimpleNamespace(topics=[topic], controls_paths=[], config={}, content_dir=None)
-    rows = _zero_rows(_coverage(state, []))
-
+    rows = _zero_rows(_coverage(_one_topic_state(free[0]), []))
     seen = {heading: row for heading, row in rows.items() if _framework_key(heading) in carriers}
     assert seen, f"no crosswalk-carrying catalog reached a zero row: {sorted(rows)}"
+    kinds_seen = set()
     for heading, row in seen.items():
-        assert _REACHES_TEXT in row, f"{heading} carries a crosswalk but reads: {row!r}"
-        assert "crosswalk seed" not in row, f"{heading} is told to seed what it carries"
+        requirements = _requirements(_framework_key(heading))
+        unmapped = sum(1 for has in requirements.values() if not has)
+        counts = _clauses(row)
+        assert counts["P"] + counts["R"] + counts["N"] == len(requirements), (
+            f"{heading}: clauses {counts} do not sum to its {len(requirements)} requirements"
+        )
+        assert counts["P"] == 0, f"{heading}: partial with no overlay: {row!r}"
+        assert counts["N"] == unmapped, f"{heading}: N={counts['N']}, data says {unmapped}"
+        assert "crosswalk seed" not in row, f"{heading} is told to run seed: {row!r}"
         assert "carries no crosswalk" not in row, f"{heading} is told it carries none"
+        assert "so do not seed them by hand" in row, f"{heading}: R lost its advice: {row!r}"
+        kinds_seen.add("R+N" if counts["N"] else "R only")
+    # Both shapes must be exercised, or the N clause could be dead code here.
+    assert kinds_seen == {"R only", "R+N"}, f"only {kinds_seen} reached; the twins need both"
     for heading, row in rows.items():
         if heading not in seen:
-            assert _REACHES_TEXT not in row, f"{heading} carries no crosswalk but reads: {row!r}"
+            assert not any(_clauses(row).values()), f"{heading} has no crosswalk: {row!r}"
 
 
 def test_a_crosswalk_carried_only_by_enhancements_still_counts():
     """NIST's HIPAA crosswalk maps implementation specifications separately
     from their Standards, so a catalog can carry its mapping only below the
-    control. No shipped catalog is shaped that way -- the one enhancement-only
-    control sits in a catalog with control-level mappings too -- so the data
-    cannot tell a control-level-only check from the real one, and this
-    hand-built catalog can."""
+    control. No shipped catalog is shaped that way, so a hand-built one: the
+    enhancement is mapped (R), the control above it is not (N)."""
     from types import SimpleNamespace
 
     from policyforge.ingest.schema import Control, ControlEnhancement
@@ -662,12 +712,13 @@ def test_a_crosswalk_carried_only_by_enhancements_still_counts():
         )
     ]
     assert not control.source_crosswalk, "the premise: nothing at control level"
-    report = SimpleNamespace(
-        framework_coverage=[SimpleNamespace(framework=name, covered=0, partial=[])]
+    coverage = SimpleNamespace(
+        framework=name, covered=0, partial=[], uncovered=["EEF-1", "EEF-1(a)"]
     )
+    report = SimpleNamespace(framework_coverage=[coverage])
     row = _row("\n".join(_zero_row_reasons([control], report)), name.upper())
 
-    assert _REACHES_TEXT in row, f"an enhancement-level crosswalk was not seen: {row!r}"
+    assert _clauses(row) == {"P": 0, "R": 1, "N": 1}, row
     assert "crosswalk seed" not in row, row
 
 
@@ -696,21 +747,17 @@ def _every_pair_recorded_superset(framework_key: str) -> dict[tuple[str, str, st
     return pairs
 
 
-def test_a_partial_only_catalog_is_not_told_its_controls_are_unowned(monkeypatch):
-    """**1d's case, through the real `_coverage`.** A topic owns an 800-53
-    control HIPAA maps to, and the organisation recorded that mapping as
-    `superset`: covered 0, partial non-empty. The fifth-kind row said "none
-    of the controls it reaches belongs to one of your topics" -- false, the
-    topic owns it. The question is whether partial is enough, which is a
-    person's call (80's ruling)."""
-    import dataclasses
-    from types import SimpleNamespace
-
+def test_a_mixed_catalog_names_each_part_and_the_parts_sum(monkeypatch):
+    """**1d's mixed case, through the real `_coverage`.** A topic owns one
+    control HIPAA maps to, and every HIPAA mapping is recorded `superset`:
+    some requirements are partial, most reach nothing owned, and 9 carry no
+    mapping at all. The row must name all three with the counts the report
+    and the data give, and they must sum to HIPAA's whole count."""
     import policyforge.crosswalk.overlay as overlay
-    from policyforge.topics.registry import load_topics
     from policyforge.zardoz.skills import _coverage, _framework_key
 
     hipaa = _framework_key("HIPAA Security Rule")
+    requirements = _requirements(hipaa)
     anchor = next(
         match
         for row in _shipped_rows()
@@ -722,19 +769,52 @@ def test_a_partial_only_catalog_is_not_told_its_controls_are_unowned(monkeypatch
     relationships = _every_pair_recorded_superset(hipaa)
     monkeypatch.setattr(overlay, "accepted_relationships", lambda _: relationships)
 
-    root = Path(__file__).resolve().parent.parent
-    topic = dataclasses.replace(
-        load_topics(root / "config" / "topics.example.yaml")[0], nist_controls=[anchor]
-    )
-    state = SimpleNamespace(topics=[topic], controls_paths=[], config={}, content_dir=None)
-    output = _coverage(state, [])
+    output = _coverage(_one_topic_state(anchor), [])
     row = _zero_rows(output)["HIPAA"]
+    counts = _clauses(row)
+    partial_line = re.search(r"(\d+) more are reached only in part", output)
+    assert partial_line, "the report lists no partial requirements for the row to point at"
 
-    assert "your topics own, but only in part" in row, f"partial-only row missing: {row!r}"
-    assert "belongs to one of your topics" not in row, "told its owned controls are unowned"
-    assert "seed" not in row, f"a partial-only catalog is told to seed: {row!r}"
-    # The row points at a section; that section must be in the same output.
+    assert counts["P"] == int(partial_line.group(1)), (counts, partial_line.group(0))
+    assert counts["N"] == sum(1 for has in requirements.values() if not has), counts
+    assert counts["P"] and counts["R"] and counts["N"], f"not a mixed case: {counts}"
+    assert sum(counts.values()) == len(requirements), (
+        f"clauses {counts} do not sum to HIPAA's {len(requirements)} requirements"
+    )
+    assert "belongs to one of your topics" not in row, "the retired single sentence is back"
+    assert "crosswalk seed" not in row, row
+    # The P clause points at a section; that section must be in this output.
     assert "(listed as partial above)" in row
     above = output[: output.index("Why those are zero")]
     assert "HIPAA reachable via the crosswalk" in above, "the section the row points at is gone"
-    assert "are reached only in part" in above, "the row says 'listed above' and nothing is"
+
+
+def test_a_purely_partial_catalog_prints_only_the_partial_clause():
+    """The pure-partial twin: every requirement is partial, none uncovered.
+    One clause, no R, no N, and nothing about seeding."""
+    from types import SimpleNamespace
+
+    from policyforge.ingest.schema import Control
+    from policyforge.zardoz.skills import _zero_row_reasons
+
+    name = "Example Partial Framework"
+    controls = [
+        Control(
+            control_id=f"EPF-{n}",
+            title="t",
+            framework=name,
+            framework_version="1",
+            source_crosswalk={"NIST 800-53": "AC-2"},
+        )
+        for n in (1, 2, 3)
+    ]
+    coverage = SimpleNamespace(
+        framework=name, covered=0, partial=["EPF-1", "EPF-2", "EPF-3"], uncovered=[]
+    )
+    row = _row(
+        "\n".join(_zero_row_reasons(controls, SimpleNamespace(framework_coverage=[coverage]))),
+        name.upper(),
+    )
+
+    assert _clauses(row) == {"P": 3, "R": 0, "N": 0}, row
+    assert "seed" not in row, row

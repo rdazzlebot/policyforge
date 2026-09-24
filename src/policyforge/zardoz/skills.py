@@ -619,21 +619,20 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
       (`oscal_loader` keeps only `rel="related"` links, and 800-171 encodes
       its sources as `rel="reference"`; #259). That zero is a gap in
       PolicyForge, not in the source, and `PUBLISHED_UPSTREAM` holds it.
-    - **A catalog that carries a crosswalk** -- HIPAA and FedRAMP ship
-      one -- reads zero when none of the 800-53 controls it maps to belongs
-      to one of the user's topics. The gap is in the topics, not the
-      mapping, so the row suggests no command and advises against seeding:
-      a hand-made mapping would compete with the publisher's. `covered` is
-      the catalog joined to the registry, not a fact about the file -- the
-      example registry anchors so much that this never showed, and a
-      one-topic registry shows it at once (1d, on #270).
-    - **A catalog reached only in part** -- the topics DO own controls it
-      maps to, but the organisation's overlay records those mappings as
-      `superset` or `intersects` -- reads covered 0 with `partial`
-      non-empty. Whether partial is enough is a person's decision, not a
-      count, so the row says that and suggests nothing. Checked before the
-      row above, which would otherwise tell the user controls they own are
-      unowned (1d's second case on #270).
+    - **A catalog that carries a crosswalk** -- HIPAA, FedRAMP, ARC-AMPE
+      -- reads zero for up to three reasons AT ONCE, one per requirement,
+      so its row is one counted clause per reason and the counts sum to
+      the catalog's whole requirement count (80's ruling on #270):
+      *partial* -- the topics own the control, but the organisation's
+      overlay records the mapping as `superset`/`intersects`, so whether
+      that is enough is a person's call; *unowned* -- mapped to a control
+      no topic owns, so the gap is in the topics and a hand-seeded pair
+      would compete with the publisher's; *unmapped* -- no mapping in this
+      catalog's crosswalk at all (HIPAA's 164.306(a)-(e) among 9), with no
+      advice. One sentence spoke for this mixed population three times on
+      #270 before it was split. `covered` is the catalog joined to the
+      user's topics and overlay, not a fact about the file: the example
+      registry anchors so much that none of this showed (1d, on #270).
     - **Any other catalog** -- every BYOC one, and any shipped one added
       later without a crosswalk -- is in none of those tables and carries no
       mapping. Its row states only that. Until #264 this branch printed "no
@@ -682,12 +681,17 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
     # Frameworks whose catalog carries any 800-53 mapping, at either level --
     # NIST's HIPAA crosswalk maps implementation specifications separately
     # from their Standards, so a control-level check alone would miss some.
-    carries_crosswalk = set()
+    # Per framework, the requirement ids -- controls and enhancements, the
+    # same ids `FrameworkCoverage` lists -- that carry a mapping of their own.
+    mapped: dict[str, set[str]] = {}
     for control in controls:
         key = _framework_key(control.framework)
         declared.setdefault(key, control.framework)
-        if control.source_crosswalk or any(e.source_crosswalk for e in control.enhancements):
-            carries_crosswalk.add(key)
+        if control.source_crosswalk:
+            mapped.setdefault(key, set()).add(control.control_id)
+        for enhancement in control.enhancements:
+            if enhancement.source_crosswalk:
+                mapped.setdefault(key, set()).add(enhancement.enhancement_id)
 
     path_for = _paths_by_framework(catalog_paths or [])
     anchor_path = path_for.get(_framework_key("NIST 800-53"))
@@ -709,35 +713,43 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
             # this branch used to print told users to rebuild by hand what the
             # publisher already publishes. #260.
             notes.append(f"  {framework.framework.upper()}: {upstream}")
-        elif framework.partial:
-            # The sixth kind, and checked before the fifth: with `partial`
-            # non-empty the topics demonstrably OWN controls this catalog
-            # reaches, so "none ... belongs to one of your topics" can never
-            # be true. The zero is the organisation's own reviewed decision
-            # (superset/intersects in its overlay), and whether that is
-            # enough is a person's call. No command: nothing here is a
-            # mapping problem (80, on #270; case found by 1d).
+        elif framework.partial or _framework_key(framework.framework) in mapped:
+            # A catalog that carries a crosswalk, read zero. **One sentence
+            # spoke for a mixed population three times** (1d twice, ba once,
+            # on #270), so the row is built from clauses -- one per kind of
+            # requirement, each with its live count, omitted at zero -- and
+            # the three counts sum to every requirement the catalog has:
             #
-            # "listed as partial above" is true because `_coverage`, this
-            # function's only production caller, prints `format_report`
-            # first, and that lists every framework's partial requirements.
-            # `test_a_partial_only_catalog_is_not_told_its_controls_are_unowned`
-            # asserts both in one output, so moving this row elsewhere fails.
-            notes.append(
-                f"  {framework.framework.upper()}: what it reaches, your topics own, but "
-                "only in part (listed as partial above): your organisation recorded those "
-                "mappings as superset or intersects. Whether that is enough is a decision "
-                "for a person, not a count."
-            )
-        elif _framework_key(framework.framework) in carries_crosswalk:
-            # The fifth kind, and checked before the seed advice: a crosswalk
-            # actually in the file outranks any claim about searching for one.
-            # No command, because the remedy is a topic, not a mapping. #270.
-            notes.append(
-                f"  {framework.framework.upper()}: this catalog maps to 800-53, but none "
-                "of the controls it reaches belongs to one of your topics. The gap is in "
-                "your topics, not the mapping; do not seed it by hand."
-            )
+            #   P  reached only through mappings the organisation recorded as
+            #      superset/intersects; whether that is enough is a person's
+            #      call. "listed as partial above" holds because `_coverage`,
+            #      this function's only production caller, prints
+            #      `format_report` first, and that lists them.
+            #   R  mapped, but to no control a topic owns: the gap is in the
+            #      topics, and a hand-seeded pair would compete with the
+            #      publisher's mapping.
+            #   N  no mapping in this catalog's crosswalk at all -- HIPAA's
+            #      164.306(a)-(e) among them. No advice: whether each could be
+            #      mapped is a claim nobody has measured.
+            #
+            # Product ruling 80, on #270. No command on any clause.
+            own = mapped.get(_framework_key(framework.framework), set())
+            reach = [r for r in framework.uncovered if r in own]
+            none = [r for r in framework.uncovered if r not in own]
+            clauses = []
+            if framework.partial:
+                clauses.append(
+                    f"{len(framework.partial)} reach controls your topics own, but only in "
+                    "part (listed as partial above); whether that is enough is a person's call."
+                )
+            if reach:
+                clauses.append(
+                    f"{len(reach)} map to 800-53 controls none of your topics owns; that gap "
+                    "is in your topics, not the mapping, so do not seed them by hand."
+                )
+            if none:
+                clauses.append(f"{len(none)} carry no mapping in this catalog's crosswalk.")
+            notes.append(f"  {framework.framework.upper()}: " + " ".join(clauses))
         else:
             # Named for its contract, because the name is what the source
             # scan sees at the interpolation site: a pre-assembled fragment

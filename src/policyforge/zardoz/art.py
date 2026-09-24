@@ -73,6 +73,7 @@ VOICE = {
     "unknown_command": "Zardoz does not know this word: {command}",
     "goodbye": "Zardoz falls silent.",
     "interrupt": "(Zardoz is patient. Use /quit to send the head away.)",
+    "command_failed": "That command failed. Zardoz remains; the session continues.",
 }
 
 #: The same keys with the theatre removed. A peer table rather than
@@ -85,6 +86,7 @@ PLAIN_VOICE = {
     "unknown_command": "Unknown command: {command}",
     "goodbye": "Exiting.",
     "interrupt": "(Use /quit to exit.)",
+    "command_failed": "That command failed; the session continues.",
 }
 
 

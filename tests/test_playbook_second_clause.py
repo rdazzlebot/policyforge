@@ -243,6 +243,25 @@ def test_org_actors_are_derived_from_config():
     assert org_actors({}) == ()
 
 
+def test_org_actors_include_names_under_keys_no_role_recognises():
+    """9b on #329: `load_org_profile` sends an unrecognised key, or an
+    unkeyed team list, to `unknown` (the KEYS, not the names). Reading the
+    actors from it dropped them, and "..., and IT Ops will adopt it" passed."""
+    from policyforge.org.context import load_org_profile, org_actors
+
+    config = {
+        "org": {
+            "name": "Acme",
+            "teams": {"it_ops": "IT Ops", "identity_access": "IAM"},
+            "vendors": {"mystery_tool": "Zendesk"},
+        }
+    }
+    assert set(load_org_profile(config).unknown) == {"it_ops", "mystery_tool"}  # the premise
+    assert set(org_actors(config)) == {"Acme", "IT Ops", "IAM", "Zendesk"}
+    assert set(org_actors({"org": {"teams": ["Platform", "Data"]}})) == {"Platform", "Data"}
+    assert _flagged("NIST suggests reviewing access, and IT Ops will adopt it.", org_actors(config))
+
+
 def test_policyforge_check_reads_the_org_name_from_config(tmp_path, monkeypatch):
     """On the user's path: `policyforge check` with a config naming the
     organization refuses "..., and <Org> will adopt it"; the same tree with no

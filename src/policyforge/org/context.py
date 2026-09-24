@@ -125,15 +125,27 @@ def load_org_profile(config: dict) -> OrgProfile:
 def org_actors(config: dict) -> tuple[str, ...]:
     """The names the organization acts under, from its own config (#323).
 
-    Its name, its team names and its vendor names, keyed or not. The Playbook
+    Its name, and every team and vendor name it declares, whatever the key:
+    a recognised role, an unrecognised key, or a plain list. The Playbook
     gate refuses one of these opening a clause after "NIST suggests ...",
     because that clause is the organization committing. Derived from config,
     never typed, so it cannot drift from the organization it describes.
+
+    **Read from the raw `org:` block, not from `load_org_profile`** (9b on
+    #329). The profile keeps only names under a role it recognises, and sends
+    an unrecognised key such as `it_ops: IT Ops`, or an unkeyed team list, to
+    `unknown`, which holds the KEYS and not the names. For substitution that
+    is right. Here it dropped actors the organization had declared, so
+    "..., and IT Ops will adopt it" passed.
     """
-    profile = load_org_profile(config)
-    names = [profile.name, *profile.unkeyed_vendors]
-    names += [a.value for a in profile.assignments]
-    return tuple(dict.fromkeys(n.strip() for n in names if n and n.strip()))
+    org = (config or {}).get("org") or {}
+    names = [org.get("name")]
+    for block in (org.get("teams"), org.get("vendors")):
+        if isinstance(block, dict):
+            names += list(block.values())
+        elif isinstance(block, list):
+            names += block
+    return tuple(dict.fromkeys(str(n).strip() for n in names if n is not None and str(n).strip()))
 
 
 @dataclass

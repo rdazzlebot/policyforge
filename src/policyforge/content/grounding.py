@@ -176,9 +176,21 @@ def unanchored(body: str) -> list[Unanchored]:
     authority without the anchor. Where a section cites nothing at all, it
     is document boilerplate and says so by its company.
     """
+    from .deontic import analyze
+
     found = claims(body)
     boundaries = [body[: m.start()].count("\n") + 1 for m in _HEADING_RE.finditer(body)]
     citing_sections = {_section_of(c.line, boundaries) for c in found if c.anchored}
+    # **A Playbook citation also makes its section "citing"** (80, on #309),
+    # though "NIST suggests ..." never binds and so is never a claim above.
+    # Without this, the section #300 produces most -- a suggestion, then the
+    # organization's own uncited "must" -- never counted as citing, and the
+    # adoption a person should confirm went unreported. Only the Playbook:
+    # widening it to every non-binding citation would change the rule's
+    # reach across all documents.
+    citing_sections |= {
+        _section_of(s.line, boundaries) for s in analyze(body) if s.cites_the_playbook
+    }
     return [
         Unanchored(c)
         for c in found

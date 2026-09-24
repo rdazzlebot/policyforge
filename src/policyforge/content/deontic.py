@@ -147,10 +147,30 @@ class Statement:
     text: str
     modality: str
     cited: bool
+    #: The citation tags this sentence carries, including one trailing it on
+    #: the next line. Recorded so a check can ask WHICH framework a sentence
+    #: cites, not only whether it cites one (#300).
+    citations: tuple[str, ...] = ()
 
     @property
     def binds(self) -> bool:
         return self.modality in BINDING
+
+    @property
+    def cites_the_playbook(self) -> bool:
+        """Any of its citations names the NIST AI RMF Playbook."""
+        return any(_is_playbook(part) for tag in self.citations for part in _parts(tag))
+
+    @property
+    def cites_only_the_playbook(self) -> bool:
+        """Every one of its citations names the Playbook, and it has one.
+
+        The unit both Playbook rules use (80, on #300). A sentence that also
+        cites a binding source carries that source's obligation, so the
+        binding source's strength rule governs it, and binding is correct.
+        """
+        parts = [part for tag in self.citations for part in _parts(tag)]
+        return bool(parts) and all(_is_playbook(part) for part in parts)
 
     @property
     def weakens_a_citation(self) -> bool:
@@ -159,8 +179,104 @@ class Statement:
         A sentence with no citation is not making a claim this can judge,
         and a binding sentence has nothing wrong with it. The overlap is
         the finding.
+
+        **Except a sentence citing only the Playbook**, which is meant not to
+        bind: NIST's suggestions are voluntary, so "NIST suggests ..." is the
+        correct rendering and must not be reported as a weakened requirement
+        (#300). Without this, the correct form warned and the wrong form,
+        "must ...", passed.
         """
+        if self.cites_only_the_playbook:
+            return False
         return self.cited and not self.binds
+
+
+#: How a Playbook citation begins, as the catalog's framework name is written
+#: into tags: `[NIST AI RMF Playbook Govern 1.1 Action 1]`.
+_PLAYBOOK = "NIST AI RMF Playbook "
+
+
+def _parts(tag: str) -> list[str]:
+    """One tag's references: a merged tag names several, split on `|`."""
+    return [" ".join(p.split()) for p in tag.strip("[]").replace("\\", "").split("|") if p.strip()]
+
+
+def _is_playbook(reference: str) -> bool:
+    return reference.startswith(_PLAYBOOK)
+
+
+#: A sentence framed as NIST's: its subject is NIST or the Playbook. Matched
+#: at the start of the sentence, after list markers and emphasis.
+_NIST_SUBJECT = re.compile(
+    r"^(?:NIST(?:'s)?(?:\s+AI\s+RMF)?(?:\s+Playbook)?"
+    r"|The\s+(?:NIST\s+)?(?:AI\s+RMF\s+)?Playbook)\s+(?:also\s+|further\s+)?(\w+)",
+    re.IGNORECASE,
+)
+
+#: With NIST as subject, the verbs that say NIST obliges. Closed on purpose:
+#: it names the one claim the ruling forbids, "NIST requires ...".
+_NIST_OBLIGES = frozenset({"requires", "mandates", "obliges", "obligates", "directs"})
+
+_LEADING_MARKER = re.compile(r"^(?:[-*+]\s+|\d+[.)]\s+)+")
+
+
+def framed_as_nists(sentence: str) -> bool:
+    """Whether a sentence speaks as NIST describing or suggesting (#300).
+
+    **An allow-list on the subject, not a deny-list of obligation verbs**
+    (80's ruling, refined after 1d's review). Every round of a verb list
+    found another spelling -- "will", "is responsible for", the imperative,
+    "ensures", "NIST requires" -- because a deny-list chases paraphrase. So
+    the sentence must have NIST or the Playbook as its subject ("NIST
+    suggests ...", "The Playbook groups ..."), and anything else fails by
+    default: an organization as subject in any wording, an imperative, any
+    other subject. Within NIST-as-subject, the verbs that say NIST obliges
+    are refused, and so is a sentence that binds anyway ("NIST suggests that
+    the organization must ..."), since a Playbook sentence never binds.
+    """
+    plain = _LEADING_MARKER.sub("", _MARKUP_RE.sub("", sentence).strip())
+    match = _NIST_SUBJECT.match(plain)
+    if not match or match.group(1).lower() in _NIST_OBLIGES:
+        return False
+    return classify(plain) not in BINDING
+
+
+def playbook_tagged_headings(text: str) -> list[tuple[int, str]]:
+    """Headings that carry a Playbook citation, as (line, heading) (#309).
+
+    **A heading may not cite the Playbook at all**, even merged with a
+    binding source (80's ruling on #309). A heading tag scopes every step
+    beneath it, so it turns a suggestion into an instruction by position,
+    whatever the heading says. `analyze` blanks headings on purpose, so the
+    sentence check never saw these: measured on a generated Procedure, all
+    9 of its 9 Playbook tags sat on headings, and the gate reported none.
+    """
+    found = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        if not _HEADING_LINE_RE.match(line):
+            continue
+        tags = _CITATION_RE.findall(line)
+        if any(_is_playbook(part) for tag in tags for part in _parts(tag)):
+            found.append((number, line.strip()))
+    return found
+
+
+def playbook_obligations(text: str) -> list[Statement]:
+    """Sentences citing only the NIST AI RMF Playbook, not framed as NIST's.
+
+    The Playbook is voluntary: NIST's suggested actions, which it
+    deliberately kept out of the AI RMF Core. A sentence citing it may say
+    NIST suggests or describes; it may never present an action as anyone's
+    obligation -- "Acme Health will ... [Playbook ...]" does so as surely as
+    "NIST requires ..." (80's rulings on #300 and #309). An obligation the
+    organization adopts goes in its own sentence, without the Playbook tag.
+
+    **Only sentences whose every citation is a Playbook tag.** A merged tag
+    that also names a binding source -- `[NIST 800-53 AC-2 | NIST AI RMF
+    Playbook ...]` -- carries that source's obligation, and the requirement
+    strength rule governs it instead.
+    """
+    return [s for s in analyze(text) if s.cites_only_the_playbook and not framed_as_nists(s.text)]
 
 
 def classify(sentence: str) -> str:
@@ -215,11 +331,13 @@ def analyze(text: str) -> list[Statement]:
         # reasons, and wrongly absorbing this citation). Both readings lose
         # the link between a control and the sentence that implements it.
         trailing_citation = False
+        peeled: list[str] = []
         while True:
             leading = _CITATION_RE.match(sentence)
             if not leading:
                 break
             trailing_citation = True
+            peeled.append(leading.group(0))
             offset += leading.end()
             sentence = sentence[leading.end() :]
             stripped = sentence.lstrip(" \t\r\n.;:|")
@@ -233,17 +351,20 @@ def analyze(text: str) -> list[Statement]:
                 text=previous.text,
                 modality=previous.modality,
                 cited=True,
+                citations=previous.citations + tuple(peeled),
             )
 
         if not sentence:
             continue
 
+        inline = tuple(_CITATION_RE.findall(sentence))
         statements.append(
             Statement(
                 line=text.count("\n", 0, offset) + 1,
                 text=" ".join(sentence.split()),
                 modality=classify(sentence),
-                cited=bool(_CITATION_RE.search(sentence)),
+                cited=bool(inline),
+                citations=inline,
             )
         )
     return statements

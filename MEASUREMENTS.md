@@ -1728,10 +1728,13 @@ dispute, because it is the only way anyone gets a first number for
 document-level variance on this corpus. **Its cost, corrected 2026-09-24
 (#186):** this said *about $0.28*, which priced epoch 21's four calls per
 topic, three of them output-heavy `generate` calls. An arm here is 20
-`synthesize` calls, and a glm-5.3-flash `synthesize` call measured $0.0020 to
-$0.0046 on 2026-09-24 (three calls through OpenRouter, paired by topic with
-epoch 21's), against a mean of $0.0054 across epoch 21's twenty. So a null
-arm is **about $0.06 to $0.11**. Those calls used four catalogs and this
+`synthesize` calls. A glm-5.3-flash `synthesize` call measured $0.0020 to
+$0.0046 on 2026-09-24, **mean $0.0029** (three calls through OpenRouter,
+paired by topic with epoch 21's), and **mean $0.0054** across epoch 21's
+twenty (2026-09-17). So a null arm is **about $0.06 to $0.11**: 20 x each
+mean. The three calls' own range, 20 x $0.0020 to $0.0046, gives $0.04 to
+$0.09, lower at both ends. Three calls are too few to bound a rate, so the
+estimate uses the means, and the larger sample sets the top. Those calls used four catalogs and this
 epoch used seven, which makes inputs larger, so read it as an order of
 magnitude, not a quote. A figure of *$0.0002/call* also circulated for this
 comparison. It does not reproduce, and it is 9x below the cheapest

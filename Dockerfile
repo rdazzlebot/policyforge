@@ -39,7 +39,7 @@ RUN PYTHONPATH=/app/src /opt/venv/bin/python -m policyforge.cli map \
 FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
 
 LABEL org.opencontainers.image.title="policyforge" \
-      org.opencontainers.image.source="https://github.com/rdazzlebot/policyforge" \
+      org.opencontainers.image.source="https://github.com/rdazzleman/policyforge" \
       org.opencontainers.image.licenses="Apache-2.0"
 
 # The package runs from source on PYTHONPATH rather than being installed as a

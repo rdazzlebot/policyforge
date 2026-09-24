@@ -301,12 +301,24 @@ def _opener_end(plain: str) -> int:
 #:
 #: **The second bound, stated (80's ruling (b) on #325):** a run's FIRST word
 #: is never exempted, so a binding word is excused only when at least one
-#: word of the same verbatim run comes before it. That word carries the
-#: modal's subject from NIST's text ("artifacts that must be preserved").
-#: A run starting AT "must" would let the writer supply the subject: "NIST
-#: suggests that the organization must be preserved for fulsome
-#: understanding ..." quotes six of Action 4's words and was passing (1d's
-#: finding). The first word still counts toward the six.
+#: word of the same verbatim run comes before it. The first word still counts
+#: toward the six. A run starting AT "must" let the writer supply the
+#: subject outright: "NIST suggests that the organization must be preserved
+#: for fulsome understanding ..." quotes Action 4's words and was passing
+#: (1d's finding).
+#:
+#: **The limit, stated (1d and 9b measured it on #325; 80 ruled it stays a
+#: limit, not a second count):** a preceding word keeps the modal inside
+#: NIST's clause but does NOT guarantee NIST's subject. When that word is a
+#: relative pronoun, the writer can still supply its antecedent, and these
+#: pass: "NIST suggests keeping the organization's own records that must be
+#: preserved for fulsome understanding or execution", and "... the
+#: organization that must be preserved ...". A second word count would only
+#: move the smuggle one word right. The exposure is instead pinned by
+#: `test_playbook_quoted_must`: the shipped Playbook actions that carry a
+#: binding word at all -- today Govern 1.7 Action 4 (must), Measure 2.9
+#: Action 6 and Measure 3.2 Action 1 (may not) -- and a catalog that adds one
+#: fails that test, so the limit is revisited then.
 QUOTE_MIN_WORDS = 6
 
 _PLAYBOOK_ACTIONS: dict[str, list[str]] | None = None

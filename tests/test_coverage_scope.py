@@ -375,18 +375,22 @@ def test_800_171_says_the_source_publishes_the_mapping_and_offers_no_seed():
     assert "crosswalk seed" not in row, "800-171 still tells the user to seed by hand"
 
 
-def test_the_header_names_three_kinds_of_zero():
+def test_the_header_names_four_kinds_of_zero():
     """The header was a two-way partition -- *work nobody has done* or *a
     mapping that would be wrong* -- with no place for a zero the source has
-    already answered. Fixing the row alone would leave the header denying the
-    category the row now names."""
+    already answered (#260). It then said "one nobody has published", which
+    no search established for any framework (#264). Fixing a row alone would
+    leave the header denying the category the row now names."""
     from policyforge.zardoz.skills import _coverage
 
     output = _coverage(_coverage_state(), [])
     header = output[output.index("Why those are zero") :].split("\n  CFR-")[0]
 
-    assert "one of three things" in header, header
-    assert "the source publishes that this release does not yet read" in header, header
+    assert "one of four things" in header, header
+    assert "the source publishes that this\n  release does not yet read" in header, header
+    assert "searched for and not found" in header, header
+    assert "a catalog\n  that carries no crosswalk yet" in header, header
+    assert "nobody has published" not in header, "the header still claims a search nobody made"
 
 
 def test_an_upstream_crosswalk_is_not_a_refusal():
@@ -430,4 +434,115 @@ def test_every_upstream_crosswalk_names_a_shipped_catalog():
             f"PUBLISHED_UPSTREAM names {name!r}, which no shipped catalog declares. "
             "If the catalog was renamed, re-key this entry; otherwise its row falls "
             "back to 'no published crosswalk yet', which is the false claim #260 removed."
+        )
+
+
+# ---- #264: "found" is reserved for a framework someone searched for --------
+#
+# The seed branch printed "no published crosswalk yet" for every catalog in
+# no table. For Part 2 a search was made (policyforge-f8, record on #264) and
+# found nothing, OLIR not enumerated; for a BYOC catalog nobody searched at
+# all. The two now print different claims, and each test asserts text only
+# its own branch writes.
+
+_SEARCHED_TEXT = "no published crosswalk found"
+_CARRIES_TEXT = "this catalog carries no crosswalk"
+
+
+def test_part_2_says_a_search_found_nothing_and_still_offers_a_seed():
+    """Part 2 is the one shipped catalog that reaches the seed advice. It
+    may say "found" because a search was made, and the seed pointer stays:
+    with no mapping found, building one is the right advice (80, #264)."""
+    from policyforge.zardoz.skills import _coverage
+
+    row = _row(_coverage(_coverage_state(), []), "CFR-42-PART-2-SUD-RECORDS")
+
+    assert _SEARCHED_TEXT in row, f"Part 2 row does not name the search result: {row!r}"
+    assert "crosswalk seed --framework" in row, "Part 2 lost its seed pointer"
+    assert "no published crosswalk yet" not in row, "the pre-#264 wording is back"
+    assert "nobody has published" not in row, row
+    assert _CARRIES_TEXT not in row, "Part 2 routed to the generic branch"
+
+
+def test_a_catalog_in_no_table_claims_nothing_about_the_world():
+    """**The branch #264 was really about.** Every BYOC catalog, and any
+    shipped one added later without a crosswalk, lands here. Nobody searched
+    for any of them, so the row may state what the catalog carries and
+    nothing else -- no "found", no "published"."""
+    from types import SimpleNamespace
+
+    from policyforge.crosswalk.overlay import (
+        _refusal_reason,
+        _searched_none_found,
+        _upstream_reason,
+    )
+    from policyforge.ingest.schema import Control
+    from policyforge.zardoz.skills import _zero_row_reasons
+
+    name = "Example Customer Framework"
+    # The premise, asserted first: if a table ever claims this name, the
+    # test would be exercising another branch and should say so by name.
+    assert _refusal_reason(name) is None
+    assert _upstream_reason(name) is None
+    assert _searched_none_found(name) is None
+
+    controls = [Control(control_id="ECF-1", title="t", framework=name, framework_version="1")]
+    report = SimpleNamespace(framework_coverage=[SimpleNamespace(framework=name, covered=0)])
+    row = _row("\n".join(_zero_row_reasons(controls, report)), name.upper())
+
+    assert _CARRIES_TEXT in row, f"generic row does not state what the catalog carries: {row!r}"
+    assert "crosswalk seed --framework" in row, "generic row lost its seed pointer"
+    assert "found" not in row, f"generic row claims a search nobody made: {row!r}"
+    assert "published" not in row, f"generic row claims a fact about the world: {row!r}"
+
+
+def test_the_crosswalk_tables_are_disjoint():
+    """A framework in two tables would print whichever branch is checked
+    first, and the other table's claim would be dead text nobody reads."""
+    from policyforge.crosswalk.overlay import (
+        NOT_CROSSWALK_ANCHORABLE,
+        PUBLISHED_UPSTREAM,
+        SEARCHED_NONE_FOUND,
+        _canonical,
+    )
+
+    tables = {
+        "NOT_CROSSWALK_ANCHORABLE": NOT_CROSSWALK_ANCHORABLE,
+        "PUBLISHED_UPSTREAM": PUBLISHED_UPSTREAM,
+        "SEARCHED_NONE_FOUND": SEARCHED_NONE_FOUND,
+    }
+    seen: dict[str, str] = {}
+    for table, entries in tables.items():
+        for name in entries:
+            key = _canonical(name)
+            assert key not in seen, f"{name!r} is in both {seen[key]} and {table}"
+            seen[key] = table
+
+
+def test_every_searched_framework_names_a_shipped_catalog():
+    """**A rename must not silently move Part 2 to the generic branch.**
+    That is the safe direction -- it claims less -- but it discards a search
+    someone made, and the record beside it would describe nothing. Same
+    guard as `PUBLISHED_UPSTREAM`'s."""
+    import json
+    from pathlib import Path
+
+    from policyforge.crosswalk.overlay import SEARCHED_NONE_FOUND, _canonical
+
+    root = Path(__file__).resolve().parent.parent / "data" / "frameworks"
+    declared = {
+        _canonical(row["framework"])
+        for path in root.glob("*/controls.json")
+        for row in json.loads(path.read_text(encoding="utf-8"))
+    }
+    assert SEARCHED_NONE_FOUND, "the table is empty, so the test below checks nothing"
+    for name, record in SEARCHED_NONE_FOUND.items():
+        assert _canonical(name) in declared, (
+            f"SEARCHED_NONE_FOUND names {name!r}, which no shipped catalog declares. "
+            "If the catalog was renamed, re-key this entry; otherwise its search "
+            "record describes nothing and its row claims no search."
+        )
+        assert "not enumerated" in record, (
+            f"{name!r}'s search record does not say what was NOT searched; a "
+            "negative result without its limits is a shrug, not a finding."
         )

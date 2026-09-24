@@ -601,21 +601,29 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
     """Why each framework reachable through the crosswalk covers nothing.
 
     **A zero under a heading that reads as a gap is not a finding until it
-    carries its cause.** Three frameworks report zero and they mean three
-    different things:
+    carries its cause.** Three shipped frameworks report zero, and with a
+    fourth kind that only a catalog nobody has examined reaches, they mean
+    four different things:
 
     - `Information Blocking` is refused **by design**. Its entries are
       conditions of an exception, not controls to implement, so mapping
       them would assert something neither document says. That zero is the
       correct answer and `NOT_CROSSWALK_ANCHORABLE` already holds the
       reason as prose.
-    - `42 CFR Part 2` seeds a crosswalk normally and nobody has published
-      one. That zero is work nobody has done.
+    - `42 CFR Part 2` seeds a crosswalk normally, and no published mapping
+      was found (#264). That zero is work nobody has done -- as far as a
+      search that did not enumerate NIST OLIR can say -- and
+      `SEARCHED_NONE_FOUND` holds the search record.
     - `NIST 800-171` **has** a published mapping: NIST's own OSCAL links
       all 97 requirements to 800-53. This release does not read it
       (`oscal_loader` keeps only `rel="related"` links, and 800-171 encodes
       its sources as `rel="reference"`; #259). That zero is a gap in
       PolicyForge, not in the source, and `PUBLISHED_UPSTREAM` holds it.
+    - **Any other catalog** -- every BYOC one, and any shipped one added
+      later without a crosswalk -- is in none of those tables, so nobody has
+      said anything about it. Its row states only what the catalog carries.
+      Until #264 this branch printed "no published crosswalk yet" for all of
+      them, which is a claim about the world that no one had checked.
 
     **This docstring said the opposite until #260**: *"`42 CFR Part 2` and
     `NIST 800-171` seed a crosswalk normally. Nobody has published one."*
@@ -625,9 +633,9 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
     had no place for a zero the source had already answered, so the third
     kind was filed under the second.
 
-    Those want different responses — *leave it alone*, *go and map it*, and
-    *wait for the ingest* — and the report prints the same number for all
-    three. The reasons are looked up from the declared framework name, which
+    Those want different responses — *leave it alone*, *wait for the
+    ingest*, *go and map it*, and *find out, then map it* — and the report
+    prints the same number for all four. The reasons are looked up from the declared framework name, which
     is reliable since the two CFR catalogs were renamed to be citable.
 
     **`catalog_paths` is what makes the remedy performable.** Without it
@@ -644,7 +652,11 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
     framework plus the 800-53 anchor a crosswalk is built against. Both,
     because seeding needs the thing being mapped and the thing it maps to.
     """
-    from policyforge.crosswalk.overlay import _refusal_reason, _upstream_reason
+    from policyforge.crosswalk.overlay import (
+        _refusal_reason,
+        _searched_none_found,
+        _upstream_reason,
+    )
 
     declared = {}
     for control in controls:
@@ -681,8 +693,18 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
             for path in (own_path, anchor_path):
                 if path and shlex.quote(str(path)) not in quoted_flags:
                     quoted_flags += f" --controls {shlex.quote(str(path))}"
+            # Two kinds of zero share the seed advice and differ only in what
+            # the row may claim. "found" is reserved for a framework someone
+            # actually searched for (`SEARCHED_NONE_FOUND`, whose search record
+            # sits beside it -- Part 2, #264). Every other catalog, including
+            # any BYOC one, gets a fact about the catalog and no claim about
+            # the world: nobody searched for it, so nothing was "not found".
+            if _searched_none_found(name) is not None:
+                state = "no published crosswalk found"
+            else:
+                state = "this catalog carries no crosswalk"
             notes.append(
-                f"  {framework.framework.upper()}: no published crosswalk yet — "
+                f"  {framework.framework.upper()}: {state} — "
                 f"`policyforge crosswalk seed --framework {shlex.quote(name)}"
                 f"{quoted_flags}` starts one."
             )
@@ -692,9 +714,10 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
         "",
         "Why those are zero",
         "-" * 60,
-        "  A zero here is one of three things, and they want different responses:",
-        "  a mapping that would be wrong to make, one nobody has published, or one",
-        "  the source publishes that this release does not yet read.",
+        "  A zero here is one of four things, and they want different responses:",
+        "  a mapping that would be wrong to make, one the source publishes that this",
+        "  release does not yet read, one searched for and not found, or a catalog",
+        "  that carries no crosswalk yet.",
         *notes,
     ]
 

@@ -635,8 +635,9 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
 
     Those want different responses — *leave it alone*, *wait for the
     ingest*, *go and map it*, and *find out, then map it* — and the report
-    prints the same number for all four. The reasons are looked up from the declared framework name, which
-    is reliable since the two CFR catalogs were renamed to be citable.
+    prints the same number for all four. The reasons are looked up from the
+    declared framework name, which is reliable since the two CFR catalogs
+    were renamed to be citable.
 
     **`catalog_paths` is what makes the remedy performable.** Without it
     this printed `crosswalk seed --framework 'NIST 800-171'`, which the

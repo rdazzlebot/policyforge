@@ -237,8 +237,7 @@ SEARCHED_NONE_FOUND: dict[str, str] = {
         # formal mapping would be registered. The published HIPAA crosswalks
         # map the Security Rule, which 2.16 does not incorporate, so they do
         # not reach Part 2 transitively.
-        "searched 2026-09-24 UTC by policyforge-f8; NIST OLIR/CPRT not "
-        "enumerated; record on #264"
+        "searched 2026-09-24 UTC by policyforge-f8; NIST OLIR/CPRT not enumerated; record on #264"
     ),
 }
 

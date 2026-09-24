@@ -216,8 +216,11 @@ def test_the_pending_proposal_is_described_as_a_subset_and_its_examples_are_live
     start = readme.index("Pending, and not applied:")
     paragraph = readme[start : readme.index("absorbing it.", start)]
     assert "90 FR 60970" in paragraph, paragraph
-    # Not "HTI-5": the rule never names itself so (80, on #307, reading its
-    # text); a label nobody can source is not written as fact.
+    # Cited by its own title, not "HTI-5". 90 FR 60970 never names itself
+    # so (0 hits in its text; 80, on #307). The label does appear elsewhere:
+    # 91 FR 49570, the FY2027 IPPS rule, calls it "the HTI-5 proposed rule"
+    # (policyforge-9b, correcting 80). So it is a sourced nickname, but it is
+    # not the rule's own identifier, and the rule's title and FR page are.
     assert "HTI-5" not in paragraph, paragraph
     assert "subset, not the whole proposal" in paragraph, paragraph
     assert "No count of the proposed removals is given" in paragraph, paragraph

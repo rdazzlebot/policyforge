@@ -1,0 +1,247 @@
+"""AI topics draw on the Playbook for their Standard only, and own none of it (#301).
+
+The Core states outcomes; NIST put the actions in the Playbook, keyed by the
+same subcategory ids. So a Standard for an AI topic may draw on "the actions
+NIST suggests" for the subcategories that topic anchors -- derived, not
+listed, so nothing is selected by hand (80's ruling).
+
+Three things are held here, each from the shipped catalogs:
+- the Standard's input carries exactly its subcategories' actions;
+- no Policy or Procedure input carries any Playbook action, because neither
+  is ever given the block (a tier flag, not text removal);
+- `/coverage` is unchanged: the Playbook is not something a topic owns.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pytest
+import yaml
+
+from policyforge.generate.policy_writer import (
+    OrgContext,
+    TopicContext,
+    generate_policy,
+    generate_procedure,
+    generate_standard,
+)
+from policyforge.ingest.schema import load_controls
+from policyforge.mapping.crosswalk import anchors_a_topic
+from policyforge.synthesis.merge import playbook_actions, read_synthesis, write_synthesis
+
+ROOT = Path(__file__).resolve().parent.parent
+FRAMEWORKS = ROOT / "data" / "frameworks"
+CONTROLS = [c for p in sorted(FRAMEWORKS.glob("*/controls.json")) for c in load_controls(p)]
+TOPICS = yaml.safe_load((ROOT / "config" / "topics.example.yaml").read_text(encoding="utf-8"))[
+    "topics"
+]
+AI = re.compile(r"^(Govern|Map|Measure|Manage)\s+\d")
+AI_TOPICS = [t for t in TOPICS if any(AI.match(str(a)) for a in t.get("nist_controls") or [])]
+
+#: Every Playbook action id the catalog ships.
+ALL_ACTION_IDS = {
+    e.enhancement_id
+    for c in CONTROLS
+    if c.framework == "NIST AI RMF Playbook"
+    for e in c.enhancements
+}
+
+
+class _Capture:
+    """A provider that records the prompt and returns a fixed document."""
+
+    def __init__(self):
+        self.prompts: list[str] = []
+
+    def generate(self, **kwargs):
+        from policyforge.llm.base import LLMResponse
+
+        self.prompts.append(kwargs.get("prompt", ""))
+        return LLMResponse(text="# Draft\n\nNIST suggests an inventory.\n", model="fake")
+
+
+def _context(topic: dict) -> TopicContext:
+    return TopicContext(
+        name=topic["name"],
+        owner="AI Team",
+        playbook=playbook_actions(topic["nist_controls"], CONTROLS),
+    )
+
+
+def _mentioned(prompt: str) -> set[str]:
+    return {action for action in ALL_ACTION_IDS if f"Playbook {action}]" in prompt}
+
+
+def test_the_premise():
+    """Five AI topics, and a Playbook catalog with actions to derive from."""
+    assert len(AI_TOPICS) == 5
+    assert len(ALL_ACTION_IDS) == 459
+
+
+@pytest.mark.parametrize("topic", AI_TOPICS, ids=lambda t: t["name"])
+def test_the_standard_input_carries_exactly_its_subcategories_actions(topic):
+    context = _context(topic)
+    expected = {a["id"] for entry in context.playbook for a in entry["actions"]}
+    provider = _Capture()
+
+    generate_standard(
+        "- An AI inventory is maintained. [NIST AI RMF GOVERN-1.6]",
+        OrgContext(name="Acme Health", industry="Healthcare"),
+        provider,
+        topic=context,
+    )
+
+    (prompt,) = provider.prompts
+    assert expected, "every AI topic anchors at least one subcategory with actions"
+    assert _mentioned(prompt) == expected
+    for entry in context.playbook:
+        assert f"Subcategory {entry['subcategory']} ({len(entry['actions'])} actions):" in prompt
+
+
+@pytest.mark.parametrize("tier", ["policy", "procedure"])
+@pytest.mark.parametrize("topic", AI_TOPICS, ids=lambda t: t["name"])
+def test_no_policy_or_procedure_input_carries_any_playbook_action(topic, tier):
+    """**Structural** (80): the block is never given to these tiers, even
+    though their topic context carries it."""
+    context = _context(topic)
+    assert context.playbook, "the premise: the context does carry the Playbook"
+    provider = _Capture()
+    generator = generate_policy if tier == "policy" else generate_procedure
+
+    generator(
+        "- An AI inventory is maintained. [NIST AI RMF GOVERN-1.6]",
+        OrgContext(name="Acme Health", industry="Healthcare"),
+        provider,
+        standard_title="AI Standard",
+        topic=context,
+    )
+
+    (prompt,) = provider.prompts
+    assert _mentioned(prompt) == set()
+    assert "NIST AI RMF Playbook" not in prompt
+
+
+def test_a_topic_without_ai_anchors_gets_no_playbook_block():
+    other = next(t for t in TOPICS if t not in AI_TOPICS)
+
+    assert playbook_actions(other["nist_controls"], CONTROLS) == []
+
+
+def test_a_subcategory_anchor_derives_only_that_subcategory():
+    (entry,) = playbook_actions(["Govern 1.6"], CONTROLS)
+
+    assert entry["subcategory"] == "Govern 1.6"
+    assert all(a["id"].startswith("Govern 1.6 Action") for a in entry["actions"])
+
+
+def test_the_playbook_rides_in_the_frontmatter_not_the_body():
+    """The body is what every tier reads; the Playbook must not be in it."""
+    context = _context(AI_TOPICS[0])
+    text = write_synthesis("- An inventory is maintained.", topic="t", playbook=context.playbook)
+
+    metadata, body = read_synthesis(text)
+    assert metadata["playbook"] == context.playbook
+    assert "Playbook" not in body
+
+
+def test_the_playbook_is_not_something_a_topic_owns():
+    """`/coverage` unchanged is 80's test. Measured byte-identical on the
+    shipped catalogs before and after; pinned here at its cause."""
+    assert not anchors_a_topic("NIST AI RMF Playbook")
+    assert anchors_a_topic("NIST AI RMF")
+
+
+# --------------------------------------------------------------------------
+# Through the real commands: the wiring, which the functions above cannot see
+# --------------------------------------------------------------------------
+
+
+class _Recorder:
+    """A provider for the CLI: records every prompt, answers with fixed text."""
+
+    def __init__(self, text: str):
+        self.text = text
+        self.prompts: list[str] = []
+
+    def generate(self, **kwargs):
+        from policyforge.llm.base import LLMResponse
+
+        self.prompts.append(kwargs.get("prompt", ""))
+        return LLMResponse(text=self.text, model="fake")
+
+
+def test_synthesize_writes_the_playbook_block_into_the_frontmatter(tmp_path, monkeypatch):
+    """The command, not the helper: a mutation that stopped passing the block
+    to `write_synthesis` left every function-level test green."""
+    from click.testing import CliRunner
+
+    import policyforge.cli as cli_mod
+
+    crosswalk = tmp_path / "crosswalk.json"
+    crosswalk.write_text("{}", encoding="utf-8")
+    fake = _Recorder("- AI legal requirements are understood. [NIST AI RMF GOVERN-1.1]\n")
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    monkeypatch.setattr(cli_mod, "get_provider", lambda config: fake)
+
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        [
+            "synthesize", "--topic", "AI Governance", "--nist-controls", "Govern 1",
+            "--controls", str(FRAMEWORKS / "nist-ai-rmf" / "controls.json"),
+            "--controls", str(FRAMEWORKS / "nist-ai-rmf-playbook" / "controls.json"),
+            "--crosswalk", str(crosswalk), "--out-dir", str(tmp_path / "synthesis"),
+        ],
+    )  # fmt: skip
+
+    assert result.exit_code == 0, result.output
+    metadata, body = read_synthesis(
+        (tmp_path / "synthesis" / "ai-governance.md").read_text(encoding="utf-8")
+    )
+    assert metadata["playbook"] == playbook_actions(["Govern 1"], CONTROLS)
+    assert "Playbook" not in body
+    assert "NIST AI RMF Playbook" not in fake.prompts[0], "the synthesis prompt never sees it"
+
+
+@pytest.mark.parametrize("tier", ["standard", "procedure"])
+def test_generate_gives_the_block_to_the_standard_only(tmp_path, monkeypatch, tier):
+    """The command reads the block from the frontmatter into the topic
+    context; only the Standard's prompt carries it."""
+    from click.testing import CliRunner
+
+    import policyforge.cli as cli_mod
+
+    synthesis = tmp_path / "ai-governance.md"
+    synthesis.write_text(
+        write_synthesis(
+            "- AI legal requirements are understood. [NIST AI RMF GOVERN-1.1]",
+            topic="AI Governance",
+            playbook=playbook_actions(["Govern 1"], CONTROLS),
+        ),
+        encoding="utf-8",
+    )
+    standard = tmp_path / "standard.md"
+    standard.write_text("# AI Governance Standard\n", encoding="utf-8")
+    fake = _Recorder("# AI Governance\n\nNIST suggests an inventory.\n")
+    monkeypatch.setattr(
+        cli_mod, "load_config", lambda: {"org": {"name": "Acme", "industry": "Health"}}
+    )
+    monkeypatch.setattr(cli_mod, "get_provider", lambda config: fake)
+
+    args = [
+        "generate", "--tier", tier, "--synthesis", str(synthesis),
+        "--out", str(tmp_path / "out.md"),
+        "--history-dir", str(tmp_path / "history"),
+    ]  # fmt: skip
+    if tier != "standard":
+        args += ["--standard", str(standard)]
+    result = CliRunner().invoke(cli_mod.cli, args)
+
+    assert result.exit_code == 0, result.output
+    carried = _mentioned(fake.prompts[0])
+    if tier == "standard":
+        expected = {a["id"] for e in playbook_actions(["Govern 1"], CONTROLS) for a in e["actions"]}
+        assert carried == expected
+    else:
+        assert carried == set()

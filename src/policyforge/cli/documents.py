@@ -133,7 +133,12 @@ def synthesize_cmd(
     import json
     import re
 
-    from policyforge.synthesis.merge import build_synthesis_topic, synthesize_topic, write_synthesis
+    from policyforge.synthesis.merge import (
+        build_synthesis_topic,
+        playbook_actions,
+        synthesize_topic,
+        write_synthesis,
+    )
     from policyforge.topics.registry import load_topics
 
     if topic_name and (topic or nist_controls):
@@ -247,6 +252,9 @@ def synthesize_cmd(
             # and classify_path will read this file as the organization's own.
             content_class=content_class,
             derived_from=derived_from,
+            # NIST's suggested actions for the AI RMF subcategories this topic
+            # anchors, in the frontmatter so only the Standard reads them (#301).
+            playbook=playbook_actions(nist_ids, controls),
         ),
     )
     click.echo(f"Synthesized {len(synthesis_topic.controls)} controls for {topic!r} -> {out_path}")
@@ -552,6 +560,7 @@ def generate_cmd(
         owner=str(metadata.get("owner") or ""),
         cadence=str(metadata.get("cadence") or ""),
         evidence=list(metadata.get("evidence") or []),
+        playbook=list(metadata.get("playbook") or []),
     )
     if topic_context.owner:
         click.echo(f"Topic owner from synthesis frontmatter: {topic_context.owner}")

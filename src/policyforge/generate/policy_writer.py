@@ -69,12 +69,18 @@ class TopicContext:
     owner: str = ""
     cadence: str = ""
     evidence: list[str] = field(default_factory=list)
+    #: NIST's suggested actions for the AI RMF subcategories this topic
+    #: anchors, from `synthesis.merge.playbook_actions` via the synthesis
+    #: frontmatter. **Read by `generate_standard` only** (#301): a Policy's
+    #: sentences are the organization's commitments and a Procedure's are
+    #: instructions, so a voluntary suggestion reaching either becomes one.
+    playbook: list[dict] = field(default_factory=list)
 
 
 _STANDARD_SYSTEM_PROMPT = register(
     Prompt(
         name="generate.standard",
-        version=4,
+        version=5,
         text="""You are a compliance policy drafting engine. \
 Turn a set of already-synthesized, source-tagged requirement statements \
 into a formal information security STANDARD document for one \
@@ -102,6 +108,12 @@ Rules:
   merged with another framework's tag: this overrides any rule that places
   tags on headings. Put it only on the "NIST suggests ..." sentence inside
   the section.
+- If the input has a "NIST AI RMF Playbook" block, write exactly ONE
+  sentence per subcategory in it, framed as NIST suggesting: "Among the N
+  actions NIST suggests for <subcategory>, ..." with N the count the block
+  gives. Restate only what the actions you cite say, and cite every action
+  you draw on with its tag (several may share one tag, separated by "|").
+  No Playbook action becomes a requirement of the organization.
 - Where a requirement is vendor/tool-specific: if the tool list below fills
   that role, use that tool's actual name. If not, write the role itself in
   square brackets (`[Identity Provider]`, `[Ticketing System]`, `[Backup
@@ -266,6 +278,29 @@ def _render_org(org: OrgContext) -> str:
     return "\n".join(lines)
 
 
+def _render_playbook(topic: TopicContext | None) -> str:
+    """The Standard's Playbook block, or "" when the topic has none.
+
+    Never part of `_render_context`, which every tier shares: leaving the
+    Playbook out of the Policy and the Procedure is done by never giving it
+    to them, not by removing it afterwards (80's ruling on #301).
+    """
+    if topic is None or not topic.playbook:
+        return ""
+    lines = [
+        "NIST AI RMF Playbook -- NIST's VOLUNTARY suggested actions for this topic's "
+        "AI RMF subcategories. These are suggestions, not requirements.",
+        "",
+    ]
+    for entry in topic.playbook:
+        actions = entry.get("actions") or []
+        lines.append(f"Subcategory {entry.get('subcategory')} ({len(actions)} actions):")
+        for action in actions:
+            lines.append(f"- {action.get('text')} [NIST AI RMF Playbook {action.get('id')}]")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
 def _render_context(org: OrgContext, topic: TopicContext | None) -> str:
     """Org context, plus topic ownership when the registry supplied it."""
     block = _render_org(org)
@@ -319,10 +354,12 @@ def generate_standard(
     if not topic_synthesis.strip():
         raise ValueError("topic_synthesis is empty — nothing to draft a document from.")
 
+    playbook = _render_playbook(topic)
     prompt = (
         f"{_render_context(org, topic)}\n\n"
         f"Synthesized requirements:\n\n{topic_synthesis}\n\n"
-        "Draft the Standard document per the rules above."
+        + (f"{playbook}\n\n" if playbook else "")
+        + "Draft the Standard document per the rules above."
     )
     from policyforge.llm import effort
 

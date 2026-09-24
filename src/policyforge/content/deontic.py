@@ -219,6 +219,76 @@ _NIST_OBLIGES = frozenset({"requires", "mandates", "obliges", "obligates", "dire
 
 _LEADING_MARKER = re.compile(r"^(?:[-*+]\s+|\d+[.)]\s+)+")
 
+#: The only openers a Playbook sentence may put before its NIST/Playbook
+#: subject (#319, 80's corrected ruling). **A closed list of SHAPES, not a
+#: free-text phrase checked for commitments**: the first ruling allowed any
+#: prepositional phrase without a binding verb, and "For Govern 1.4 the
+#: organization will adopt these, NIST suggests ..." passed, because
+#: `classify` does not count will, commits or is responsible as binding. That
+#: was the default-allow shape #309 rejected, one clause over.
+#:
+#: **The bound, stated:** at most ONE opener, exactly one of the four shapes
+#: below, ending at its comma. `<SUB>` must be a Core subcategory id in the
+#: shipped `nist-ai-rmf` catalog (checked in `_opener_end`, so the id slot
+#: cannot carry text), and `<N>` is digits. Case and whitespace are free.
+#: Anything else before the subject fails: two stacked openers, a comma
+#: inside one, a missing comma, and harmless openers not listed here, such as
+#: "In practice, NIST suggests ...". Those are false alarms on purpose, loud,
+#: and fixed by a reword, which is the safe direction.
+_SUB = r"(?P<sub>[A-Za-z]+\s+\d+\.\d+)"
+_OPENERS = tuple(
+    re.compile(shape, re.IGNORECASE)
+    for shape in (
+        rf"For\s+{_SUB}\s*,\s*",
+        rf"Among\s+the\s+\d+\s+actions\s+(?:NIST\s+suggests|the\s+Playbook\s+lists)\s+for\s+{_SUB}\s*,\s*",
+        r"Across\s+(?:these|the\s+\d+)\s+actions\s*,\s*",
+        rf"Of\s+the\s+\d+\s+actions\s+for\s+{_SUB}\s*,\s*",
+    )
+)
+
+
+def _core_subcategories() -> frozenset[str]:
+    """The shipped AI RMF Core's subcategory ids, lower-cased (#319).
+
+    Read once from the bundled catalog, the same one `etl-ai-rmf` pins. An
+    installation with no bundled catalogs raises here rather than answering
+    "none": an empty set would pass the id-free opener and refuse the rest,
+    which is a gate that half works.
+    """
+    global _SUBCATEGORIES
+    if _SUBCATEGORIES is None:
+        import json
+
+        from policyforge.scaffold import bundled_root
+
+        rows = json.loads(
+            bundled_root()
+            .joinpath("frameworks", "nist-ai-rmf", "controls.json")
+            .read_text(encoding="utf-8")
+        )
+        _SUBCATEGORIES = frozenset(
+            " ".join(e["enhancement_id"].split()).lower()
+            for row in rows
+            for e in row.get("enhancements") or []
+        )
+    return _SUBCATEGORIES
+
+
+_SUBCATEGORIES: frozenset[str] | None = None
+
+
+def _opener_end(plain: str) -> int:
+    """Where the subject may start: after one allowed opener, else 0."""
+    for shape in _OPENERS:
+        match = shape.match(plain)
+        if not match:
+            continue
+        sub = match.groupdict().get("sub")
+        if sub is not None and " ".join(sub.split()).lower() not in _core_subcategories():
+            return 0
+        return match.end()
+    return 0
+
 
 def framed_as_nists(sentence: str) -> bool:
     """Whether a sentence speaks as NIST describing or suggesting (#300).
@@ -233,9 +303,13 @@ def framed_as_nists(sentence: str) -> bool:
     other subject. Within NIST-as-subject, the verbs that say NIST obliges
     are refused, and so is a sentence that binds anyway ("NIST suggests that
     the organization must ..."), since a Playbook sentence never binds.
+
+    The subject may follow one opener from `_OPENERS` (#319), such as "Among
+    the 7 actions NIST suggests for Govern 1.4, NIST suggests ...". The
+    binding check below still reads the WHOLE sentence, opener included.
     """
     plain = _LEADING_MARKER.sub("", _MARKUP_RE.sub("", sentence).strip())
-    match = _NIST_SUBJECT.match(plain)
+    match = _NIST_SUBJECT.match(plain[_opener_end(plain) :])
     if not match or match.group(1).lower() in _NIST_OBLIGES:
         return False
     return classify(plain) not in BINDING

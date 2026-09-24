@@ -578,6 +578,86 @@ def etl_part2(date: str | None, out: Path):
     )
 
 
+@cli.command("etl-onc")
+@click.option(
+    "--date",
+    default=None,
+    help="eCFR effective date (YYYY-MM-DD) to fetch, for reproducibility. "
+    "Default: eCFR's current published date for Title 45.",
+)
+@click.option(
+    "--xml",
+    "xml_path",
+    default=None,
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    help="Parse a saved copy of 45 CFR 170 (or just section 170.315) instead of fetching. "
+    "--date is then the date that copy is current to, and is required.",
+)
+@click.option(
+    "--out",
+    default=Path("data/frameworks/cfr-170-315-onc-certification/controls.json"),
+    type=click.Path(path_type=Path),
+    help="Where to write the parsed data.",
+)
+def etl_onc(date: str | None, xml_path: Path | None, out: Path):
+    """Fetch the ONC certification criteria (45 CFR 170.315) from eCFR's
+    public API and parse them into this project's data schema. A US federal
+    regulation, so safe to bundle.
+
+    ONE CRITERION IS ONE CONTROL, cited as 170.315(g)(10). Its category is
+    the family, and its sub-paragraphs are its statement.
+
+    THE PARSE IS REFUSED unless the live criteria EQUAL an independently
+    agreed set (#179): this catalog shipped once with fabricated criteria
+    (#152, reverted as #163). Reserved and expired criteria are left out and
+    reported by id on every run.
+    """
+    import dataclasses
+    import datetime as dt
+    import json
+
+    from policyforge.ingest.onc_loader import (
+        FRAMEWORK_VERSION,
+        OncParseError,
+        current_ecfr_date,
+        ecfr_source_url,
+        fetch_part_xml,
+        parse_onc_criteria,
+    )
+    from policyforge.ingest.provenance import record_source_provenance
+
+    if xml_path is not None:
+        if not date:
+            raise click.ClickException("--xml needs --date: the date that copy is current to.")
+        xml_text = xml_path.read_text(encoding="utf-8")
+        click.echo(f"Parsing saved XML {xml_path} (current to {date}) instead of fetching.")
+    else:
+        # Resolved here rather than inside the fetch, so the date recorded is
+        # provably the date fetched.
+        date = date or current_ecfr_date()
+        xml_text = fetch_part_xml(date=date)
+
+    try:
+        controls, excluded = parse_onc_criteria(xml_text, as_of=dt.date.fromisoformat(date))
+    except OncParseError as exc:
+        raise click.ClickException(str(exc)) from exc
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
+    stamp = record_source_provenance(
+        out.parent / "framework.yaml",
+        source_ref=date,
+        source_url=ecfr_source_url(date),
+        content=out.read_bytes(),
+    )
+    if stamp is not None:
+        click.echo(f"Recorded provenance: {date} sha256:{stamp[:16]}… -> {out.parent}")
+    click.echo(f"Parsed {len(controls)} certification criteria ({FRAMEWORK_VERSION}) -> {out}")
+    for kind in ("reserved", "expired"):
+        ids = excluded[kind]
+        if ids:
+            click.echo(f"Excluded {len(ids)} {kind}: " + ", ".join(ids))
+
+
 @cli.command("etl-ai-rmf")
 @click.option(
     "--out",

@@ -109,6 +109,8 @@ def test_no_bundled_catalog_changed_key():
         "nist-800-171-r3": "nist-800-171",
         "nist-800-53-r5": "nist-800-53",
         "nist-ai-rmf": "nist-ai-rmf",
+        # Re-landed by #179; its own declared name is pinned, its siblings not.
+        "cfr-170-315-onc-certification": "cfr-170-315-onc-certification",
     }
     seen = {}
     skipped = set()
@@ -201,7 +203,6 @@ def test_the_taxonomy_is_citable():
 @pytest.mark.parametrize(
     "written",
     [
-        "ONC Certification Criteria",
         "ONC Health IT Certification Program",
         "ONC Certification Program Requirements",
         "ONC Disincentives for Health IT Developers",

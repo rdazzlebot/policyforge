@@ -90,6 +90,39 @@ def test_a_must_outside_the_quoted_run_still_binds():
     )
 
 
+def test_a_quote_starting_at_must_with_a_supplied_subject_fails():
+    """1d's smuggle, ruled (b) by 80 on #325. Eight of Action 4's words,
+    verbatim, but the run starts AT "must", so the subject "the
+    organization" is the writer's, not NIST's."""
+    sentence = (
+        "NIST suggests that the organization must be preserved for fulsome "
+        "understanding or execution."
+    )
+    assert "must be preserved for fulsome understanding or execution" in _action(
+        "Govern 1.7 Action 4"
+    )
+    assert _flagged(sentence, CITES_1_7_4)
+
+
+def test_a_run_beginning_exactly_at_must_fails():
+    # "must be preserved for fulsome understanding or" -- seven words, first is
+    # "must". ("understanding." with its full stop would not match the
+    # catalog's "understanding", and a five-word run fails for length, not
+    # for this: the first version of this test did exactly that.)
+    sentence = "NIST suggests records must be preserved for fulsome understanding or audit."
+    assert "must be preserved for fulsome understanding or" in _action("Govern 1.7 Action 4")
+    assert _flagged(sentence, CITES_1_7_4)
+
+
+def test_one_quoted_word_before_must_is_enough():
+    """The boundary on the other side: "that" precedes "must" inside the
+    run, so NIST's own clause carries the modal."""
+    assert not _flagged(
+        "NIST suggests keeping records that must be preserved for fulsome understanding.",
+        CITES_1_7_4,
+    )
+
+
 def test_the_quote_is_case_and_whitespace_insensitive():
     assert not _flagged(
         "NIST suggests listing ARTIFACTS  that\tmust be Preserved FOR audits.", CITES_1_7_4

@@ -298,6 +298,15 @@ def _opener_end(plain: str) -> int:
 #: SAME sentence cites, looked up in the shipped catalog. A binding word
 #: outside every such run still binds. A paraphrase does not qualify, so a
 #: model gets no licence to write its own "must".
+#:
+#: **The second bound, stated (80's ruling (b) on #325):** a run's FIRST word
+#: is never exempted, so a binding word is excused only when at least one
+#: word of the same verbatim run comes before it. That word carries the
+#: modal's subject from NIST's text ("artifacts that must be preserved").
+#: A run starting AT "must" would let the writer supply the subject: "NIST
+#: suggests that the organization must be preserved for fulsome
+#: understanding ..." quotes six of Action 4's words and was passing (1d's
+#: finding). The first word still counts toward the six.
 QUOTE_MIN_WORDS = 6
 
 _PLAYBOOK_ACTIONS: dict[str, list[str]] | None = None
@@ -356,7 +365,8 @@ def _unquoted(plain: str, quoted_from: list[list[str]]) -> str:
                 ):
                     length += 1
                 if length >= QUOTE_MIN_WORDS:
-                    for k in range(i, i + length):
+                    # From i + 1: the run's first word is never excused.
+                    for k in range(i + 1, i + length):
                         covered[k] = True
     return " ".join("_" if c else t for t, c in zip(tokens, covered, strict=True))
 

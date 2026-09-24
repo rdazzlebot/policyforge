@@ -495,3 +495,46 @@ def test_zardoz_opens_on_a_registry_with_a_syntax_error(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "could not be read" in result.output
     assert "not valid YAML" in result.output
+
+
+def test_the_ai_block_names_topics_that_exist_and_ai_topics_anchor_only_outcomes():
+    """**#188.** The AI block's comment says an AI topic generates an
+    outcomes document because it anchors only AI RMF ids, and names the
+    security topics whose 800-53 controls carry the obligations instead
+    (every name in its "for example" list must be a topic).
+    Both are claims about this file, so both are checked against it: a
+    renamed security topic, or an 800-53 id added to an AI topic, would
+    otherwise leave the comment describing a registry that no longer
+    exists."""
+    import re
+
+    raw = yaml.safe_load(EXAMPLE_REGISTRY.read_text(encoding="utf-8"))
+    topics = raw["topics"] if isinstance(raw, dict) else raw
+    names = {t["name"] for t in topics}
+    # The AI block's comment only: from its banner to the first AI topic.
+    # The whole file will not do -- every name below is also its own
+    # topic's `name:` line, so a search of the file could never fail.
+    source = EXAMPLE_REGISTRY.read_text(encoding="utf-8")
+    start = source.index("# ---- AI risk management")
+    end = source.index("- name: AI Governance & Accountability", start)
+    text = " ".join(line.strip().lstrip("#") for line in source[start:end].splitlines())
+    text = " ".join(text.split())
+
+    # The names are READ from the block, not listed here, so a topic added
+    # to the comment is checked too (9b, on #289: a fixed list passed a
+    # made-up name). Bound, stated: the names sit in one sentence of the form
+    # "for example A, B, ... and Z." -- if that sentence is reworded, the
+    # index() below raises, loudly, rather than checking nothing.
+    listed = text[text.index("for example ") + len("for example ") :]
+    listed = listed[: listed.index(".")]
+    named = [n.strip() for n in re.split(r",| and (?=[A-Z])", listed) if n.strip()]
+    assert len(named) >= 2, f"parsed no topic list from the AI block: {listed!r}"
+    for name in named:
+        assert name in names, f"the AI block names {name!r}, which is not a topic"
+
+    outcome = re.compile(r"^(Govern|Map|Measure|Manage) \d")
+    ai = [t for t in topics if " AI " in f" {t['name']} "]
+    assert len(ai) == 5, [t["name"] for t in ai]
+    for topic in ai:
+        stray = [c for c in topic["nist_controls"] if not outcome.match(c)]
+        assert not stray, f"{topic['name']} anchors non-outcome ids {stray}; the #188 text is false"

@@ -67,6 +67,23 @@ catalog, ask *what would someone have to do differently tomorrow?* If the
 answer is "nothing", the citation is decorative even though every
 automated check passed.
 
+### A document generated from an AI topic is an outcomes document
+
+The five AI topics in `config/topics.example.yaml` anchor this catalog and
+nothing else. A Standard generated from one of them therefore describes
+**what good looks like**, and it commits nobody to a specific action. That
+follows from the section above and is not a generation defect: the source
+states outcomes, and PolicyForge does not decompose them into obligations,
+because NIST publishes the actions separately, in the Playbook.
+
+The obligations an AI programme draws on (governance, risk assessment,
+secure development, training, third-party risk and incident response) are
+800-53 controls. They are owned by the security topics in the same
+registry, because every control has exactly one owning topic. **Which of
+them serve which AI RMF outcome is your organisation's decision.**
+PolicyForge does not make that pairing for you, for the reason the next
+section gives.
+
 ### There is deliberately no crosswalk
 
 `satisfies` resolves an AI RMF citation and then stops. That is not an

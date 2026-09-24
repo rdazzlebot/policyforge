@@ -533,3 +533,97 @@ def test_no_shipped_field_says_there_is_no_guidance():
     ]
 
     assert boilerplate == []
+
+
+# --------------------------------------------------------------------------
+# Optional columns whose caption drifts (#265)
+# --------------------------------------------------------------------------
+
+
+def _drifted_book(replace: dict[str, str]):
+    """The fixture's catalog sheet, with some header captions reworded."""
+    from openpyxl import Workbook
+
+    book = Workbook()
+    book.remove(book.active)
+    sheet = book.create_sheet("AE Mandatory Baseline")
+    sheet.append([replace.get(caption, caption) for caption in HEADER])
+    sheet.append(_row(1, "AC-01", "Policy", "a. Develop.", "•  Define roles.", "IA-1, PM-9"))
+    sheet.append(_row(2, "AC-02(01)", "Automated", "Support.", "•  Use automation.", "AC-2"))
+    return book
+
+
+GUIDANCE_CAPTION = "ARC-AMPE SUPPLEMENTAL CONTROL REQUIREMENTS & GUIDANCE"
+
+
+@pytest.mark.parametrize(
+    ("replace", "missing"),
+    [
+        ({GUIDANCE_CAPTION: GUIDANCE_CAPTION.replace("&", "and")}, ["guidance"]),
+        ({"Related Controls": "Related Control(s)"}, ["related"]),
+        ({"Control Family": "Family"}, ["family"]),
+        (
+            {GUIDANCE_CAPTION: GUIDANCE_CAPTION.replace("&", "and"), "Related Controls": "Related"},
+            ["guidance", "related"],
+        ),
+    ],
+)
+def test_a_drifted_optional_caption_still_parses_and_says_so(replace, missing):
+    """**The parse succeeding is the defect's shape, not the fix's absence.**
+
+    Each of these rewordings leaves the three required captions intact, so
+    the sheet still qualifies and every control is read — with one column
+    empty in every row. The count of controls is right; only the warning
+    says anything is wrong, so the warning is what is asserted, first in the
+    report and naming the field.
+    """
+    _, summary = arc_ampe.parse_arc_ampe(_drifted_book(replace))
+
+    assert summary.controls + summary.enhancements == 2, "the sheet must still qualify"
+    assert summary.missing_optional == missing
+    report = summary.format_report()
+    for index, field in enumerate(missing):
+        assert report[index].startswith(f"WARNING: no '{field}' column")
+
+
+def test_the_drift_really_empties_the_column():
+    """The premise of the warning, measured rather than assumed: with `&`
+    reworded, a row whose guidance cell is full reads as having none."""
+    controls, summary = arc_ampe.parse_arc_ampe(
+        _drifted_book({GUIDANCE_CAPTION: GUIDANCE_CAPTION.replace("&", "and")})
+    )
+
+    assert summary.with_guidance == 0
+    assert controls[0].discussion == ""
+    assert controls[1].enhancements[0].additional_requirements == ""  # AC-2(1), under AC-2
+
+
+def test_the_shipped_captions_raise_no_warning(workbook):
+    """The passing case. A warning that also fires on the real header is one
+    everybody learns to read past, which is the state it exists to end."""
+    _, summary = arc_ampe.parse_arc_ampe(workbook)
+
+    assert summary.missing_optional == []
+    assert not any(line.startswith("WARNING") for line in summary.format_report())
+
+
+def test_the_related_count_is_reported(workbook):
+    """It printed nothing before #265, so a column that read as empty in
+    every row looked identical to one that was never parsed."""
+    _, summary = arc_ampe.parse_arc_ampe(workbook)
+
+    # AC-1 only. "None." lists nothing, and AC-2(1)'s "AC-2" belongs to an
+    # enhancement, which has no related field to count.
+    assert summary.with_related == 1
+    assert f"{summary.with_related} controls list related controls." in summary.format_report()
+
+
+def test_every_caption_is_either_required_or_warned_about():
+    """**Derived, so a new caption cannot fall between the two.** A field
+    added to `COLUMN_CAPTIONS` and to neither list would go silent in
+    exactly the way #265 describes; the partition must cover the map."""
+    fields = set(arc_ampe.COLUMN_CAPTIONS.values())
+
+    assert set(arc_ampe.REQUIRED_FIELDS) | set(arc_ampe.OPTIONAL_FIELDS) == fields
+    assert not set(arc_ampe.REQUIRED_FIELDS) & set(arc_ampe.OPTIONAL_FIELDS)
+    assert set(arc_ampe.OPTIONAL_FIELDS) == {"family", "guidance", "related"}

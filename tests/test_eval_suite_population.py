@@ -174,3 +174,54 @@ def test_the_shipped_cases_fill_every_suite():
     empty = sorted(suite for suite in SUITES if not cases.get(suite))
 
     assert empty == [], f"shipped with no cases: {', '.join(empty)}"
+
+
+# --------------------------------------------------------------------------
+# The real run, not the dry run
+# --------------------------------------------------------------------------
+
+
+class _Fake:
+    """Answers the reachability probe and meters nothing. No call leaves."""
+
+    model = "fake"
+
+    def generate(self, **_):
+        return "ok"
+
+    def summary(self) -> str:
+        return "0 model call(s); fake"
+
+
+def test_the_real_run_names_the_empty_suite_in_the_epoch_report(monkeypatch, capsys, routing_only):
+    """**The path that writes the epoch** (9b's finding on #274). Every test
+    above uses `--dry-run`, which returns before the report is printed, so
+    the report's `requested=` argument and the real-run NOT RUN line had no
+    test at all: passing `requested` as the suites that PLANNED, rather than
+    the suites asked for, brought #223 back on exactly this path and every
+    test stayed green.
+
+    `run_case` is stubbed because grading is not what is under test here;
+    the wiring from what was requested to what the report says is.
+    """
+    from scripts import eval_zardoz
+
+    monkeypatch.setattr(eval_zardoz, "eval_config", lambda **_: {"llm": {"provider": "fake"}})
+    monkeypatch.setattr(eval_zardoz, "build_provider", lambda _config: _Fake())
+    monkeypatch.setattr(
+        eval_zardoz,
+        "run_case",
+        lambda suite, case, *_a, **_k: CaseResult(suite, case["name"], [Outcome(True)]),
+    )
+    monkeypatch.setattr(
+        sys, "argv", ["eval_zardoz.py", "--cases", str(routing_only), "--repeat", "1"]
+    )
+
+    code = eval_zardoz.main()
+    out = capsys.readouterr().out.splitlines()
+
+    assert code == 0
+    assert any(line.startswith("Running ") for line in out), "took the real-run branch"
+    assert any(line.startswith("NOT RUN, no cases:") and "synthesis" in line for line in out)
+    assert "synthesis: NOT RUN, 0 cases, so this report says nothing about it" in out
+    assert "  every case that ran passed every run" in out

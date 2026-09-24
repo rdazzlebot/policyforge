@@ -286,7 +286,42 @@ def run_install_check(image: str = CONTAINER_IMAGE) -> tuple[bool, list[str]]:
     return True, lines
 
 
+def _safe_stdout(stream=None) -> None:
+    """Make every `print` below survive a character the console cannot encode.
+
+    **`_run` fixed the decode and moved the crash to the print.** Decoding as
+    UTF-8 with `errors="replace"` only replaces bytes that are *invalid*
+    UTF-8. Homebrew's `🍺` is *valid* UTF-8, so it decodes into a real
+    character -- and then `print` must re-encode it for stdout, which on the
+    Windows machine the release is cut from is cp1252, where it does not
+    exist. `UnicodeEncodeError`, same traceback, one step later. Found by
+    policyforge-9b (handle 9b) reading `0ef705d`.
+
+    **And it crashes on the path the gate exists for.** The tail is the last
+    twelve lines. On success the last step is `audit`, whose output is ASCII.
+    On a FAILED install the `&&` chain stops at `install`, and the tail is
+    that step's last lines -- which include the beer-mug summary of the last
+    dependency poured before the failure. So it hid the install error, the
+    one output this check is for.
+
+    **A class fix, not line 445.** Every `print` here can carry text from
+    outside -- the docker tail, exception messages, package names -- so the
+    stream is reconfigured once rather than each call site guarded.
+    `errors="replace"` rather than switching to UTF-8: an operator on a
+    cp1252 console then reads `?` for the mug instead of mojibake.
+
+    The same mistake appeared in 1d's own probe an hour before 9b found this
+    one -- a `print` of the mug failed to the console -- and 1d read it as
+    proof the decode had worked without asking whether the product printed
+    the same way.
+    """
+    stream = stream if stream is not None else sys.stdout
+    if hasattr(stream, "reconfigure"):
+        stream.reconfigure(errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _safe_stdout()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--version", required=True, help="the version just cut, e.g. 1.4.0")
     parser.add_argument(

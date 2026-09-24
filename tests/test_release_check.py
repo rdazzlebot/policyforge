@@ -417,3 +417,54 @@ def test_every_subprocess_call_goes_through_the_decoding_helper():
             ):
                 outside.append(f"{fn.name}:{call.lineno}")
     assert not outside, f"subprocess.run outside _run, so not UTF-8 safe: {outside}"
+
+
+# --- the print half: decoding fixed, then the crash moved to `print` ----
+#
+# Found by policyforge-9b (handle 9b) reading 0ef705d. errors="replace" on
+# decode only replaces INVALID UTF-8; Homebrew's beer mug is VALID UTF-8, so
+# it arrives as a real character that a cp1252 stdout cannot encode.
+
+
+def test_a_character_cp1252_cannot_encode_prints_rather_than_raising():
+    """**The opposite fixture to the decode test, deliberately.** The lone
+    0x8D there is replaced on decode and never reaches `print` as an
+    unencodable character, so that test cannot see this defect at all. This
+    needs VALID UTF-8 that is NOT cp1252: the real Homebrew summary line."""
+    import io
+
+    console = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+    release_check._safe_stdout(console)
+    line = "\U0001f37a  /home/linuxbrew/.linuxbrew/Cellar/policyforge/1.6.0: 1,234 files"
+    print(f"    {line}", file=console)
+    console.flush()
+    printed = console.buffer.getvalue().decode("cp1252")
+    assert "Cellar/policyforge" in printed, "the rest of the line must survive the mug"
+
+
+def test_the_strict_console_really_does_raise_without_the_fix():
+    """**The second arm, expected to fail.** If a strict cp1252 stream did
+    not raise on the mug, the test above would pass for the wrong reason."""
+    import io
+
+    console = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+    with pytest.raises(UnicodeEncodeError):
+        print("\U0001f37a", file=console)
+        console.flush()
+
+
+def test_main_actually_calls_the_stdout_fix():
+    """**A fix nobody calls is not a fix.** `_safe_stdout` being correct says
+    nothing about whether `main` invokes it; three loaders here shipped a
+    guard that was proven correct and never proven called. Required to be
+    the first statement, so no `print` can run before it."""
+    import ast
+
+    tree = ast.parse(Path(release_check.__file__).read_text(encoding="utf-8"))
+    main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main")
+    first = main.body[0]
+    assert (
+        isinstance(first, ast.Expr)
+        and isinstance(first.value, ast.Call)
+        and getattr(first.value.func, "id", "") == "_safe_stdout"
+    ), "main() must call _safe_stdout() before anything can print"

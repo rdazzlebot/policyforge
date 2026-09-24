@@ -874,7 +874,10 @@ def test_import_confluence_writes_markdown_and_records_history(tmp_path, monkeyp
     )
 
     assert result.exit_code == 0
-    assert out_path.read_text(encoding="utf-8").startswith("# Authenticator Management Standard")
+    # The body is the page; the frontmatter records the import (#197).
+    written = out_path.read_text(encoding="utf-8")
+    assert written.startswith("---\nimported_from:\n"), written[:80]
+    assert "\n---\n\n# Authenticator Management Standard\n" in written
 
     from policyforge.history.version_store import load_history
 

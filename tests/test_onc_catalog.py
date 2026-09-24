@@ -214,48 +214,49 @@ def test_the_readme_s_counts_are_the_catalog_s(parsed):
 
 
 # ---- the ETL, on the user's path ------------------------------------------------------
+#
+# The real command, with only the network fetch replaced by the fixture: the
+# command takes no saved-XML option (see the last test), so this is the one
+# seam, and everything past it -- parse, refusal, write, provenance -- runs.
 
 
-def test_etl_on_the_fixture_writes_the_shipped_catalog(tmp_path):
+def _etl(monkeypatch, tmp_path, xml_text: str):
     from click.testing import CliRunner
 
+    import policyforge.ingest.onc_loader as onc
     from policyforge import cli as cli_mod
 
-    out = tmp_path / "controls.json"
-    result = CliRunner().invoke(
-        cli_mod.cli,
-        ["etl-onc", "--xml", str(FIXTURE), "--date", "2026-09-22", "--out", str(out)],
-    )
+    monkeypatch.setattr(onc, "fetch_part_xml", lambda *, date=None: xml_text)
+    out = tmp_path / "out" / "controls.json"
+    result = CliRunner().invoke(cli_mod.cli, ["etl-onc", "--date", "2026-09-22", "--out", str(out)])
+    return result, out
+
+
+def test_etl_writes_the_shipped_catalog(monkeypatch, tmp_path, xml):
+    result, out = _etl(monkeypatch, tmp_path, xml)
     assert result.exit_code == 0, result.output
     assert "Excluded 1 expired: 170.315(a)(9)" in result.output
     shipped = (CATALOG / "controls.json").read_bytes().replace(b"\r\n", b"\n")
     assert out.read_bytes() == shipped
 
 
-def test_etl_refuses_a_changed_criterion_set_cleanly(tmp_path, xml):
-    from click.testing import CliRunner
-
-    from policyforge import cli as cli_mod
-
+def test_etl_refuses_a_changed_criterion_set_cleanly(monkeypatch, tmp_path, xml):
     paragraph = re.search(r"<P>\(3\) <I>Patient health information capture\.</I>.*?</P>", xml, re.S)
-    changed = tmp_path / "part170.xml"
-    changed.write_text(xml.replace(paragraph.group(0), "", 1), encoding="utf-8")
-    out = tmp_path / "out" / "controls.json"
-    result = CliRunner().invoke(
-        cli_mod.cli,
-        ["etl-onc", "--xml", str(changed), "--date", "2026-09-22", "--out", str(out)],
-    )
+    result, out = _etl(monkeypatch, tmp_path, xml.replace(paragraph.group(0), "", 1))
     assert result.exit_code == 1, result.output
     assert "Error: the parsed criteria differ from the independently agreed set" in result.output
     assert "Traceback" not in result.output
     assert not out.exists(), "a refused parse wrote a catalog"
 
 
-def test_etl_xml_needs_its_date(tmp_path):
-    from click.testing import CliRunner
-
+def test_etl_takes_no_saved_xml_option():
+    """**The XML parser's safety premise, pinned.** `onc_loader` uses the
+    stdlib parser because eCFR is the only source (see its import comment
+    and `info_blocking.py`'s measurement). An option that read a local XML
+    file would point it at user-supplied XML -- #179's first draft had one,
+    and semgrep's use-defused-xml finding is what caught it. Adding one back
+    needs `defusedxml`, and this test says so."""
     from policyforge import cli as cli_mod
 
-    result = CliRunner().invoke(cli_mod.cli, ["etl-onc", "--xml", str(FIXTURE)])
-    assert result.exit_code != 0
-    assert "--xml needs --date" in result.output
+    options = {param.name for param in cli_mod.cli.commands["etl-onc"].params}
+    assert options == {"date", "out"}, f"etl-onc gained an input: {options}"

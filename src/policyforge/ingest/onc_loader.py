@@ -32,7 +32,17 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-import xml.etree.ElementTree as ET  # nosec B405 - eCFR's own XML, from a host we name
+
+# The stdlib parser, knowingly, for the reason `info_blocking.py` measured
+# and records at length: it refuses undefined entities and fetches no
+# external DTD, and the one live risk -- internal entity expansion -- can
+# only exhaust the memory of the operator who ran the fetch. **That rests
+# on the host being fixed** (`ecfr._API`, no override) and on nothing else
+# reaching this parser. `etl-onc` therefore takes no saved-XML option,
+# deliberately: #179's first draft had one, and it would have pointed this
+# parser at user-supplied XML, where `defusedxml` is the right answer.
+# nosemgrep: python.lang.security.use-defused-xml.use-defused-xml
+import xml.etree.ElementTree as ET  # nosec B405
 from dataclasses import dataclass, field
 
 from policyforge.ingest import ecfr

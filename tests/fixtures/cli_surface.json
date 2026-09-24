@@ -1900,27 +1900,6 @@
           }
         },
         {
-          "default": null,
-          "help": "Parse a saved copy of 45 CFR 170 (or just section 170.315) instead of fetching. --date is then the date that copy is current to, and is required.",
-          "hidden": false,
-          "is_flag": false,
-          "kind": "Option",
-          "multiple": false,
-          "name": "xml_path",
-          "nargs": 1,
-          "opts": [
-            "--xml"
-          ],
-          "required": false,
-          "secondary_opts": [],
-          "type": {
-            "dir_okay": false,
-            "exists": true,
-            "file_okay": true,
-            "name": "file"
-          }
-        },
-        {
           "default": "data/frameworks/cfr-170-315-onc-certification/controls.json",
           "help": "Where to write the parsed data.",
           "hidden": false,

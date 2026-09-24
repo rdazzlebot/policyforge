@@ -51,26 +51,40 @@ A figure of *$0.0002 per call* once circulated as glm's rate for synthesis
 
 - **Claude through its direct API.** Not authorised for this release (the
   user, 2026-09-21). **Every Claude figure in this file went through
-  OpenRouter**, on three different grounds. Epoch 21's sonnet-5 calls, and the
-  two in the 2026-09-18 eval ledger, carry OpenRouter request ids (`gen-…`),
-  27 of 27; a call answered by Anthropic's own API carries a `msg_…` id, and
-  none appears in any ledger. Their `provider: litellm` does not settle it
-  alone: that names the library, which can call Anthropic directly for the
-  model string `anthropic/claude-sonnet-5`. Epoch 24's record is one row per topic, with no
-  provider field, and its path is the model string the entry names,
-  `openrouter/anthropic/claude-sonnet-4.5`. For the sections whose sources did
-  not survive, the ground is the file's own record: epoch 11 notes that the
-  only credential the project had configured was `OPENROUTER_API_KEY`, with
-  no Anthropic or Vertex key. The two paths are different code, and nothing
-  here measures the direct one.
+  OpenRouter.** The grounds differ in strength, strongest first:
+
+  - **The configured model string**, for the two retained Claude runs.
+    Epoch 21's sonnet-5 run was configured as
+    `openrouter/anthropic/claude-sonnet-5`, recorded in its committed step
+    record, and epoch 24's as `openrouter/anthropic/claude-sonnet-4.5`. A
+    LiteLLM model string prefixed `openrouter/` is routed through OpenRouter
+    whatever keys are present.
+  - **The request ids**, as corroboration. Those calls, and the two sonnet-5
+    calls in the 2026-09-18 eval ledger that have no recorded config, carry
+    `gen-…` ids, 27 of 27: the form OpenRouter returns. None carries the
+    `msg_…` form Anthropic's API has used, though Anthropic does not promise
+    that format. The ledger's `provider: litellm` does not settle it: that
+    names the library, which can call Anthropic directly for
+    `anthropic/claude-sonnet-5`.
+  - **The file's own record**, for the sections whose sources did not
+    survive. Epoch 11 notes that the only credential the project had
+    configured was `OPENROUTER_API_KEY`. That is the weakest of the three: a
+    process environment can hold an Anthropic key the project never
+    configured, and LiteLLM would use it.
+
+  The two paths are different code, and nothing here measures the direct one.
+
 - **Gemini through its direct API.** Never measured. Gemini appears only via
   OpenRouter, in the 2026-09-12 comparison, whose source was not retained.
+
 - **Local models through `openai-compat`.** Never measured. One
   `ollama_chat/qwen3:14b` row exists, from 2026-09-12 and before the
   `qwen3:14b-pf` variant, and its source was not retained.
+
 - **The full three-tier matrix across providers, and a second paid
   provider.** Refused by the user on 2026-09-21. Epoch 24 is the authorised
   partial: one provider, one tier.
+
 - **Eval-suite scores.** Every score in this file comes from a run whose
   results were not retained. The 2026-09-18/19 ledgers record calls, not
   grades, so no score can be re-derived from them.

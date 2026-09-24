@@ -32,6 +32,7 @@ from pathlib import Path
 #: pyproject.toml; the test compares the two.
 BUNDLED_CATALOGS = (
     "arc-ampe",
+    "cfr-170-315-onc-certification",
     "cfr-171-information-blocking",
     "cfr-42-part-2-sud-records",
     "fedramp",

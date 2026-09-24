@@ -87,6 +87,21 @@ jobs:
             --controls data/frameworks/cfr-42-part-2-sud-records/controls.json \
             --detail --fail-on-change
 
+      # Refused, not absorbed, when the criterion set moves: the loader's
+      # live criteria must EQUAL an independently agreed set (#179). A red
+      # step here after a new ONC rule is this job working -- a person
+      # re-derives the set and re-pins; do not loosen the check.
+      - name: Fetch the current ONC certification criteria
+        if: always()
+        run: policyforge etl-onc
+
+      - name: What changed in 45 CFR 170.315
+        if: always()
+        run: |
+          policyforge drift \
+            --controls data/frameworks/cfr-170-315-onc-certification/controls.json \
+            --detail --fail-on-change
+
       - name: Fetch the current AI RMF Core
         if: always()
         run: policyforge etl-ai-rmf

@@ -112,6 +112,8 @@ def test_no_bundled_catalog_changed_key():
         # Its own key, not the Core's: the "ai rmf playbook" needle is ordered
         # before "ai rmf", which "NIST AI RMF Playbook" also contains (#177).
         "nist-ai-rmf-playbook": "nist-ai-rmf-playbook",
+        # Re-landed by #179; its own declared name is pinned, its siblings not.
+        "cfr-170-315-onc-certification": "cfr-170-315-onc-certification",
     }
     seen = {}
     skipped = set()
@@ -204,7 +206,6 @@ def test_the_taxonomy_is_citable():
 @pytest.mark.parametrize(
     "written",
     [
-        "ONC Certification Criteria",
         "ONC Health IT Certification Program",
         "ONC Certification Program Requirements",
         "ONC Disincentives for Health IT Developers",

@@ -183,12 +183,16 @@ FRAMEWORK_ALIASES: tuple[tuple[str, str], ...] = (
     ("iso/iec 27001", "iso-27001"),
     ("iso/iec 27002", "iso-27002"),
     ("pci dss", "pci-dss"),
+    # The ONC catalog's own declared name (#179): a name this project has
+    # READ, because it declares it. Its siblings stay unpinned -- see below.
+    ("onc certification criteria", "cfr-170-315-onc-certification"),
 )
-# **ONC is deliberately absent** (#176). Every ONC name keys to the bare
-# `onc` today -- "ONC Certification Criteria", "ONC Health IT Certification
-# Program", "ONC Certification Program Requirements" -- which is harmless
-# while only one ONC catalog exists and becomes a collision the day a second
-# lands (Part 170's Subparts D and E are also "ONC ... Certification"). They
+# **ONC's siblings are deliberately absent** (#176). The ONC catalog's own
+# name is pinned above (#179); every OTHER ONC name keys to the bare `onc` --
+# "ONC Health IT Certification Program", "ONC Certification Program
+# Requirements" -- which is harmless while no second ONC catalog exists and
+# becomes a collision the day one lands (Part 170's Subparts D and E are
+# also "ONC ... Certification"). They
 # are not pre-pinned because their declared names are a guess until someone
 # reads the regulation: this table is for names that have been READ, and a
 # pin written in anticipation reads as decided. `test_onc_siblings_share_

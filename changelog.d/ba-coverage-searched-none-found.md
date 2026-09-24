@@ -10,6 +10,7 @@ The row now names the actual cause:
 
 - **A catalog that maps to 800-53** (HIPAA, FedRAMP, ARC-AMPE) now accounts
   for every requirement, with a count for each reason it reads zero:
+
   - how many your topics reach only in part, because your organisation's
     crosswalk overlay records the mapping as `superset` or `intersects`.
     Whether that is enough is a decision for a person;
@@ -21,11 +22,13 @@ The row now names the actual cause:
 
   A reason with nothing to count is left out, and nothing on these rows
   suggests a command.
+
 - **42 CFR Part 2** says *"no published crosswalk found"*, because a search
   was made. It covered NIST, HHS/OCR, SAMHSA rulemaking and HITRUST's source
   list, but not NIST's OLIR catalog, where a formal mapping would be
   registered. The search and its limits are recorded beside the claim in the
   code.
+
 - **A catalog with no mapping at all** says *"this catalog carries no
   crosswalk"*.
 

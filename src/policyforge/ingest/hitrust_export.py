@@ -416,14 +416,18 @@ def records_from_pairs(
         if ledger is not None:
             ledger.append((kind, cells))
 
-    def placed(cells: list[str]) -> None:
-        """Label and value are read. Any cell IN FRONT of them is not, so it
-        is reported: the unit that carries text is the cell, not the row
-        (9b, on #281)."""
-        outcome(PLACED, cells[-2:])
+    def settled(kind: str, cells: list[str]) -> None:
+        """Label and value end in `kind`. Any cell IN FRONT of them does not
+        share that outcome, so it is reported: the unit that carries text is
+        the cell, not the row (9b, on #281 -- found first for placed rows,
+        then for the known-unread branch, which quieted the whole row)."""
+        outcome(kind, cells[-2:])
         if len(cells) > _LABEL_VALUE_WIDTH:
             stray.extend(cells[:-2])
             outcome(REPORTED, cells[:-2])
+
+    def placed(cells: list[str]) -> None:
+        settled(PLACED, cells)
 
     for row in rows:
         cells = [cell for cell in row if cell.strip()]
@@ -478,7 +482,7 @@ def records_from_pairs(
                 outcome(REPORTED, cells)
             continue
         if field in _KNOWN_UNREAD:
-            outcome(QUIET, cells)  # a label this reader knows and does not keep
+            settled(QUIET, cells)  # a label this reader knows and does not keep
             continue
         if (
             len(cells) == _LABEL_VALUE_WIDTH

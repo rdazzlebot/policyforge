@@ -975,6 +975,21 @@ def test_a_heading_for_a_level_the_report_never_uses_is_reported():
     assert "'Level 2 MARKER'" in losses[0], losses[0]
 
 
+def test_a_cell_in_front_of_a_known_but_unread_label_is_reported():
+    """**9b's shape.** "Topics:" is quiet, but a cell in front of it is not
+    part of that decision: it reached no record, so it is reported, as a
+    front cell of a placed row is."""
+    markup = _RENDERED.replace(
+        _L2, _L2 + "<tr><td>MARKER</td><td>Topics:</td><td>Change Management</td></tr>"
+    )
+    assert markup != _RENDERED
+    _, losses = _losses(markup)
+
+    assert len(losses) == 1, losses
+    assert losses[0].startswith("1 cell(s) sat in front of a label and value"), losses[0]
+    assert "'MARKER'" in losses[0], losses[0]
+
+
 def test_a_known_but_unread_label_is_not_a_loss():
     """The quiet twin of the unknown-label warning: "Topics:" is a label this
     reader KNOWS and deliberately does not keep (the CSV reader drops it
@@ -1051,6 +1066,7 @@ def _every_shape() -> str:
     )
     placed = (
         "<tr><td>Section 1</td><td>Level 2 Organizational Factors:</td><td>Size: Small</td></tr>"
+        "<tr><td>Section 2</td><td>Topics:</td><td>Asset Management</td></tr>"
     )
     orphan = "<tr><td>Level 1 Implementation:</td><td>Before any reference.</td></tr>"
     return _RENDERED.replace(_OBJ, _OBJ + orphan).replace(_L2, _L2 + loud + quiet + placed)
@@ -1100,7 +1116,9 @@ def test_every_row_of_text_is_placed_quiet_or_reported():
             )
         else:
             bare_label = len(cells) == 1 and hitrust.field_for_label(cells[0]) is not None
-            unread = len(cells) >= 2 and hitrust.field_for_label(cells[-2]) in {"topics"}
+            # Exactly two cells: a quiet entry never carries a cell in front
+            # of its label (9b found `MARKER | Topics: | x` quieted whole).
+            unread = len(cells) == 2 and hitrust.field_for_label(cells[0]) in {"topics"}
             used = {r.level for r in records}
             heading = (
                 len(cells) == 2
@@ -1114,4 +1132,4 @@ def test_every_row_of_text_is_placed_quiet_or_reported():
 
     reported = sum(1 for kind, _ in ledger if kind == export.REPORTED)
     assert reported == sum(int(w.split(" ", 1)[0]) for w in losses), (reported, losses)
-    assert reported == 7, f"the fixture holds seven loud groups, the ledger reported {reported}"
+    assert reported == 8, f"the fixture holds eight loud groups, the ledger reported {reported}"

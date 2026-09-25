@@ -192,14 +192,36 @@ _DASH = chr(0x2014)
         ("USB devices -- including phones -- are not allowed.", PROHIBITION),
         # FedRAMP MA-5(1), recovered by the same fix in the catalog count.
         ("Only MA-5 (1) (a) (1) is required by FedRAMP Class C Baseline.", OBLIGATION),
-        # A reduced clause ("when working") is not a condition on the predicate.
-        ("When working remotely MFA is required.", OBLIGATION),
         # ... and what must stay unbound still does.
         ("If approval is required, request it in the ticket.", NONE),
         ("Encryption (where required) protects data at rest.", NONE),
     ],
     ids=["paren", "comma-aside", "comma-aside-2", "em-dash-aside", "double-hyphen-aside",
-         "fedramp-ma-5-1", "reduced-clause", "if-clause", "paren-condition"],
+         "fedramp-ma-5-1", "if-clause", "paren-condition"],
 )  # fmt: skip
 def test_an_aside_before_the_predicate_does_not_hide_its_subject(sentence, modality):
     assert classify(sentence) == modality
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Whether logging is required depends on the system.",
+        "Where training is required, the HR team records it.",
+        "If testing is required, see the test plan.",
+        "When patching is mandatory, the change board is informed.",
+    ],
+)
+def test_a_condition_with_a_gerund_subject_stays_unbound(sentence):
+    """1d on #367: a draft exempted an -ing word after a conditional (to read
+    "When working remotely MFA is required" as binding) and so made these
+    gerund-subject conditions into obligations. Unbound, as on the train."""
+    assert classify(sentence) == NONE
+
+
+@pytest.mark.xfail(strict=True, reason="named miss: a reduced clause reads as a condition")
+def test_a_reduced_clause_before_the_predicate():
+    """Known and accepted (1d on #367): the conditional rule cannot tell
+    "When working remotely MFA is" from "When patching is", so the first
+    stays unbound. Strict, so a fix that makes it bind is noticed."""
+    assert classify("When working remotely MFA is required.") == OBLIGATION

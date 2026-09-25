@@ -814,11 +814,12 @@ def _states_no_requirement(text: str, match: re.Match[str]) -> bool:
         # before it -- "information that: (i) Is not permitted by applicable
         # law" (45 CFR 171.204(a)) -- so it states nothing about a subject.
         return True
-    conditional = any(
-        w in _CONDITIONAL_WORDS and not (i + 1 < len(words) and words[i + 1].endswith("ing"))
-        for i, w in enumerate(words)
-    )
-    if words[-1] in _RELATIVE_WORDS or conditional:
+    # A conditional word anywhere in the clause makes it a condition. This
+    # misses "When working remotely MFA is required" (a reduced clause), a
+    # named miss: exempting an -ing word after the conditional also caught
+    # gerund SUBJECTS, "If testing is required, see the test plan" (1d on
+    # #367), which is the direction that invents obligations.
+    if words[-1] in _RELATIVE_WORDS or any(w in _CONDITIONAL_WORDS for w in words):
         return True
     # The subject is what follows the last relative word: "... may be such
     # that no explicit terms and conditions are required" (800-53 AC-20).

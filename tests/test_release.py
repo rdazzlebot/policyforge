@@ -713,3 +713,18 @@ def test_an_open_retry_is_read_before_a_closed_first_attempt():
         )
     )
     assert release._release_pr(ctx)["number"] == 2
+
+
+def test_the_wait_refuses_a_closed_release_pr_instead_of_waiting_forever():
+    """ba on #348: a closed-unmerged release PR at HEAD made release-pr
+    count as done and the wait say "waiting" forever. Its gate now fails,
+    naming the PR's state; an open PR is still waited for."""
+    main = next(s for s in release.steps() if s.key == "main")
+
+    def ctx(state):
+        return _ctx(run=_fake_run({"pr list": (0, _prs(("Release 9.9.9", 4, state)))}))
+
+    closed = main.gate(ctx("CLOSED"))
+    assert not closed.ok and "#4 CLOSED" in closed.measured[0]
+    assert main.gate(ctx("OPEN")).ok
+    assert not main.gate(_ctx(run=_fake_run({}))).ok, "no PR at all is nothing to wait for"

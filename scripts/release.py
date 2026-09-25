@@ -488,6 +488,24 @@ def _open_pr(ctx: Context) -> None:
             return
 
 
+def _pr_still_open(ctx: Context) -> Check:
+    """The wait's gate: there is a release PR to wait FOR.
+
+    policyforge-ba on #348: if the only release PR was closed unmerged (at
+    HEAD, so release-pr counts as done), the wait said "waiting" forever.
+    Safe, but silent. Now it stops and says the PR is closed."""
+    pr = _release_pr(ctx)
+    state = pr.get("state", "") if pr else ""
+    return Check(
+        state == "OPEN",
+        [
+            f"release PR: {'#' + str(pr['number']) + ' ' + state if pr else 'none'} "
+            "(must be OPEN to wait for; a CLOSED one will never be merged: "
+            "reopen it, or close the cut and start again)"
+        ],
+    )
+
+
 def _main_merged(ctx: Context) -> Check:
     pr = _release_pr(ctx)
     merge = (pr.get("mergeCommit") or {}).get("oid", "") if pr else ""
@@ -881,7 +899,7 @@ def steps() -> list[Step]:
             "main",
             "the user merges the release PR",
             WAIT,
-            lambda c: Check(True),
+            _pr_still_open,
             _main_merged,
             would="the user's approval and merge of the release PR in GitHub",
         ),

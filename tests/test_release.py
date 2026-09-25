@@ -634,3 +634,82 @@ def test_the_install_ends_by_reading_the_installed_version():
     last = script.split(" && ")[-1]
     assert last.startswith('test "$(') and last.endswith('= "9.9.9"'), last
     assert "policyforge.__version__" in last and "libexec/bin/python" in last
+
+
+# --- #348, b5's review --------------------------------------------------------
+
+
+def test_clean_tree_refuses_another_versions_train(train):
+    """A: on release/9.9.9, clean and at its server tip, cutting 9.9.7 must
+    be refused; with a prefix test it passed and cut 9.9.7 from 9.9.9's code."""
+    _origin, clone = train
+    assert release._train_tree(_ctx(root=clone, run=_real())).ok, "the right train passes"
+    other = _ctx(root=clone, run=_real())
+    other.version = "9.9.7"
+    check = release._train_tree(other)
+    assert not check.ok
+    assert "must be 'release/9.9.7'" in check.measured[0], check.measured
+
+
+def test_clean_tree_refuses_another_versions_train_even_at_the_release_pr_head():
+    """A, the resume route: HEAD is the release PR's head (the cut commit),
+    so the server-tip half is not needed to pass. The branch must still be
+    this version's train."""
+
+    def ctx(branch):
+        return _ctx(
+            run=_fake_run(
+                {
+                    "rev-parse --abbrev-ref HEAD": (0, branch),
+                    "rev-parse HEAD": (0, "c" * 40),
+                    "pr list": (
+                        0,
+                        '[{"title": "Release 9.9.9", "state": "OPEN", '
+                        f'"headRefOid": "{"c" * 40}"}}]',
+                    ),
+                }
+            )
+        )
+
+    assert release._train_tree(ctx("release/9.9.9")).ok
+    assert not release._train_tree(ctx("release/9.9.8")).ok
+
+
+def _prs(*entries):
+    return json.dumps(
+        [{"title": t, "number": n, "state": s, "headRefOid": "a" * 40} for t, n, s in entries]
+    )
+
+
+def test_the_release_pr_is_matched_by_its_exact_title():
+    """C: "Release 1.6.10" is not 1.6.1's PR."""
+    ctx = _ctx(run=_fake_run({"pr list": (0, _prs(("Release 9.9.90", 5, "OPEN")))}))
+    assert release._release_pr(ctx) == {}
+    ctx = _ctx(
+        run=_fake_run(
+            {"pr list": (0, _prs(("Release 9.9.90", 5, "OPEN"), ("Release 9.9.9", 6, "OPEN")))}
+        )
+    )
+    assert release._release_pr(ctx)["number"] == 6
+
+
+@pytest.mark.parametrize(
+    "listed",
+    [
+        (("Release 9.9.9", 1, "CLOSED"), ("Release 9.9.9", 2, "MERGED")),
+        (("Release 9.9.9", 2, "MERGED"), ("Release 9.9.9", 1, "CLOSED")),
+    ],
+)
+def test_a_closed_first_attempt_never_shadows_the_merged_release_pr(listed):
+    """C2: whatever order gh lists them in, the merged PR is the one read."""
+    ctx = _ctx(run=_fake_run({"pr list": (0, _prs(*listed))}))
+    assert release._release_pr(ctx)["number"] == 2
+
+
+def test_an_open_retry_is_read_before_a_closed_first_attempt():
+    ctx = _ctx(
+        run=_fake_run(
+            {"pr list": (0, _prs(("Release 9.9.9", 1, "CLOSED"), ("Release 9.9.9", 2, "OPEN")))}
+        )
+    )
+    assert release._release_pr(ctx)["number"] == 2

@@ -291,14 +291,19 @@ def _dirty_paths(ctx: Context) -> list[str]:
 
 
 def _train_tree(ctx: Context) -> Check:
+    # THIS version's train, not any train (policyforge-b5 on #348): with a
+    # prefix test, `release.py 1.7.0` on a release/1.6.1 checkout passed
+    # here and cut 1.7.0 from 1.6.1's code, and notes-measured, reading
+    # release/1.7.0's tip, could not see it.
+    train = f"{TRAIN_PREFIX}{ctx.version}"
     branch = ctx.git("rev-parse", "--abbrev-ref", "HEAD")
     head = ctx.git("rev-parse", "HEAD")
-    remote = _server_tip(ctx, branch) if branch.startswith(TRAIN_PREFIX) else ""
+    remote = _server_tip(ctx, branch) if branch == train else ""
     cut = _release_pr(ctx).get("headRefOid", "")
     dirty = _dirty_paths(ctx)
-    ok = branch.startswith(TRAIN_PREFIX) and head in {remote, cut} - {""} and not dirty
+    ok = branch == train and head in {remote, cut} - {""} and not dirty
     measured = [
-        f"branch {branch!r} (must start {TRAIN_PREFIX!r})",
+        f"branch {branch!r} (must be {train!r})",
         f"HEAD {head[:12]}: origin/{branch} ON THE SERVER {remote[:12] or '-'}, "
         f"release PR head {cut[:12] or '-'} (must be one)",
         f"uncommitted changes: {len(dirty)} (must be 0)",
@@ -383,11 +388,12 @@ def _release_pr(ctx: Context) -> dict:
             "number,state,headRefOid,mergeCommit,title",
         ]
     ).stdout
-    prs = [
-        p
-        for p in json.loads(out or "[]")
-        if p.get("title", "").startswith(f"Release {ctx.version}")
-    ]
+    # The exact title `_open_pr` writes: a prefix took "Release 1.6.10" for
+    # 1.6.1. Then MERGED, then OPEN, before a closed first attempt, whatever
+    # order `gh` lists them in (policyforge-b5 on #348).
+    prs = [p for p in json.loads(out or "[]") if p.get("title", "") == f"Release {ctx.version}"]
+    rank = {"MERGED": 0, "OPEN": 1}
+    prs.sort(key=lambda p: rank.get(p.get("state", ""), 2))
     return prs[0] if prs else {}
 
 

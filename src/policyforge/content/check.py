@@ -335,7 +335,9 @@ def _check_requirement_strength(documents: list[ContentDocument]) -> list[Findin
             findings.append(
                 Finding(
                     doc.relative_path,
-                    f"line {statement.line}: states a cited requirement {how} "
+                    f"line {statement.line}: "
+                    + ("heading " if statement.heading else "")
+                    + f"states a cited requirement {how} "
                     f'— "{statement.text[:70]}"',
                     WARNING,
                 )
@@ -425,7 +427,13 @@ def _check_unanchored(documents: list[ContentDocument]) -> list[Finding]:
             findings.append(
                 Finding(
                     doc.relative_path,
-                    f"line {finding.claim.line}: binds but cites nothing, in a section "
+                    f"line {finding.claim.line}: "
+                    + (
+                        "heading states an obligation but cites nothing"
+                        if finding.claim.heading
+                        else "binds but cites nothing"
+                    )
+                    + ", in a section "
                     f'that cites — "{finding.claim.text[:70]}"',
                     WARNING,
                 )

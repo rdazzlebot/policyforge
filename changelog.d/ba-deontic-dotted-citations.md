@@ -9,11 +9,12 @@ HIPAA**. The sentence splitter broke at every full stop, including the
 ones inside `164.308(a)(3)(i)`, so the citation became three fragments,
 none of which is a citation.
 
-Counted from the shipped catalogs rather than estimated: **324 of 1,844
-identifiers contain a dot, and four catalogs are entirely dotted** —
+Counted from the catalogs this release ships rather than estimated: **914
+of 2,434 identifiers contain a dot, and six catalogs are entirely dotted** —
 `hipaa-security-rule`, `cfr-171-information-blocking`,
-`cfr-42-part-2-sud-records` and `nist-800-171-r3`. The check worked for
-800-53, FedRAMP and ARC-AMPE.
+`cfr-42-part-2-sud-records`, `nist-800-171-r3`, and the two new in this
+release, `cfr-170-315-onc-certification` and `nist-ai-rmf-playbook`. The
+check worked for 800-53, FedRAMP and ARC-AMPE.
 
 **`nist-ai-rmf` was neither, and it is the case worth understanding**:
 72 of its 91 identifiers contain a dot. Its nineteen categories —

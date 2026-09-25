@@ -7,7 +7,9 @@ without PolicyForge inventing one.
 
 **The Playbook is voluntary.** A document may say NIST suggests an action,
 never that NIST requires it. The catalog's README says so first, in NIST's own
-words. Generation does not enforce this yet; that is planned.
+words. This release enforces it: `policyforge check` reports a Playbook
+action written as a requirement as an error, and a Standard whose Playbook
+sentences fail that check is regenerated or refused.
 
 Fetch it again with `policyforge etl-ai-rmf-playbook`. NIST publishes no
 revision number for the Playbook, so the catalog is pinned to the exact export

@@ -204,17 +204,61 @@ def documents_citing(controls: set[str], root: Path) -> dict[str, list[str]]:
     return {key: sorted(set(value)) for key, value in hits.items()}
 
 
-def assess_impact(changes, *, topics=(), content_root=None, decisions=None) -> dict[str, Impact]:
-    """Work out what each changed control reaches."""
+#: Catalogs whose ids read like an anchored catalog's but that no topic
+#: anchors: a Playbook change keyed `Govern 1.1` is NIST's suggestion under
+#: that subcategory, not the subcategory ("never anchored", ANCHOR_DECISIONS).
+_REACHES_NO_TOPIC = frozenset({"nist-ai-rmf-playbook"})
+
+
+def _topic_keys(control_id: str, framework: str) -> set[str] | None:
+    """The ids a topic may anchor to claim `control_id`, from `framework`'s
+    rule, or None if a change in `framework` reaches no topic (#339).
+
+    **For a catalog topics anchor (800-53, the AI RMF Core), coverage's own
+    rule, `topics.coverage.parent_of`**: the control, or the one it hangs
+    off, so `AC-2(3)` reaches the topic anchoring `AC-2` and `Govern 1.1`
+    the topic anchoring `Govern 1`. This used `_base_control` for every
+    catalog while its comment claimed coverage's rule, and `_base_control`
+    knows only the 800-53 grammar: an AI RMF subcategory change reached no
+    topic (9b, on #336).
+
+    **The Playbook reaches none**, whatever its ids look like. `parent_of`
+    reads no framework, which is why it is only applied to the anchored
+    catalogs here (it claimed 72 Playbook rows in `programme.py`, #318).
+
+    Any other catalog, or none named, keeps the rule it had: the id, or its
+    800-53-style base (FedRAMP and ARC-AMPE ids are 800-53's). That is not
+    this change's question.
+    """
+    from policyforge.mapping.crosswalk import anchors_a_topic, normalize_framework
+    from policyforge.topics.coverage import parent_of
+
+    key = normalize_framework(framework) if framework else ""
+    if key in _REACHES_NO_TOPIC:
+        return None
+    upper = control_id.upper()
+    if framework and anchors_a_topic(framework):
+        parent = parent_of(control_id)
+        return {upper} | ({parent.upper()} if parent else set())
+    return {upper, _base_control(control_id)}
+
+
+def assess_impact(
+    changes, *, topics=(), content_root=None, decisions=None, framework: str = ""
+) -> dict[str, Impact]:
+    """Work out what each changed control reaches.
+
+    `framework` is the catalog the changes are in; it decides which ids a
+    topic may anchor to be reached (`_topic_keys`).
+    """
     changed_ids = {c.control_id for c in changes}
     impacts = {control_id: Impact(control_id=control_id) for control_id in changed_ids}
 
     for topic in topics or ():
         anchors = {a.upper() for a in getattr(topic, "nist_controls", [])}
         for control_id in changed_ids:
-            # An anchor claims its enhancements, the same rule coverage.py
-            # uses, so a change to AC-2(3) reaches the topic anchoring AC-2.
-            if control_id.upper() in anchors or _base_control(control_id) in anchors:
+            keys = _topic_keys(control_id, framework)
+            if keys and keys & anchors:
                 impacts[control_id].topics.append(topic.name)
 
     if content_root is not None:
@@ -377,6 +421,12 @@ def analyze_drift(
         new_version=(new_controls[0].framework_version if new_controls else ""),
         changes=changes,
         impacts=assess_impact(
-            changes, topics=topics, content_root=content_root, decisions=decisions
+            changes,
+            topics=topics,
+            content_root=content_root,
+            decisions=decisions,
+            framework=(new_controls or old_controls or [None])[0].framework
+            if (new_controls or old_controls)
+            else "",
         ),
     )

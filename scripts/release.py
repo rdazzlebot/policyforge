@@ -38,7 +38,9 @@ PUBLISHED formula last.
 
 EXIT CODES: 0 done; 5 waiting on the user; 6 an outward step not confirmed;
 10+i a failed gate at step i; 40+i a failed postcondition at step i; 2 a
-refusal before any step (wrong tree, wrong platform).
+version that is not X.Y.Z. A wrong tree is not a refusal before the steps:
+it fails at step 2 (clean-tree), and there is no platform check -- a
+Windows host with Docker is what the container steps need.
 
 Usage:
 
@@ -110,6 +112,8 @@ class Context:
     install: Callable[[str], tuple[bool, bool, list[str]]] = None  # type: ignore[assignment]
     #: Reads the typed confirmation for an outward step.
     confirm: Callable[[str], str] = input
+    #: The release's tracking issue, where the two artefact gates read their records.
+    tracking: int | None = None
     #: Values steps hand to later steps (main's merge SHA, the candidate formula).
     notes: dict[str, str] = field(default_factory=dict)
 
@@ -381,16 +385,24 @@ def _main_merged(ctx: Context) -> Check:
         ).returncode
         == 0
     )
-    same_tree = ctx.git("rev-parse", f"{merge}^{{tree}}") == ctx.git(
-        "rev-parse", f"{pr['headRefOid']}^{{tree}}"
-    )
-    if on_main and same_tree:
+    # Against the cut commit THIS script made (local HEAD, which survives
+    # the exit-5 re-run), never against the PR's head as fetched now: that
+    # value passes by construction if anything was pushed to the release
+    # branch after step 5 (policyforge-9b on #348, the --match-head-commit
+    # failure the charge names).
+    cut = ctx.git("rev-parse", "HEAD")
+    head_is_cut = pr.get("headRefOid") == cut
+    same_tree = ctx.git("rev-parse", f"{merge}^{{tree}}") == ctx.git("rev-parse", f"{cut}^{{tree}}")
+    ok = on_main and head_is_cut and same_tree
+    if ok:
         ctx.notes["main_sha"] = merge
     return Check(
-        on_main and same_tree,
+        ok,
         [
             f"merge commit {merge[:12]} on origin/main: {on_main}",
-            f"its tree equals the approved release head's: {same_tree}",
+            f"the PR's head {str(pr.get('headRefOid'))[:12]} is the cut commit {cut[:12]}: "
+            f"{head_is_cut}",
+            f"the merge's tree equals the cut commit's: {same_tree}",
         ],
     )
 
@@ -407,8 +419,19 @@ def _no_tag(ctx: Context) -> Check:
 
 
 def _formula(ctx: Context, url: str, sha: str) -> str:
-    """The published formula with its source `url` and `sha256` replaced."""
+    """The published formula with its source `url`, `sha256` and `homepage` set.
+
+    `homepage` from the one `OWNER` constant, as `url` is (80's ruling on
+    #348): the published formula still names the old owner there, and
+    `brew info` shows it to users (policyforge-9b)."""
     text = release_check.fetch_formula()
+    text = re.sub(
+        r'^(\s*homepage ")[^"]+(")',
+        rf"\g<1>{release_check.CANONICAL_HOMEPAGE}\g<2>",
+        text,
+        count=1,
+        flags=re.M,
+    )
     text = re.sub(r'^(\s*url ")[^"]+(")', rf"\g<1>{url}\g<2>", text, count=1, flags=re.M)
     return re.sub(r'^(  sha256 ")[0-9a-f]{64}(")', rf"\g<1>{sha}\g<2>", text, count=1, flags=re.M)
 
@@ -441,7 +464,10 @@ def _branch_install_done(ctx: Context) -> Check:
 def _install(ctx: Context, url: str, note: str) -> None:
     formula = _formula(ctx, url, ctx.hash_url(url))
     if not release_check.names_canonical_owner(release_check.source_url_in_formula(formula)):
-        ctx.notes[note] = "refused: the formula does not name the canonical owner"
+        ctx.notes[note] = "refused: the formula's url does not name the canonical owner"
+        return
+    if not release_check.names_canonical_homepage(release_check.homepage_in_formula(formula)):
+        ctx.notes[note] = "refused: the formula's homepage does not name the canonical owner"
         return
     ran, ok, lines = ctx.install(formula)
     for line in lines[-6:]:
@@ -563,6 +589,124 @@ def _release_check_passes(ctx: Context) -> Check:
     return Check(code == 0, [f"release_check.py {ctx.version}: exit {code} (must be 0)"])
 
 
+# --- the two artefact gates (80's ruling on #348) ------------------------------
+#
+# The script cannot do the #226 re-measure or the post-zero review, but it can
+# refuse to pass until each has left an ARTEFACT. Both are read from the
+# release's tracking issue (`--tracking-issue N`), each as the LAST non-empty
+# line of a comment -- the verdict-line rule, so quoting one in a discussion
+# does not create one. Every session posts as the same GitHub account, so the
+# handle in the line is the identity, as it is for `reviewer=`. `--execute`
+# cannot satisfy either; only the comment can.
+
+#: One per reviewer, posted after the milestone reached zero (CLAUDE.md,
+#: "Closing a release train": product, research and quality each review).
+REVIEW_LINE = re.compile(r"^Post-zero-review: (\S+) reviewer=policyforge-(\w+)\s*$")
+POST_ZERO_REVIEWERS = ("80", "5b", "1d")
+
+#: The #226 re-measure of every figure in the notes, naming the train SHA it
+#: was done at. It must be the current train tip: a figure is a fact about a
+#: moment, and only one taken after the last merge may ship.
+MEASURE_LINE = re.compile(
+    r"^Notes-measured-SHA: ([0-9a-f]{40}) release=(\S+) reviewer=policyforge-(\w+)\s*$"
+)
+
+
+def _tracking_records(ctx: Context) -> list[tuple[str, str]]:
+    """(created_at, last non-empty line) for every comment on the tracking issue."""
+    if not ctx.tracking:
+        return []
+    out = ctx.run(
+        [
+            "gh",
+            "api",
+            "--paginate",
+            f"repos/{release_check.REPOSITORY}/issues/{ctx.tracking}/comments",
+            "--jq",
+            ".[] | [.created_at, .body] | @json",
+        ]
+    ).stdout
+    records = []
+    for line in (out or "").splitlines():
+        try:
+            created, body = json.loads(line)
+        except ValueError:
+            continue
+        lines = [x.strip() for x in (body or "").splitlines() if x.strip()]
+        if lines:
+            records.append((created, lines[-1]))
+    return records
+
+
+def _milestone_zero_at(ctx: Context) -> str:
+    """When the milestone reached zero: the latest `closed_at` among its issues."""
+    repo = release_check.REPOSITORY
+    milestones = ctx.run(["gh", "api", f"repos/{repo}/milestones?state=all&per_page=100"]).stdout
+    number = next(
+        (m["number"] for m in json.loads(milestones or "[]") if m.get("title") == ctx.version),
+        None,
+    )
+    if number is None:
+        return ""
+    out = ctx.run(
+        [
+            "gh",
+            "api",
+            "--paginate",
+            f"repos/{repo}/issues?milestone={number}&state=closed&per_page=100",
+            "--jq",
+            ".[] | select(.pull_request|not) | .closed_at",
+        ]
+    ).stdout
+    stamps = [s.strip() for s in (out or "").splitlines() if s.strip()]
+    return max(stamps) if stamps else ""
+
+
+def _post_zero_reviewed(ctx: Context) -> Check:
+    if not ctx.tracking:
+        return Check(False, ["no --tracking-issue given, so there is no record to read"])
+    zero_at = _milestone_zero_at(ctx)
+    after = {
+        match.group(2)
+        for created, line in _tracking_records(ctx)
+        if (match := REVIEW_LINE.match(line))
+        and match.group(1) == ctx.version
+        and zero_at
+        and created > zero_at
+    }
+    missing = [h for h in POST_ZERO_REVIEWERS if h not in after]
+    return Check(
+        bool(zero_at) and not missing,
+        [
+            f"milestone {ctx.version} reached zero at {zero_at or '?'}",
+            f"post-zero reviews on #{ctx.tracking} after it: {sorted(after) or 'none'}",
+            f"missing (each posts `Post-zero-review: {ctx.version} reviewer=policyforge-<handle>` "
+            f"as a comment's last line): {missing or 'none'}",
+        ],
+    )
+
+
+def _notes_measured(ctx: Context) -> Check:
+    if not ctx.tracking:
+        return Check(False, ["no --tracking-issue given, so there is no record to read"])
+    tip = ctx.git("rev-parse", f"origin/{TRAIN_PREFIX}{ctx.version}")
+    measured = [
+        (created, match.group(1))
+        for created, line in _tracking_records(ctx)
+        if (match := MEASURE_LINE.match(line)) and match.group(2) == ctx.version
+    ]
+    latest = max(measured)[1] if measured else ""
+    return Check(
+        bool(tip) and latest == tip,
+        [
+            f"train tip origin/{TRAIN_PREFIX}{ctx.version}: {tip[:12] or '?'}",
+            f"latest `Notes-measured-SHA:` for {ctx.version} on #{ctx.tracking}: "
+            f"{latest[:12] or 'none'} "
+            "(must be the tip: a measurement before the last merge may be stale)",
+        ],
+    )
+
+
 def steps() -> list[Step]:
     """The cut, in order. The order is the point: nothing here is optional."""
     return [
@@ -573,6 +717,20 @@ def steps() -> list[Step]:
             CHECK,
             _train_tree,
             _train_tree,
+        ),
+        Step(
+            "post-zero-review",
+            "80, 5b and 1d each reviewed after the milestone reached zero",
+            CHECK,
+            _post_zero_reviewed,
+            _post_zero_reviewed,
+        ),
+        Step(
+            "notes-measured",
+            "the #226 re-measure names the current train tip",
+            CHECK,
+            _notes_measured,
+            _notes_measured,
         ),
         Step(
             "changelog",
@@ -764,6 +922,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("version", help="the version to cut, e.g. 1.6.1")
     parser.add_argument("--execute", action="store_true", help="act; without it, a dry run")
+    parser.add_argument(
+        "--tracking-issue",
+        type=int,
+        help="the issue holding the post-zero reviews and the notes re-measure",
+    )
     args = parser.parse_args(argv)
     if not re.fullmatch(r"\d+\.\d+\.\d+", args.version):
         print(f"release: {args.version!r} is not X.Y.Z")
@@ -774,6 +937,7 @@ def main(argv: list[str] | None = None) -> int:
         status_of=_real_status,
         hash_url=release_check.hash_of,
         install=_real_install,
+        tracking=args.tracking_issue,
     )
     print(f"release {ctx.tag}: {'EXECUTE' if args.execute else 'DRY RUN (nothing will change)'}")
     return run_steps(steps(), ctx, execute=args.execute)

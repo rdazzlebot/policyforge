@@ -255,3 +255,141 @@ def test_the_status_probe_refuses_anything_but_https(tmp_path):
     target.write_text("x", encoding="utf-8")
     assert release._real_status(target.as_uri()) == 0
     assert release._real_status("http://github.com/x") == 0
+
+
+# --- #348 review: step 6 against the cut, the homepage, the two artefact gates ----
+
+
+def _merged_ctx(pr_head: str, cut: str, merge_tree: str, cut_tree: str):
+    return _ctx(
+        run=_fake_run(
+            {
+                "pr list": (
+                    0,
+                    '[{"title": "Release 9.9.9", "state": "MERGED", '
+                    f'"headRefOid": "{pr_head}", "mergeCommit": {{"oid": "{"m" * 40}"}}}}]',
+                ),
+                "merge-base --is-ancestor": (0, ""),
+                "rev-parse HEAD": (0, cut),
+                f"rev-parse {'m' * 40}^{{tree}}": (0, merge_tree),
+                f"rev-parse {cut}^{{tree}}": (0, cut_tree),
+            }
+        )
+    )
+
+
+def test_step_six_accepts_the_merge_of_the_cut_commit():
+    assert release._main_merged(_merged_ctx("c" * 40, "c" * 40, "t1", "t1")).ok
+
+
+def test_step_six_refuses_a_head_pushed_after_the_cut():
+    """policyforge-9b on #348: something pushed to the release branch after
+    step 5 was merged, and the old check compared the merge with that PR head
+    AS FETCHED NOW, which passes by construction. Against the cut commit this
+    script made, it is refused, even if the trees happen to agree."""
+    moved = _merged_ctx("d" * 40, "c" * 40, "t1", "t1")
+    check = release._main_merged(moved)
+    assert not check.ok
+    assert any("is the cut commit" in line and "False" in line for line in check.measured)
+
+
+def test_step_six_refuses_a_merge_whose_tree_is_not_the_cut():
+    assert not release._main_merged(_merged_ctx("c" * 40, "c" * 40, "t1", "t2")).ok
+
+
+def test_the_candidate_formula_names_the_owner_in_homepage_and_url(monkeypatch):
+    published = (
+        '  homepage "https://github.com/rdazzlebot/policyforge"\n'
+        '  url "https://github.com/rdazzlebot/policyforge/archive/refs/tags/v1.6.0.tar.gz"\n'
+        f'  sha256 "{"0" * 64}"\n'
+    )
+    monkeypatch.setattr(release.release_check, "fetch_formula", lambda url=None: published)
+    formula = release._formula(_ctx(), release._tag_archive(_ctx()), "1" * 64)
+    assert release.release_check.names_canonical_homepage(
+        release.release_check.homepage_in_formula(formula)
+    )
+    assert release.release_check.names_canonical_owner(
+        release.release_check.source_url_in_formula(formula)
+    )
+
+
+def _records_ctx(comments, closed=("2026-09-25T01:00:00Z",), tip="a" * 40):
+    import json as _json
+
+    lines = "\n".join(_json.dumps([created, body]) for created, body in comments)
+    return _ctx(
+        tracking=99,
+        run=_fake_run(
+            {
+                "milestones": (0, '[{"title": "9.9.9", "number": 7}]'),
+                "state=closed": (0, "\n".join(closed)),
+                "issues/99/comments": (0, lines),
+                "rev-parse origin/release/9.9.9": (0, tip),
+            }
+        ),
+    )
+
+
+def _review(handle, at="2026-09-25T02:00:00Z", version="9.9.9"):
+    return (at, f"Reviewed.\n\nPost-zero-review: {version} reviewer=policyforge-{handle}")
+
+
+def test_the_post_zero_review_needs_all_three_after_the_zero():
+    assert release._post_zero_reviewed(
+        _records_ctx([_review("80"), _review("5b"), _review("1d")])
+    ).ok
+    assert not release._post_zero_reviewed(_records_ctx([_review("80"), _review("5b")])).ok
+    early = [_review("80"), _review("5b"), _review("1d", at="2026-09-25T00:30:00Z")]
+    assert not release._post_zero_reviewed(_records_ctx(early)).ok, (
+        "a review BEFORE the zero is not one"
+    )
+    other = [_review("80"), _review("5b"), _review("1d", version="9.9.8")]
+    assert not release._post_zero_reviewed(_records_ctx(other)).ok, "another release's review"
+
+
+def test_a_quoted_review_line_is_not_a_review():
+    """The last-line rule: discussing a review must not create one.
+
+    Pinned to exactly which reviewer is missing: a bare `not ok` also held
+    under a "first line counts" mutant, because that one dropped 80's and
+    5b's real reviews instead -- right answer, wrong reason."""
+    quoted = (
+        "2026-09-25T02:00:00Z",
+        "Post-zero-review: 9.9.9 reviewer=policyforge-1d\n\nquoted above.",
+    )
+    check = release._post_zero_reviewed(_records_ctx([_review("80"), _review("5b"), quoted]))
+    assert not check.ok
+    assert check.measured[-1].endswith("['1d']"), check.measured
+
+
+def test_the_notes_measurement_must_name_the_train_tip():
+    def measured(sha, at="2026-09-25T02:00:00Z"):
+        return (
+            at,
+            f"Re-measured.\n\nNotes-measured-SHA: {sha} release=9.9.9 reviewer=policyforge-9b",
+        )
+
+    assert release._notes_measured(_records_ctx([measured("a" * 40)])).ok
+    assert not release._notes_measured(_records_ctx([measured("b" * 40)])).ok, (
+        "before the last merge"
+    )
+    stale_last = [
+        measured("a" * 40, at="2026-09-25T02:00:00Z"),
+        measured("b" * 40, at="2026-09-25T03:00:00Z"),
+    ]
+    assert not release._notes_measured(_records_ctx(stale_last)).ok, "the LATEST record decides"
+
+
+def test_the_artefact_gates_need_a_tracking_issue():
+    assert not release._post_zero_reviewed(_ctx()).ok
+    assert not release._notes_measured(_ctx()).ok
+
+
+def test_the_artefact_gates_come_before_the_changelog():
+    keys = _keys()
+    assert keys.index("post-zero-review") < keys.index("changelog")
+    assert keys.index("notes-measured") < keys.index("changelog")
+    kinds = {s.key: s.kind for s in release.steps()}
+    assert kinds["post-zero-review"] == CHECK and kinds["notes-measured"] == CHECK, (
+        "a CHECK has no action, so --execute cannot satisfy it"
+    )

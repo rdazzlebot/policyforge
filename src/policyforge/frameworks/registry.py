@@ -193,6 +193,39 @@ class FrameworkKeyWarning(UserWarning):
     or two catalogs declaring one name with different keys (#295)."""
 
 
+def config_or_defaults(what: str, category: type[Warning] = UserWarning) -> dict:
+    """This project's config, or `{}` -- the default search paths -- if it
+    cannot be read. The ONE copy of that fallback (1d on #346).
+
+    **A lookup never fails on the config file** (1d on #344). Keying a
+    framework name and recognising one in a tag both run under commands that
+    never read config themselves, like `map` and `check`, so a config that
+    does not parse must not become their traceback. It is named in one
+    warning of `category`, saying `what` was read from the default search
+    paths and the bundled catalogs instead. A missing config is ordinary and
+    silent.
+    """
+    import warnings
+
+    import yaml
+
+    from policyforge.config import load_config, resolve_config_path
+
+    try:
+        return load_config()
+    except FileNotFoundError:
+        return {}
+    except (yaml.YAMLError, OSError, UnicodeDecodeError, ValueError) as exc:
+        warnings.warn(
+            category(
+                f"{resolve_config_path()} could not be read ({type(exc).__name__}), so {what} "
+                "from the default search paths and the bundled catalogs only."
+            ),
+            stacklevel=4,
+        )
+        return {}
+
+
 def _catalog_roots(config: dict | None) -> list[Path]:
     """The search paths, then the bundled catalogs: every place a catalog
     this project can cite may live, wherever the command runs. A

@@ -74,7 +74,9 @@ class Framework:
     source: str = ""
     notes: str = ""
     #: The framework key the catalog DECLARES (#295), e.g. `nist-800-53`, from
-    #: `crosswalk_as:` in its manifest. It wins over keying from the prose name;
+    #: `framework_id:` in its manifest: the identity citations, crosswalks,
+    #: coverage and `/satisfies` all key it by. Not the manifest's `id:`,
+    #: which names the directory (`nist-800-53-r5`). It wins over keying from the prose name;
     #: empty when the manifest has none. The manifest field is not called
     #: `key:` because gitleaks' generic-api-key rule reads `key: <long token>`
     #: as a secret (it flagged `cfr-170-315-onc-certification`).
@@ -122,7 +124,7 @@ def load_framework(directory: Path) -> Framework:
         licence=PUBLIC_DOMAIN if licence == PUBLIC_DOMAIN else LICENSED,
         source=str(data.get("source") or ""),
         notes=str(data.get("notes") or ""),
-        key=str(data.get("crosswalk_as") or "").strip(),
+        key=str(data.get("framework_id") or "").strip(),
         declared=bool(data),
     )
 
@@ -209,7 +211,7 @@ def _key_roots(config: dict | None) -> list[Path]:
 def declared_keys(config: dict | None = None, *, roots: list[Path] | None = None) -> dict[str, str]:
     """{name, whitespace-collapsed and lower-cased: declared key} (#295).
 
-    **Every name a catalog goes by** is mapped to the `crosswalk_as:` its
+    **Every name a catalog goes by** is mapped to the `framework_id:` its
     `framework.yaml` declares: the manifest's `name`, and each `framework`
     string its `controls.json` rows carry (`NIST 800-53` there, `NIST SP
     800-53 Rev 5` in the manifest). The first root that declares a name

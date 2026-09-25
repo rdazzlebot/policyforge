@@ -62,7 +62,7 @@ def normalize_framework(name: str) -> str:
     as before.
 
     **A catalog's declared key wins (#295).** A name that a catalog's
-    `framework.yaml` declares a key for (`crosswalk_as:`) keys to that key, whatever the
+    `framework.yaml` declares a key for (`framework_id:`) keys to that key, whatever the
     prose would give, so a sibling of a pinned name cannot fall through to
     the first word. The declarations are read from the catalog directories
     once, lazily (`frameworks.registry.declared_keys`), so the answer does

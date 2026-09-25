@@ -1,9 +1,9 @@
-"""A catalog keys by the `crosswalk_as:` its `framework.yaml` declares (#295, PR 1 of 2).
+"""A catalog keys by the `framework_id:` its `framework.yaml` declares (#295, PR 1 of 2).
 
 `normalize_framework` keyed a framework by the first word of its prose name
 unless an alias needle matched first, and every sibling of a pinned name fell
 through to the bare word (#176 recorded seven). 80's ruling: a declared key in
-`framework.yaml` (`crosswalk_as:`, not `key:`, which gitleaks reads as a
+`framework.yaml` (`framework_id:`, not `key:`, which gitleaks reads as a
 secret); the declaration wins; a tree-derived test that each shipped
 catalog's declared key equals today's key, so this change moves no key; and a
 disagreement for a shipped catalog is a test failure.
@@ -52,7 +52,7 @@ def _shipped() -> list[Path]:
 def test_every_shipped_catalog_declares_a_key():
     assert len(_shipped()) >= 10
     missing = [d.name for d in _shipped() if not load_framework(d).key]
-    assert not missing, f"no `crosswalk_as:` in framework.yaml: {missing}"
+    assert not missing, f"no `framework_id:` in framework.yaml: {missing}"
 
 
 @pytest.mark.parametrize("directory", _shipped(), ids=lambda d: d.name)
@@ -82,7 +82,7 @@ def test_the_shipped_tree_declares_without_a_single_disagreement():
 def _catalog(root: Path, directory: str, *, name: str, key: str, framework: str | None = None):
     path = root / directory
     path.mkdir(parents=True)
-    (path / "framework.yaml").write_text(f"name: {name}\ncrosswalk_as: {key}\n", encoding="utf-8")
+    (path / "framework.yaml").write_text(f"name: {name}\nframework_id: {key}\n", encoding="utf-8")
     row = {
         "control_id": "X-1",
         "title": "t",

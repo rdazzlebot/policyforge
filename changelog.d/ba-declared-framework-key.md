@@ -1,5 +1,5 @@
 **A catalog can now declare its framework key in `framework.yaml`.** Add
-`crosswalk_as: acme-baseline` beside `name:`, and every place PolicyForge keys that
+`framework_id: acme-baseline` beside `name:`, and every place PolicyForge keys that
 catalog's name will use your key, including crosswalks, coverage and
 citations. Before, a name the built-in table did not know was keyed by its
 first word, so "NIST Privacy Framework" and every other unlisted NIST name

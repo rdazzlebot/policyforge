@@ -1,6 +1,6 @@
 id: nist-ai-rmf
 name: NIST AI Risk Management Framework 1.0
-crosswalk_as: nist-ai-rmf
+framework_id: nist-ai-rmf
 licence: public-domain
 source: NIST AIRC (airc.nist.gov), via policyforge etl-ai-rmf
 notes: A US government work, so freely redistributable. Bundled with this project and safe

@@ -85,11 +85,21 @@ class TopicContext:
 #: flagged every compliant sentence (17 of 17).
 PLAYBOOK_SENTENCE_FORM = "NIST suggests, among its N actions for <subcategory>, ..."
 
+#: How several Playbook actions share one tag. **Every part names the
+#: framework** (#301): the gate and the traceability reader split a merged
+#: tag on "|" and read each part alone, so a part written as the shorthand
+#: "Govern 1.1 Action 2" is not a Playbook citation to either of them. glm
+#: wrote that shorthand in 17 of 17 sentences of one Standard when this rule
+#: said only "separated by |", and the gate saw none of the 17.
+PLAYBOOK_MERGED_TAG_EXAMPLE = (
+    "[NIST AI RMF Playbook Govern 1.1 Action 1 | NIST AI RMF Playbook Govern 1.1 Action 2]"
+)
+
 
 _STANDARD_SYSTEM_PROMPT = register(
     Prompt(
         name="generate.standard",
-        version=5,
+        version=6,
         text=f"""You are a compliance policy drafting engine. \
 Turn a set of already-synthesized, source-tagged requirement statements \
 into a formal information security STANDARD document for one \
@@ -122,7 +132,10 @@ Rules:
 "{PLAYBOOK_SENTENCE_FORM}" \
 with N the count the block
   gives. Restate only what the actions you cite say, and cite every action
-  you draw on with its tag (several may share one tag, separated by "|").
+  you draw on with its tag. Several may share one tag, separated by "|",
+  but EVERY part names the framework in full:
+  `{PLAYBOOK_MERGED_TAG_EXAMPLE}`, never a
+  part that starts at the subcategory.
   No Playbook action becomes a requirement of the organization.
 - Where a requirement is vendor/tool-specific: if the tool list below fills
   that role, use that tool's actual name. If not, write the role itself in

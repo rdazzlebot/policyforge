@@ -271,10 +271,45 @@ def test_the_prompts_own_sentence_form_passes_the_gate():
     assert playbook_obligations(f"{sentence} {tag}\n") == []
 
 
-def test_the_first_wording_is_the_one_the_gate_refuses():
-    """The other arm, so the test above is known to distinguish the forms."""
+def test_the_prompts_merged_tag_is_one_the_gate_reads_as_the_playbook():
+    """**Measured failure this pins** (#301). The rule said only "several may
+    share one tag, separated by |"; glm wrote `[NIST AI RMF Playbook Govern
+    1.1 Action 1 | Govern 1.1 Action 2]` in 17 of 17 sentences of one
+    Standard. The gate reads each part alone, so none of the 17 was a
+    Playbook citation to it, and "Acme Health must ..." under that tag
+    passed. The prompt now shows a merged tag; the gate must read that tag
+    as the Playbook's, or it is teaching a form the gate cannot see."""
+    from policyforge.content.deontic import analyze, playbook_obligations
+    from policyforge.generate.policy_writer import (
+        _STANDARD_SYSTEM_PROMPT,
+        PLAYBOOK_MERGED_TAG_EXAMPLE,
+    )
+
+    assert PLAYBOOK_MERGED_TAG_EXAMPLE in _STANDARD_SYSTEM_PROMPT
+    assert PLAYBOOK_MERGED_TAG_EXAMPLE.count("|") >= 1, "the premise: it is a MERGED tag"
+    (statement,) = analyze(f"NIST suggests documenting contacts. {PLAYBOOK_MERGED_TAG_EXAMPLE}\n")
+    assert statement.cites_only_the_playbook
+
+    wrong = f"Acme Health must document contacts. {PLAYBOOK_MERGED_TAG_EXAMPLE}\n"
+    assert len(playbook_obligations(wrong, ("Acme Health",))) == 1
+
+
+def test_the_same_form_with_the_organization_as_subject_is_refused():
+    """The other arm, so the form test above is known to distinguish forms:
+    the prompt's own sentence, filled the same way, with the organization in
+    NIST's place. (This arm used the first wording, "Among the 7 actions NIST
+    suggests for ...", until #319 made that opener one of four allowed shapes;
+    it now passes, correctly, so it no longer distinguishes anything.)"""
     from policyforge.content.deontic import playbook_obligations
+    from policyforge.generate.policy_writer import PLAYBOOK_SENTENCE_FORM
 
-    old = "Among the 7 actions NIST suggests for Govern 1.4, NIST suggests documenting contacts."
+    assert PLAYBOOK_SENTENCE_FORM.startswith("NIST suggests"), "the premise the swap relies on"
+    sentence = (
+        PLAYBOOK_SENTENCE_FORM.replace("NIST suggests", "Acme Health adopts", 1)
+        .replace(" N ", " 7 ")
+        .replace("<subcategory>", "Govern 1.4")
+        .replace("...", "documenting AI actor contact information.")
+    )
+    tag = "[NIST AI RMF Playbook Govern 1.4 Action 1]"
 
-    assert len(playbook_obligations(f"{old} [NIST AI RMF Playbook Govern 1.4 Action 1]\n")) == 1
+    assert len(playbook_obligations(f"{sentence} {tag}\n", ("Acme Health",))) == 1

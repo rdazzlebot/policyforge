@@ -7,9 +7,10 @@ shared the key `nist`. Every bundled catalog now declares its key, and none
 of those keys changed. `etl-hitrust` and `etl-govramp` now write the
 declaration beside the catalog they import, with the key the name already
 had; a `framework.yaml` you wrote yourself is kept, and a different key in it
-is named rather than replaced. PolicyForge warns only when the name alone
-would have produced another framework's key, or the first word of a bundled
-catalog's name such as `nist`, since citations written before the declaration
-were then filed there. Name lookup now
+is named rather than replaced. `policyforge frameworks` and the importers
+point out a declaration whose name alone would have produced another
+framework's key, or the first word of a bundled catalog's name such as
+`nist`, since citations written before the declaration were filed there.
+Other commands stay quiet about it. Name lookup now
 ignores extra spacing, so an irregularly spaced name may key differently
 than it did.

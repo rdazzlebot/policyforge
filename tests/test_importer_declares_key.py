@@ -98,6 +98,16 @@ def test_a_manifest_that_declares_a_different_key_is_kept_and_named(tmp_path):
     assert (out.parent / "framework.yaml").read_text(encoding="utf-8") == written
     assert "already declares framework_id govramp-moderate" in result.output
     assert "Keeping yours" in result.output
+    # Where the declaration is made, its prose collision is stated (80 on
+    # #347): `govramp`, the key the name had, is an alias target.
+    assert "would key to 'govramp', a key the built-in alias table assigns" in result.output
+
+
+def test_a_declaration_equal_to_todays_key_states_no_collision(tmp_path):
+    out = tmp_path / "catalogs" / "govramp" / "controls.json"
+    result = _govramp(tmp_path, out)
+    assert result.exit_code == 0, result.output
+    assert "Note:" not in result.output
 
 
 def test_nothing_is_declared_when_nothing_is_written(tmp_path):

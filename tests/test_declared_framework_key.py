@@ -21,7 +21,12 @@ from pathlib import Path
 
 import pytest
 
-from policyforge.frameworks.registry import FrameworkKeyWarning, declared_keys, load_framework
+from policyforge.frameworks.registry import (
+    FrameworkKeyWarning,
+    declared_keys,
+    key_collisions,
+    load_framework,
+)
 from policyforge.mapping import crosswalk
 from policyforge.mapping.crosswalk import normalize_framework, prose_framework_key
 
@@ -111,53 +116,59 @@ def test_a_byoc_declared_name_keys_by_its_declaration_with_nothing_loaded(
         assert normalize_framework("Acme Security Baseline Extended") == "acme"
 
 
+def _silently_keys(name: str) -> str:
+    """Key `name` and fail on any FrameworkKeyWarning: keying is silent about
+    prose collisions on every command (80's ruling on #347)."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FrameworkKeyWarning)
+        return normalize_framework(name)
+
+
 def test_a_sibling_of_a_pinned_name_no_longer_falls_through(tmp_path, monkeypatch, fresh_keys):
     """The class #295 is about: `NIST Privacy Framework` has no alias, so its
-    prose key is bare `nist`. Declared, it keys to itself -- and **warns
-    once**, because `nist` is the first word of the shipped NIST catalogs,
-    the bucket every unpinned NIST citation was filed under (80's ruling on
-    #347, which this test was pinned to ask)."""
+    prose key is bare `nist`. Declared, it keys to itself, silently, and
+    `key_collisions` states the fact: `nist` is the first word of a shipped
+    NIST catalog, the bucket every unpinned NIST citation was filed under
+    (80's rulings on #347)."""
     _catalog(
         tmp_path / "frameworks", "nist-privacy", name="NIST Privacy Framework", key="nist-privacy"
     )
     monkeypatch.chdir(tmp_path)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always", FrameworkKeyWarning)
-        assert normalize_framework("NIST Privacy Framework") == "nist-privacy"
-    messages = [str(w.message) for w in caught if issubclass(w.category, FrameworkKeyWarning)]
-    assert len(messages) == 1, messages
-    assert "'nist-privacy'" in messages[0] and "'nist'" in messages[0]
+    assert _silently_keys("NIST Privacy Framework") == "nist-privacy"
+    (fact,) = key_collisions()
+    assert "'nist-privacy'" in fact and "would key to 'nist'" in fact
+    assert "the first word of shipped catalog 'NIST" in fact
 
 
 def test_the_shipped_buckets_are_derived_from_the_shipped_catalogs():
     """Rule (3) of 80's known keys: the first word of every name a shipped
     catalog goes by, read from the tree -- so a catalog added later adds
     its bucket without anyone typing it."""
-    from policyforge.frameworks.registry import _shipped_first_words
+    from policyforge.frameworks.registry import _shipped_buckets
 
     expected = {name.lower().split()[0] for d in _shipped() for name in _names(d)}
-    assert _shipped_first_words() == expected
+    assert set(_shipped_buckets()) == expected
     assert {"nist", "hipaa"} <= expected and "acme" not in expected
 
 
 def test_the_fragments_own_example_declares_silently(tmp_path, monkeypatch, fresh_keys):
-    """80's PR 2 ruling: a user following the fragment exactly must not get a
-    warning on every command. `acme` is nobody's key, so nothing can mislead."""
+    """80's PR 2 ruling: a user following the fragment exactly gets no
+    warning and no fact. `acme` is nobody's key, so nothing can mislead."""
     _catalog(
         tmp_path / "frameworks", "acme-baseline", name="Acme Security Baseline", key="acme-baseline"
     )
     monkeypatch.chdir(tmp_path)
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", FrameworkKeyWarning)
-        assert normalize_framework("Acme Security Baseline") == "acme-baseline"
+    assert _silently_keys("Acme Security Baseline") == "acme-baseline"
+    assert key_collisions() == []
 
 
-def test_a_name_that_prose_files_under_another_frameworks_key_is_warned_once(
+def test_a_name_that_prose_files_under_another_frameworks_key_is_stated(
     tmp_path, monkeypatch, fresh_keys
 ):
     """The real hazard (80): `NIST SP 800-53 Privacy Overlay` keys by prose to
     `nist-800-53` -- 800-53's key -- so citations written before its
-    declaration were filed under the wrong catalog. Named, with both keys."""
+    declaration were filed under the wrong catalog. Stated, with both keys
+    and the catalog that declares the other one."""
     _catalog(
         tmp_path / "frameworks",
         "privacy-overlay",
@@ -166,14 +177,46 @@ def test_a_name_that_prose_files_under_another_frameworks_key_is_warned_once(
     )
     assert prose_framework_key("NIST SP 800-53 Privacy Overlay") == "nist-800-53"  # the premise
     monkeypatch.chdir(tmp_path)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always", FrameworkKeyWarning)
-        assert (
-            normalize_framework("NIST SP 800-53 Privacy Overlay") == "nist-800-53-privacy-overlay"
+    assert _silently_keys("NIST SP 800-53 Privacy Overlay") == "nist-800-53-privacy-overlay"
+    (fact,) = key_collisions()
+    assert "'nist-800-53-privacy-overlay'" in fact and "would key to 'nist-800-53'" in fact
+    assert "nist-800-53-r5 declares" in fact
+
+
+def test_frameworks_shows_the_fact_and_a_keying_command_does_not(tmp_path, monkeypatch, fresh_keys):
+    """80's ruling on #347: shown where declarations are inspected, never on
+    every command that loads catalogs. `map` stands for the latter because
+    it keys every control's framework, including this catalog's; `check`
+    does not call `normalize_framework` at all, so it could not show one."""
+    from click.testing import CliRunner
+
+    import policyforge.cli as cli_mod
+
+    _catalog(
+        tmp_path / "frameworks", "nist-privacy", name="NIST Privacy Framework", key="nist-privacy"
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+
+    listed = CliRunner().invoke(cli_mod.cli, ["frameworks"])
+    assert "would key to 'nist'" in listed.output, listed.output
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FrameworkKeyWarning)
+        mapped = CliRunner().invoke(
+            cli_mod.cli,
+            [
+                "map",
+                "--controls",
+                str(CATALOGS / "nist-800-53-r5" / "controls.json"),
+                "--controls",
+                str(tmp_path / "frameworks" / "nist-privacy" / "controls.json"),
+                "--out",
+                str(tmp_path / "crosswalk.json"),
+            ],
         )
-    messages = [str(w.message) for w in caught if issubclass(w.category, FrameworkKeyWarning)]
-    assert len(messages) == 1, messages
-    assert "'nist-800-53-privacy-overlay'" in messages[0] and "'nist-800-53'" in messages[0]
+    assert mapped.exit_code == 0, (mapped.output, mapped.exception)
+    assert "would key to" not in mapped.output
 
 
 def test_two_catalogs_declaring_one_name_differently_are_named_and_the_first_wins(

@@ -987,7 +987,11 @@ def _declare_catalog(out: Path, *, framework: str, source: str) -> str:
         else:
             done = f"{manifest} already declares framework_id {key}."
     reset_declared_keys()  # so keying later in this process reads the new declaration
-    return done
+    # Where a declaration is made is where its prose collision is shown (80 on #347).
+    from policyforge.frameworks.registry import key_collisions
+
+    facts = key_collisions(directory=out.parent)
+    return "\n".join([done, *(f"Note: {fact}" for fact in facts)])
 
 
 def _guard_licensed_write(out: Path, *, force: bool, product: str, licence: str, noun: str):

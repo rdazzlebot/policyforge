@@ -122,6 +122,81 @@ def test_a_playbook_obligation_underlined_as_a_heading_is_still_an_error(tmp_pat
     assert any("Playbook" in f.message and "line 3" in f.message for f in errors), errors
 
 
+PB_TAG = "[NIST AI RMF Playbook Govern 1.1 Action 1]"
+#: Every shape a line can become heading text in, each with a Playbook tag
+#: on its heading text. The population for the conservation test below.
+HEADING_SHAPES = {
+    "atx": f"## Legal {PB_TAG}\n\nBody.\n",
+    "atx-bare-then-text": f"##\nAcme must act. {PB_TAG}\n",
+    "atx-quoted": f"> ## Legal {PB_TAG}\n\nBody.\n",
+    "setext-equals": f"Legal {PB_TAG}\n===\n\nBody.\n",
+    "setext-one-equals": f"Legal {PB_TAG}\n=\n\nBody.\n",
+    "setext-dashes": f"Legal {PB_TAG}\n---\n\nBody.\n",
+    "setext-two-dashes": f"Legal {PB_TAG}\n--\n\nBody.\n",
+    "setext-multiline-first": f"Legal {PB_TAG}\nand more\n---\n\nBody.\n",
+    "setext-multiline-last": f"Legal\nand more {PB_TAG}\n===\n\nBody.\n",
+}
+
+
+@pytest.mark.parametrize("shape", sorted(HEADING_SHAPES))
+def test_every_blanked_line_with_a_playbook_tag_is_seen_by_the_heading_check(shape):
+    """**Conservation** (1d on #350): a line `analyze` removes as heading text
+    must be one `playbook_tagged_headings` reports, or a Playbook tag on it
+    is judged by neither. Derived from the shared classification: every
+    heading-text line carrying a Playbook tag, in every shape."""
+    from policyforge.content.deontic import _HEADING_TEXT, _line_kinds, playbook_tagged_headings
+
+    text = HEADING_SHAPES[shape]
+    lines = text.split("\n")
+    kinds = _line_kinds(lines)
+    tagged_heading_text = {
+        n for n, (line, kind) in enumerate(zip(lines, kinds, strict=True), 1)
+        if kind in _HEADING_TEXT and "Playbook" in line
+    }  # fmt: skip
+    seen = {n for n, _ in playbook_tagged_headings(text)}
+
+    if shape == "atx-bare-then-text":
+        assert tagged_heading_text == set(), "the premise: `##` alone, the tagged line is text"
+        assert len(playbook_obligations_for(text)) == 1
+    else:
+        assert tagged_heading_text, "the premise: this shape puts the tag on heading text"
+    assert tagged_heading_text <= seen
+
+
+def playbook_obligations_for(text: str):
+    from policyforge.content.deontic import playbook_obligations
+
+    return playbook_obligations(text, ("Acme Health", "Acme"))
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["#hashtag Acme must keep a register.", "#1 priority: Acme must keep a register."],
+    ids=["hashtag", "numbered-hash"],
+)
+def test_a_hash_not_followed_by_a_space_is_not_a_heading(line):
+    """The destructive direction (1d on #350): read as a heading, this line
+    would be blanked out of every gate. It stays a sentence, and the
+    Playbook gate reads it."""
+    from policyforge.content.deontic import playbook_tagged_headings
+
+    text = f"{line} {PB_TAG}\n"
+
+    assert playbook_tagged_headings(text) == []
+    assert len(playbook_obligations_for(text)) == 1
+
+
+def test_a_lone_dash_is_not_an_underline_by_choice():
+    """markdown-it would make the line above a setext heading; excluding it
+    is a stated choice, so the line stays in sentence analysis."""
+    from policyforge.content.deontic import playbook_tagged_headings
+
+    text = f"Acme must keep a register. {PB_TAG}\n-\n"
+
+    assert playbook_tagged_headings(text) == []
+    assert len(playbook_obligations_for(text)) == 1
+
+
 def test_with_a_blank_line_before_the_rule_it_is_still_a_sentence():
     """The other arm: a `---` after a blank line is a thematic break, the
     line above stays a sentence, and the Playbook gate reads it."""

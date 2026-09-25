@@ -705,8 +705,11 @@ _ATX_RE = re.compile(r"^[ \t]{0,3}(?:>[ \t]?)*[ \t]{0,3}#{1,6}(?:[ \t]|$)")
 #: `___`, `- - -` and `* * *` did not end a block).
 _THEMATIC_BREAK_RE = re.compile(r"^[ \t]{0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$")
 #: A setext underline: any run of `=`, or two or more `-`, and nothing else.
-#: One `-` alone is an empty list item, so `-` needs two; `=` needs one. It
-#: is an underline only under a paragraph line (see `_heading_blocks`).
+#: It is an underline only under a paragraph line (see `_line_kinds`).
+#: **A lone `-` is excluded by choice, not by CommonMark** (1d on #350:
+#: markdown-it reads `text\n-` as a setext h2). Excluding it keeps the line
+#: above in sentence analysis, where every gate reads it; including it would
+#: blank that line on a single stray character, the destructive direction.
 _SETEXT_UNDERLINE_RE = re.compile(r"^[ \t]{0,3}(?:=+|-{2,})[ \t]*$")
 #: A line that cannot be setext heading text: a list item or a table row.
 _LIST_OR_TABLE_RE = re.compile(r"^[ \t]*(?:[-*+][ \t]|\d+[.)][ \t]|\|)")
@@ -738,7 +741,19 @@ def _line_kinds(lines: list[str]) -> list[str | None]:
             and not _THEMATIC_BREAK_RE.match(lines[above])
         )
         if paragraph_above and _SETEXT_UNDERLINE_RE.match(line):
-            kinds[index], kinds[above] = _UNDERLINE, _SETEXT
+            kinds[index] = _UNDERLINE
+            # The whole paragraph above is the heading, as in CommonMark,
+            # not only its last line (1d on #350): a tag on its first line
+            # must reach the heading check too.
+            while (
+                above >= 0
+                and lines[above].strip()
+                and kinds[above] is None
+                and not _LIST_OR_TABLE_RE.match(lines[above])
+                and not _THEMATIC_BREAK_RE.match(lines[above])
+            ):
+                kinds[above] = _SETEXT
+                above -= 1
         elif _THEMATIC_BREAK_RE.match(line):
             kinds[index] = _BREAK
     return kinds

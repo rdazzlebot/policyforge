@@ -159,6 +159,21 @@ def _complete(send, kwargs: dict):
         return response
     larger = min(first * RETRY_FACTOR, RETRY_CEILING)
     if larger > first:
+        from . import escalation
+
+        # Said before it is sent (#361). The cut-off first attempt already
+        # has its own ledger row here, since each send is a separate call.
+        escalation.announce(
+            model=getattr(response, "model", None) or "the model",
+            first_max_tokens=first,
+            max_tokens=larger,
+            input_tokens=getattr(response, "input_tokens", None),
+            first_request_id=getattr(response, "request_id", None),
+            first_cost_usd=getattr(response, "cost_usd", None),
+            first_output_tokens=getattr(response, "output_tokens", None),
+            first_stop_reason=getattr(response, "stop_reason", None),
+            empty=not (getattr(response, "text", "") or "").strip(),
+        )
         response = _send({**kwargs, "max_tokens": larger}, larger)
         if not truncated(response):
             return response

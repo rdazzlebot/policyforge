@@ -26,6 +26,7 @@ from __future__ import annotations
 import os
 import time
 
+from . import escalation
 from ._inline_thinking import answer_and_stripped, exhausted, needs_more_room, retry_budget
 from .base import LLMProvider, LLMResponse, ProviderRejected, SchemaReplyError
 
@@ -271,6 +272,18 @@ class LiteLLMProvider(LLMProvider):
 
         if needs_more_room(text, finish_reason):
             second = retry_budget(max_tokens)
+            first_usage = getattr(response, "usage", None)
+            # Said before it is sent, and kept for this call's ledger row (#361).
+            escalation.announce(
+                model=self.model,
+                first_max_tokens=max_tokens,
+                max_tokens=second,
+                input_tokens=getattr(first_usage, "prompt_tokens", None),
+                first_request_id=getattr(response, "id", None),
+                first_cost_usd=cost,
+                first_output_tokens=getattr(first_usage, "completion_tokens", None),
+                first_stop_reason=finish_reason,
+            )
             response = self._create({**payload, "max_tokens": second}, temperature)
             text, finish_reason, retry_cost, stripped = self._read(response)
             if needs_more_room(text, finish_reason):

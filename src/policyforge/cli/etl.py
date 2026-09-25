@@ -946,6 +946,95 @@ def _lands_in_bundled_catalogs(out: Path) -> bool:
     return False
 
 
+def _add_framework_id(manifest: Path, key: str) -> str:
+    """Add `framework_id: key` to the user's own `manifest`, or say why not.
+
+    **The file is the user's, so it is never left worse** (1d on #347). One
+    that does not parse, or does not hold a mapping, is not touched. After
+    the line is appended, the file is parsed again and must hold exactly
+    what it held plus `framework_id`; otherwise -- a `...` document-end
+    marker puts the line in a second document, for one -- its original
+    bytes are put back. Every outcome is said, never "Declared" for a file
+    that did not take the declaration.
+    """
+    import yaml
+
+    original = manifest.read_bytes()
+    add = f"Add `framework_id: {key}` to it yourself."
+    try:
+        before = yaml.safe_load(original.decode("utf-8"))
+    except (yaml.YAMLError, UnicodeDecodeError) as exc:
+        return f"{manifest} could not be read ({type(exc).__name__}), so it was left alone. {add}"
+    if before is None:
+        before = {}
+    if not isinstance(before, dict):
+        return f"{manifest} does not hold a mapping, so it was left alone. {add}"
+    if "framework_id" in before:
+        existing = str(before["framework_id"] or "").strip()
+        if not existing:
+            return f"{manifest} declares an empty framework_id, so it was left alone. {add}"
+        if existing != key:
+            return (
+                f"{manifest} already declares framework_id {existing}; the import would "
+                f"have declared {key}. Keeping yours."
+            )
+        return f"{manifest} already declares framework_id {key}."
+
+    text = original.decode("utf-8")
+    write_text_lf(manifest, text.rstrip("\r\n") + f"\nframework_id: {key}\n")
+    try:
+        after = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        after = None
+    if after != {**before, "framework_id": key}:
+        manifest.write_bytes(original)
+        return (
+            f"{manifest} did not take an appended framework_id (it would have changed what "
+            f"the file says), so it was put back as it was. {add}"
+        )
+    return f"Declared framework_id {key} in {manifest}."
+
+
+def _declare_catalog(out: Path, *, framework: str, source: str) -> str:
+    """Declare the catalog just written at `out` by its framework key (#295).
+
+    A catalog a user brings has no `framework.yaml`, so its name was keyed by
+    prose -- an alias if one matched, else its first word. The importer knows
+    what it imported, so it writes the declaration the bundled catalogs carry:
+    `framework_id:` equal to the key the name already had, so nothing keyed
+    before the import moves. The manifest says `licence: licensed`, because
+    everything these importers read is.
+
+    **A manifest already there is the user's.** Without a `framework_id` it
+    gains one line (comments and keys kept); with one, it is left alone and
+    a different value is named -- the declaration wins, and a person chose
+    it. Returns what was done, for the command to print.
+    """
+    from policyforge.mapping.crosswalk import prose_framework_key, reset_declared_keys
+
+    key = prose_framework_key(framework)
+    manifest = out.parent / "framework.yaml"
+    if not manifest.exists():
+        write_text_lf(
+            manifest,
+            f"name: {framework}\nframework_id: {key}\nlicence: licensed\nsource: {source}\n",
+        )
+        done = f"Declared {manifest}: framework_id {key}."
+    else:
+        done = _add_framework_id(manifest, key)
+    # Both caches, so a long-running process keys the new declaration and
+    # knows the new catalog's name in a tag (1d on #347).
+    from policyforge.content.tags import reset_known_framework_names
+
+    reset_declared_keys()
+    reset_known_framework_names()
+    # Where a declaration is made is where its prose collision is shown (80 on #347).
+    from policyforge.frameworks.registry import key_collisions
+
+    facts = key_collisions(directory=out.parent)
+    return "\n".join([done, *(f"Note: {fact}" for fact in facts)])
+
+
 def _guard_licensed_write(out: Path, *, force: bool, product: str, licence: str, noun: str):
     """Refuse to write a licensed catalog anywhere it could be redistributed.
 
@@ -1080,6 +1169,9 @@ def etl_hitrust(export_path: Path, version: str, out: Path | None, force: bool):
     out.parent.mkdir(parents=True, exist_ok=True)
     write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
     click.echo(f"\nWrote {len(controls)} HITRUST control references -> {out}")
+    from policyforge.ingest.hitrust import FRAMEWORK
+
+    click.echo(_declare_catalog(out, framework=FRAMEWORK, source="your MyCSF export"))
 
 
 @cli.command("etl-govramp")
@@ -1183,6 +1275,9 @@ def etl_govramp(export_path: Path, impact_level: str | None, version: str, out: 
     write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
     enhancements = sum(len(c.enhancements) for c in controls)
     click.echo(f"\nWrote {len(controls)} GovRAMP controls ({enhancements} enhancements) -> {out}")
+    from policyforge.ingest.govramp import FRAMEWORK
+
+    click.echo(_declare_catalog(out, framework=FRAMEWORK, source="your GovRAMP controls matrix"))
 
 
 @cli.command("etl-hipaa-crosswalk")

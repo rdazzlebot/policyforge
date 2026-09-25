@@ -643,6 +643,16 @@ def frameworks_cmd():
         raise SystemExit(1)
 
     click.echo(report.format_report())
+    # Where declarations are inspected is where their prose collisions are
+    # shown (80 on #347): facts for the user to judge, never a failure.
+    from policyforge.frameworks.registry import key_collisions
+
+    facts = key_collisions(config)
+    if facts:
+        click.echo("")
+        click.echo("Framework keys worth a look:")
+        for fact in facts:
+            click.echo(f"  {fact}")
     if report.allowed:
         click.echo("")
         click.echo(

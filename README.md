@@ -1772,9 +1772,15 @@ Each catalog directory carries a `framework.yaml` declaring its terms:
 ```yaml
 id: hitrust-csf
 name: HITRUST CSF v11.3
+framework_id: hitrust-csf   # the key crosswalks, coverage and citations file it under
 licence: licensed        # or: public-domain
 source: MyCSF export, 2026-01
 ```
+
+`etl-hitrust` and `etl-govramp` write this file beside the catalog they
+import, if there isn't one yet. Without a `framework_id`, a name is keyed by
+the built-in table or else by its first word, so every unlisted NIST name
+shares `nist`.
 
 `policyforge frameworks` lists what's on disk and where each one stands.
 `policyforge check` fails on licensed content committed to a repo that hasn't

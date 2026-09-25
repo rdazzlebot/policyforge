@@ -193,6 +193,40 @@ class FrameworkKeyWarning(UserWarning):
     or two catalogs declaring one name with different keys (#295)."""
 
 
+def config_or_defaults(what: str, category: type[Warning] = UserWarning) -> dict:
+    """This project's config, or `{}` -- the default search paths -- if it
+    cannot be read. The ONE copy of that fallback (1d on #346).
+
+    **A lookup never fails on the config file** (1d on #344). Keying a
+    framework name runs under commands that never read config themselves,
+    like `map`, so a config that does not parse must not become their
+    traceback. (`check` does read config, since #329, and still raises on a
+    malformed one; this fallback does not change that.) It is named in one
+    warning of `category`, saying `what` was read from the default search
+    paths and the bundled catalogs instead. A missing config is ordinary and
+    silent.
+    """
+    import warnings
+
+    import yaml
+
+    from policyforge.config import load_config, resolve_config_path
+
+    try:
+        return load_config()
+    except FileNotFoundError:
+        return {}
+    except (yaml.YAMLError, OSError, UnicodeDecodeError, ValueError) as exc:
+        warnings.warn(
+            category(
+                f"{resolve_config_path()} could not be read ({type(exc).__name__}), so {what} "
+                "from the default search paths and the bundled catalogs only."
+            ),
+            stacklevel=4,
+        )
+        return {}
+
+
 def _catalog_roots(config: dict | None) -> list[Path]:
     """The search paths, then the bundled catalogs: every place a catalog
     this project can cite may live, wherever the command runs. A
@@ -222,8 +256,9 @@ def _catalog_names(
     directory reached twice is read once, the first time. Rows that cannot
     be read cost the row names, not the manifest's.
 
-    `declared_keys` reads catalogs through this, both for the declarations
-    and for the shipped catalogs' first words (#295, PR 2).
+    `known_framework_names` and `declared_keys` both read catalogs through
+    this, so the names a tag part is matched against and the names a key is
+    declared for cannot drift apart (9b on #346).
     """
     import json
 
@@ -245,6 +280,23 @@ def _catalog_names(
                 except (OSError, ValueError):
                     pass
             yield directory, framework, sorted(n for n in names if n.strip())
+
+
+def known_framework_names(
+    config: dict | None = None, *, roots: list[Path] | None = None
+) -> frozenset[str]:
+    """Every framework name a catalog on disk goes by (#340).
+
+    See `_catalog_names` for which names and which catalogs: a catalog a
+    user brings, under `frameworks/` or `local_content/`, is known as surely
+    as a shipped one. Derived from the catalogs, never typed.
+
+    The ONE list of names both readers of a tag's parts use (80's ruling on
+    #340): the Playbook gate, to tell a part naming another framework from a
+    shorthand part that inherits, and `satisfies`, which adds the catalogs it
+    has loaded.
+    """
+    return frozenset(n for _, _, names in _catalog_names(config, roots) for n in names)
 
 
 def _shipped_buckets() -> dict[str, str]:

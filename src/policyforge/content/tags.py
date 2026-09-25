@@ -86,6 +86,33 @@ def source_tags(text: str) -> list[str]:
     return SOURCE_TAG_RE.findall(text)
 
 
+_KNOWN_NAMES: frozenset[str] | None = None
+
+
+def known_framework_names() -> frozenset[str]:
+    """Every framework name a catalog on disk goes by, read once (#340).
+
+    See `frameworks.registry.known_framework_names`. A config file that does
+    not parse is named in one warning and the default search paths are read
+    instead, so a tag check never becomes a config traceback: the rule 1d set
+    for framework keys on #344, through the same `config_or_defaults`.
+    """
+    global _KNOWN_NAMES
+    if _KNOWN_NAMES is None:
+        from policyforge.frameworks.registry import config_or_defaults
+        from policyforge.frameworks.registry import known_framework_names as read
+
+        config = config_or_defaults("framework names were read")
+        _KNOWN_NAMES = read(config)  # assigned only after the read succeeds
+    return _KNOWN_NAMES
+
+
+def reset_known_framework_names() -> None:
+    """Forget the cached names: after a catalog is written, or in tests."""
+    global _KNOWN_NAMES
+    _KNOWN_NAMES = None
+
+
 @dataclass(frozen=True)
 class TagPart:
     """One `|`-separated citation in a tag, with the framework it names."""

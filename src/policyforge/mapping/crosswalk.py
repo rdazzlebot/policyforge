@@ -91,32 +91,17 @@ def _declared_keys() -> dict[str, str]:
 def declared_keys_from_config() -> dict[str, str]:
     """`declared_keys` for this project's configured search paths.
 
-    **Keying never fails on the config file** (1d on #344). `normalize_framework`
-    runs under commands that never read config, like `map`, so a config that
-    does not parse must not become their traceback. It is named once in a
-    `FrameworkKeyWarning`, and the default search paths and the bundled
-    catalogs are read instead. A missing config is ordinary and silent.
+    **Keying never fails on the config file** (1d on #344): an unreadable
+    config is named once in a `FrameworkKeyWarning` and the defaults are
+    read, through `registry.config_or_defaults`, the one copy of that rule.
     """
-    import warnings
+    from policyforge.frameworks.registry import (
+        FrameworkKeyWarning,
+        config_or_defaults,
+        declared_keys,
+    )
 
-    import yaml
-
-    from policyforge.config import load_config, resolve_config_path
-    from policyforge.frameworks.registry import FrameworkKeyWarning, declared_keys
-
-    try:
-        config = load_config()
-    except FileNotFoundError:
-        config = {}
-    except (yaml.YAMLError, OSError, UnicodeDecodeError, ValueError) as exc:
-        warnings.warn(
-            FrameworkKeyWarning(
-                f"{resolve_config_path()} could not be read ({type(exc).__name__}), so framework "
-                "keys were declared from the default search paths and the bundled catalogs only."
-            ),
-            stacklevel=3,
-        )
-        config = {}
+    config = config_or_defaults("framework keys were declared", FrameworkKeyWarning)
     return declared_keys(config)
 
 

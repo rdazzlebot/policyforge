@@ -18,20 +18,25 @@ measurement and is not done here.
 escalation for the current call; `RecordingProvider` takes them into the
 call's one row (`CallRecord.escalations`). That row's cost is already the
 summed cost where the provider reports one (LiteLLM), so a separate row for
-the first attempt would count it twice. Splitting attempts into rows is
-#343's change.
+the first attempt would count it twice. A call that fails keeps the same
+shape (#343): every billed request's id is on the row or in `escalations`,
+and, when every attempt reports a cost, its cost is in the row's total. If
+any attempt's cost is unknown the row's cost is None, never the known part
+presented as the whole (9b and 1d on #378). One row per request was
+considered and dropped (80 on #343), because that conservation is what it
+was for.
 
-**When `first_cost_usd` may be added to a ledger total** (#372, measured with
-fakes billing known amounts):
+**`first_cost_usd` is never added to a ledger total** (#372, measured with
+fakes billing known amounts; #343 closed the error-row exception):
 
-- **Never, on a row that has a cost.** On LiteLLM's 8x path the row's
-  `cost_usd` already sums both attempts. On `effort`'s 2x path the first
-  attempt is its own row, and the escalation on the second row repeats it.
-  The sum of row costs equals what was billed on both paths.
-- **On an error row it is the only record of the first charge.** When the
-  re-send fails too, the call raises and its row has no response, so
-  `cost_usd` is None. **The re-send's own charge is recorded nowhere**, and
-  that is #343: $0.20 + $1.30 billed, $0.00 in the row, $0.20 here.
+- **On a row that has a cost.** On LiteLLM's 8x path the row's `cost_usd`
+  already sums both attempts. On `effort`'s 2x path the first attempt is
+  its own row, and the escalation on the second row repeats it. The sum of
+  row costs equals what was billed on both paths.
+- **On an error row too.** When the re-send fails, the exception carries
+  what both attempts billed, so the row's `cost_usd` is the sum: $0.20 +
+  $1.30 billed, $1.50 in the row, and the $0.20 here is already in it. A
+  provider that reports no cost leaves the row's cost None, as on success.
 
 **Scoped to `ledger.about`.** Each `about` block starts a fresh pending list
 and closes it on exit, so an escalation from a call that recorded no row
@@ -66,11 +71,15 @@ class Escalation:
     price_source: str | None
     #: The billed attempt that came back empty or cut off.
     first_request_id: str | None
-    #: Already counted in any row that has a cost: never add it to one. On an
-    #: error row it is the only record of this charge (see the module doc).
+    #: Already counted in its row's cost, error rows included (#343): never
+    #: add it to one (see the module doc).
     first_cost_usd: float | None
     first_output_tokens: int | None
     first_stop_reason: str | None
+    #: The model whose reply came back empty, when it is not `model`: a
+    #: cascade's hop to a stronger model (#343). None for a re-send to the
+    #: same model.
+    first_model: str | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -110,6 +119,7 @@ def announce(
     first_cost_usd: float | None = None,
     first_output_tokens: int | None = None,
     first_stop_reason: str | None = None,
+    first_model: str | None = None,
     empty: bool = True,
     out=None,
 ) -> Escalation:
@@ -135,8 +145,10 @@ def announce(
         first_cost_usd=first_cost_usd,
         first_output_tokens=first_output_tokens,
         first_stop_reason=first_stop_reason,
+        first_model=first_model if first_model and first_model != model else None,
     )
     what = escalation.subject or "this request"
+    whose = f"{escalation.first_model}'s reply" if escalation.first_model else "the reply"
     if escalation.worst_case_usd is not None:
         cost = (
             f"worst case ${escalation.worst_case_usd:.4f} at {escalation.price_source}'s list price"
@@ -145,7 +157,7 @@ def announce(
         cost = f"worst case unpriced: up to {max_tokens:,} output tokens"
     spent = f" (${first_cost_usd:.4f}, billed)" if first_cost_usd is not None else " (billed)"
     (out or sys.stderr).write(
-        f"Warning: re-sending {what} to {model} with max_tokens {max_tokens:,}: the reply at "
+        f"Warning: re-sending {what} to {model} with max_tokens {max_tokens:,}: {whose} at "
         f"{first_max_tokens:,} came back {'empty' if empty else 'cut off'}{spent}; "
         f"{cost}.\n"
     )

@@ -261,8 +261,135 @@ _PIPES_TO_CONSUMER = re.compile(rf"{_PIPE}(?:{_CONSUMERS})\b")
 #: A `set` or `shopt` statement, up to the end of its statement.
 _SET_OR_SHOPT = re.compile(r"(?<![\w-])(set|shopt)\b([^;&|]*)")
 
+#: What may stand before a command: an operator, or a keyword that starts
+#: a command list.
+_COMMAND_STARTS = re.compile(r"(?:^|[;&|({!]|\b(?:then|do|else))$")
 
-def _pipefail_changes(line: str) -> list[tuple[int, bool]]:
+
+#: Where a command runs UNCONDITIONALLY, in this shell: the start of a line
+#: or quoted program, or after `;`, `(`, `{` or `!`. NOT after `&&`/`||`
+#: (it runs only if the left side went one way), `|` or a lone `&` (a
+#: subshell or background job), or `then`/`else`/`do` (a branch or a loop
+#: body that may run zero times). policyforge-9b on #331: `false && set -o
+#: pipefail`, `true || set -o pipefail` and `[ -n "$CI" ] && set -o pipefail`
+#: were credited, and bash leaves pipefail OFF after each of the first two.
+_UNCONDITIONAL_STARTS = re.compile(r"(?:^|[;({!])$")
+
+#: Block openers and closers, read only at a command position in the top-level
+#: unquoted shell, so a block's depth carries across lines. A `set` inside an
+#: `if`/`for`/`while`/`until`/`case` block, or inside a function body (which
+#: runs only when called), is not credited. A plain `{ ...; }` group runs, so
+#: it is tracked only so that its `}` is not mistaken for a function's.
+_BLOCK_WORD = re.compile(
+    r"\b(?P<open>if|for|while|until|case|function)\b|\b(?P<close>fi|done|esac)\b"
+    r"|(?P<fn>\(\)\s*\{)|(?P<brace>\{)(?=\s)|(?P<end>\})"
+)
+_CONDITIONAL_BLOCKS = frozenset({"if", "for", "while", "until", "case", "function", "fn"})
+
+
+def _open_quote_after(line: str) -> str:
+    """The quote still open at the end of `line` in the top-level shell, or "".
+
+    A quote left open inside `$( )` is not carried, a stated limit: the next
+    line is then read as commands, as it was before #331.
+    """
+    quote, depth = _nesting(line + " ")[-1]
+    return quote if depth == 0 else ""
+
+
+def _statement_prefix(line: str, states: list[tuple[str, int]], start: int) -> str:
+    """The text before `start` in its own quoting context, right-stripped."""
+    k = start
+    while k > 0 and states[k - 1] == states[start]:
+        k -= 1
+    return line[k:start].rstrip()
+
+
+def _at_command_position(line: str, states: list[tuple[str, int]], start: int) -> bool:
+    """Whether the word at `start` is where a command begins, reading only
+    the text in its own quoting context (so a quoted program's first word
+    counts, and an `echo` argument does not)."""
+    return bool(_COMMAND_STARTS.search(_statement_prefix(line, states, start)))
+
+
+def _blocks_at(
+    line: str, states: list[tuple[str, int]], blocks: tuple[str, ...]
+) -> tuple[dict[int, tuple[str, ...]], tuple[str, ...]]:
+    """The open-block stack at each block word in `line`, and after the line.
+
+    Carried across lines by `findings`, so a multi-line
+    `if ...; then` / `set -o pipefail` / `fi` is seen as conditional.
+    **A small tracker, not a parser**, and its limits are stated: keywords
+    are read only in the top-level unquoted shell (inside a quoted `bash -c`
+    program only the operator rule applies), and a CALLED function's `set`
+    is not credited either (safe direction: a false alarm, never a false
+    clear).
+    """
+    stack = list(blocks)
+    after: dict[int, tuple[str, ...]] = {}
+    for match in _BLOCK_WORD.finditer(line):
+        at = match.start()
+        if states[at] != ("", 0):
+            continue
+        if not match.group("fn") and not _at_command_position(line, states, at):
+            continue
+        if match.group("open"):
+            stack.append(match.group("open"))
+        elif match.group("close"):
+            for i in range(len(stack) - 1, -1, -1):
+                if stack[i] in ("if", "for", "while", "until", "case"):
+                    del stack[i]
+                    break
+        elif match.group("fn"):
+            stack.append("fn")
+        elif match.group("brace"):
+            if stack and stack[-1] == "function":
+                stack[-1] = "fn"
+            else:
+                stack.append("group")
+        elif match.group("end") and stack and stack[-1] in ("fn", "group"):
+            stack.pop()
+        after[at] = tuple(stack)
+    return after, tuple(stack)
+
+
+def _in_conditional_block(after: dict[int, tuple[str, ...]], blocks, start: int) -> bool:
+    """Whether `start` sits inside an if/loop/case block or a function body,
+    given the stack recorded after each block word (`_blocks_at`)."""
+    earlier = [p for p in after if p < start]
+    stack = after[max(earlier)] if earlier else tuple(blocks)
+    return any(kind in _CONDITIONAL_BLOCKS for kind in stack)
+
+
+def _reaches(line: str, states: list[tuple[str, int]], change: int, pipe: int) -> bool:
+    """Whether a pipefail change at `change` still governs the shell at `pipe`.
+
+    Its context must stay open in between. An unquoted change lasts until its
+    `$( )` or `( )` subshell closes, and a quoted one (a `bash -c` program)
+    until its quote closes. A pipe inside a quoted program is reached only
+    from inside that same program, because `bash -c` is a new shell that does
+    not inherit the outer one's pipefail. Each rule was checked against real
+    bash on #330: `x=$(set -o pipefail)`, `( set -o pipefail )` and an outer
+    `set` before `bash -c '...'` all leave the pipe without pipefail.
+    """
+    quote, depth = states[change]
+    parens = 0
+    for i in range(change, min(pipe, len(states))):
+        here = states[i]
+        if here[1] < depth or (quote and here[1] == depth and here[0] != quote):
+            return False
+        if here == (quote, depth):
+            if line[i] == "(" and not (i > 0 and line[i - 1] == "$"):
+                parens += 1
+            elif line[i] == ")":
+                parens -= 1
+                if parens < 0:
+                    return False
+    # A pipe inside a quoted program is reached only from that same program.
+    return not (pipe < len(states) and states[pipe][0] and states[pipe] != (quote, depth))
+
+
+def _pipefail_changes(line: str, blocks: tuple[str, ...] = ()) -> list[tuple[int, bool]]:
     """Every place in `line` that turns pipefail on (True) or off (False).
 
     **On and off are read by ONE interpreter of the options, not two
@@ -277,9 +404,31 @@ def _pipefail_changes(line: str) -> list[tuple[int, bool]]:
     next word as the option name. The word's sign decides on or off.
     `shopt`: the flags must include `o` (set-style options); `s` turns the
     option on and `u` turns it off.
+
+    **Only a `set`/`shopt` that RUNS counts** (#330, policyforge-ba): one at
+    a command position (the start of its line or quoted program, or after
+    `;`, `&&`, `||`, `|`, `(`, `{`, `then`, `do`, `else`, `!`). A mention
+    does not count: `git commit -m "set -o pipefail in ci"` or
+    `echo set -o pipefail` left the lint believing pipefail was on, and it
+    cleared a real swallow. Which pipes a change reaches is `_pipefail_at`'s
+    question.
     """
+    states = _nesting(line)
+    after, _ = _blocks_at(line, states, blocks)
     changes: list[tuple[int, bool]] = []
     for match in _SET_OR_SHOPT.finditer(line):
+        at = match.start()
+        # Unconditional, and not inside a block that may not run (#331, 9b).
+        if not _UNCONDITIONAL_STARTS.search(_statement_prefix(line, states, at)):
+            continue
+        if _in_conditional_block(after, blocks, at):
+            continue
+        # Nor a `set` that is the left side of a pipe or backgrounded: each
+        # runs in a subshell. Bash-verified on #331 (ba): `set -o pipefail | cat`,
+        # `|& cat` and `& wait` leave it OFF; `&&`/`||` after it do not.
+        after_set = line[match.end() :].lstrip()
+        if after_set.startswith(("|", "&")) and not after_set.startswith(("||", "&&")):
+            continue
         command, words = match.group(1), match.group(2).split()
         if command == "set":
             j = 0
@@ -649,12 +798,47 @@ def _strip_comment(line: str) -> str:
     return "".join(out)
 
 
-def _pipefail_at(state: bool, line: str, position: int) -> bool:
+def _pipefail_at(state: bool, line: str, position: int, blocks: tuple[str, ...] = ()) -> bool:
     """Whether pipefail is on at `position` in `line`, given its state
-    before the line: each `set`/`shopt` that turns it on or off earlier in
-    the line changes it, in order."""
-    for start, value in sorted(_pipefail_changes(line)):
-        if start < position:
+    before the line and the blocks open at its start: each `set`/`shopt`
+    that RUNS UNCONDITIONALLY earlier in the line and still governs the shell
+    at `position` changes it, in order (#330, #331). A pipe inside a quoted
+    program starts from off, because `bash -c` is a new shell."""
+    states = _nesting(line)
+    if position < len(states) and states[position][0]:
+        state = False
+    for start, value in sorted(_pipefail_changes(line, blocks)):
+        if start < position and _reaches(line, states, start, position):
+            state = value
+    return state
+
+
+def _pipefail_after(state: bool, line: str, blocks: tuple[str, ...] = ()) -> bool:
+    """Pipefail in the top-level shell AFTER `line`, carried to the next line.
+
+    Only a change made in the top-level unquoted shell carries, and only if
+    no `( )` subshell around it closes later on the line. A `set` inside a
+    quote never does: it is text, or a `bash -c` program that ends with the
+    quote. **Separate from `_pipefail_at` on purpose** (#331, 9b): asking
+    `_pipefail_at` about a position past the end missed a quote that closes
+    on the line's last character, so the continuation line of a multi-line
+    `git commit -m \"...\"` that began `set -o pipefail` was carried as ON.
+    """
+    states = _nesting(line)
+    for start, value in sorted(_pipefail_changes(line, blocks)):
+        if states[start] != ("", 0):
+            continue
+        parens = 0
+        for i in range(start, len(line)):
+            if states[i] != ("", 0):
+                continue
+            if line[i] == "(" and not (i > 0 and line[i - 1] == "$"):
+                parens += 1
+            elif line[i] == ")":
+                parens -= 1
+                if parens < 0:
+                    break
+        else:
             state = value
     return state
 
@@ -691,19 +875,25 @@ def findings(sources: list[Source]) -> list[Finding]:
         #: The delimiter of a heredoc whose body is DATA (a review, a commit
         #: message, a Python script), so its lines are not commands.
         heredoc_end = ""
+        #: Blocks open at the start of the line (if/loop/case/function), carried
+        #: so a `set` inside a multi-line conditional block is not credited (#331).
+        blocks: tuple[str, ...] = ()
+        #: A quote left open at the end of a line (a multi-line `-m "..."`), carried
+        #: so its continuation is read as quoted text, not as commands (#331, 9b).
+        carried_quote = ""
         for number, raw in source.lines:
             if heredoc_end:
                 if raw.strip() == heredoc_end:
                     heredoc_end = ""
                 continue
-            line = _strip_comment(raw)
+            line = _strip_comment(carried_quote + raw)
             if not line.strip():
                 continue
             opened = _HEREDOC.search(line)
             if opened and not _SHELL_READS_HEREDOC.search(line[: opened.start()]):
                 heredoc_end = opened.group("tag")
             piped = _PIPES_TO_CONSUMER.search(line)
-            guarded = piped is not None and _pipefail_at(pipefail, line, piped.start())
+            guarded = piped is not None and _pipefail_at(pipefail, line, piped.start(), blocks)
 
             # `$?` read where it can only mean a stream consumer's status:
             # right after `x | tail ;` on the same line, or at the start of
@@ -713,7 +903,7 @@ def findings(sources: list[Source]) -> list[Finding]:
             status = _READS_STATUS.search(line)
             same_line = _STATUS_AFTER_PIPE.search(line)
             if status and (
-                (same_line and not _pipefail_at(pipefail, line, same_line.start()))
+                (same_line and not _pipefail_at(pipefail, line, same_line.start(), blocks))
                 or (unguarded_pipe_above and _READS_STATUS.search(_first_statement(line)))
             ):
                 results.append(
@@ -741,7 +931,9 @@ def findings(sources: list[Source]) -> list[Finding]:
                 )
             # Carry the state to the next line: every set/unset on this one,
             # and whether it ENDS in an unguarded pipe into a consumer.
-            pipefail = _pipefail_at(pipefail, line, len(line) + 1)
+            pipefail = _pipefail_after(pipefail, line, blocks)
+            blocks = _blocks_at(line, _nesting(line), blocks)[1]
+            carried_quote = _open_quote_after(line)
             unguarded_pipe_above = bool(_ENDS_IN_CONSUMER_PIPE.search(line)) and not guarded
 
             if not (source.requires_pipefail and piped):

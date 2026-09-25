@@ -53,6 +53,12 @@ when set after the pipe, set in another block, or turned off again by any of
 `shopt -uo pipefail`. Each spelling was checked against real bash, not taken
 from documentation.
 
+Only a `set` that runs counts, and only in the shell where it runs. A
+mention does not count, as in `git commit -m "set -o pipefail in ci"` or
+`echo set -o pipefail`. A `set` inside `$( )` or `( )` does not leak out of
+that subshell. An outer `set` does not reach a `bash -c '…'` program, which
+is a new shell. Each of these rules was checked against bash (#330).
+
 **Measured before shipping (#213):** replaying one session's 2,742 typed
 commands found 57 findings. 25 were consequential: a push gated on `tail`, a
 stale container run after a failed build, and five `$?` read from a stream

@@ -953,3 +953,146 @@ def test_each_bash_verified_off_spelling_is_still_flagged(spelling):
     again."""
     command = f"set -o pipefail; {spelling}; python scripts/check.py | tail -4 && git push"
     assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+# --- #330: pipefail MENTIONED is not pipefail SET ------------------------------------
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'git commit -m "set -o pipefail in ci"; python -m pytest -q | tail -1 && git push',
+        "echo set -o pipefail; python -m pytest -q | tail -1 && git push",
+        "git log --grep 'set -o pipefail' | head; python -m pytest -q | tail -1 && git push",
+        "bash -c 'set -o pipefail'; python -m pytest -q | tail -1 && git push",
+        'echo "set -o pipefail"\npython -m pytest -q | tail -1 && git push',
+    ],
+)
+def test_pipefail_mentioned_does_not_clear_a_swallow(command):
+    """**The unsafe direction** (policyforge-ba, #330). A `set -o pipefail`
+    that is only TEXT (a commit message, an echo argument, a grep pattern), or
+    that runs in ANOTHER shell (`bash -c '...'`), left the lint believing
+    pipefail was on here, and it cleared the swallowed status that follows.
+    The last case carries the mention to the next line."""
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "set -o pipefail; python -m pytest -q | tail -1 && git push",
+        "! set -o pipefail; python -m pytest -q | tail -1 && git push",
+        "{ set -o pipefail; }; python -m pytest -q | tail -1 && git push",
+        "bash -c 'set -o pipefail; python -m pytest -q | tail -1 && git push'",
+        "set -o pipefail; n=$(python -m pytest -q | tail -1) && git push",
+        "set -o pipefail\npython -m pytest -q | tail -1 && git push",
+    ],
+)
+def test_pipefail_really_set_still_clears(command):
+    """What #330's fix must ALLOW. A `set` at a command position; the same
+    `bash -c` program as the pipe; and a `$( )`, which inherits the shell's
+    options. The last case carries a real `set` to the next line."""
+    assert shell_status.check_command(command) == []
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "x=$(set -o pipefail); python -m pytest -q | tail -1 && git push",
+        "( set -o pipefail ); python -m pytest -q | tail -1 && git push",
+        "( set -o pipefail; x=$(true) ); python -m pytest -q | tail -1 && git push",
+        "set -o pipefail; bash -c 'python -m pytest -q | tail -1 && git push'",
+        "set -o pipefail\nbash -c 'python -m pytest -q | tail -1 && git push'",
+    ],
+)
+def test_pipefail_set_in_another_shell_does_not_reach_the_pipe(command):
+    """Bash-verified on #330: a `set` inside `$( )` or `( )` does not leak
+    out of that subshell, and an outer `set` does not reach a `bash -c`
+    program, which is a new shell. Each left the pipe unguarded, and the
+    lint must see it so. The `( )` case was found open while writing these."""
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "false && set -o pipefail; python -m pytest -q | tail -1 && git push",
+        "true || set -o pipefail; python -m pytest -q | tail -1 && git push",
+        '[ -n "$CI" ] && set -o pipefail; python -m pytest -q | tail -1 && git push',
+        "f(){ set -o pipefail; }; python -m pytest -q | tail -1 && git push",
+        "true | set -o pipefail; python -m pytest -q | tail -1 && git push",
+        'if [ -n "$CI" ]; then\n  set -o pipefail\nfi\npython -m pytest -q | tail -1 && git push',
+        "f() {\n  set -o pipefail\n}\npython -m pytest -q | tail -1 && git push",
+        # Conditional as WRITTEN, though bash would run them (true && ...,
+        # if true). A static check cannot know the branch, so it credits
+        # neither: a false alarm, never a false clear.
+        "true && set -o pipefail; python -m pytest -q | tail -1 && git push",
+        "if true; then set -o pipefail; fi; python -m pytest -q | tail -1 && git push",
+    ],
+)
+def test_a_conditional_or_deferred_set_is_not_credited(command):
+    """**The unsafe direction** (policyforge-9b on #331). A `set` after
+    `&&`/`||`, in a pipeline stage, in an `if` body (on one line or across
+    three), or in a function body that is defined and not called, may not
+    run. The first five and the multi-line `if` were checked in bash: OFF.
+    Crediting any of them cleared a real swallow."""
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+def test_a_set_after_a_closed_block_is_credited():
+    """The block tracker must CLOSE blocks too: after `fi`, a `set` is
+    unconditional again."""
+    command = "if true; then echo x; fi\nset -o pipefail\npython -m pytest -q | tail -1 && git push"
+    assert shell_status.check_command(command) == []
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'git commit -m "Fix the gate\nset -o pipefail is now read as a state"\n'
+        "python -m pytest -q | tail -1 && git push",
+        "printf 'a\nset -o pipefail\n'\npython -m pytest -q | tail -1 && git push",
+        "( set -o pipefail )\npython -m pytest -q | tail -1 && git push",
+        "bash -c 'set -o pipefail'\npython -m pytest -q | tail -1 && git push",
+    ],
+)
+def test_a_set_inside_a_multi_line_quote_or_another_shell_does_not_carry(command):
+    """**#330's own subject, across lines** (policyforge-9b on #331). The
+    continuation line of a multi-line quoted string that begins
+    `set -o pipefail` is text, and it was carried as ON, both because the
+    quote was not carried into the next line and because the end-of-line
+    carry missed a quote closing on the last character."""
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'echo "one\ntwo"\nset -o pipefail\npython -m pytest -q | tail -1 && git push',
+        'set -o pipefail; git commit -m "multi\nline"\npython -m pytest -q | tail -1 && git push',
+    ],
+)
+def test_a_real_set_around_a_multi_line_quote_still_carries(command):
+    """The other side: the carried quote must END where the quote closes, and
+    a real top-level `set` before a multi-line message still governs the
+    shell after it."""
+    assert shell_status.check_command(command) == []
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    ["set -o pipefail | cat", "set -o pipefail |& cat", "set -o pipefail & wait"],
+)
+def test_a_set_in_a_pipeline_stage_or_backgrounded_is_not_credited(prefix):
+    """policyforge-ba on #331: each runs the `set` in a subshell, so bash
+    leaves pipefail OFF (verified), yet the lint cleared the swallow."""
+    command = f"{prefix}; python -m pytest -q | tail -1 && git push"
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+@pytest.mark.parametrize("prefix", ["set -o pipefail && true", "set -o pipefail || true"])
+def test_a_set_followed_by_and_or_is_still_credited(prefix):
+    """The other side: `&&`/`||` AFTER the `set` do not move it into a
+    subshell (bash: ON)."""
+    command = f"{prefix}; python -m pytest -q | tail -1 && git push"
+    assert shell_status.check_command(command) == []

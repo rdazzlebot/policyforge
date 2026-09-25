@@ -1,5 +1,6 @@
 id: nist-ai-rmf-playbook
 name: NIST AI RMF Playbook
+crosswalk_as: nist-ai-rmf-playbook
 licence: public-domain
 source: NIST AIRC (airc.nist.gov/docs/playbook.json), via policyforge etl-ai-rmf-playbook
 notes: A US government work, so freely redistributable. NIST's suggested actions for each

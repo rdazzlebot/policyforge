@@ -60,7 +60,48 @@ def normalize_framework(name: str) -> str:
     The first word remains the fallback, which is what keeps every catalog
     not named in the table — including one a user brings — working exactly
     as before.
+
+    **A catalog's declared key wins (#295).** A name that a catalog's
+    `framework.yaml` declares a key for (`crosswalk_as:`) keys to that key, whatever the
+    prose would give, so a sibling of a pinned name cannot fall through to
+    the first word. The declarations are read from the catalog directories
+    once, lazily (`frameworks.registry.declared_keys`), so the answer does
+    not depend on which catalog was loaded first.
     """
+    declared = _declared_keys().get(" ".join(name.lower().split()))
+    return declared or prose_framework_key(name)
+
+
+_DECLARED_KEYS: dict[str, str] | None = None
+
+
+def _declared_keys() -> dict[str, str]:
+    """Every catalog's declared name -> key, read once per process (#295)."""
+    global _DECLARED_KEYS
+    if _DECLARED_KEYS is None:
+        _DECLARED_KEYS = {}  # set first, so a lookup made while building sees prose only
+        from policyforge.config import load_config
+        from policyforge.frameworks.registry import declared_keys
+
+        try:
+            config = load_config()
+        except (FileNotFoundError, OSError):
+            config = {}
+        _DECLARED_KEYS = declared_keys(config)
+    return _DECLARED_KEYS
+
+
+def reset_declared_keys() -> None:
+    """Forget the cached declarations, so the next lookup reads the
+    directories again: after an importer writes a new catalog, or in tests."""
+    global _DECLARED_KEYS
+    _DECLARED_KEYS = None
+
+
+def prose_framework_key(name: str) -> str:
+    """The key a framework NAME gives on its own: the first alias needle it
+    contains, else its first word. What `normalize_framework` falls back to
+    where no catalog declares the name (#295)."""
     lowered = name.strip().lower()
     for needle, framework in FRAMEWORK_ALIASES:
         if _needle_found(needle, lowered):

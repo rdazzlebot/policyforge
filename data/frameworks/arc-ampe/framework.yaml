@@ -1,5 +1,6 @@
 id: arc-ampe
 name: ARC-AMPE Volume II (ACA Administering Entity baseline)
+crosswalk_as: arc-ampe
 licence: public-domain
 source: CMS ARC-AMPE Volume II SSPP workbook, via policyforge etl-arc-ampe
 version: v1.02

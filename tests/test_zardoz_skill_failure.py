@@ -179,6 +179,10 @@ NOT_REFUSALS = {
     # import that guard forbids -- which is how this was found: the first
     # version imported it, and that guard went red on the control arm.
     "policyforge.export.confluence_exporter.ConcurrentEditError",
+    # A warning category (#295): issued with `warnings.warn` when a catalog's
+    # declared framework key disagrees with prose keying, never raised, so no
+    # skill can fail with it.
+    "policyforge.frameworks.registry.FrameworkKeyWarning",
 }
 
 

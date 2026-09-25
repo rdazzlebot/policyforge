@@ -903,9 +903,11 @@ def _list_starts(lines: list[str], heading: list[bool]) -> list[bool]:
     The lead-in is the last line before the list's first item that is not
     blank and not only citations.
 
-    A list ends at a heading, or at an unindented line of prose after a
-    blank line; that line starts a block of its own, so a paragraph after a
-    colon's list is not read as one of its items. An indented line, or one
+    **A blank line ends a paragraph** (#358): a line of prose after one
+    starts a block of its own, in or out of a list, so a paragraph after a
+    colon's list is not read as one of its items, and a sentence that did not
+    end in a stop before a capital does not run on into the next paragraph.
+    A list ends at a heading or at such a line. An indented line, or one
     straight after an item with no blank line (CommonMark's lazy
     continuation), stays with the item. **A line of only citations never
     ends a list or starts a block**, blank line or not: it is the trailing
@@ -970,7 +972,12 @@ def _walk_lists(lines: list[str], heading: list[bool]) -> tuple[list[bool], list
             starts[index] = not colon_list
             if colon_list:
                 colon_lists[-1].items.append([index, index])
-        elif in_list and blank_since and prose and not line[:1].isspace():
+        elif blank_since and prose and not (in_list and line[:1].isspace()):
+            # A blank line ends a paragraph, so prose after one starts a block
+            # (#358): a sentence no longer runs on into the next paragraph
+            # because it did not end in a stop before a capital. Inside a list
+            # an indented line is still the item's; a citation-only line is
+            # never prose, so it stays and is credited to the sentence above.
             in_list = colon_list = False
             starts[index] = True
         elif colon_list and colon_lists[-1].items:

@@ -198,9 +198,10 @@ def config_or_defaults(what: str, category: type[Warning] = UserWarning) -> dict
     cannot be read. The ONE copy of that fallback (1d on #346).
 
     **A lookup never fails on the config file** (1d on #344). Keying a
-    framework name and recognising one in a tag both run under commands that
-    never read config themselves, like `map` and `check`, so a config that
-    does not parse must not become their traceback. It is named in one
+    framework name runs under commands that never read config themselves,
+    like `map`, so a config that does not parse must not become their
+    traceback. (`check` does read config, since #329, and still raises on a
+    malformed one; this fallback does not change that.) It is named in one
     warning of `category`, saying `what` was read from the default search
     paths and the bundled catalogs instead. A missing config is ordinary and
     silent.

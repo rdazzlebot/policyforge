@@ -264,7 +264,7 @@ def parse_citations(body: str, frameworks=(), ids=None) -> list[tuple[str, str, 
     carried there. Silently: the requirements were simply absent from the
     report, which is the failure this command exists to catch.
     """
-    from policyforge.content.tags import SOURCE_TAG_RE
+    from policyforge.content.tags import SOURCE_TAG_RE, tag_parts
 
     known = sorted({str(f) for f in frameworks}, key=len, reverse=True)
     found: list[tuple[str, str, str, str]] = []
@@ -275,8 +275,12 @@ def parse_citations(body: str, frameworks=(), ids=None) -> list[tuple[str, str, 
             # Without the tags, which are traceability rather than title.
             section = SOURCE_TAG_RE.sub("", heading.group("title")).strip()
         for tag in SOURCE_TAG_RE.findall(line):
-            for part in tag.strip("[]").split("|"):
-                framework, requirement_id, qualifier = split_citation(part.strip(), known, ids)
+            # One splitter for every reader of a tag's parts, shared with the
+            # Playbook gate (#333): a shorthand part inherits the preceding
+            # part's framework, and `split_citation` then resolves it -- or
+            # returns it whole, so it is reported unresolved like any other.
+            for part in tag_parts(tag, known, lambda word: bool(resolve_framework(word, ids))):
+                framework, requirement_id, qualifier = split_citation(part.citation, known, ids)
                 if framework and requirement_id:
                     found.append((framework, requirement_id, qualifier, section))
     return found

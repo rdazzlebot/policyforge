@@ -303,10 +303,8 @@ class LiteLLMProvider(LLMProvider):
             # first one is recorded nowhere, since the row has one cost field.
             # LiteLLM prices by model, so both attempts are normally known or
             # both unknown.
-            if cost is not None and retry_cost is not None:
-                cost = cost + retry_cost
-            else:
-                cost = None
+            known = cost is not None and retry_cost is not None
+            cost = cost + retry_cost if known else None
             if needs_more_room(text, finish_reason):
                 # Empty again: both attempts were still billed, and this
                 # exception is the only way that reaches the ledger (#343).

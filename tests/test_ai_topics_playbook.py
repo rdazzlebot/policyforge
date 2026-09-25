@@ -221,6 +221,60 @@ def test_synthesize_writes_the_playbook_block_into_the_frontmatter(tmp_path, mon
     assert "NIST AI RMF Playbook" not in fake.prompts[0], "the synthesis prompt never sees it"
 
 
+@pytest.mark.parametrize("with_playbook", [True, False])
+def test_synthesize_says_what_it_retrieved_or_why_not(tmp_path, monkeypatch, with_playbook):
+    """1d on #359: an empty Playbook block read the same whether the topic has
+    no AI RMF anchors or the Playbook catalog was simply not loaded. The
+    command now says how many it retrieved, or warns that it retrieved none."""
+    from click.testing import CliRunner
+
+    import policyforge.cli as cli_mod
+
+    crosswalk = tmp_path / "crosswalk.json"
+    crosswalk.write_text("{}", encoding="utf-8")
+    fake = _Recorder("- AI legal requirements are understood. [NIST AI RMF GOVERN-1.1]\n")
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    monkeypatch.setattr(cli_mod, "get_provider", lambda config: fake)
+    catalogs = ["nist-ai-rmf"] + (["nist-ai-rmf-playbook"] if with_playbook else [])
+    args = ["synthesize", "--topic", "AI Governance", "--nist-controls", "Govern 1",
+            "--crosswalk", str(crosswalk), "--out-dir", str(tmp_path / "synthesis")]  # fmt: skip
+    for catalog in catalogs:
+        args += ["--controls", str(FRAMEWORKS / catalog / "controls.json")]
+
+    result = CliRunner().invoke(cli_mod.cli, args)
+
+    assert result.exit_code == 0, result.output
+    expected = playbook_actions(["Govern 1"], CONTROLS)
+    if with_playbook:
+        actions = sum(len(e["actions"]) for e in expected)
+        assert f"{len(expected)} subcategories, {actions} suggested actions" in result.output
+    else:
+        assert "no NIST AI RMF Playbook catalog is loaded" in result.output
+
+
+def test_synthesize_is_silent_for_a_topic_with_no_ai_rmf_anchors(tmp_path, monkeypatch):
+    """No warning where none applies: an 800-53 topic, no Playbook loaded."""
+    from click.testing import CliRunner
+
+    import policyforge.cli as cli_mod
+
+    crosswalk = tmp_path / "crosswalk.json"
+    crosswalk.write_text("{}", encoding="utf-8")
+    fake = _Recorder("- Accounts are managed. [NIST 800-53 AC-2]\n")
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    monkeypatch.setattr(cli_mod, "get_provider", lambda config: fake)
+
+    result = CliRunner().invoke(
+        cli_mod.cli,
+        ["synthesize", "--topic", "Access", "--nist-controls", "AC-2",
+         "--controls", str(FRAMEWORKS / "nist-800-53-r5" / "controls.json"),
+         "--crosswalk", str(crosswalk), "--out-dir", str(tmp_path / "synthesis")],
+    )  # fmt: skip
+
+    assert result.exit_code == 0, result.output
+    assert "Playbook" not in result.output
+
+
 @pytest.mark.parametrize("tier", ["standard", "procedure"])
 def test_generate_gives_the_block_to_the_standard_only(tmp_path, monkeypatch, tier):
     """The command reads the block from the frontmatter into the topic

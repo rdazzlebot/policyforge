@@ -133,6 +133,60 @@ def test_a_wrong_action_count_is_repaired():
     assert playbook_problems(out, [entry], ACTORS) == []
 
 
+AC2 = "The owner must review access quarterly [NIST 800-53 AC-2]."
+
+
+@pytest.mark.parametrize("order", ["playbook-first", "ac2-first"])
+def test_a_line_carrying_another_requirement_is_refused_not_rewritten(order):
+    """1d on #359: a line-level repair deleted a binding requirement that
+    shared the line, and returned success. The line is now left as written,
+    and the Standard refused, whichever sentence comes first."""
+    (entry,) = _entries("Govern 1.1")
+    ids = " | ".join(f"NIST AI RMF Playbook {a['id']}" for a in entry["actions"])
+    bad = f"Acme Health must maintain awareness. [{ids}]"
+    line = f"{bad} {AC2}" if order == "playbook-first" else f"{AC2} {bad}"
+    model = _Model(_good(entry))
+
+    with pytest.raises(PlaybookRepairFailed):
+        repair_standard(f"# Standard\n\n{line}\n", [entry], model, ACTORS)
+    assert model.prompts == [], "no call is made for a line it cannot safely replace"
+
+
+def test_conservation_refuses_a_repair_that_would_lose_an_obligation(monkeypatch):
+    """80's ruling on #359: every cited obligation the gate did not flag is in
+    the output, checked on the RESULT. With the isolation guard switched off,
+    as a future repair path might skip it, 1d's line would be rewritten and
+    the AC-2 requirement lost; the conservation check refuses it and names it."""
+    import policyforge.generate.playbook_repair as repair
+
+    monkeypatch.setattr(repair, "_is_whole_line", lambda document, index: True)
+    (entry,) = _entries("Govern 1.1")
+    ids = " | ".join(f"NIST AI RMF Playbook {a['id']}" for a in entry["actions"])
+    draft = (
+        f"# Standard\n\n{AC2}\n\n{AC2.replace('access', 'logs')} Acme Health must act. [{ids}]\n"
+    )
+
+    with pytest.raises(PlaybookRepairFailed) as refused:
+        repair_standard(draft, [entry], _Model(_good(entry)), ACTORS)
+
+    assert "would remove a cited obligation" in str(refused.value)
+    assert "review logs quarterly" in str(refused.value)
+
+
+def test_a_list_items_marker_is_kept():
+    """A refused Playbook sentence written as a list item comes back as a
+    list item, with its indentation and marker (1d on #359)."""
+    (entry,) = _entries("Govern 1.1")
+    ids = " | ".join(f"NIST AI RMF Playbook {a['id']}" for a in entry["actions"])
+    draft = f"# Standard\n\n- Intro.\n  - Acme Health must maintain awareness. [{ids}]\n"
+    fixed = _good(entry)
+
+    out = repair_standard(draft, [entry], _Model(fixed), ACTORS)
+
+    assert f"\n  - {fixed}\n" in out
+    assert "- Intro." in out
+
+
 def test_it_retries_a_bounded_number_of_times_then_refuses_loudly():
     """A model that keeps writing an obligation is asked exactly
     REPAIR_ATTEMPTS times, and the Standard is refused, not returned."""

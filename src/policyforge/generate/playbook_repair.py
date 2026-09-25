@@ -60,7 +60,7 @@ class PlaybookRepairFailed(ValueError):
 
 @dataclass(frozen=True)
 class PlaybookProblem:
-    kind: str  # "obligation", "heading", "missing", "count"
+    kind: str  # "obligation", "heading", "missing", "count", "lost"
     subcategory: str
     line: int | None = None
     text: str = ""
@@ -72,6 +72,7 @@ class PlaybookProblem:
             "heading": f"{where}a heading carries a Playbook tag",
             "missing": f"{self.subcategory}: no Playbook sentence",
             "count": f"{where}{self.subcategory}: {self.text}",
+            "lost": f"{where}the repair would remove a cited obligation -- {self.text[:90]}",
         }[self.kind]
 
 
@@ -175,6 +176,63 @@ def _draft_sentence(provider, entry: dict, failed: str) -> str:
     return (getattr(response, "text", "") or "").strip()
 
 
+#: A line's indentation and list marker (`- `, `* `, `1. `), kept on repair.
+_MARKER_RE = re.compile(r"^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?")
+
+
+def _words(text: str) -> str:
+    """Text as compared for "is this the whole line": no citation tags, no
+    markdown emphasis or backticks, no list marker, whitespace collapsed."""
+    text = _TAG.sub(" ", text)
+    text = re.sub(r"\*\*|__|\*|`", "", text)
+    return " ".join(_MARKER_RE.sub("", text.strip()).split())
+
+
+def _is_whole_line(document: str, index: int) -> bool:
+    """Whether the failing statement on line `index` is ALL of that line.
+
+    **Replacing a line replaces everything on it** (1d on #359): with a
+    Playbook sentence and "The owner must review access quarterly [NIST
+    800-53 AC-2]." on one line, a line-level repair deleted the AC-2
+    requirement and returned success. So a line is replaced only when exactly
+    one statement starts on it and that statement's words are the line's
+    words. Anything else is left as written and reported, as a line mixing
+    subcategories already is.
+    """
+    from policyforge.content import deontic
+
+    starting = [s for s in deontic.analyze(document) if s.line == index + 1]
+    if len(starting) != 1:
+        return False
+    line = document.split("\n")[index]
+    return _words(starting[0].text) == _words(line)
+
+
+def _lost_obligations(before: str, after: str, *, flagged: set[str]) -> list[PlaybookProblem]:
+    """**Conservation** (80's ruling on #359): every cited obligation in the
+    draft that the gate did not flag is still in the repaired Standard.
+
+    A repair may replace only the failing sentence's own text. The isolation
+    check in `repair_standard` is meant to guarantee that; this checks the
+    result, so a repair path added later cannot delete a requirement and
+    report success either. The unit is a statement's words (citations, list
+    markers and emphasis set aside), read by `analyze` on both sides.
+
+    **The exemption is the flagged STATEMENT, by its words, never its line.**
+    Keyed by line, it exempted exactly 1d's case: the 800-53 obligation
+    sharing the flagged sentence's line went unchecked (caught by the
+    conservation test with isolation switched off).
+    """
+    from policyforge.content import deontic
+
+    kept = {_words(s.text) for s in deontic.analyze(after)}
+    return [
+        PlaybookProblem("lost", "", s.line, s.text)
+        for s in deontic.analyze(before)
+        if s.cited and s.binds and _words(s.text) not in flagged and _words(s.text) not in kept
+    ]
+
+
 def _only_citations(line: str) -> bool:
     return bool(line.strip()) and not _TAG.sub("", line).strip(" \t.;:|")
 
@@ -217,6 +275,9 @@ def repair_standard(
         if index is not None and _subcategories_cited([lines[index]]) - {sub}:
             unrepaired.append(problem)  # the line mixes subcategories
             continue
+        if index is not None and not _is_whole_line(document, index):
+            unrepaired.append(problem)  # the line carries another sentence
+            continue
         failed = lines[index].strip() if index is not None else ""
         sentence = ""
         for _ in range(REPAIR_ATTEMPTS):
@@ -231,7 +292,10 @@ def repair_standard(
         if index is None:
             appended.append(sentence)
         else:
-            lines[index] = sentence
+            # The line's own indentation and list marker are kept: a list
+            # item stays a list item (1d on #359).
+            marker = _MARKER_RE.match(lines[index])
+            lines[index] = (marker.group(0) if marker else "") + sentence
             if index + 1 < len(lines) and _only_citations(lines[index + 1]):
                 lines[index + 1] = ""
 
@@ -247,4 +311,8 @@ def repair_standard(
     remaining = playbook_problems(repaired, entries, org_actors)
     if remaining or unrepaired:
         raise PlaybookRepairFailed(remaining or unrepaired)
+    flagged = {_words(p.text) for p in problems if p.kind == "obligation"}
+    lost = _lost_obligations(document, repaired, flagged=flagged)
+    if lost:
+        raise PlaybookRepairFailed(lost)
     return repaired

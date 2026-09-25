@@ -59,7 +59,8 @@ _MODALITY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         PROHIBITION,
         re.compile(
             r"\b(?:must not|shall not|may not|must never|shall never|"
-            r"is prohibited|are prohibited|is forbidden|are forbidden)\b",
+            r"is prohibited|are prohibited|is forbidden|are forbidden|"
+            r"is not permitted|are not permitted|is not allowed|are not allowed)\b",
             re.IGNORECASE,
         ),
     ),
@@ -67,7 +68,8 @@ _MODALITY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         OBLIGATION,
         re.compile(
             r"\b(?:must|shall|is required to|are required to|is obligated to|"
-            r"are obligated to|will be required to)\b",
+            r"are obligated to|will be required to|"
+            r"is required|are required|is mandatory|are mandatory)\b",
             re.IGNORECASE,
         ),
     ),
@@ -735,9 +737,95 @@ def classify(sentence: str) -> str:
     """
     visible = _MARKUP_RE.sub("", sentence)
     for modality, pattern in _MODALITY_PATTERNS:
-        if pattern.search(visible):
+        if any(not _states_no_requirement(visible, m) for m in pattern.finditer(visible)):
             return modality
     return NONE
+
+
+#: The predicates #360 added: "X is required." binds like its verb twin "X
+#: is required to ...", and "X is not permitted." like "X is prohibited",
+#: but only when they state something ABOUT their subject. The context rules
+#: below apply to these alone, so every other phrase reads exactly as before.
+_PREDICATES = frozenset(
+    {"is required", "are required", "is mandatory", "are mandatory"}
+    | {"is not permitted", "are not permitted", "is not allowed", "are not allowed"}
+)
+#: A clause whose subject opens with one of these says nothing is required.
+_NEGATIVE_SUBJECTS = frozenset({"no", "nothing", "none", "neither"})
+#: A predicate right after one of these sits in a relative or interrogative
+#: clause ("what is required", "the evidence that is required"): a noun
+#: phrase, not a statement.
+_RELATIVE_WORDS = frozenset({"what", "that", "which", "whatever", "who"})
+#: A clause opened by one of these is a condition or a reference ("where it
+#: is required", "if approval is required"), not a statement that it is.
+_CONDITIONAL_WORDS = frozenset(
+    {"if", "when", "where", "whenever", "unless", "whether", "as"}
+    # A concession or a reason is not the sentence's claim either: "While
+    # plans of action are required for federal organizations, other ..."
+    # (800-53 PM-4, measured over the shipped catalogs).
+    | {"while", "although", "though", "whereas", "because", "since"}
+)
+
+
+#: What closes an aside right before a predicate: a comma, an em or en dash,
+#: or `--`.
+_ASIDE_CLOSE = re.compile(rf"(,|{chr(0x2014)}|{chr(0x2013)}|--)\s*$")
+
+
+def _without_asides(prefix: str) -> str:
+    """`prefix` without the asides that sit between a subject and its
+    predicate (1d on #367): balanced parentheses ("Written approval (see
+    Appendix B) is required"), and a comma or dash pair ending right before
+    the predicate ("Encryption, where feasible, is required", "USB devices
+    -- including phones -- are not allowed"). Without this the clause
+    before the predicate was empty and read as "no subject". A CFR
+    enumerator after a colon ("information that: (i) Is not permitted")
+    still leaves an empty clause, as it should.
+    """
+    while re.search(r"\([^()]*\)", prefix):
+        prefix = re.sub(r"\([^()]*\)", " ", prefix)
+    close = _ASIDE_CLOSE.search(prefix)
+    if close:
+        opening = prefix.rfind(close.group(1), 0, close.start())
+        if opening >= 0:
+            prefix = prefix[:opening]
+    return prefix
+
+
+def _states_no_requirement(text: str, match: re.Match[str]) -> bool:
+    """Whether a #360 predicate match states nothing about its subject (80's
+    ruling): `No action is required.`, `what is required`, `where it is
+    required`, and `When organizations are not permitted to delete ...,
+    Acme Health shall ...` -- a condition, whose sentence binds by its own
+    "shall" (measured on the 33 Standards: without this, that sentence read
+    as a prohibition). Only for `_PREDICATES`; any other phrase states what
+    it says."""
+    if " ".join(match.group(0).lower().split()) not in _PREDICATES:
+        return False
+    if re.match(r"\s+or\b", text[match.end() :], re.IGNORECASE):
+        # A category, not a demand: HIPAA 164.306(d)'s "Implementation
+        # specifications are required or addressable." (80's L1 on #360).
+        return True
+    clause = re.split(rf"[.;:,(){chr(0x2014)}]", _without_asides(text[: match.start()]))[-1]
+    words = [w.strip("\"'").lower() for w in clause.split()]
+    words = [w for w in words if not re.fullmatch(r"[-*+]|\d+[.)]|\([ivx\d]+\)", w)]
+    if not words:
+        # No subject in its clause: the predicate continues a clause begun
+        # before it -- "information that: (i) Is not permitted by applicable
+        # law" (45 CFR 171.204(a)) -- so it states nothing about a subject.
+        return True
+    # A conditional word anywhere in the clause makes it a condition. This
+    # misses "When working remotely MFA is required" (a reduced clause), a
+    # named miss: exempting an -ing word after the conditional also caught
+    # gerund SUBJECTS, "If testing is required, see the test plan" (1d on
+    # #367), which is the direction that invents obligations.
+    if words[-1] in _RELATIVE_WORDS or any(w in _CONDITIONAL_WORDS for w in words):
+        return True
+    # The subject is what follows the last relative word: "... may be such
+    # that no explicit terms and conditions are required" (800-53 AC-20).
+    last = max((i for i, w in enumerate(words) if w in _RELATIVE_WORDS), default=-1)
+    subject = words[last + 1 :]
+    return bool(subject) and subject[0] in _NEGATIVE_SUBJECTS
 
 
 #: Markdown headings are structure, not statements: "### 4.1 Media Protection"

@@ -36,15 +36,14 @@ is why nothing here travels as prose.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
-#: Any markdown heading. Deliberately not a *numbered* heading: requiring
-#: `\d+(\.\d+)*` followed by whitespace rejects `## 1. Purpose`, because the
-#: character after `1` is `.` and not a space. Measured on two real generated
-#: documents, that single omission found zero sections in one and let the
-#: last section run to end-of-file in the other.
-_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s", re.MULTILINE)
+#: Sections start at every markdown heading, read by `_section_starts` from
+#: the one classifier (#352). Deliberately not a *numbered* heading:
+#: requiring `\d+(\.\d+)*` followed by whitespace rejects `## 1. Purpose`,
+#: because the character after `1` is `.` and not a space. Measured on two
+#: real generated documents, that single omission found zero sections in one
+#: and let the last section run to end-of-file in the other.
 
 
 @dataclass(frozen=True)
@@ -62,6 +61,8 @@ class Claim:
     text: str
     line: int
     tags: tuple[str, ...]
+    #: Heading text, not a sentence (#352).
+    heading: bool = False
 
     @property
     def anchored(self) -> bool:
@@ -135,7 +136,7 @@ def claims(body: str) -> list[Claim]:
     the tags on the lines it spans, from its own line up to the line before
     the next statement starts.
     """
-    from .deontic import analyze
+    from .deontic import analyze, heading_statements
     from .tags import source_tags
 
     lines = body.splitlines()
@@ -148,7 +149,23 @@ def claims(body: str) -> list[Claim]:
         last = max(statement.line, following - 1)
         span = "\n".join(lines[statement.line - 1 : last])
         found.append(Claim(text=statement.text, line=statement.line, tags=tuple(source_tags(span))))
-    return found
+    # A heading that states an obligation is one (80's ruling on #352): its
+    # own citations are the ones on its heading text.
+    found += [
+        Claim(text=h.text, line=h.line, tags=tuple(source_tags(h.text)), heading=True)
+        for h in heading_statements(body)
+        if h.binds
+    ]
+    return sorted(found, key=lambda c: c.line)
+
+
+def _section_starts(body: str) -> list[int]:
+    """The line each section starts on: every heading, ATX or setext, as
+    `deontic._line_kinds` classifies them (#352). This used an ATX-only
+    regex of its own, so a setext heading did not start a section here."""
+    from .deontic import heading_statements
+
+    return [h.line for h in heading_statements(body)]
 
 
 def _section_of(line: int, boundaries: list[int]) -> int:
@@ -179,7 +196,7 @@ def unanchored(body: str) -> list[Unanchored]:
     from .deontic import analyze
 
     found = claims(body)
-    boundaries = [body[: m.start()].count("\n") + 1 for m in _HEADING_RE.finditer(body)]
+    boundaries = _section_starts(body)
     citing_sections = {_section_of(c.line, boundaries) for c in found if c.anchored}
     # **A Playbook citation also makes its section "citing"** (80, on #309),
     # though "NIST suggests ..." never binds and so is never a claim above.

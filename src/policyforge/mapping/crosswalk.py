@@ -360,8 +360,8 @@ ANCHOR_DECISIONS: dict[str, str] = {
     ),
     "nist-ai-rmf-playbook": (
         "never anchored or counted in /coverage, because its actions are voluntary; "
-        "#301 (open) will retrieve them for Standards through the Core subcategory a "
-        "topic anchors (80, on #301)"
+        "a Standard retrieves them through the Core subcategories its topic anchors, "
+        "and no Policy or Procedure is given them (#301)"
     ),
     "govramp": (
         "bring-your-own: no ids ship, so there is nothing to anchor until a user "

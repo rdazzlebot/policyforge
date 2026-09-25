@@ -88,15 +88,17 @@ def test_a_paragraph_above_a_thematic_break_stays_text():
 
 def test_two_dashes_with_no_paragraph_above_are_neither_heading_nor_break():
     """`--` is a setext underline only under a paragraph line; alone, it is
-    text: nothing is blanked and the text stays one block. Asked of the block
-    split directly, because the sentence splitter then joins `act. --` on its
-    own rule (no capital after the full stop), which is not this question."""
+    text: nothing is blanked. Asked of the block split directly.
+
+    It used to assert the text stays ONE block. Since #358 a blank line ends
+    a paragraph, so `--` after one is a paragraph of its own, as in
+    CommonMark: two blocks, and still no heading."""
     from policyforge.content.deontic import _heading_blocks
 
     text = "Echo must act.\n\n--\n"
     blanked, blocks = _heading_blocks(text)
     assert blanked == text
-    assert blocks == [(0, text)]
+    assert blocks == [(0, "Echo must act.\n"), (16, "--\n")]
 
 
 @pytest.mark.parametrize("underline", ["---", "--", "==="])

@@ -351,3 +351,22 @@ def test_a_lead_in_that_frames_nothing_is_refused_not_dropped():
     # The control: the same lead-in with no token frames the section, and passes.
     (_, workstation) = parse_hipaa_security_rule(subpart(""))
     assert workstation.control_id == "164.310(b)" and workstation.related_controls == ["164.306"]
+
+
+def test_a_lead_in_is_judged_by_what_it_cites_not_by_its_section_sign():
+    """1d on #355: `section 164.306` with no `§` is still carried, and a `§`
+    citing something this loader cannot read is refused, never skipped."""
+    import pytest
+
+    from policyforge.ingest.hipaa_loader import parse_hipaa_security_rule
+
+    xml = FIXTURE.read_text(encoding="utf-8")
+    target = f"<P>A covered entity or business associate {_LEAD_IN}"
+    no_sign = xml.replace(target, target.replace("&#xA7; 164.306", "section 164.306"), 1)
+    assert no_sign != xml
+    by_id = {c.control_id: c for c in parse_hipaa_security_rule(no_sign)}
+    assert by_id["164.310(a)(1)"].related_controls == ["164.306"]
+
+    elsewhere = xml.replace(target, target.replace("164.306", "160.103"), 1)
+    with pytest.raises(ValueError, match=r"cites no section this loader can read"):
+        parse_hipaa_security_rule(elsewhere)

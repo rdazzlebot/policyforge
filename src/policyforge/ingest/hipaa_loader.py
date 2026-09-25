@@ -222,9 +222,12 @@ def _relate_lead_ins(section_id: str, lead_ins: list[tuple[str, str]], controls)
     (§ 164.302's applicability sentence) has nothing to carry.
     """
     for citation, text in lead_ins:
-        if "§" not in text:
-            continue
         cited = list(dict.fromkeys(_CITED_SECTION_RE.findall(text)))
+        if not cited and "§" not in text:
+            continue  # cites nothing at all: nothing to carry
+        # Keyed on what was FOUND, not on the `§` sign (1d on #355): a lead-in
+        # naming `164.306` without `§` is carried, and one with `§` citing
+        # nothing this loader reads is refused below rather than skipped.
         framed = [
             c
             for c in controls

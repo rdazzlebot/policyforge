@@ -642,14 +642,18 @@ def playbook_obligations(text: str, org_actors=()) -> list[Statement]:
     but that joining never let one item's citation vouch for a sibling: in
     `Acme Health must:` / `- maintain a register [Playbook]` / `- review
     access [AC-2]` the joined statement cites both, reads as mixed, and the
-    Playbook item escaped. So each item is judged as "lead-in + that item"
-    against its own citations (plus any the lead-in or the list itself
-    carries), and reported at the item's line, the same verdict it gets as a
-    plain item. A lead-in with NIST as its subject (`NIST suggests:`) frames
-    every item as NIST's.
+    Playbook item escaped. So each SENTENCE of each item is judged against its
+    own citations (plus any the lead-in or the list itself carries) and
+    reported at its line: the item's first sentence as "lead-in + sentence",
+    unless it is NIST's speech on its own, and any later sentence alone, as
+    in a plain item (1d on #356: one item's 800-53 sentence vouched for its
+    Playbook sentence). Under an organization's lead-in this is the verdict
+    the same item gets as a plain item, and the tests take that verdict as
+    their oracle. A lead-in with NIST as its subject (`NIST suggests:`)
+    frames each item's first sentence as NIST's.
     """
     statements = analyze(text)
-    units, covered = _colon_units(text, statements)
+    units, covered = _colon_units(text, statements, org_actors)
     judged = [s for s in statements if id(s) not in covered] + units
     return sorted(
         (
@@ -661,7 +665,9 @@ def playbook_obligations(text: str, org_actors=()) -> list[Statement]:
     )
 
 
-def _colon_units(text: str, statements: list[Statement]) -> tuple[list[Statement], set[int]]:
+def _colon_units(
+    text: str, statements: list[Statement], org_actors=()
+) -> tuple[list[Statement], set[int]]:
     """Each colon list's items as "lead-in + item" statements, and the ids of
     the statements those lists cover (#354)."""
     lines = text.split("\n")
@@ -689,18 +695,29 @@ def _colon_units(text: str, statements: list[Statement]) -> tuple[list[Statement
             tag for index in colon.trailing for tag in _CITATION_RE.findall(lines[index])
         )
         for first, last in colon.items:
-            item = _LEADING_MARKER.sub("", joined(first, last))
-            own = tuple(_CITATION_RE.findall(item))
-            unit = f"{lead} {item}"
-            units.append(
-                Statement(
-                    line=first + 1,
-                    text=unit,
-                    modality=classify(unit),
-                    cited=bool(shared + own),
-                    citations=shared + own,
+            # Each SENTENCE of the item, split by `analyze` itself so that its
+            # boundaries and trailing-citation credit are a plain item's: one
+            # item's 800-53 sentence must not vouch for its Playbook sentence
+            # any more than a sibling item may (1d on #356). The lead-in runs
+            # on into the item's FIRST sentence only ("Acme Health must: keep
+            # a register"); a later sentence stands alone, as it does in a
+            # plain item, so `NIST suggests ...` there is still NIST's. So does
+            # a first sentence that is NIST's speech on its own: it has its own
+            # subject, and the lead-in does not run into it.
+            body = "\n".join([_LEADING_MARKER.sub("", lines[first]), *lines[first + 1 : last + 1]])
+            for position, sentence in enumerate(analyze(body)):
+                own = shared + sentence.citations
+                alone = position > 0 or framed_as_nists(sentence.text, own, org_actors)
+                unit = sentence.text if alone else f"{lead} {sentence.text}"
+                units.append(
+                    Statement(
+                        line=first + sentence.line,
+                        text=unit,
+                        modality=classify(unit),
+                        cited=bool(shared + sentence.citations),
+                        citations=shared + sentence.citations,
+                    )
                 )
-            )
     return units, covered
 
 

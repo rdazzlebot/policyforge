@@ -16,6 +16,8 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from policyforge.content.deontic import analyze, playbook_obligations
 
 P = "[NIST AI RMF Playbook Map 1.6 Action 1]"
@@ -101,3 +103,43 @@ def test_an_items_continuation_line_is_part_of_the_item():
     text = f"Acme Health must:\n\n- review access\n  every quarter {P}\n- rotate keys {AC2}"
     (unit,) = playbook_obligations(text, ACTORS)
     assert unit.line == 3 and unit.text == f"Acme Health must: review access every quarter {P}"
+
+
+# 1d on #356: an item with two sentences escaped the same way two items did.
+# The oracle is the SAME item as a plain item, not this gate's own rule.
+_ITEMS = [
+    f"review access {AC2}. Acme Health must keep a register {P}.",
+    f"review access {AC2}.\n  Acme Health must keep a register {P}.",
+    f"keep a register {P}. Acme Health must review access {AC2}.",
+    f"review access {AC2}",
+    f"Acme Health must keep a register {P}",
+    f"keep a register {P}. NIST suggests reviewing it {P2}.",
+    f"NIST suggests keeping a register {P}. Acme Health must review it {AC2}.",
+    f"keep a register {P}.\n  NIST suggests reviewing it {P2}.",
+    f"keep a register.\n  {P}",
+]
+
+
+@pytest.mark.parametrize("item", _ITEMS, ids=range(len(_ITEMS)))
+def test_an_item_under_an_organizations_lead_in_gets_its_plain_item_verdict(item):
+    plain = len(playbook_obligations(f"- {item}", ACTORS))
+    listed = playbook_obligations(f"Acme Health must:\n\n- {item}\n- review keys {AC2}", ACTORS)
+    assert len(listed) == plain, [s.text for s in listed]
+
+
+def test_the_items_include_both_verdicts():
+    """Otherwise the oracle comparison could agree by being constant."""
+    assert {len(playbook_obligations(f"- {i}", ACTORS)) for i in _ITEMS} == {0, 1}
+
+
+def test_a_later_sentences_finding_names_its_own_line():
+    text = f"Acme Health must:\n\n- review access {AC2}.\n  Acme Health must keep a register {P}."
+    assert [s.line for s in playbook_obligations(text, ACTORS)] == [4]
+
+
+def test_a_nist_lead_in_does_not_frame_an_items_later_sentence():
+    """`NIST suggests:` runs on into an item's first sentence only. A later
+    imperative is the organization's own instruction, as it would be in a
+    plain item, and is reported at its line."""
+    text = f"NIST suggests:\n\n- maintaining a register {P}.\n  Review it quarterly {P2}."
+    assert [s.line for s in playbook_obligations(text, ACTORS)] == [4]

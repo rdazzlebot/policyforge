@@ -1,7 +1,7 @@
 **`policyforge check` no longer reads a sentence across a heading.** Text on
 either side of a heading could be judged as one sentence, carrying the second
 part's citations and its "must" or "shall". Across 33 generated Standards, 18
-of 2,501 sentences ran across a heading. You may see a few more "binds but
+of 2,495 sentences ran across a heading. You may see a few more "binds but
 cites nothing" warnings: those obligations had been borrowing a citation from
 the next section, and they are genuinely uncited. In the same 33 Standards
 that was 8 new warnings and 1 that no longer applies.

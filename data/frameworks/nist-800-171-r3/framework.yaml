@@ -1,5 +1,6 @@
 id: nist-800-171-r3
 name: NIST SP 800-171 Rev 3
+framework_id: nist-800-171
 licence: public-domain
 source: NIST usnistgov/oscal-content, via policyforge etl-800-171
 notes: A US government work, so freely redistributable. Bundled with this project and safe

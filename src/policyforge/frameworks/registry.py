@@ -44,6 +44,7 @@ from __future__ import annotations
 
 # Used for exactly one thing: asking git whether a path is tracked.
 import subprocess  # nosec B404
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -73,6 +74,14 @@ class Framework:
     licence: str = LICENSED
     source: str = ""
     notes: str = ""
+    #: The framework key the catalog DECLARES (#295), e.g. `nist-800-53`, from
+    #: `framework_id:` in its manifest: the identity citations, crosswalks,
+    #: coverage and `/satisfies` all key it by. Not the manifest's `id:`,
+    #: which names the directory (`nist-800-53-r5`). It wins over keying from the prose name;
+    #: empty when the manifest has none. The manifest field is not called
+    #: `key:` because gitleaks' generic-api-key rule reads `key: <long token>`
+    #: as a secret (it flagged `cfr-170-315-onc-certification`).
+    key: str = ""
     #: True when a manifest was found. Without one there is nothing to go on
     #: but the directory's location, so the framework is reported as
     #: undeclared rather than assumed safe.
@@ -116,6 +125,7 @@ def load_framework(directory: Path) -> Framework:
         licence=PUBLIC_DOMAIN if licence == PUBLIC_DOMAIN else LICENSED,
         source=str(data.get("source") or ""),
         notes=str(data.get("notes") or ""),
+        key=str(data.get("framework_id") or "").strip(),
         declared=bool(data),
     )
 
@@ -178,9 +188,16 @@ def discover(config: dict | None = None, *, roots: list[Path] | None = None) -> 
     return list(found.values())
 
 
+class FrameworkKeyWarning(UserWarning):
+    """A declared framework key that prose keying would not have produced,
+    or two catalogs declaring one name with different keys (#295)."""
+
+
 def _catalog_roots(config: dict | None) -> list[Path]:
     """The search paths, then the bundled catalogs: every place a catalog
-    this project can cite may live, wherever the command runs."""
+    this project can cite may live, wherever the command runs. A
+    repository's own copy shadows the bundled one exactly as `discover`
+    lets it."""
     roots = list(search_paths(config))
     try:
         from policyforge.scaffold import bundled_root
@@ -193,25 +210,24 @@ def _catalog_roots(config: dict | None) -> list[Path]:
     return roots
 
 
-def known_framework_names(
-    config: dict | None = None, *, roots: list[Path] | None = None
-) -> frozenset[str]:
-    """Every framework name a catalog on disk goes by (#340).
+def _catalog_names(
+    config: dict | None, roots: list[Path] | None
+) -> Iterator[tuple[Path, Framework, list[str]]]:
+    """Each catalog on disk, with every name it goes by: the ONE walk (#340, #295).
 
-    The manifest's `name` and each `framework` string its `controls.json`
-    rows carry (`NIST 800-53` there, `NIST SP 800-53 Rev 5` in the manifest),
-    for every catalog under the search paths and the bundled root -- so a
-    catalog a user brings, under `frameworks/` or `local_content/`, is known
-    as surely as a shipped one. Derived from the catalogs, never typed.
+    The manifest's `name` (when a manifest declares one) and each
+    `framework` string its `controls.json` rows carry (`NIST 800-53` there,
+    `NIST SP 800-53 Rev 5` in the manifest), for every catalog under
+    `roots` -- by default the search paths, then the bundled root. A
+    directory reached twice is read once, the first time. Rows that cannot
+    be read cost the row names, not the manifest's.
 
-    The ONE list of names both readers of a tag's parts use (80's ruling on
-    #340): the Playbook gate, to tell a part naming another framework from a
-    shorthand part that inherits, and `satisfies`, which adds the catalogs it
-    has loaded.
+    `known_framework_names` and `declared_keys` both read catalogs through
+    this, so the names a tag part is matched against and the names a key is
+    declared for cannot drift apart (9b on #346).
     """
     import json
 
-    names: set[str] = set()
     seen: set[Path] = set()
     for root in roots if roots is not None else _catalog_roots(config):
         if not root.is_dir():
@@ -222,15 +238,81 @@ def known_framework_names(
                 continue
             seen.add(resolved)
             framework = load_framework(directory)
-            if framework.declared:
-                names.add(framework.name)
+            names = {framework.name} if framework.declared else set()
             if framework.has_controls:
                 try:
                     rows = json.loads(framework.controls_path.read_text(encoding="utf-8"))
+                    names.update(str(r.get("framework") or "") for r in rows if isinstance(r, dict))
                 except (OSError, ValueError):
-                    continue
-                names.update(str(r.get("framework") or "") for r in rows if isinstance(r, dict))
-    return frozenset(n for n in names if n.strip())
+                    pass
+            yield directory, framework, sorted(n for n in names if n.strip())
+
+
+def known_framework_names(
+    config: dict | None = None, *, roots: list[Path] | None = None
+) -> frozenset[str]:
+    """Every framework name a catalog on disk goes by (#340).
+
+    See `_catalog_names` for which names and which catalogs: a catalog a
+    user brings, under `frameworks/` or `local_content/`, is known as surely
+    as a shipped one. Derived from the catalogs, never typed.
+
+    The ONE list of names both readers of a tag's parts use (80's ruling on
+    #340): the Playbook gate, to tell a part naming another framework from a
+    shorthand part that inherits, and `satisfies`, which adds the catalogs it
+    has loaded.
+    """
+    return frozenset(n for _, _, names in _catalog_names(config, roots) for n in names)
+
+
+def declared_keys(config: dict | None = None, *, roots: list[Path] | None = None) -> dict[str, str]:
+    """{name, whitespace-collapsed and lower-cased: declared key} (#295).
+
+    **Every name a catalog goes by** (`_catalog_names`, the same walk
+    `known_framework_names` makes) is mapped to the `framework_id:` its
+    `framework.yaml` declares; a catalog declaring none is skipped. The
+    first root that declares a name wins, as in `discover`. Two catalogs
+    declaring one name with different keys, and a declared key that the
+    name's prose keying would not give, each raise a `FrameworkKeyWarning`
+    naming both; the declaration is kept.
+
+    Read from the directories rather than registered when a catalog is
+    loaded, so that keying a name does not depend on what was loaded first
+    (80's condition on #295): a citation parsed before any catalog is read
+    still gets the declared key.
+    """
+    import warnings
+
+    from policyforge.mapping.crosswalk import prose_framework_key
+
+    found: dict[str, tuple[str, Path]] = {}
+    for directory, framework, names in _catalog_names(config, roots):
+        if not framework.key:
+            continue
+        for name in names:
+            normal = " ".join(name.lower().split())
+            if normal in found:
+                if found[normal][0] != framework.key:
+                    warnings.warn(
+                        FrameworkKeyWarning(
+                            f"{name!r} is declared as {found[normal][0]!r} by "
+                            f"{found[normal][1]} and as {framework.key!r} by {directory}; "
+                            f"keeping {found[normal][0]!r}"
+                        ),
+                        stacklevel=2,
+                    )
+                continue
+            found[normal] = (framework.key, directory)
+            prose = prose_framework_key(name)
+            if prose != framework.key:
+                warnings.warn(
+                    FrameworkKeyWarning(
+                        f"{directory} declares key {framework.key!r} for {name!r}; keying "
+                        f"the name would give {prose!r}. The declaration wins."
+                    ),
+                    stacklevel=2,
+                )
+    return {name: key for name, (key, _) in found.items()}
 
 
 def is_tracked(path: Path) -> bool | None:

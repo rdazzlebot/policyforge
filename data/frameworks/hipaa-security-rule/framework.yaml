@@ -1,5 +1,6 @@
 id: hipaa-security-rule
 name: HIPAA Security Rule (45 CFR 164 Subpart C)
+framework_id: hipaa
 licence: public-domain
 source: eCFR public API, via policyforge etl-hipaa
 notes: A US government work, so freely redistributable. Bundled with this project and safe

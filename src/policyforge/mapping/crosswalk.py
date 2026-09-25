@@ -60,7 +60,77 @@ def normalize_framework(name: str) -> str:
     The first word remains the fallback, which is what keeps every catalog
     not named in the table — including one a user brings — working exactly
     as before.
+
+    **A catalog's declared key wins (#295).** A name that a catalog's
+    `framework.yaml` declares a key for (`framework_id:`) keys to that key, whatever the
+    prose would give, so a sibling of a pinned name cannot fall through to
+    the first word. The declarations are read from the catalog directories
+    once, lazily (`frameworks.registry.declared_keys`), so the answer does
+    not depend on which catalog was loaded first.
     """
+    declared = _declared_keys().get(" ".join(name.lower().split()))
+    return declared or prose_framework_key(name)
+
+
+_DECLARED_KEYS: dict[str, str] | None = None
+
+
+def _declared_keys() -> dict[str, str]:
+    """Every catalog's declared name -> key, read once per process (#295)."""
+    global _DECLARED_KEYS
+    if _DECLARED_KEYS is None:
+        # Assigned only once the build has succeeded (1d on #344): a failed
+        # build that left `{}` behind would key every later lookup by prose,
+        # silently dropping every declaration. Building cannot recurse into
+        # this function -- `declared_keys` keys names with
+        # `prose_framework_key` -- so nothing needs a placeholder.
+        _DECLARED_KEYS = declared_keys_from_config()
+    return _DECLARED_KEYS
+
+
+def declared_keys_from_config() -> dict[str, str]:
+    """`declared_keys` for this project's configured search paths.
+
+    **Keying never fails on the config file** (1d on #344). `normalize_framework`
+    runs under commands that never read config, like `map`, so a config that
+    does not parse must not become their traceback. It is named once in a
+    `FrameworkKeyWarning`, and the default search paths and the bundled
+    catalogs are read instead. A missing config is ordinary and silent.
+    """
+    import warnings
+
+    import yaml
+
+    from policyforge.config import load_config, resolve_config_path
+    from policyforge.frameworks.registry import FrameworkKeyWarning, declared_keys
+
+    try:
+        config = load_config()
+    except FileNotFoundError:
+        config = {}
+    except (yaml.YAMLError, OSError, UnicodeDecodeError, ValueError) as exc:
+        warnings.warn(
+            FrameworkKeyWarning(
+                f"{resolve_config_path()} could not be read ({type(exc).__name__}), so framework "
+                "keys were declared from the default search paths and the bundled catalogs only."
+            ),
+            stacklevel=3,
+        )
+        config = {}
+    return declared_keys(config)
+
+
+def reset_declared_keys() -> None:
+    """Forget the cached declarations, so the next lookup reads the
+    directories again: after an importer writes a new catalog, or in tests."""
+    global _DECLARED_KEYS
+    _DECLARED_KEYS = None
+
+
+def prose_framework_key(name: str) -> str:
+    """The key a framework NAME gives on its own: the first alias needle it
+    contains, else its first word. What `normalize_framework` falls back to
+    where no catalog declares the name (#295)."""
     lowered = name.strip().lower()
     for needle, framework in FRAMEWORK_ALIASES:
         if _needle_found(needle, lowered):

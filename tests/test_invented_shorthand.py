@@ -107,6 +107,38 @@ def test_the_gate_and_satisfies_read_the_same_name_list(monkeypatch, fresh_names
     assert len(calls) == 2
 
 
+def test_known_names_and_declared_keys_read_the_same_catalogs_the_same_way(tmp_path):
+    """9b on #346: the names a tag part is matched against (#340) and the
+    names a key is declared for (#295) come from one walk, so they cannot
+    drift. Over the shipped tree -- where every catalog declares a key -- and
+    over a BYOC root beside it, every known name has a declaration and every
+    declaration is a known name."""
+    import warnings
+
+    from policyforge.frameworks.registry import declared_keys, known_framework_names
+
+    byoc = tmp_path / "hitrust-csf"
+    byoc.mkdir()
+    (byoc / "framework.yaml").write_text(
+        "name: HITRUST CSF v11\nframework_id: hitrust-csf\n", encoding="utf-8"
+    )
+    row = {
+        "control_id": "01.a",
+        "title": "t",
+        "framework": "HITRUST CSF",
+        "framework_version": "11",
+    }
+    (byoc / "controls.json").write_text(json.dumps([row]), encoding="utf-8")
+
+    for roots in ([CATALOGS], [CATALOGS, tmp_path]):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            keys = declared_keys(roots=roots)
+        known = {" ".join(n.lower().split()) for n in known_framework_names(roots=roots)}
+        assert known == set(keys), known ^ set(keys)
+    assert {"hitrust csf", "hitrust csf v11"} <= known
+
+
 def test_a_framework_the_user_brings_is_known_once_its_catalog_is_on_disk(
     tmp_path, monkeypatch, fresh_names
 ):

@@ -1,5 +1,6 @@
 id: cfr-42-part-2-sud-records
 name: Substance Use Disorder Patient Records (42 CFR Part 2)
+framework_id: cfr-42-part-2-sud-records
 licence: public-domain
 source: eCFR public API, via policyforge etl-part2
 notes: A US government work, so freely redistributable. Bundled with this project and safe

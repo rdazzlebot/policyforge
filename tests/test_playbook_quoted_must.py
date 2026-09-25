@@ -146,8 +146,11 @@ def test_the_stated_limit_a_relative_pronoun_passes(sentence):
 def test_the_exposure_is_the_three_playbook_actions_that_carry_a_binding_word():
     """What the limit above can reach: only an action whose own text binds.
     Pinned by id, not by count, so a catalog change names what it added (80
-    on #325). Today one "must" and two "may not" -- the latter are #321's
-    epistemic case. A new one fails here and the limit is revisited."""
+    on #325). Today one "must" and one "may not". There were two "may not":
+    #364 reads Measure 3.2 Action 1's "may not be measurable" as the
+    possibility it is. Measure 2.9 Action 6's "explanations may not
+    accurately summarize" is a thing's capability, #364's named miss, so it
+    stays. A new one fails here and the limit is revisited."""
     from policyforge.content.deontic import BINDING, classify
 
     rows = json.loads((CATALOG / "controls.json").read_text(encoding="utf-8"))
@@ -161,7 +164,6 @@ def test_the_exposure_is_the_three_playbook_actions_that_carry_a_binding_word():
     assert binding == {
         "Govern 1.7 Action 4": "obligation",
         "Measure 2.9 Action 6": "prohibition",
-        "Measure 3.2 Action 1": "prohibition",
     }
 
 

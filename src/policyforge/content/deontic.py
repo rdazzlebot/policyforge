@@ -163,14 +163,29 @@ class Statement:
 
     @property
     def cites_only_the_playbook(self) -> bool:
-        """Every one of its citations names the Playbook, and it has one.
+        """It cites the Playbook, and nothing that states an obligation.
 
         The unit both Playbook rules use (80, on #300). A sentence that also
         cites a binding source carries that source's obligation, so the
         binding source's strength rule governs it, and binding is correct.
+
+        **The AI RMF Core does not count as binding** (#341, 80's ruling). It
+        states outcomes, so a Playbook sentence that also cites the Core is
+        still NIST's suggestion and still read by the gate. The non-binding
+        set is `crosswalk.overlay.NON_BINDING_FRAMEWORKS`, not a list here.
+        The name is kept because every caller asks the same question it
+        always did: is this sentence governed by the Playbook rules?
         """
-        parts = [part for tag in self.citations for part in _parts(tag)]
-        return bool(parts) and all(_is_playbook(part) for part in parts)
+        from policyforge.crosswalk.overlay import NON_BINDING_FRAMEWORKS
+        from policyforge.mapping.crosswalk import normalize_framework
+
+        parts = [part for tag in self.citations for part in _attributed_parts(tag)]
+        if not parts:
+            return False
+        frameworks = [normalize_framework(part.framework or "") for part in parts]
+        return "nist-ai-rmf-playbook" in frameworks and all(
+            f in NON_BINDING_FRAMEWORKS for f in frameworks
+        )
 
     @property
     def weakens_a_citation(self) -> bool:
@@ -592,8 +607,14 @@ def playbook_tagged_headings(text: str) -> list[tuple[int, str]]:
     9 of its 9 Playbook tags sat on headings, and the gate reported none.
     """
     found = []
-    for number, line in enumerate(text.splitlines(), start=1):
-        if not _HEADING_LINE_RE.match(line):
+    lines = text.split("\n")
+    kinds = _line_kinds(lines)
+    for number, line in enumerate(lines, start=1):
+        # Headings as `analyze` classifies them (9b on #350): a setext
+        # heading's text line, blanked out of sentence analysis, is still
+        # a heading here, so an obligation underlined with `---` is caught
+        # by this rule rather than by neither.
+        if kinds[number - 1] not in _HEADING_TEXT:
             continue
         tags = _CITATION_RE.findall(line)
         if any(_is_playbook(part) for tag in tags for part in _parts(tag)):
@@ -639,10 +660,10 @@ def classify(sentence: str) -> str:
     return NONE
 
 
-#: Markdown headings. Structure, not statements — "### 4.1 Media Protection"
+#: Markdown headings are structure, not statements: "### 4.1 Media Protection"
 #: commits the organization to nothing, and a heading ending in a numbered
-#: section makes the sentence splitter cut in the middle of one.
-_HEADING_LINE_RE = re.compile(r"^[ \t]*#{1,6}[ \t].*$", re.MULTILINE)
+#: section makes the sentence splitter cut in the middle of one. Which lines
+#: are headings is decided once, by `_line_kinds` below.
 
 
 def analyze(text: str) -> list[Statement]:
@@ -658,12 +679,127 @@ def analyze(text: str) -> list[Statement]:
     a heading and binds nothing. Left alone that reported every correctly
     cited requirement in the corpus as a weakened one, which is precisely
     the kind of false positive that teaches people to ignore the check.
+
+    **A heading ends a sentence, and nothing is credited across one (#349).**
+    Headings used to be blanked and then read straight through, so a
+    sentence ending `... [Playbook Map 1.6 Action 8].` ran across `## 3.` and
+    `### 3.1` into `- **CAT-01:** ... shall ensure ... [NIST AI RMF Map 2]`,
+    and the gate read CAT-01's obligation and citation as NIST's suggestion
+    (18 of 2,501 statements across 33 generated Standards). Sentences are
+    now split within each run of lines between headings, ATX or setext.
     """
-    text = _HEADING_LINE_RE.sub(lambda m: " " * len(m.group(0)), text)
+    text, blocks = _heading_blocks(text)
 
     statements: list[Statement] = []
-    for piece_start, raw in _sentences(text):
-        offset = piece_start + (len(raw) - len(raw.lstrip()))
+    for block_offset, block in blocks:
+        _analyze_block(text, block_offset, block, statements)
+    return statements
+
+
+#: An ATX heading, CommonMark's shapes: up to three spaces, 1-6 `#`, then a
+#: space or the end of the line (so a bare `##` is an empty heading), inside
+#: any number of blockquote markers (`> ## heading`).
+_ATX_RE = re.compile(r"^[ \t]{0,3}(?:>[ \t]?)*[ \t]{0,3}#{1,6}(?:[ \t]|$)")
+#: A thematic break, CommonMark's shape: up to three spaces, then three or
+#: more of ONE of `-`, `*`, `_`, spaces allowed between (1d on #350: `***`,
+#: `___`, `- - -` and `* * *` did not end a block).
+_THEMATIC_BREAK_RE = re.compile(r"^[ \t]{0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$")
+#: A setext underline: any run of `=`, or two or more `-`, and nothing else.
+#: It is an underline only under a paragraph line (see `_line_kinds`).
+#: **A lone `-` is excluded by choice, not by CommonMark** (1d on #350:
+#: markdown-it reads `text\n-` as a setext h2). Excluding it keeps the line
+#: above in sentence analysis, where every gate reads it; including it would
+#: blank that line on a single stray character, the destructive direction.
+_SETEXT_UNDERLINE_RE = re.compile(r"^[ \t]{0,3}(?:=+|-{2,})[ \t]*$")
+#: A line that cannot be setext heading text: a list item or a table row.
+_LIST_OR_TABLE_RE = re.compile(r"^[ \t]*(?:[-*+][ \t]|\d+[.)][ \t]|\|)")
+
+
+#: Line kinds `_line_kinds` returns; the first two are heading TEXT.
+_ATX, _SETEXT, _UNDERLINE, _BREAK = "atx", "setext", "underline", "break"
+_HEADING_TEXT = (_ATX, _SETEXT)
+
+
+def _line_kinds(lines: list[str]) -> list[str | None]:
+    """Each line's block role, or None for ordinary text.
+
+    **The one classification of headings**, read by `analyze` (a boundary)
+    and by `playbook_tagged_headings` (a tagged heading). Two readings of
+    one document disagreeing is how an obligation underlined with `---` left
+    sentence analysis without becoming a heading anywhere (9b on #350).
+    """
+    kinds: list[str | None] = [_ATX if _ATX_RE.match(line) else None for line in lines]
+    for index, line in enumerate(lines):
+        if kinds[index] is not None:
+            continue
+        above = index - 1
+        paragraph_above = (
+            above >= 0
+            and lines[above].strip()
+            and kinds[above] is None
+            and not _LIST_OR_TABLE_RE.match(lines[above])
+            and not _THEMATIC_BREAK_RE.match(lines[above])
+        )
+        if paragraph_above and _SETEXT_UNDERLINE_RE.match(line):
+            kinds[index] = _UNDERLINE
+            # The whole paragraph above is the heading, as in CommonMark,
+            # not only its last line (1d on #350): a tag on its first line
+            # must reach the heading check too.
+            while (
+                above >= 0
+                and lines[above].strip()
+                and kinds[above] is None
+                and not _LIST_OR_TABLE_RE.match(lines[above])
+                and not _THEMATIC_BREAK_RE.match(lines[above])
+            ):
+                kinds[above] = _SETEXT
+                above -= 1
+        elif _THEMATIC_BREAK_RE.match(line):
+            kinds[index] = _BREAK
+    return kinds
+
+
+def _heading_blocks(text: str) -> tuple[str, list[tuple[int, str]]]:
+    """`text` with every heading line blanked in place (so line numbers hold),
+    and the runs of lines between headings as `(offset, block)`.
+
+    Block boundaries, in CommonMark's precedence:
+    - an ATX heading (`## x`, a bare `##`, or `> ## x`);
+    - a setext underline under a paragraph line: the underline and the
+      line above are both heading. `---` there is setext, not a break;
+    - a thematic break anywhere else: it ends the block, and the line
+      above it stays text.
+
+    **Named, not handled:** a setext heading inside a blockquote, and
+    indented code blocks, whose contents are still read as prose.
+    """
+    lines = text.split("\n")
+    heading = [kind is not None for kind in _line_kinds(lines)]
+    blanked = [" " * len(line) if heading[i] else line for i, line in enumerate(lines)]
+    text = "\n".join(blanked)
+
+    blocks: list[tuple[int, str]] = []
+    offset, start = 0, None
+    for index, line in enumerate(blanked):
+        if heading[index]:
+            if start is not None:
+                blocks.append((start, text[start : offset - 1]))
+                start = None
+        elif start is None:
+            start = offset
+        offset += len(line) + 1
+    if start is not None:
+        blocks.append((start, text[start:]))
+    return text, blocks
+
+
+def _analyze_block(text: str, block_offset: int, block: str, statements: list[Statement]) -> None:
+    """The sentences of one run of lines between headings, appended to
+    `statements`. A leading citation is credited backwards only to a
+    sentence in this same block."""
+    first_in_block = len(statements)
+    for piece_start, raw in _sentences(block):
+        offset = block_offset + piece_start + (len(raw) - len(raw.lstrip()))
         sentence = raw.strip()
         if not sentence:
             continue
@@ -688,7 +824,8 @@ def analyze(text: str) -> list[Statement]:
             offset += len(sentence) - len(stripped)
             sentence = stripped
 
-        if trailing_citation and statements:
+        carried: tuple[str, ...] = ()
+        if trailing_citation and len(statements) > first_in_block:
             previous = statements[-1]
             statements[-1] = Statement(
                 line=previous.line,
@@ -697,11 +834,15 @@ def analyze(text: str) -> list[Statement]:
                 cited=True,
                 citations=previous.citations + tuple(peeled),
             )
+        elif trailing_citation:
+            # Nothing above it in this block: a citation opening a block
+            # belongs to the sentence it opens, never to one across a heading.
+            carried = tuple(peeled)
 
         if not sentence:
             continue
 
-        inline = tuple(_CITATION_RE.findall(sentence))
+        inline = carried + tuple(_CITATION_RE.findall(sentence))
         statements.append(
             Statement(
                 line=text.count("\n", 0, offset) + 1,
@@ -711,7 +852,6 @@ def analyze(text: str) -> list[Statement]:
                 citations=inline,
             )
         )
-    return statements
 
 
 def weakened_citations(text: str) -> list[Statement]:

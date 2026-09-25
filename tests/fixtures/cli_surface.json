@@ -1,7 +1,7 @@
 {
   "commands": {
     "addresses": {
-      "help": "Who answers for one requirement, and which document says so.\n\nThe assessor's direction of travel. Name any requirement - NIST, HIPAA,\nHITRUST - and this resolves it through the crosswalk to the topics the\nregistry anchors, then names the owner and the pages.\n\nEvery claim says how it was reached: anchored directly, inherited from a\nparent control, or reached through a published crosswalk. The last is\nthe weakest and is labelled as such, because a mapping is not evidence\nthat anybody wrote the requirement down.",
+      "help": "Who answers for one requirement, and which document says so.\n\nThe assessor's direction of travel. Name any requirement - NIST, HIPAA,\nHITRUST - and this resolves it through the crosswalk to the topics the\nregistry anchors, then names the owner and the pages.\n\nEvery claim says how it was reached: anchored directly, inherited from an\nanchored parent (a control, or an AI RMF category), or reached through a\npublished crosswalk. The last is\nthe weakest and is labelled as such, because a mapping is not evidence\nthat anybody wrote the requirement down.",
       "name": "addresses",
       "params": [
         {

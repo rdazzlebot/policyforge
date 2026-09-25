@@ -102,7 +102,10 @@ def test_anchoring_a_control_claims_its_enhancements():
 
 def test_the_bundle_separates_direct_from_inherited_in_its_summary():
     rendered = team_bundle(TOPICS, NIST, "IT Asset Management").render()
-    assert "2 anchored directly, 2 inherited from a parent control." in rendered
+    assert (
+        "2 anchored directly, 2 inherited from an anchored parent "
+        "(a control, or an AI RMF category)." in rendered
+    )
 
 
 def test_a_bundle_lists_the_documents_the_team_must_keep_current():
@@ -148,7 +151,7 @@ def test_an_enhancement_resolves_through_its_parent_and_says_so():
     view = requirement_view(TOPICS, NIST, "AC-2(1)")
     assert view.claims[0].route == INHERITED
     assert "inherited" in view.render()
-    assert "anchoring a control claims its enhancements" in view.render()
+    assert "a control's enhancements" in view.render()
 
 
 def test_the_view_points_at_the_document_to_show_an_assessor():

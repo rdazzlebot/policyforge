@@ -380,6 +380,26 @@ def document_evidence(
     return evidence
 
 
+def _answers_for_an_anchor(framework: str) -> bool:
+    """Whether a citation of `framework` can answer for a topic's anchor (#335).
+
+    A TOPIC-anchor question, so `anchors_a_topic` answers it. This used to
+    test `NIST_ANCHOR`, the crosswalk's key, so no AI RMF citation ever
+    counted and every AI anchor read as cited nowhere: 19 of 19 on the
+    shipped registry's generated Standards. **The Playbook stays out**: its
+    ids are the Core's (`Govern 1.1`), so crediting it would let a document
+    citing only NIST's suggestions answer for a Core anchor.
+
+    Its own function because this file is also a crosswalk-anchor site, and
+    `test_anchor_concepts` guards the two sides function by function here:
+    this is the only code in the file allowed to name the topic anchor, and
+    the import stays inside it so nothing at module level does.
+    """
+    from policyforge.mapping.crosswalk import anchors_a_topic
+
+    return anchors_a_topic(framework)
+
+
 def build_report(
     documents,
     *,
@@ -427,16 +447,15 @@ def build_report(
     for evidence, slug in zip(evidences, keys, strict=True):
         reached = cited_by_topic.setdefault(slug, set())
         for citation in evidence.cited:
-            if citation.framework != NIST_ANCHOR:
+            if not _answers_for_an_anchor(citation.framework):
                 continue
             reached.add(citation.requirement_id)
-            # Citing AC-2(3) is mentioning AC-2: the enhancement is part of
-            # the control it enhances. `coverage` reads the relation the
-            # other way round (anchoring AC-2 claims AC-2(3)) through the same
-            # `parent_of` (#318), so a topic that cites IR-3(1) and IR-3(3)
-            # is not reported as never mentioning IR-3. **Only 800-53 reaches
-            # this line**: the framework test above skips every AI RMF
-            # citation, so `parent_of`'s AI RMF grammar does nothing here.
+            # Citing AC-2(3) is mentioning AC-2, and citing Govern 1.1 is
+            # mentioning Govern 1: the child is part of its parent. `coverage`
+            # reads the relation the other way round (anchoring AC-2 claims
+            # AC-2(3)) through the same `parent_of` (#318), so a topic that
+            # cites IR-3(1) and IR-3(3) is not reported as never mentioning
+            # IR-3.
             parent = parent_of(citation.requirement_id)
             if parent:
                 reached.add(parent)

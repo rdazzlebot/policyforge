@@ -47,7 +47,8 @@ CHANGED = "changed"
 
 #: Fields whose change alters what the organization must *do*. Everything
 #: else is editorial: worth recording, not worth re-opening a document over.
-SUBSTANTIVE_FIELDS = ("control_statement", "baseline", "enhancements", "parameters")
+#: `description` is an enhancement's requirement text (#369).
+SUBSTANTIVE_FIELDS = ("control_statement", "description", "baseline", "enhancements", "parameters")
 
 #: Inline source tags in a generated document — `[NIST AC-2 | HIPAA 164.x]`.
 #: How a document says which control it answers for, and therefore how this
@@ -172,8 +173,57 @@ def diff_catalogs(old_controls, new_controls) -> list[ControlChange]:
                     detail=detail,
                 )
             )
+        changes.extend(_enhancement_changes(old, new))
 
     return changes
+
+
+def _enhancement_changes(old, new) -> list[ControlChange]:
+    """Each enhancement of a control present in both loads that arrived, left,
+    or is not what it was, under the ENHANCEMENT's own id (#369).
+
+    **Compared this used to be by id alone**, so a reworded enhancement was
+    never reported: measured on the shipped catalogs, 0 changes for 1,573
+    enhancements across 8 catalogs, including every 800-53 enhancement, AI
+    RMF subcategory and HIPAA implementation specification. The id a user
+    cites, and the id impact has to reach (#339), is the enhancement's; the
+    parent keeps `fields=["enhancements"]` for an add or remove, as a pointer
+    (80's ruling on #369).
+
+    **Fields compared** (named so a later narrowing is visible): the
+    `description` (the requirement's text) and `title`, whitespace-normalised
+    as `control_statement` is; the `baseline` (HIPAA's Required/Addressable);
+    and the parameter ids. Not compared: `additional_requirements` and
+    `source_crosswalk`, as at the control level.
+    """
+    old_by_id = {e.enhancement_id: e for e in getattr(old, "enhancements", [])}
+    new_by_id = {e.enhancement_id: e for e in getattr(new, "enhancements", [])}
+    found: list[ControlChange] = []
+    for eid in sorted(set(new_by_id) - set(old_by_id)):
+        found.append(ControlChange(control_id=eid, kind=ADDED, title=new_by_id[eid].title))
+    for eid in sorted(set(old_by_id) - set(new_by_id)):
+        found.append(ControlChange(control_id=eid, kind=REMOVED, title=old_by_id[eid].title))
+    for eid in sorted(set(old_by_id) & set(new_by_id)):
+        a, b = old_by_id[eid], new_by_id[eid]
+        fields: list[str] = []
+        detail = ""
+        if _normalize(a.description) != _normalize(b.description):
+            fields.append("description")
+            detail = _statement_diff(a.description, b.description)
+        if (a.baseline or "") != (b.baseline or ""):
+            fields.append("baseline")
+            detail = detail or f"    baseline: {a.baseline or 'none'} -> {b.baseline or 'none'}"
+        if set(a.parameter_values or {}) != set(b.parameter_values or {}):
+            fields.append("parameters")
+        if _normalize(a.title) != _normalize(b.title):
+            fields.append("title")
+        if fields:
+            found.append(
+                ControlChange(
+                    control_id=eid, kind=CHANGED, title=b.title, fields=fields, detail=detail
+                )
+            )
+    return found
 
 
 def documents_citing(controls: set[str], root: Path) -> dict[str, list[str]]:

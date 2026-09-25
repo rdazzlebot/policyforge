@@ -145,6 +145,10 @@ class OscalDialect:
     family_abbr: Callable[[dict], str]
     #: A part's rendered label. Returning "" drops it.
     part_label: Callable[[str, str], str] = lambda label, _identifier: label
+    #: Whether this catalog names its 800-53 source controls as
+    #: `rel="reference"` links (#259). Only 800-171 rev 3 does: 800-53's own
+    #: reference links are literature, and must never become a mapping.
+    references_800_53: bool = False
 
 
 def _prop(item: dict, name: str) -> str | None:
@@ -201,7 +205,51 @@ NIST_800_171_REV3 = OscalDialect(
     identifier=_sort_id,
     family_abbr=_sort_id,
     part_label=_strip_control_id_from_label,
+    references_800_53=True,
 )
+
+#: The key a 800-171 requirement's `source_crosswalk` names 800-53 under, as
+#: the HIPAA catalog's does; `mapping/crosswalk.py` normalises it to its anchor.
+CROSSWALK_KEY_800_53 = "nist-800-53"
+
+#: A back-matter title that IS a 800-53 control or enhancement id. NIST writes
+#: them zero-padded (`AC-02`, `AC-02(03)`); the shipped 800-53 catalog does
+#: not (`AC-2`, `AC-2(3)`), so the digits are captured without leading zeros.
+#: Read as written, only 22 of rev 3's 157 links resolve -- a partial crosswalk
+#: that looks healthier than an empty one (80 and 9b on #259).
+_REFERENCE_800_53 = re.compile(r"^([A-Z]{2})-0*(\d+)(?:\(0*(\d+)\))?$")
+
+#: The other titles rev 3's reference links carry: publications (`SP 800-63-3`,
+#: `IR 7874`, `FIPS 199`), 199 of them. **In the OSCAL, the title's shape is
+#: the only thing that tells a control from a publication** -- they share one
+#: `rel="reference"` list -- so a title that is neither is refused, not guessed.
+_REFERENCE_LITERATURE = re.compile(r"^(?:SP|IR|FIPS)\s")
+
+
+def _reference_crosswalk(item: dict, titles: dict[str, str], identifier: str) -> dict[str, str]:
+    """The 800-53 ids a 800-171 requirement cites, as a `source_crosswalk`.
+
+    NIST asserts these itself, in the file this catalog is pinned to, so
+    carrying them is not asserting what the source withheld (80 on #259).
+    """
+    ids: list[str] = []
+    for link in item.get("links", []):
+        if link.get("rel") != "reference":
+            continue
+        title = titles.get(link.get("href", "").lstrip("#"), "")
+        match = _REFERENCE_800_53.match(title)
+        if match:
+            family, number, enhancement = match.groups()
+            label = f"{family}-{number}" + (f"({enhancement})" if enhancement else "")
+            if label not in ids:
+                ids.append(label)
+        elif not _REFERENCE_LITERATURE.match(title):
+            raise ValueError(
+                f"{identifier} has a reference whose back-matter title is neither a 800-53 "
+                f"id nor a publication: {title!r}. The title's shape is the only thing that "
+                "separates the two in this catalog, so it is refused rather than guessed."
+            )
+    return {CROSSWALK_KEY_800_53: ", ".join(ids)} if ids else {}
 
 
 def _plain_label(item: dict) -> str | None:
@@ -379,6 +427,11 @@ def parse_oscal_catalog(
     catalog = catalog_json["catalog"]
     version = catalog["metadata"]["version"]
     baselines = baselines or {}
+    titles = {
+        r["uuid"]: r.get("title", "")
+        for r in catalog.get("back-matter", {}).get("resources", [])
+        if "uuid" in r
+    }
 
     controls: list[Control] = []
     withdrawn = 0
@@ -443,6 +496,11 @@ def parse_oscal_catalog(
                     ),
                     enhancements=enhancements,
                     related_controls=_related_controls(raw_control),
+                    source_crosswalk=(
+                        _reference_crosswalk(raw_control, titles, control_id)
+                        if dialect.references_800_53
+                        else {}
+                    ),
                     source_path=dialect.source_url,
                 )
             )

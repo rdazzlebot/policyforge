@@ -174,6 +174,7 @@ def etl_800_171(out: Path):
 
     catalog = fetch_800_171_catalog()
     controls, withdrawn = parse_oscal_catalog(catalog, dialect=NIST_800_171_REV3)
+    links = _require_800_53_links_resolve(controls)
 
     out.parent.mkdir(parents=True, exist_ok=True)
     write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
@@ -188,6 +189,53 @@ def etl_800_171(out: Path):
         click.echo(f"Recorded provenance: {version} sha256:{stamp[:16]}… -> {out.parent}")
     click.echo(f"Parsed {len(controls)} requirements (rev 3, {version}) -> {out}")
     click.echo(f"Excluded {withdrawn} withdrawn requirements.")
+    click.echo(
+        f"Carried NIST's {links['total']} links to 800-53 on {links['requirements']} requirements: "
+        f"{links['controls']} to controls, {links['enhancements']} to enhancements, all resolved."
+    )
+
+
+def _require_800_53_links_resolve(controls) -> dict[str, int]:
+    """Refuse unless every 800-53 id the requirements cite exists in 800-53 (#259).
+
+    **A read count proves nothing here; a resolve count does.** NIST pads its
+    ids (`AC-02(03)`), and 43 of rev 3's 157 targets are enhancements, which
+    the 800-53 catalog nests under their control rather than listing as
+    rows. Skip the padding and 22 resolve; key on `control_id` alone and 114
+    do. Both are partial crosswalks that look like working ones (80 and 9b
+    on #259). So each id must be a `control_id` or an `enhancement_id` of the
+    bundled 800-53 catalog, and one that is neither stops the run.
+    """
+    import json
+
+    from policyforge.ingest.oscal_loader import CROSSWALK_KEY_800_53
+    from policyforge.scaffold import bundled_root
+
+    rows = json.loads(
+        bundled_root()
+        .joinpath("frameworks", "nist-800-53-r5", "controls.json")
+        .read_text(encoding="utf-8")
+    )
+    control_ids = {r["control_id"] for r in rows}
+    enhancement_ids = {e["enhancement_id"] for r in rows for e in r.get("enhancements") or []}
+    cited = [
+        (c.control_id, i.strip())
+        for c in controls
+        for i in c.source_crosswalk.get(CROSSWALK_KEY_800_53, "").split(",")
+        if i.strip()
+    ]
+    missing = [f"{req} -> {i}" for req, i in cited if i not in control_ids | enhancement_ids]
+    if missing:
+        raise click.ClickException(
+            f"{len(missing)} of {len(cited)} links to 800-53 name no control or enhancement "
+            f"in the bundled 800-53 catalog, so nothing was written: {', '.join(missing[:10])}"
+        )
+    return {
+        "total": len(cited),
+        "requirements": len({req for req, _ in cited}),
+        "controls": sum(1 for _, i in cited if i in control_ids),
+        "enhancements": sum(1 for _, i in cited if i in enhancement_ids),
+    }
 
 
 def _crosswalk_mappings(catalog: list[dict]) -> int:

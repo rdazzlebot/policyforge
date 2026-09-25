@@ -122,17 +122,19 @@ crosswalk:
 
 ```
 NIST-800-171 reachable via the crosswalk
-  0 of 97 requirements map to an owned NIST control
+  97 of 97 requirements map to an owned NIST control
 ```
 
-**Zero here is a gap in PolicyForge, not in the source.** NIST's OSCAL
-file for rev 3, the one this catalog is built from, links every one of
-the 97 requirements to the 800-53 controls it was derived from: 157
-links. This catalog does not ingest them yet (#259), so nothing reaches
-800-53 through it. It does not mean 97 requirements are unaddressed, and
-it does not mean nobody has mapped them. **Do not hand-map them with
-`crosswalk seed`**, because the source already asserts the mapping and a
-hand-made one would compete with it.
+That is the example topic registry (`config/topics.example.yaml`),
+measured on 2026-09-24; yours depends on which 800-53 controls your
+topics own. **The mapping is NIST's own.** NIST's OSCAL file for rev 3,
+the one this catalog is built from, links every one of the 97
+requirements to the 800-53 controls it was derived from: 157 links, 114
+to controls and 43 to enhancements. Since #259 this catalog carries them,
+so 800-171 reaches 800-53 through NIST's mapping. Before #259 it did not
+read them, and this line read `0 of 97`. **Do not hand-map them with
+`crosswalk seed`**: the source asserts the mapping, and a hand-made one
+would compete with it.
 
 ## Regenerating it
 
@@ -155,12 +157,22 @@ template produces both; only literals do.
 
 ## Crosswalk
 
-This catalog seeds normally. It ships without a `source_crosswalk`
-**because the ETL does not read the links NIST publishes**, not because
-none exist. Each rev 3 requirement links to its 800-53 source controls
-as `rel="reference"` entries in the catalog's back-matter, in the same
-list as its literature references (`IR 7874`, `SP 800-63-3`). 800-53
-uses `rel="related"`, which is the only kind `oscal_loader` reads.
-Ingesting them is #259. The framework key is `nist-800-171`,
-which `mapping/crosswalk.FRAMEWORK_ALIASES` already carried before this
-catalog existed.
+**Every requirement carries NIST's own mapping to 800-53** as its
+`source_crosswalk` (#259): 97 of 97 requirements, 157 links. Each rev 3
+requirement links to its 800-53 source controls as `rel="reference"`
+entries in the catalog's back-matter, **in the same list as its
+literature references** (`IR 7874`, `SP 800-63-3`, `FIPS 199`: 199 of
+them). In the OSCAL, the title's shape is the only thing that tells a
+control from a publication, so `oscal_loader` keeps 800-53-shaped
+titles, skips publications, and refuses a title that is neither.
+
+NIST writes the ids zero-padded (`AC-02(03)`) and the 800-53 catalog
+does not (`AC-2(3)`), so they are normalised. `etl-800-171` refuses to
+write unless every one resolves to an 800-53 control or enhancement.
+Read as written, only 22 of the 157 would resolve; keyed on control ids
+alone, 114. Both are partial mappings that look like working ones.
+
+The framework key is `nist-800-171`, which
+`mapping/crosswalk.FRAMEWORK_ALIASES` already carried before this catalog
+existed. A topic cannot anchor an 800-171 requirement; it anchors the
+800-53 controls the requirement maps to.

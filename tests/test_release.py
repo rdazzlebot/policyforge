@@ -970,3 +970,14 @@ def test_a_version_the_published_formula_already_has_is_replaced_not_doubled(mon
     assert [line for line in commit if line.startswith("  version ")] == ['  version "9.9.9"']
     tag = release._formula(_ctx(), release._tag_archive(_ctx()), "1" * 64)
     assert "version " not in tag, tag
+
+
+def test_a_crlf_published_formula_still_gets_its_version(monkeypatch):
+    """b5 on #392: the patterns anchor on "\n", so a CRLF formula silently
+    got no version line and would fail step 8 like #391. Normalised first."""
+    crlf = _PUBLISHED.replace("\n", "\r\n")
+    monkeypatch.setattr(release.release_check, "fetch_formula", lambda url=None: crlf)
+    ctx = _ctx(run=_fake_run({"rev-parse HEAD": (0, CUT)}))
+    formula = release._formula(ctx, release._head_archive(ctx), "1" * 64)
+    assert '  version "9.9.9"' in formula.splitlines(), formula
+    assert "\r" not in formula

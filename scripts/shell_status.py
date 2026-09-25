@@ -214,8 +214,19 @@ def _opener_of(line: str, states: list[tuple[str, int]], start: int, depth: int)
 
 
 def _swallowed_at(line: str) -> int | None:
-    """Where a pipe into a consumer is followed by an `&&` that gates it,
-    else None.
+    """The first pipe whose status an `&&` swallows, else None. See
+    `_swallowed_positions`, which the rule uses: a line can hold more than one."""
+    positions = _swallowed_positions(line)
+    return positions[0] if positions else None
+
+
+def _swallowed_positions(line: str) -> list[int]:
+    """EVERY pipe into a consumer that is followed by an `&&` gating it.
+
+    **Every one, not the first** (policyforge-9b on #338, over 4,820 bash-judged
+    cases): returning only the first let a guarded first swallow hide an
+    unguarded second one, as in `set -o pipefail; a | tail && x;
+    set +o pipefail; b | tail && push`.
 
     **The `&&` must sit at the same quoting and `$( )` depth as the pipe,
     with no `|` or `;` between them at that level.** Each clause is
@@ -228,8 +239,9 @@ def _swallowed_at(line: str) -> int | None:
     which `bash -c` runs.
     """
     if not _SWALLOWED.search(line):
-        return None
+        return []
     states = _nesting(line)
+    found: list[int] = []
     for match in _CONSUMER_PIPE.finditer(line):
         quote, depth = states[match.start()]
         #: After leaving a substitution whose statement is assignment-only,
@@ -248,12 +260,13 @@ def _swallowed_at(line: str) -> int | None:
                 continue
             ch = line[i]
             if line.startswith("&&", i) and (quote is not None or here[0] == ""):
-                return match.start()
+                found.append(match.start())
+                break
             if ch in "|;" and (quote is not None or here[0] == ""):
                 break
             if after_assignment and not (ch.isspace() or ch in "\"')&"):
                 break
-    return None
+    return found
 
 
 #: Any pipe into a stream consumer, used for the pipefail requirement.
@@ -929,8 +942,7 @@ def findings(sources: list[Source]) -> list[Finding]:
                     )
                 )
 
-            swallowed = _swallowed_at(line)
-            if swallowed is not None and not on_at(swallowed):
+            if any(not on_at(position) for position in _swallowed_positions(line)):
                 results.append(
                     Finding(
                         source.path,

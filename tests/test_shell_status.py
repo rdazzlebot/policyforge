@@ -1137,3 +1137,18 @@ def test_a_status_read_after_the_line_is_judged_at_its_last_pipe():
     assert "status-after-pipe" not in _block(
         "git log | tail -1; set -o pipefail; git diff | head -1", "rc=$?"
     )
+
+
+def test_every_swallow_on_a_line_is_judged_not_only_the_first():
+    """policyforge-9b on #338, the one shape left among 4,820 bash-judged
+    cases: a guarded FIRST swallow hid an unguarded SECOND one (bash: pipefail
+    OFF at the second pipe)."""
+    command = (
+        "set -o pipefail; git log | tail -1 && echo ok; set +o pipefail; "
+        "python -m pytest -q | tail -1 && git push"
+    )
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+    guarded = (
+        "set -o pipefail; git log | tail -1 && echo ok; python -m pytest -q | tail -1 && git push"
+    )
+    assert shell_status.check_command(guarded) == []

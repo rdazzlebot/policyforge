@@ -151,6 +151,9 @@ class Statement:
     #: the next line. Recorded so a check can ask WHICH framework a sentence
     #: cites, not only whether it cites one (#300).
     citations: tuple[str, ...] = ()
+    #: Heading text, not a sentence (#352): reported by the same checks,
+    #: with a message that says so, because rendered output hides it.
+    heading: bool = False
 
     @property
     def binds(self) -> bool:
@@ -1045,9 +1048,115 @@ def _analyze_block(text: str, block_offset: int, block: str, statements: list[St
         )
 
 
+#: An ATX heading's markup: indentation, blockquote markers and the opening
+#: `#`s, and an optional closing run of `#`s.
+_ATX_MARKS_RE = re.compile(r"^[ \t]{0,3}(?:>[ \t]?)*[ \t]{0,3}#{1,6}[ \t]*|[ \t]+#+[ \t]*$")
+
+
+#: Every modal phrase `_MODALITY_PATTERNS` matches, lowercase, longest first.
+_HEADING_MODALS = "|".join(
+    sorted(
+        {
+            phrase
+            for _, pattern in _MODALITY_PATTERNS
+            for phrase in pattern.pattern.split("(?:", 1)[1].rsplit(")", 1)[0].split("|")
+        },
+        key=len,
+        reverse=True,
+    )
+)
+_HEADING_MODAL_RE = re.compile(rf"\b(?:{_HEADING_MODALS})\b", re.IGNORECASE)
+#: Words that open a clause rather than assert (80's ruling on #357).
+_QUESTION_WORDS = frozenset({"what", "how", "why", "when", "which", "who", "whom", "where"})
+#: A modal right after these belongs to a relative clause inside a noun
+#: phrase: "Controls That Must Be Applied" names a topic (b5, put to 80).
+_RELATIVES = frozenset({"that", "which", "who", "whom", "whose"})
+
+
+def _states_something(heading: str) -> bool:
+    """Whether a heading asserts, so its modality counts (80's ruling on #357).
+
+    **Subject + modal + verb, in any case, and passive counts.** "Password
+    Must Be Rotated" and "Acme Health must retain ..." assert. These are
+    titles: "What Employees Must Do" (opens with a question word),
+    "Must-Have Controls" (the modal leads, and is hyphenated into an
+    adjective), and "Shall Statements" (the modal leads: the word is named,
+    not used). A modal with no subject before it, or no verb after it, is not
+    an obligation. A phrase that is complete in itself ("are prohibited")
+    may end the heading.
+    """
+    plain = " ".join(_MARKUP_RE.sub("", _CITATION_RE.sub("", heading)).split())
+    words = plain.lower().split()
+    if not words or words[0].strip(":,") in _QUESTION_WORDS:
+        return False
+    for match in _HEADING_MODAL_RE.finditer(plain):
+        before = plain[: match.start()].split()
+        if not before or before[-1].lower() in _RELATIVES:
+            continue
+        after = plain[match.end() :]
+        if re.match(r"\s+[A-Za-z]", after) or re.fullmatch(r"[.!]?\s*", after):
+            return True
+    return False
+
+
+def heading_statements(text: str) -> list[Statement]:
+    """Every heading as a statement, from the one classifier, `_line_kinds`.
+
+    **A heading that states an obligation is an obligation** (80's ruling on
+    #352). `analyze` blanks headings, so the uncited and strength checks
+    never saw one: an obligation that was heading text, ATX or setext, was
+    silent. These are the headings, for those checks to read. An ATX
+    heading is its line; a setext heading is its whole paragraph, as
+    CommonMark reads it, starting on its first line.
+    """
+    lines = text.split("\n")
+    kinds = _line_kinds(lines)
+    found: list[Statement] = []
+    index = 0
+    while index < len(lines):
+        kind = kinds[index]
+        if kind not in _HEADING_TEXT:
+            index += 1
+            continue
+        start = index
+        if kind == _ATX:
+            raw = _ATX_MARKS_RE.sub("", lines[index])
+            index += 1
+        else:
+            while index < len(lines) and kinds[index] == _SETEXT:
+                index += 1
+            raw = " ".join(line.strip() for line in lines[start:index])
+        heading = " ".join(raw.split())
+        if not heading:
+            continue
+        citations = tuple(_CITATION_RE.findall(heading))
+        found.append(
+            Statement(
+                line=start + 1,
+                text=heading,
+                # A title states nothing, whatever words it uses (#357).
+                modality=classify(heading) if _states_something(heading) else NONE,
+                cited=bool(citations),
+                citations=citations,
+                heading=True,
+            )
+        )
+    return found
+
+
 def weakened_citations(text: str) -> list[Statement]:
-    """Sentences that cite a control and do not bind."""
-    return [s for s in analyze(text) if s.weakens_a_citation]
+    """Sentences that cite a control and do not bind, and headings that do.
+
+    **A heading counts only when it states something** (a modality other
+    than none): "NIST should ..." set as a heading is a weakened citation,
+    but a cited title such as `## Account Management [NIST 800-53 AC-2]`
+    states nothing, and reporting every one would make the check noise.
+    The choice is b5's on #352, measured on the 33 generated Standards and
+    put to 80 on the PR.
+    """
+    sentences = [s for s in analyze(text) if s.weakens_a_citation]
+    headings = [h for h in heading_statements(text) if h.modality != NONE and h.weakens_a_citation]
+    return sorted(sentences + headings, key=lambda s: s.line)
 
 
 def binding_share(text: str) -> tuple[int, int]:

@@ -981,7 +981,8 @@ def test_pipefail_mentioned_does_not_clear_a_swallow(command):
     "command",
     [
         "set -o pipefail; python -m pytest -q | tail -1 && git push",
-        "true && set -o pipefail; python -m pytest -q | tail -1 && git push",
+        "! set -o pipefail; python -m pytest -q | tail -1 && git push",
+        "{ set -o pipefail; }; python -m pytest -q | tail -1 && git push",
         "bash -c 'set -o pipefail; python -m pytest -q | tail -1 && git push'",
         "set -o pipefail; n=$(python -m pytest -q | tail -1) && git push",
         "set -o pipefail\npython -m pytest -q | tail -1 && git push",
@@ -1012,8 +1013,34 @@ def test_pipefail_set_in_another_shell_does_not_reach_the_pipe(command):
     assert "swallowed-status" in _rules(shell_status.check_command(command))
 
 
-def test_pipefail_set_in_an_if_body_does_reach_the_pipe():
-    """`if ...; then set -o pipefail; fi` runs in the SAME shell (bash: ON),
-    so `then` is a command position and the change carries."""
-    command = "if true; then set -o pipefail; fi; python -m pytest -q | tail -1 && git push"
+@pytest.mark.parametrize(
+    "command",
+    [
+        "false && set -o pipefail; python -m pytest -q | tail -1 && git push",
+        "true || set -o pipefail; python -m pytest -q | tail -1 && git push",
+        '[ -n "$CI" ] && set -o pipefail; python -m pytest -q | tail -1 && git push',
+        "f(){ set -o pipefail; }; python -m pytest -q | tail -1 && git push",
+        "true | set -o pipefail; python -m pytest -q | tail -1 && git push",
+        'if [ -n "$CI" ]; then\n  set -o pipefail\nfi\npython -m pytest -q | tail -1 && git push',
+        "f() {\n  set -o pipefail\n}\npython -m pytest -q | tail -1 && git push",
+        # Conditional as WRITTEN, though bash would run them (true && ...,
+        # if true). A static check cannot know the branch, so it credits
+        # neither: a false alarm, never a false clear.
+        "true && set -o pipefail; python -m pytest -q | tail -1 && git push",
+        "if true; then set -o pipefail; fi; python -m pytest -q | tail -1 && git push",
+    ],
+)
+def test_a_conditional_or_deferred_set_is_not_credited(command):
+    """**The unsafe direction** (policyforge-9b on #331). A `set` after
+    `&&`/`||`, in a pipeline stage, in an `if` body (on one line or across
+    three), or in a function body that is defined and not called, may not
+    run. The first five and the multi-line `if` were checked in bash: OFF.
+    Crediting any of them cleared a real swallow."""
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+def test_a_set_after_a_closed_block_is_credited():
+    """The block tracker must CLOSE blocks too: after `fi`, a `set` is
+    unconditional again."""
+    command = "if true; then echo x; fi\nset -o pipefail\npython -m pytest -q | tail -1 && git push"
     assert shell_status.check_command(command) == []

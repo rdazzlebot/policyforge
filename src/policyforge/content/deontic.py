@@ -767,6 +767,31 @@ _CONDITIONAL_WORDS = frozenset(
 )
 
 
+#: What closes an aside right before a predicate: a comma, an em or en dash,
+#: or `--`.
+_ASIDE_CLOSE = re.compile(rf"(,|{chr(0x2014)}|{chr(0x2013)}|--)\s*$")
+
+
+def _without_asides(prefix: str) -> str:
+    """`prefix` without the asides that sit between a subject and its
+    predicate (1d on #367): balanced parentheses ("Written approval (see
+    Appendix B) is required"), and a comma or dash pair ending right before
+    the predicate ("Encryption, where feasible, is required", "USB devices
+    -- including phones -- are not allowed"). Without this the clause
+    before the predicate was empty and read as "no subject". A CFR
+    enumerator after a colon ("information that: (i) Is not permitted")
+    still leaves an empty clause, as it should.
+    """
+    while re.search(r"\([^()]*\)", prefix):
+        prefix = re.sub(r"\([^()]*\)", " ", prefix)
+    close = _ASIDE_CLOSE.search(prefix)
+    if close:
+        opening = prefix.rfind(close.group(1), 0, close.start())
+        if opening >= 0:
+            prefix = prefix[:opening]
+    return prefix
+
+
 def _states_no_requirement(text: str, match: re.Match[str]) -> bool:
     """Whether a #360 predicate match states nothing about its subject (80's
     ruling): `No action is required.`, `what is required`, `where it is
@@ -781,7 +806,7 @@ def _states_no_requirement(text: str, match: re.Match[str]) -> bool:
         # A category, not a demand: HIPAA 164.306(d)'s "Implementation
         # specifications are required or addressable." (80's L1 on #360).
         return True
-    clause = re.split(r"[.;:,()—]", text[: match.start()])[-1]
+    clause = re.split(rf"[.;:,(){chr(0x2014)}]", _without_asides(text[: match.start()]))[-1]
     words = [w.strip("\"'").lower() for w in clause.split()]
     words = [w for w in words if not re.fullmatch(r"[-*+]|\d+[.)]|\([ivx\d]+\)", w)]
     if not words:
@@ -789,7 +814,11 @@ def _states_no_requirement(text: str, match: re.Match[str]) -> bool:
         # before it -- "information that: (i) Is not permitted by applicable
         # law" (45 CFR 171.204(a)) -- so it states nothing about a subject.
         return True
-    if words[-1] in _RELATIVE_WORDS or any(w in _CONDITIONAL_WORDS for w in words):
+    conditional = any(
+        w in _CONDITIONAL_WORDS and not (i + 1 < len(words) and words[i + 1].endswith("ing"))
+        for i, w in enumerate(words)
+    )
+    if words[-1] in _RELATIVE_WORDS or conditional:
         return True
     # The subject is what follows the last relative word: "... may be such
     # that no explicit terms and conditions are required" (800-53 AC-20).

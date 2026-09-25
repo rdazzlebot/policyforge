@@ -175,3 +175,31 @@ def test_the_heading_reader_sees_every_modal_phrase():
     assert len(phrases) > 30 and "is not permitted" in phrases and "is mandatory" in phrases
     missing = sorted(p for p in phrases if not _HEADING_MODAL_RE.fullmatch(p))
     assert missing == []
+
+
+# 1d on #367: an aside between the subject and the predicate emptied the
+# clause, and "no subject" then left a real requirement unbound.
+_DASH = chr(0x2014)
+
+
+@pytest.mark.parametrize(
+    ("sentence", "modality"),
+    [
+        ("Written approval (see Appendix B) is required.", OBLIGATION),
+        ("Encryption, where feasible, is required.", OBLIGATION),
+        ("MFA, for all remote access, is required.", OBLIGATION),
+        (f"USB devices {_DASH} including phones {_DASH} are not allowed.", PROHIBITION),
+        ("USB devices -- including phones -- are not allowed.", PROHIBITION),
+        # FedRAMP MA-5(1), recovered by the same fix in the catalog count.
+        ("Only MA-5 (1) (a) (1) is required by FedRAMP Class C Baseline.", OBLIGATION),
+        # A reduced clause ("when working") is not a condition on the predicate.
+        ("When working remotely MFA is required.", OBLIGATION),
+        # ... and what must stay unbound still does.
+        ("If approval is required, request it in the ticket.", NONE),
+        ("Encryption (where required) protects data at rest.", NONE),
+    ],
+    ids=["paren", "comma-aside", "comma-aside-2", "em-dash-aside", "double-hyphen-aside",
+         "fedramp-ma-5-1", "reduced-clause", "if-clause", "paren-condition"],
+)  # fmt: skip
+def test_an_aside_before_the_predicate_does_not_hide_its_subject(sentence, modality):
+    assert classify(sentence) == modality

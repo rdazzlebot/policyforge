@@ -1004,7 +1004,13 @@ def check_cmd(content_dir: Path | None, synthesis_dir: Path, strict: bool, entai
             "`zardoz.content_dir` in config/config.yaml."
         )
 
-    report = check_tree(root, synthesis_dir=synthesis_dir)
+    from policyforge.org.context import org_actors
+
+    # The organization's own names, so the Playbook check catches "..., and
+    # <Org> will adopt it" for THIS organization (#323).
+    report = check_tree(
+        root, synthesis_dir=synthesis_dir, org_actors=org_actors(load_config_or_empty())
+    )
     click.echo(report.format_report())
 
     # Licensed catalog content committed to a repository that has not

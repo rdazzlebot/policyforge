@@ -737,7 +737,10 @@ def classify(sentence: str) -> str:
     """
     visible = _MARKUP_RE.sub("", sentence)
     for modality, pattern in _MODALITY_PATTERNS:
-        if any(not _states_no_requirement(visible, m) for m in pattern.finditer(visible)):
+        if any(
+            not (_states_no_requirement(visible, m) or _epistemic_may(visible, m))
+            for m in pattern.finditer(visible)
+        ):
             return modality
     return NONE
 
@@ -790,6 +793,61 @@ def _without_asides(prefix: str) -> str:
         if opening >= 0:
             prefix = prefix[:opening]
     return prefix
+
+
+#: "may (not)", past these adverbs, then "be" and the word that decides.
+_BE_AFTER_MAY = re.compile(
+    r"\s+(?:(?:also|only|still|not|always|necessarily|even)\s+)*be\s+(\w+)(\s+as\b)?",
+    re.IGNORECASE,
+)
+#: Passive verbs of judgement or perception, as 80 ruled them on #364.
+#: "known" only as "known as" (a name), not "may not be known to anyone",
+#: which is a split-knowledge requirement.
+_JUDGEMENT = frozenset({"considered", "seen"})
+#: Adjectives: what might be true, not what anyone may do (80's ruling (b)
+#: on #364). **An explicit list, never a suffix rule**: -able/-al would
+#: clear "accountable" and "responsible", and an unlisted word must stay a
+#: permission or prohibition, loudly, rather than clear an action. Taken
+#: from what follows "may (not) be" in the shipped catalogs and the 33
+#: Standards. No -ed form is ever cleared: "may not be left unattended"
+#: stays a prohibition.
+_EPISTEMIC_ADJECTIVES = frozenset(
+    {
+        "necessary", "possible", "subject", "less", "more", "effective", "ineffective",
+        "qualitative", "unreliable", "measurable", "comparable", "significant", "present",
+        "helpful", "convenient", "natural", "disruptive", "suitable", "bilateral", "able",
+        "appropriate", "electronic", "visible",
+    }
+)  # fmt: skip
+
+
+def _epistemic_may(text: str, match: re.Match[str]) -> bool:
+    """Whether a "may" / "may not" match states a possibility, not a permission
+    or prohibition (#364, 80's rulings): "Systems within these organizations
+    may not be considered external.", "(may also be known as accounts of last
+    resort)", "links that may be visible to individuals", "Exit interviews
+    may not always be possible". *May* binds with an agent and an action
+    verb; with a verb of judgement or an adjective it says what might be
+    true. "Approval may be required." stays a permission (#360's L4), and
+    "may not be done" a prohibition: an action participle is never cleared.
+
+    **Known miss, left by ruling (80, option (c) out):** a thing's capability
+    with an active verb still reads as a permission or prohibition, e.g.
+    "Dynamic account creation ... may not support independent verification",
+    "Such key combinations ... may not provide a trusted path", "explanations
+    may not accurately summarize complex systems".
+    """
+    if " ".join(match.group(0).lower().split()) not in {"may", "may not"}:
+        return False
+    after = _BE_AFTER_MAY.match(text[match.end() :])
+    if not after:
+        return False
+    word = after.group(1).lower()
+    return (
+        word in _JUDGEMENT
+        or word in _EPISTEMIC_ADJECTIVES
+        or (word == "known" and bool(after.group(2)))
+    )
 
 
 def _states_no_requirement(text: str, match: re.Match[str]) -> bool:

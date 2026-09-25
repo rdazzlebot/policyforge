@@ -24,7 +24,14 @@ THE CONTRACT, stated once and held by every step:
   would be a measurement of nothing.
 - **An OUTWARD step -- one that changes something outside this clone (push,
   tag, GitHub Release, the tap) -- needs `--execute` AND its key typed.** A
-  stray invocation cannot cut a release.
+  stray invocation cannot cut a release. **`release-pr`'s key is asked
+  BEFORE the changelog step writes anything** (policyforge-ba on #348):
+  declining it after the cut was written left a dirty tree that stopped
+  every re-run at clean-tree. A cut interrupted any other way (a failed
+  postcondition, Ctrl-C) still stops there, and clean-tree prints the
+  `git restore` that puts it back rather than running it.
+- **The train is read from the server** (`git ls-remote`), never from this
+  clone's `origin/*` refs, which answer about the last fetch.
 - **The script never merges to main.** Final approval to main is the user's,
   in GitHub, and the ruleset makes it impossible anyway. That step is a WAIT:
   it reports what it is waiting for and exits 5, and a re-run after the
@@ -94,6 +101,10 @@ class Step:
     outward: bool = False
     #: One line saying what the step would do, for the dry-run.
     would: str = ""
+    #: The key of a LATER outward step this one commits the run to. It is
+    #: asked for here, before this step writes anything, and not again when
+    #: that step is reached in the same run (policyforge-ba on #348).
+    commits_to: str = ""
 
 
 @dataclass
@@ -108,8 +119,9 @@ class Context:
     status_of: Callable[[str], int] = None  # type: ignore[assignment]
     #: sha256 of the bytes a URL serves.
     hash_url: Callable[[str], str] = None  # type: ignore[assignment]
-    #: Installs a formula text in a clean container: (ran, ok, lines).
-    install: Callable[[str], tuple[bool, bool, list[str]]] = None  # type: ignore[assignment]
+    #: Installs a formula text in a clean container and checks the installed
+    #: package's version is this one: (formula, version) -> (ran, ok, lines).
+    install: Callable[[str, str], tuple[bool, bool, list[str]]] = None  # type: ignore[assignment]
     #: Reads the typed confirmation for an outward step.
     confirm: Callable[[str], str] = input
     #: The release's tracking issue, where the two artefact gates read their records.
@@ -130,6 +142,7 @@ class Context:
 
 def run_steps(steps: list[Step], ctx: Context, *, execute: bool, out=print) -> int:
     """Walk the steps in order; the return value is the exit code."""
+    confirmed: set[str] = set()
     for index, step in enumerate(steps, 1):
         out(f"\n[{index}/{len(steps)}] {step.key}: {step.title}")
         done = step.post(ctx) if step.kind != CHECK else Check(False)
@@ -165,11 +178,17 @@ def run_steps(steps: list[Step], ctx: Context, *, execute: bool, out=print) -> i
                 out(f"    not reached: {later.key}: {later.title}")
             return 0
 
-        if step.outward:
-            typed = ctx.confirm(f"    type '{step.key}' to {step.would}: ").strip()
-            if typed != step.key:
+        needs = step.commits_to or (step.key if step.outward else "")
+        if needs and needs not in confirmed:
+            later = next((s for s in steps if s.key == needs), step)
+            prompt = f"    type '{needs}' to {later.would}"
+            if needs != step.key:
+                prompt += f" (asked now: {step.key} writes the cut, and only {needs} commits it)"
+            typed = ctx.confirm(prompt + ": ").strip()
+            if typed != needs:
                 out(f"    not confirmed (typed {typed!r}); stopping before {step.key}")
                 return 6
+            confirmed.add(needs)
 
         assert step.act is not None, f"{step.key} is an ACT step with no action"
         step.act(ctx)
@@ -241,22 +260,58 @@ def _milestone_open(ctx: Context) -> Check:
     )
 
 
+def _server_tip(ctx: Context, branch: str) -> str:
+    """`branch`'s tip ON THE SERVER, never this clone's `origin/<branch>` ref.
+
+    policyforge-ba on #348, measured with a second clone: nothing here fetched
+    the train, so a gate reading `origin/release/X` answered about whenever
+    this clone last fetched. After a late merge pushed from elsewhere,
+    clean-tree AND notes-measured both passed on the stale tip, the second on
+    exactly the stale measurement it exists to refuse. `ls-remote` asks the
+    server every time. No answer is "", which fails every gate that reads it.
+    """
+    out = ctx.run(["git", "-C", str(ctx.root), "ls-remote", "origin", f"refs/heads/{branch}"])
+    for line in (out.stdout or "").splitlines():
+        sha, _, ref = line.partition("\t")
+        if ref.strip() == f"refs/heads/{branch}" and re.fullmatch(r"[0-9a-f]{40}", sha):
+            return sha
+    return ""
+
+
+#: What steps 5 and 6 write. A dirty tree made only of these is an
+#: interrupted cut, and clean-tree says how to put it back.
+CUT_PATHS = ("CHANGELOG.md", "changelog.d/", "pyproject.toml", "src/policyforge/__init__.py")
+
+
+def _dirty_paths(ctx: Context) -> list[str]:
+    """Paths `git status --porcelain` names, read unstripped: its first column
+    is significant, and `ctx.git` strips the output."""
+    out = ctx.run(["git", "-C", str(ctx.root), "status", "--porcelain"]).stdout or ""
+    return [line[3:] for line in out.splitlines() if line.strip()]
+
+
 def _train_tree(ctx: Context) -> Check:
     branch = ctx.git("rev-parse", "--abbrev-ref", "HEAD")
     head = ctx.git("rev-parse", "HEAD")
-    remote = ctx.git("rev-parse", f"origin/{branch}") if branch.startswith(TRAIN_PREFIX) else ""
+    remote = _server_tip(ctx, branch) if branch.startswith(TRAIN_PREFIX) else ""
     cut = _release_pr(ctx).get("headRefOid", "")
-    dirty = ctx.git("status", "--porcelain")
+    dirty = _dirty_paths(ctx)
     ok = branch.startswith(TRAIN_PREFIX) and head in {remote, cut} - {""} and not dirty
-    return Check(
-        ok,
-        [
-            f"branch {branch!r} (must start {TRAIN_PREFIX!r})",
-            f"HEAD {head[:12]}: origin/{branch} {remote[:12] or '-'}, "
-            f"release PR head {cut[:12] or '-'} (must be one)",
-            f"uncommitted changes: {len(dirty.splitlines())} (must be 0)",
-        ],
-    )
+    measured = [
+        f"branch {branch!r} (must start {TRAIN_PREFIX!r})",
+        f"HEAD {head[:12]}: origin/{branch} ON THE SERVER {remote[:12] or '-'}, "
+        f"release PR head {cut[:12] or '-'} (must be one)",
+        f"uncommitted changes: {len(dirty)} (must be 0)",
+    ]
+    if dirty and all(path.startswith(CUT_PATHS) for path in dirty):
+        # Steps 5 and 6 wrote these and the run stopped before release-pr
+        # committed them (a failed postcondition, a failed commit, Ctrl-C).
+        # Said, not done: discarding a working tree is the operator's call.
+        measured.append(
+            "these are only the cut's own files, from an interrupted run; to start "
+            "the cut again: git restore --source=HEAD --staged --worktree -- " + " ".join(CUT_PATHS)
+        )
+    return Check(ok, measured)
 
 
 def _fragments_ready(ctx: Context) -> Check:
@@ -340,20 +395,65 @@ def _pr_ready(ctx: Context) -> Check:
     return Check(True, ["the cut commit will be pushed and a PR opened against main"])
 
 
+def _cut_at_head(ctx: Context) -> list[tuple[bool, str]]:
+    """Whether HEAD's COMMITTED content is the cut: both versions X, `## X` in
+    the changelog, no fragments left, and nothing uncommitted.
+
+    policyforge-ba on #348: the postcondition used to ask only whether a PR
+    sat at HEAD. With the commit refused (a hook, no identity), the push sent
+    the train tip, a PR opened there, and "ok" was printed over a tree whose
+    bump was still uncommitted, so 9.9.9 could have been tagged on 9.9.8 code.
+    This reads HEAD, not the working tree, because HEAD is what gets pushed.
+    """
+
+    def show(path: str) -> str:
+        return ctx.run(["git", "-C", str(ctx.root), "show", f"HEAD:{path}"]).stdout or ""
+
+    a = re.search(r'^version = "([^"]+)"', show("pyproject.toml"), re.M)
+    b = re.search(r'^__version__ = "([^"]+)"', show("src/policyforge/__init__.py"), re.M)
+    a, b = (a.group(1) if a else "?"), (b.group(1) if b else "?")
+    section = f"\n## {ctx.version}\n" in "\n" + show("CHANGELOG.md")
+    listed = ctx.run(["git", "-C", str(ctx.root), "ls-tree", "--name-only", "HEAD", "changelog.d/"])
+    left = [
+        name
+        for name in (listed.stdout or "").splitlines()
+        if name.endswith(".md") and Path(name).name not in changelog_fragments.NOT_A_FRAGMENT
+    ]
+    dirty = _dirty_paths(ctx)
+    return [
+        (
+            a == b == ctx.version,
+            f"at HEAD: pyproject {a} / __version__ {b} (must both be {ctx.version})",
+        ),
+        (section, f"at HEAD: `## {ctx.version}` in CHANGELOG.md: {section}"),
+        (not left, f"at HEAD: fragments left: {len(left)} (must be 0)"),
+        (not dirty, f"uncommitted changes: {len(dirty)} (must be 0: the cut is committed)"),
+    ]
+
+
 def _pr_open(ctx: Context) -> Check:
     pr = _release_pr(ctx)
     head = ctx.git("rev-parse", "HEAD")
-    ok = bool(pr) and (pr.get("state") == "MERGED" or pr.get("headRefOid") == head)
-    return Check(
-        ok, [f"release PR: {'#' + str(pr['number']) + ' ' + pr['state'] if pr else 'none'}"]
-    )
+    at_head = bool(pr) and (pr.get("state") == "MERGED" or pr.get("headRefOid") == head)
+    content = _cut_at_head(ctx)
+    measured = [
+        f"release PR: {'#' + str(pr['number']) + ' ' + pr['state'] if pr else 'none'}, "
+        f"at HEAD {head[:12]}: {at_head}",
+        *(line for _, line in content),
+    ]
+    if ctx.notes.get("release-pr"):
+        measured.append(ctx.notes["release-pr"])
+    return Check(at_head and all(ok for ok, _ in content), measured)
 
 
 def _open_pr(ctx: Context) -> None:
+    """Commit, push, open, and STOP at the first that fails (policyforge-ba
+    on #348): a refused commit followed by a push sends the train tip under
+    the release's name. What failed is left for the postcondition to print."""
     branch = f"9b/release-{ctx.version}"
-    ctx.run(["git", "-C", str(ctx.root), "commit", "-am", f"Release {ctx.version}"])
-    ctx.run(["git", "-C", str(ctx.root), "push", "origin", f"HEAD:refs/heads/{branch}"])
-    ctx.run(
+    for argv in (
+        ["git", "-C", str(ctx.root), "commit", "-am", f"Release {ctx.version}"],
+        ["git", "-C", str(ctx.root), "push", "origin", f"HEAD:refs/heads/{branch}"],
         [
             "gh",
             "pr",
@@ -369,8 +469,17 @@ def _open_pr(ctx: Context) -> None:
             "--body",
             f"The {ctx.version} cut, prepared by scripts/release.py. "
             "Merging it is the user's approval.",
-        ]
-    )
+        ],
+    ):
+        proc = ctx.run(argv)
+        if proc.returncode != 0:
+            said = ((proc.stderr or "") + (proc.stdout or "")).strip().splitlines()
+            what = " ".join(argv[3:5] if argv[0] == "git" else argv[:3])
+            ctx.notes["release-pr"] = (
+                f"`{what}` exited {proc.returncode}, so nothing after it ran"
+                + (f": {said[-1]}" if said else "")
+            )
+            return
 
 
 def _main_merged(ctx: Context) -> Check:
@@ -469,7 +578,7 @@ def _install(ctx: Context, url: str, note: str) -> None:
     if not release_check.names_canonical_homepage(release_check.homepage_in_formula(formula)):
         ctx.notes[note] = "refused: the formula's homepage does not name the canonical owner"
         return
-    ran, ok, lines = ctx.install(formula)
+    ran, ok, lines = ctx.install(formula, ctx.version)
     for line in lines[-6:]:
         print(f"      | {line}")
     ctx.notes[note] = "passed" if ran and ok else ("did not run" if not ran else "FAILED")
@@ -689,7 +798,7 @@ def _post_zero_reviewed(ctx: Context) -> Check:
 def _notes_measured(ctx: Context) -> Check:
     if not ctx.tracking:
         return Check(False, ["no --tracking-issue given, so there is no record to read"])
-    tip = ctx.git("rev-parse", f"origin/{TRAIN_PREFIX}{ctx.version}")
+    tip = _server_tip(ctx, f"{TRAIN_PREFIX}{ctx.version}")
     measured = [
         (created, match.group(1))
         for created, line in _tracking_records(ctx)
@@ -699,7 +808,7 @@ def _notes_measured(ctx: Context) -> Check:
     return Check(
         bool(tip) and latest == tip,
         [
-            f"train tip origin/{TRAIN_PREFIX}{ctx.version}: {tip[:12] or '?'}",
+            f"train tip origin/{TRAIN_PREFIX}{ctx.version} ON THE SERVER: {tip[:12] or '?'}",
             f"latest `Notes-measured-SHA:` for {ctx.version} on #{ctx.tracking}: "
             f"{latest[:12] or 'none'} "
             "(must be the tip: a measurement before the last merge may be stale)",
@@ -740,6 +849,7 @@ def steps() -> list[Step]:
             _changelog_cut,
             _assemble,
             would="assemble the fragments into CHANGELOG.md and remove them",
+            commits_to="release-pr",
         ),
         Step(
             "version",
@@ -749,6 +859,7 @@ def steps() -> list[Step]:
             _bumped,
             _bump,
             would="set both version strings",
+            commits_to="release-pr",
         ),
         Step(
             "release-pr",
@@ -863,7 +974,41 @@ def _real_status(url: str) -> int:
         return 0
 
 
-def _real_install(formula: str) -> tuple[bool, bool, list[str]]:
+def _install_script(version: str) -> str:
+    """The container's `&&` chain, ending with the installed package's version.
+
+    **The version is the one check that reads the artefact itself**
+    (policyforge-ba on #348): an install of the wrong commit passes every
+    other line here. `policyforge --version` does not exist, so it asks the
+    formula's virtualenv for `policyforge.__version__`, the string step 6
+    bumps. `test "$(...)" = X` fails on a wrong version and on no output
+    alike. PROBE MEASURED on #348 against the published 1.6.0 formula in this
+    image: it read 1.6.0, the arm expecting 9.9.9 failed.
+    """
+    python = '"$(brew --prefix local/candidate/policyforge)/libexec/bin/python"'
+    read = "import policyforge, sys; sys.stdout.write(policyforge.__version__)"
+    return " && ".join(
+        [
+            "brew tap-new --no-git local/candidate",
+            "cp /candidate/policyforge.rb "
+            '"$(brew --repository)/Library/Taps/local/homebrew-candidate/Formula/"',
+            "brew install --build-from-source local/candidate/policyforge",
+            "brew test local/candidate/policyforge",
+            "brew audit --strict local/candidate/policyforge",
+            "mkdir -p /tmp/pf",
+            # release_check's pinned smoke test, not retyped: `frameworks` in an
+            # empty directory exits 1 by design, so `init` must come first.
+            *(
+                command
+                for name, command in release_check.INSTALL_STEPS
+                if name in ("init", "frameworks")
+            ),
+            f'test "$({python} -c \'{read}\')" = "{version}"',
+        ]
+    )
+
+
+def _real_install(formula: str, version: str) -> tuple[bool, bool, list[str]]:
     """Install a local formula in a clean container through a throwaway tap.
 
     **Measured on #255, not assumed:** in the `homebrew/brew` image
@@ -882,24 +1027,7 @@ def _real_install(formula: str) -> tuple[bool, bool, list[str]]:
         return False, False, [f"could not start {CONTAINER_IMAGE}"]
     work = Path(tempfile.mkdtemp())
     (work / "policyforge.rb").write_text(formula, encoding="utf-8", newline="\n")
-    script = " && ".join(
-        [
-            "brew tap-new --no-git local/candidate",
-            "cp /candidate/policyforge.rb "
-            '"$(brew --repository)/Library/Taps/local/homebrew-candidate/Formula/"',
-            "brew install --build-from-source local/candidate/policyforge",
-            "brew test local/candidate/policyforge",
-            "brew audit --strict local/candidate/policyforge",
-            "mkdir -p /tmp/pf",
-            # release_check's pinned smoke test, not retyped: `frameworks` in an
-            # empty directory exits 1 by design, so `init` must come first.
-            *(
-                command
-                for name, command in release_check.INSTALL_STEPS
-                if name in ("init", "frameworks")
-            ),
-        ]
-    )
+    script = _install_script(version)
     proc = _real_run(
         [
             "docker",

@@ -9,6 +9,7 @@ list is tested for its order and for what it must never do.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -231,7 +232,10 @@ def test_after_the_cut_commit_the_tree_check_accepts_the_release_head():
             run=_fake_run(
                 {
                     "rev-parse --abbrev-ref HEAD": (0, "release/9.9.9"),
-                    "rev-parse origin/release/9.9.9": (0, "a" * 40),
+                    "ls-remote origin refs/heads/release/9.9.9": (
+                        0,
+                        "a" * 40 + "\trefs/heads/release/9.9.9",
+                    ),
                     "rev-parse HEAD": (0, "b" * 40),
                     "status --porcelain": (0, ""),
                     "pr list": (
@@ -324,7 +328,10 @@ def _records_ctx(comments, closed=("2026-09-25T01:00:00Z",), tip="a" * 40):
                 "milestones": (0, '[{"title": "9.9.9", "number": 7}]'),
                 "state=closed": (0, "\n".join(closed)),
                 "issues/99/comments": (0, lines),
-                "rev-parse origin/release/9.9.9": (0, tip),
+                "ls-remote origin refs/heads/release/9.9.9": (
+                    0,
+                    tip + "\trefs/heads/release/9.9.9",
+                ),
             }
         ),
     )
@@ -393,3 +400,237 @@ def test_the_artefact_gates_come_before_the_changelog():
     assert kinds["post-zero-review"] == CHECK and kinds["notes-measured"] == CHECK, (
         "a CHECK has no action, so --execute cannot satisfy it"
     )
+
+
+# --- #348, ba's review: against REAL git repos, only `gh` stubbed ----------------
+#
+# A bare origin, the clone the script runs in, and a second clone that pushes.
+# Real git because every defect here was about what git's refs and working
+# tree actually hold, which a fake answers however it was written to.
+
+
+def _git(cwd, *args) -> str:
+    return subprocess.run(
+        ["git", "-C", str(cwd), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    ).stdout.strip()
+
+
+def _identity(repo) -> None:
+    _git(repo, "config", "user.email", "release@example.invalid")
+    _git(repo, "config", "user.name", "release test")
+    _git(repo, "config", "core.autocrlf", "false")
+
+
+@pytest.fixture
+def train(tmp_path):
+    """(origin, clone): release/9.9.9 pushed at 9.9.8 with one fragment."""
+    origin, clone = tmp_path / "origin.git", tmp_path / "clone"
+    subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
+    subprocess.run(["git", "clone", "-q", str(origin), str(clone)], check=True, capture_output=True)
+    _identity(clone)
+    files = {
+        "pyproject.toml": 'version = "9.9.8"\n',
+        "src/policyforge/__init__.py": '__version__ = "9.9.8"\n',
+        "CHANGELOG.md": "# Changelog\n\n## 9.9.8\n\nOlder.\n",
+        "changelog.d/README.md": "How to write a fragment.\n",
+        "changelog.d/fix.md": "Fixed a thing.\n",
+    }
+    for path, text in files.items():
+        (clone / path).parent.mkdir(parents=True, exist_ok=True)
+        (clone / path).write_bytes(text.encode())
+    _git(clone, "checkout", "-q", "-b", "release/9.9.9")
+    _git(clone, "add", "-A")
+    _git(clone, "commit", "-q", "-m", "train")
+    _git(clone, "push", "-q", "origin", "release/9.9.9")
+    return origin, clone
+
+
+def _real(gh: dict | None = None, *, fail: str = "", calls: list | None = None):
+    """Real git; `gh` from a fake; `fail` makes one git subcommand exit 1."""
+    fake = _fake_run(gh or {})
+
+    def run(argv):
+        if calls is not None:
+            calls.append(" ".join(argv))
+        if argv[0] != "git":
+            return fake(argv)
+        if fail and argv[3:4] == [fail]:
+            return subprocess.CompletedProcess(argv, 1, "", "refused by a hook")
+        return subprocess.run(
+            argv, capture_output=True, text=True, encoding="utf-8", errors="replace"
+        )
+
+    return run
+
+
+def _late_merge(origin, tmp_path) -> str:
+    """Another clone pushes to the train; returns the new server tip."""
+    other = tmp_path / "other"
+    subprocess.run(
+        ["git", "clone", "-q", "-b", "release/9.9.9", str(origin), str(other)],
+        check=True,
+        capture_output=True,
+    )
+    _identity(other)
+    (other / "late.txt").write_bytes(b"a late merge\n")
+    _git(other, "add", "-A")
+    _git(other, "commit", "-q", "-m", "late merge")
+    _git(other, "push", "-q", "origin", "release/9.9.9")
+    return _git(other, "rev-parse", "HEAD")
+
+
+def test_the_train_gates_read_the_server_not_this_clones_last_fetch(train, tmp_path):
+    """F1. This clone has not fetched since another clone pushed. Both gates
+    that read the train tip must refuse, and notes-measured must refuse the
+    measurement taken at the stale tip: the one it exists to refuse."""
+    origin, clone = train
+    stale = _git(clone, "rev-parse", "HEAD")
+    tip = _late_merge(origin, tmp_path)
+    assert _git(clone, "rev-parse", "origin/release/9.9.9") == stale, "the clone is stale"
+
+    ctx = _ctx(root=clone, run=_real())
+    tree = release._train_tree(ctx)
+    assert not tree.ok
+    assert any(tip[:12] in line for line in tree.measured), tree.measured
+
+    def notes(sha):
+        record = json.dumps(
+            [
+                "2026-09-25T02:00:00Z",
+                f"x\n\nNotes-measured-SHA: {sha} release=9.9.9 reviewer=policyforge-9b",
+            ]
+        )
+        return _ctx(root=clone, tracking=99, run=_real({"issues/99/comments": (0, record)}))
+
+    assert not release._notes_measured(notes(stale)).ok, "measured before the late merge"
+    assert release._notes_measured(notes(tip)).ok, "and it passes at the real tip"
+
+
+def _write_cut(clone) -> None:
+    for path, old in (
+        ("pyproject.toml", "version"),
+        ("src/policyforge/__init__.py", "__version__"),
+    ):
+        (clone / path).write_bytes(f'{old} = "9.9.9"\n'.encode())
+    (clone / "CHANGELOG.md").write_bytes(b"# Changelog\n\n## 9.9.9\n\nFixed a thing.\n\n## 9.9.8\n")
+    (clone / "changelog.d" / "fix.md").unlink()
+
+
+def test_a_refused_commit_stops_the_push_and_fails_the_postcondition(train):
+    """F2. The commit is refused. Nothing after it may run (the push would
+    send the train tip under the release's name), and the postcondition must
+    say the cut is not at HEAD, even with a PR reported sitting there."""
+    _origin, clone = train
+    _write_cut(clone)
+    calls: list[str] = []
+    head = _git(clone, "rev-parse", "HEAD")
+    pr = f'[{{"title": "Release 9.9.9", "number": 9, "state": "OPEN", "headRefOid": "{head}"}}]'
+    ctx = _ctx(root=clone, run=_real({"pr list": (0, pr)}, fail="commit", calls=calls))
+    release._open_pr(ctx)
+    assert not any(" push " in c or "pr create" in c for c in calls), calls
+    check = release._pr_open(ctx)
+    assert not check.ok
+    text = "\n".join(check.measured)
+    assert "pyproject 9.9.8" in text and "uncommitted changes: 4" in text, text
+    assert "exited 1, so nothing after it ran" in text
+
+
+def test_a_committed_cut_passes_the_postcondition(train):
+    """F2's passing case: the same cut, committed and pushed for real."""
+    _origin, clone = train
+    _write_cut(clone)
+    ctx = _ctx(root=clone, run=_real())
+    release._open_pr(ctx)
+    head = _git(clone, "rev-parse", "HEAD")
+    pushed = _git(clone, "ls-remote", "origin", "refs/heads/9b/release-9.9.9").split()
+    assert pushed and pushed[0] == head, "the cut is on the server"
+    pr = f'[{{"title": "Release 9.9.9", "number": 9, "state": "OPEN", "headRefOid": "{head}"}}]'
+    check = release._pr_open(_ctx(root=clone, run=_real({"pr list": (0, pr)})))
+    assert check.ok, check.measured
+
+
+def test_a_committed_cut_with_uncommitted_changes_beside_it_is_refused(train):
+    """F2: HEAD is the cut, but the tree is not what was pushed. The re-run's
+    clean-tree would refuse it, so the postcondition says so here, first."""
+    _origin, clone = train
+    _write_cut(clone)
+    release._open_pr(_ctx(root=clone, run=_real()))
+    (clone / "CHANGELOG.md").write_bytes(b"# Changelog\n\n## 9.9.9\n\nEdited after the commit.\n")
+    head = _git(clone, "rev-parse", "HEAD")
+    pr = f'[{{"title": "Release 9.9.9", "number": 9, "state": "OPEN", "headRefOid": "{head}"}}]'
+    check = release._pr_open(_ctx(root=clone, run=_real({"pr list": (0, pr)})))
+    assert not check.ok and "uncommitted changes: 1" in "\n".join(check.measured)
+
+
+@pytest.mark.parametrize(
+    "undo",
+    ["pyproject.toml", "src/policyforge/__init__.py", "CHANGELOG.md", "changelog.d/fix.md"],
+)
+def test_each_part_of_the_cut_is_read_at_head(train, undo):
+    """F2, one part at a time: commit the cut with that part left as it was
+    on the train, and the postcondition must refuse."""
+    _origin, clone = train
+    _write_cut(clone)
+    _git(clone, "checkout", "HEAD", "--", undo)
+    _git(clone, "add", "-A")
+    _git(clone, "commit", "-q", "-m", "partial cut")
+    head = _git(clone, "rev-parse", "HEAD")
+    pr = f'[{{"title": "Release 9.9.9", "number": 9, "state": "OPEN", "headRefOid": "{head}"}}]'
+    assert not release._pr_open(_ctx(root=clone, run=_real({"pr list": (0, pr)}))).ok
+
+
+def test_declining_the_push_writes_nothing_so_a_rerun_starts_clean():
+    """F3. The key for release-pr is asked before the changelog step writes
+    anything; declining it stops with nothing acted, and agreeing asks once."""
+    acted: list[str] = []
+
+    def steps():
+        cut = [_step("changelog", acted=acted), _step("version", acted=acted)]
+        for step in cut:
+            step.commits_to = "release-pr"
+        return [*cut, _step("release-pr", outward=True, acted=acted)]
+
+    asked: list[str] = []
+    no = _ctx(confirm=lambda prompt: asked.append(prompt) or "no")
+    assert run_steps(steps(), no, execute=True, out=lambda s: None) == 6
+    assert acted == [], "nothing written, so clean-tree holds on the re-run"
+    assert len(asked) == 1 and "release-pr" in asked[0]
+
+    asked.clear()
+    yes = _ctx(confirm=lambda prompt: asked.append(prompt) or "release-pr")
+    assert run_steps(steps(), yes, execute=True, out=lambda s: None) == 0
+    assert acted == ["changelog", "version", "release-pr"]
+    assert len(asked) == 1, "one agreement covers the cut and its push"
+
+
+def test_the_real_cut_steps_ask_for_the_push_before_writing():
+    by_key = {s.key: s for s in release.steps()}
+    assert by_key["changelog"].commits_to == "release-pr"
+    assert by_key["version"].commits_to == "release-pr"
+    assert by_key["release-pr"].outward
+
+
+def test_an_interrupted_cut_is_named_and_a_foreign_change_is_not(train):
+    """F3's residue (a failed postcondition or Ctrl-C at 5 or 6): clean-tree
+    still refuses, and names the restore only when the dirt is the cut's."""
+    _origin, clone = train
+    _write_cut(clone)
+    cut = release._train_tree(_ctx(root=clone, run=_real()))
+    assert not cut.ok and "git restore" in cut.measured[-1], cut.measured
+    (clone / "notes.txt").write_bytes(b"mine\n")
+    foreign = release._train_tree(_ctx(root=clone, run=_real()))
+    assert not foreign.ok and not any("git restore" in line for line in foreign.measured)
+
+
+def test_the_install_ends_by_reading_the_installed_version():
+    """The one check that reads the artefact: the last link of the `&&` chain
+    compares the virtualenv's `policyforge.__version__` with the release."""
+    script = release._install_script("9.9.9")
+    last = script.split(" && ")[-1]
+    assert last.startswith('test "$(') and last.endswith('= "9.9.9"'), last
+    assert "policyforge.__version__" in last and "libexec/bin/python" in last

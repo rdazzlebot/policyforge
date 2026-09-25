@@ -153,6 +153,71 @@ def test_the_bundled_catalogs_declare_from_any_working_directory(tmp_path, monke
     assert keys.get("nist ai rmf playbook") == "nist-ai-rmf-playbook"
 
 
+def test_a_malformed_config_is_named_once_and_does_not_break_keying(
+    tmp_path, monkeypatch, fresh_keys
+):
+    """1d on #344: `normalize_framework` read config, and `org: [unclosed`
+    turned `policyforge map` -- which never reads config itself -- from exit
+    0 into a ParserError traceback. Now one warning names the file, and the
+    default search paths still declare (a BYOC catalog under `frameworks/`
+    keeps its key)."""
+    from click.testing import CliRunner
+
+    from policyforge.cli import cli
+
+    _catalog(
+        tmp_path / "frameworks", "acme-baseline", name="Acme Security Baseline", key="acme-baseline"
+    )
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "config.yaml").write_text("org: [unclosed\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", FrameworkKeyWarning)
+        result = CliRunner().invoke(
+            cli,
+            [
+                "map",
+                "--controls",
+                str(CATALOGS / "nist-800-53-r5" / "controls.json"),
+                "--controls",
+                str(CATALOGS / "hipaa-security-rule" / "controls.json"),
+                "--out",
+                str(tmp_path / "crosswalk.json"),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert normalize_framework("Acme Security Baseline") == "acme-baseline"
+    named = [str(w.message) for w in caught if "could not be read" in str(w.message)]
+    assert len(named) == 1 and "config.yaml" in named[0], named
+
+
+def test_a_failed_build_is_not_cached_as_no_declarations(tmp_path, monkeypatch, fresh_keys):
+    """The second half of 1d's finding: the cache was set to `{}` before the
+    build, so after one failure every later lookup keyed by prose, silently.
+    A failure now propagates, and the next lookup builds again."""
+    _catalog(
+        tmp_path / "frameworks", "acme-baseline", name="Acme Security Baseline", key="acme-baseline"
+    )
+    monkeypatch.chdir(tmp_path)
+    real = crosswalk.declared_keys_from_config
+    calls = []
+
+    def fails_once():
+        calls.append(1)
+        if len(calls) == 1:
+            raise OSError("disk went away")
+        return real()
+
+    monkeypatch.setattr(crosswalk, "declared_keys_from_config", fails_once)
+    with pytest.raises(OSError, match="disk went away"):
+        normalize_framework("Acme Security Baseline")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FrameworkKeyWarning)
+        assert normalize_framework("Acme Security Baseline") == "acme-baseline"
+    assert len(calls) == 2
+
+
 def test_a_catalog_without_a_key_declares_nothing(tmp_path):
     path = tmp_path / "plain"
     path.mkdir()

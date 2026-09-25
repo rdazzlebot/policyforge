@@ -1,0 +1,151 @@
+"""A billed request is in the ledger even when its call then fails (#343).
+
+After #366 the success path kept every billed attempt: the row's cost is the
+summed cost and the first attempt is in `escalations`. The failure paths lost
+money:
+- a re-send that came back empty again raised `ReasoningBudgetExhausted`,
+  and the row had `cost_usd` None and no request id: the re-send's cost
+  (b5 measured the shape at up to $1.30) and its id were recorded nowhere;
+- a cascade caught that exhaustion and escalated, so the row carried only
+  the stronger model's cost, and the primary's re-send vanished again.
+
+**The conservation check below is the point**: in every scenario the row's
+cost is the total the fakes billed, and every billed request id is on the
+row or in its escalations. A path that loses a request fails it.
+"""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from policyforge.llm import escalation, ledger
+from policyforge.llm._inline_thinking import ReasoningBudgetExhausted
+from policyforge.llm.cascade_provider import CascadeProvider
+from policyforge.llm.litellm_provider import LiteLLMProvider
+from tests.test_escalation import PRICE, _Completion, _reply
+
+
+@pytest.fixture(autouse=True)
+def _known_price(monkeypatch):
+    monkeypatch.setattr(escalation, "_price", lambda model: PRICE)
+
+
+def _litellm(model, *replies):
+    return LiteLLMProvider(model=model, completion=_Completion(*replies))
+
+
+def _row(provider, path):
+    wrapped = ledger.RecordingProvider(
+        provider, provider_name="t", provider_class="cloud", path=path
+    )
+    raised = None
+    try:
+        with ledger.about("standard/x", site="generate"):
+            wrapped.generate(system="s", prompt="p", max_tokens=100)
+    except Exception as exc:
+        raised = type(exc).__name__
+    (row,) = [json.loads(line) for line in path.read_text().splitlines()]
+    return row, raised
+
+
+def _ids(row):
+    return {row["request_id"]} | {e["first_request_id"] for e in row["escalations"]}
+
+
+EMPTY_A = _reply("", "length", cost=0.2, rid="gen-a")
+EMPTY_B = _reply("", "length", cost=1.3, completion=800, rid="gen-b")
+ANSWER_C = _reply("Answer.", "stop", cost=0.5, completion=40, rid="gen-c")
+EMPTY_C = _reply("", "length", cost=0.4, rid="gen-c")
+EMPTY_D = _reply("", "length", cost=0.6, completion=800, rid="gen-d")
+
+SCENARIOS = {
+    # name: (provider factory, billed total, billed ids, error expected)
+    "re-send answers (the #366 path)": (
+        lambda: _litellm("m", EMPTY_A, _reply("ok", "stop", cost=0.3, rid="gen-b")),
+        0.5, {"gen-a", "gen-b"}, None,
+    ),
+    "re-send empty again": (
+        lambda: _litellm("m", EMPTY_A, EMPTY_B),
+        1.5, {"gen-a", "gen-b"}, "ReasoningBudgetExhausted",
+    ),
+    "cascade: primary exhausts, stronger answers": (
+        lambda: CascadeProvider(
+            primary=_litellm("flash", EMPTY_A, EMPTY_B), escalate_to=_litellm("pro", ANSWER_C)
+        ),
+        2.0, {"gen-a", "gen-b", "gen-c"}, None,
+    ),
+    "cascade: both exhaust": (
+        lambda: CascadeProvider(
+            primary=_litellm("flash", EMPTY_A, EMPTY_B),
+            escalate_to=_litellm("pro", EMPTY_C, EMPTY_D),
+        ),
+        2.5, {"gen-a", "gen-b", "gen-c", "gen-d"}, "ReasoningBudgetExhausted",
+    ),
+}  # fmt: skip
+
+
+@pytest.mark.parametrize("name", SCENARIOS)
+def test_every_billed_request_is_on_the_row_and_its_cost_in_the_total(name, tmp_path):
+    factory, billed, ids, error = SCENARIOS[name]
+    row, raised = _row(factory(), tmp_path / "calls.jsonl")
+    assert raised == error
+    assert row["cost_usd"] == pytest.approx(billed), row
+    assert _ids(row) == ids, row
+
+
+def test_the_failed_re_send_carries_its_id_and_tokens(tmp_path):
+    row, _ = _row(_litellm("m", EMPTY_A, EMPTY_B), tmp_path / "calls.jsonl")
+    assert row["error"] == "ReasoningBudgetExhausted"
+    assert (row["request_id"], row["output_tokens"]) == ("gen-b", 800)
+    assert row["escalations"][0]["first_cost_usd"] == 0.2
+
+
+def test_the_cascade_hop_is_announced_naming_whose_reply_was_empty(tmp_path, capsys):
+    """A hop to the stronger model is a re-send at the user's expense, and is
+    said before it is sent (#361). The reply that came back empty was the
+    primary's, so the message names it."""
+    provider = CascadeProvider(
+        primary=_litellm("flash", EMPTY_A, EMPTY_B), escalate_to=_litellm("pro", ANSWER_C)
+    )
+    row, _ = _row(provider, tmp_path / "calls.jsonl")
+    said = capsys.readouterr().err
+    assert "re-sending standard/x to pro" in said and "flash's reply at 800" in said
+    hop = row["escalations"][-1]
+    assert (hop["model"], hop["first_model"], hop["first_cost_usd"]) == ("pro", "flash", 1.3)
+
+
+def test_a_failure_that_billed_nothing_records_no_cost(tmp_path):
+    """An exception that carries no billing stays as it was: unknown, not zero."""
+
+    class _Down:
+        model = "m"
+
+        def generate(self, **kwargs):
+            raise ConnectionError("endpoint down")
+
+    row, raised = _row(_Down(), tmp_path / "calls.jsonl")
+    assert raised == "ConnectionError"
+    assert row["cost_usd"] is None and row["request_id"] is None
+
+
+def test_the_openai_compatible_re_send_records_its_id(tmp_path, monkeypatch):
+    """That API reports no cost, so none is invented; the id and tokens are kept."""
+    from policyforge.llm.openai_compat_provider import OpenAICompatProvider
+
+    provider = OpenAICompatProvider(model="local/q", base_url="http://localhost:1/v1")
+    empty = {"choices": [{"message": {"content": ""}, "finish_reason": "length"}]}
+    posts = [
+        {"id": "r1", **empty, "usage": {"prompt_tokens": 5, "completion_tokens": 64}},
+        {"id": "r2", **empty, "usage": {"prompt_tokens": 5, "completion_tokens": 512}},
+    ]
+    monkeypatch.setattr(provider, "_post", lambda payload: posts.pop(0))
+    row, raised = _row(provider, tmp_path / "calls.jsonl")
+    assert raised == "ReasoningBudgetExhausted"
+    assert (row["request_id"], row["output_tokens"], row["cost_usd"]) == ("r2", 512, None)
+    assert _ids(row) == {"r1", "r2"}
+
+
+def test_the_exception_type_is_unchanged():
+    assert issubclass(ReasoningBudgetExhausted, RuntimeError)

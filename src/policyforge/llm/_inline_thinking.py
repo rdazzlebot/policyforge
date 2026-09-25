@@ -107,15 +107,45 @@ class ReasoningBudgetExhausted(RuntimeError):
     Deliberately worded to avoid the substrings `evals/runner.py` treats as
     infrastructure — this is a fact about the model, and grading it as "the
     request never ran" would hide exactly what it demonstrates.
+
+    **It carries what was billed** (#343). Both attempts reached the vendor
+    and were charged, and the call ends here with no response, so these are
+    the only place that cost can travel to the ledger: the summed cost where
+    the provider reports one, and the LAST attempt's request id and tokens,
+    as a successful call's row carries them. The first attempt is in the
+    row's `escalations` (#366).
     """
 
+    #: Both attempts, summed, where the provider reports cost.
+    cost_usd: float | None = None
+    #: The re-send's own cost: the part `escalations` does not already hold.
+    last_cost_usd: float | None = None
+    request_id: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    #: The re-send's budget.
+    max_tokens: int | None = None
 
-def exhausted(model: str, first: int, second: int) -> ReasoningBudgetExhausted:
-    return ReasoningBudgetExhausted(
+
+def exhausted(
+    model: str,
+    first: int,
+    second: int,
+    *,
+    cost_usd: float | None = None,
+    last_cost_usd: float | None = None,
+    request_id: str | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+) -> ReasoningBudgetExhausted:
+    exc = ReasoningBudgetExhausted(
         f"{model} used its whole output budget on reasoning and never began an "
         f"answer, at {first} tokens and again at {second}. Either raise max_tokens "
         f"for this call site, or use a model that reasons less to reach a short answer."
     )
+    exc.cost_usd, exc.last_cost_usd, exc.request_id = cost_usd, last_cost_usd, request_id
+    exc.input_tokens, exc.output_tokens, exc.max_tokens = input_tokens, output_tokens, second
+    return exc
 
 
 def retry_budget(max_tokens: int) -> int:

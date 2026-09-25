@@ -50,6 +50,10 @@ class Escalation:
     first_cost_usd: float | None
     first_output_tokens: int | None
     first_stop_reason: str | None
+    #: The model whose reply came back empty, when it is not `model`: a
+    #: cascade's hop to a stronger model (#343). None for a re-send to the
+    #: same model.
+    first_model: str | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -89,6 +93,7 @@ def announce(
     first_cost_usd: float | None = None,
     first_output_tokens: int | None = None,
     first_stop_reason: str | None = None,
+    first_model: str | None = None,
     empty: bool = True,
     out=None,
 ) -> Escalation:
@@ -114,8 +119,10 @@ def announce(
         first_cost_usd=first_cost_usd,
         first_output_tokens=first_output_tokens,
         first_stop_reason=first_stop_reason,
+        first_model=first_model if first_model and first_model != model else None,
     )
     what = escalation.subject or "this request"
+    whose = f"{escalation.first_model}'s reply" if escalation.first_model else "the reply"
     if escalation.worst_case_usd is not None:
         cost = (
             f"worst case ${escalation.worst_case_usd:.4f} at {escalation.price_source}'s list price"
@@ -124,7 +131,7 @@ def announce(
         cost = f"worst case unpriced: up to {max_tokens:,} output tokens"
     spent = f" (${first_cost_usd:.4f}, billed)" if first_cost_usd is not None else " (billed)"
     (out or sys.stderr).write(
-        f"Warning: re-sending {what} to {model} with max_tokens {max_tokens:,}: the reply at "
+        f"Warning: re-sending {what} to {model} with max_tokens {max_tokens:,}: {whose} at "
         f"{first_max_tokens:,} came back {'empty' if empty else 'cut off'}{spent}; "
         f"{cost}.\n"
     )

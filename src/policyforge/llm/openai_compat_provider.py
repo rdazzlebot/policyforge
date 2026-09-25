@@ -198,7 +198,18 @@ class OpenAICompatProvider(LLMProvider):
             text, stripped = answer_and_stripped(message.get("content", ""))
             stripped += len(_separated_reasoning(message))
             if needs_more_room(text, choice.get("finish_reason")):
-                raise exhausted(self.model, max_tokens, second)
+                # Both attempts reached the endpoint; the last one's id and
+                # tokens go to the ledger on the exception (#343). This API
+                # reports no cost, so none is carried.
+                usage = data.get("usage") or {}
+                raise exhausted(
+                    self.model,
+                    max_tokens,
+                    second,
+                    request_id=data.get("id"),
+                    input_tokens=usage.get("prompt_tokens"),
+                    output_tokens=usage.get("completion_tokens"),
+                )
 
         usage = data.get("usage") or {}
         return LLMResponse(

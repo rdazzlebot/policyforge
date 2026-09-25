@@ -1044,3 +1044,55 @@ def test_a_set_after_a_closed_block_is_credited():
     unconditional again."""
     command = "if true; then echo x; fi\nset -o pipefail\npython -m pytest -q | tail -1 && git push"
     assert shell_status.check_command(command) == []
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'git commit -m "Fix the gate\nset -o pipefail is now read as a state"\n'
+        "python -m pytest -q | tail -1 && git push",
+        "printf 'a\nset -o pipefail\n'\npython -m pytest -q | tail -1 && git push",
+        "( set -o pipefail )\npython -m pytest -q | tail -1 && git push",
+        "bash -c 'set -o pipefail'\npython -m pytest -q | tail -1 && git push",
+    ],
+)
+def test_a_set_inside_a_multi_line_quote_or_another_shell_does_not_carry(command):
+    """**#330's own subject, across lines** (policyforge-9b on #331). The
+    continuation line of a multi-line quoted string that begins
+    `set -o pipefail` is text, and it was carried as ON, both because the
+    quote was not carried into the next line and because the end-of-line
+    carry missed a quote closing on the last character."""
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'echo "one\ntwo"\nset -o pipefail\npython -m pytest -q | tail -1 && git push',
+        'set -o pipefail; git commit -m "multi\nline"\npython -m pytest -q | tail -1 && git push',
+    ],
+)
+def test_a_real_set_around_a_multi_line_quote_still_carries(command):
+    """The other side: the carried quote must END where the quote closes, and
+    a real top-level `set` before a multi-line message still governs the
+    shell after it."""
+    assert shell_status.check_command(command) == []
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    ["set -o pipefail | cat", "set -o pipefail |& cat", "set -o pipefail & wait"],
+)
+def test_a_set_in_a_pipeline_stage_or_backgrounded_is_not_credited(prefix):
+    """policyforge-ba on #331: each runs the `set` in a subshell, so bash
+    leaves pipefail OFF (verified), yet the lint cleared the swallow."""
+    command = f"{prefix}; python -m pytest -q | tail -1 && git push"
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+@pytest.mark.parametrize("prefix", ["set -o pipefail && true", "set -o pipefail || true"])
+def test_a_set_followed_by_and_or_is_still_credited(prefix):
+    """The other side: `&&`/`||` AFTER the `set` do not move it into a
+    subshell (bash: ON)."""
+    command = f"{prefix}; python -m pytest -q | tail -1 && git push"
+    assert shell_status.check_command(command) == []

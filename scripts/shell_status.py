@@ -287,6 +287,16 @@ _BLOCK_WORD = re.compile(
 _CONDITIONAL_BLOCKS = frozenset({"if", "for", "while", "until", "case", "function", "fn"})
 
 
+def _open_quote_after(line: str) -> str:
+    """The quote still open at the end of `line` in the top-level shell, or "".
+
+    A quote left open inside `$( )` is not carried, a stated limit: the next
+    line is then read as commands, as it was before #331.
+    """
+    quote, depth = _nesting(line + " ")[-1]
+    return quote if depth == 0 else ""
+
+
 def _statement_prefix(line: str, states: list[tuple[str, int]], start: int) -> str:
     """The text before `start` in its own quoting context, right-stripped."""
     k = start
@@ -412,6 +422,12 @@ def _pipefail_changes(line: str, blocks: tuple[str, ...] = ()) -> list[tuple[int
         if not _UNCONDITIONAL_STARTS.search(_statement_prefix(line, states, at)):
             continue
         if _in_conditional_block(after, blocks, at):
+            continue
+        # Nor a `set` that is the left side of a pipe or backgrounded: each
+        # runs in a subshell. Bash-verified on #331 (ba): `set -o pipefail | cat`,
+        # `|& cat` and `& wait` leave it OFF; `&&`/`||` after it do not.
+        after_set = line[match.end() :].lstrip()
+        if after_set.startswith(("|", "&")) and not after_set.startswith(("||", "&&")):
             continue
         command, words = match.group(1), match.group(2).split()
         if command == "set":
@@ -797,6 +813,36 @@ def _pipefail_at(state: bool, line: str, position: int, blocks: tuple[str, ...] 
     return state
 
 
+def _pipefail_after(state: bool, line: str, blocks: tuple[str, ...] = ()) -> bool:
+    """Pipefail in the top-level shell AFTER `line`, carried to the next line.
+
+    Only a change made in the top-level unquoted shell carries, and only if
+    no `( )` subshell around it closes later on the line. A `set` inside a
+    quote never does: it is text, or a `bash -c` program that ends with the
+    quote. **Separate from `_pipefail_at` on purpose** (#331, 9b): asking
+    `_pipefail_at` about a position past the end missed a quote that closes
+    on the line's last character, so the continuation line of a multi-line
+    `git commit -m \"...\"` that began `set -o pipefail` was carried as ON.
+    """
+    states = _nesting(line)
+    for start, value in sorted(_pipefail_changes(line, blocks)):
+        if states[start] != ("", 0):
+            continue
+        parens = 0
+        for i in range(start, len(line)):
+            if states[i] != ("", 0):
+                continue
+            if line[i] == "(" and not (i > 0 and line[i - 1] == "$"):
+                parens += 1
+            elif line[i] == ")":
+                parens -= 1
+                if parens < 0:
+                    break
+        else:
+            state = value
+    return state
+
+
 def _first_statement(line: str) -> str:
     """The text before the first `;`, `&&` or `||`: the statement whose `$?`
     still refers to whatever ran on the line above."""
@@ -832,12 +878,15 @@ def findings(sources: list[Source]) -> list[Finding]:
         #: Blocks open at the start of the line (if/loop/case/function), carried
         #: so a `set` inside a multi-line conditional block is not credited (#331).
         blocks: tuple[str, ...] = ()
+        #: A quote left open at the end of a line (a multi-line `-m "..."`), carried
+        #: so its continuation is read as quoted text, not as commands (#331, 9b).
+        carried_quote = ""
         for number, raw in source.lines:
             if heredoc_end:
                 if raw.strip() == heredoc_end:
                     heredoc_end = ""
                 continue
-            line = _strip_comment(raw)
+            line = _strip_comment(carried_quote + raw)
             if not line.strip():
                 continue
             opened = _HEREDOC.search(line)
@@ -882,8 +931,9 @@ def findings(sources: list[Source]) -> list[Finding]:
                 )
             # Carry the state to the next line: every set/unset on this one,
             # and whether it ENDS in an unguarded pipe into a consumer.
-            pipefail = _pipefail_at(pipefail, line, len(line) + 1, blocks)
+            pipefail = _pipefail_after(pipefail, line, blocks)
             blocks = _blocks_at(line, _nesting(line), blocks)[1]
+            carried_quote = _open_quote_after(line)
             unguarded_pipe_above = bool(_ENDS_IN_CONSUMER_PIPE.search(line)) and not guarded
 
             if not (source.requires_pipefail and piped):

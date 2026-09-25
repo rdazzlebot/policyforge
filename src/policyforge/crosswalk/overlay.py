@@ -197,18 +197,13 @@ def _refusal_reason(framework: str) -> str | None:
 #: rename. `test_every_upstream_crosswalk_names_a_shipped_catalog` fails if a
 #: key stops matching, so a rename cannot silently restore the false message.
 PUBLISHED_UPSTREAM: dict[str, str] = {
-    # Measured 2026-09-23, three times with two different assumptions:
-    # `policyforge-f8` (5b) and 80 each classified back-matter reference titles
-    # by SHAPE; `ba` checked MEMBERSHIP in the shipped 800-53 catalog. All three:
-    # 97 of 97 requirements linked, 157 links, no control-shaped title outside
-    # 800-53. The links are `rel="reference"` to back-matter resources, which
-    # `oscal_loader._related_controls` does not read — see #259.
-    "NIST 800-171": (
-        "NIST publishes this mapping -- the source file links every requirement "
-        "to its 800-53 controls -- but this release does not read it. The zero is "
-        "a gap in PolicyForge, not in the source; do not seed it by hand: NIST's "
-        "mapping is the one to use."
-    ),
+    # EMPTY since #259, and that is a measurement, not an omission. Its one
+    # entry was "NIST 800-171": NIST's rev 3 OSCAL links all 97 requirements
+    # to 800-53 (157 links, as `rel="reference"` to back-matter), and this
+    # release did not read them. `oscal_loader` now does, so 800-171 carries
+    # NIST's mapping as its `source_crosswalk` and its row is a
+    # crosswalk-carrying one. The table stays for the next catalog whose
+    # source publishes a mapping PolicyForge does not yet read.
 }
 
 

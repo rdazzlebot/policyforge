@@ -11,5 +11,5 @@ notes: A US government work, so freely redistributable. Bundled with this projec
   this to prepare for a CMMC assessment.
 source_ref: 1.1.0
 source_url: https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json
-content_sha256: eea2cb55bbe5caaa882568c161f487614dab6acbbdca9b864c03945649846fed
-fetched_at: '2026-09-20'
+content_sha256: e07316513ad9936f56416bb022406490369cffffff560ea424cb632f8a731068
+fetched_at: '2026-09-25'

@@ -287,7 +287,7 @@ ANCHOR_DECISIONS: dict[str, str] = {
     "fedramp": "reached through its crosswalk to 800-53, not anchored beside it",
     "hipaa-security-rule": "reached through its crosswalk to 800-53, not anchored beside it",
     "nist-800-171-r3": (
-        "its 800-53 mapping is published upstream and not yet read (#259); a topic "
+        "reached through NIST's own mapping to 800-53, carried since #259; a topic "
         "anchors the 800-53 controls it maps to"
     ),
     "cfr-171-information-blocking": (

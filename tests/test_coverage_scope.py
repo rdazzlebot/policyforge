@@ -367,18 +367,40 @@ def _row(output: str, heading: str) -> str:
     return rows[0]
 
 
-def test_800_171_says_the_source_publishes_the_mapping_and_offers_no_seed():
-    """**The row #260 is about.** It told users to rebuild by hand what NIST
-    already publishes. It must now say where the gap is, and suggest nothing
-    to run -- there is nothing a user can run to ingest it."""
-    from policyforge.zardoz.skills import _coverage
+def test_800_171_carries_nists_mapping_so_its_zero_is_counted_and_never_seeded():
+    """**The row #260 was about, after #259.** #260 made it say the gap was
+    PolicyForge's; #259 closed the gap, so 800-171 now carries NIST's 157
+    links. With the example registry it is not a zero row at all. Forced to
+    zero -- every requirement uncovered -- it must be a crosswalk-carrying
+    row: counted clauses, never the upstream text (the gap is closed) and
+    never a `crosswalk seed` hint (NIST's mapping is the one to use)."""
+    import json
+    from pathlib import Path
+    from types import SimpleNamespace
 
-    row = _row(_coverage(_coverage_state(), []), "NIST-800-171")
+    from policyforge.ingest.schema import load_controls
+    from policyforge.zardoz.skills import _coverage, _zero_row_reasons
 
-    assert _UPSTREAM_TEXT in row, f"800-171 row does not say the gap is ours: {row!r}"
-    assert "no published crosswalk" not in row, "800-171 still claims no mapping is published"
-    assert "not mapped by design" not in row, "800-171 routed to the refusal branch"
-    assert "crosswalk seed" not in row, "800-171 still tells the user to seed by hand"
+    output = _coverage(_coverage_state(), [])
+    assert not [ln for ln in output.splitlines() if ln.strip().startswith("NIST-800-171:")], (
+        "800-171 reads zero with the example registry, which owns what it maps to"
+    )
+
+    path = Path(__file__).resolve().parent.parent / "data/frameworks/nist-800-171-r3/controls.json"
+    controls = load_controls(path)
+    ids = [c.control_id for c in controls]
+    assert len(ids) == len(json.loads(path.read_text(encoding="utf-8"))) == 97
+    report = SimpleNamespace(
+        framework_coverage=[
+            SimpleNamespace(framework="nist-800-171", covered=0, partial=[], uncovered=ids)
+        ]
+    )
+    row = _row("\n".join(_zero_row_reasons(controls, report)), "NIST-800-171")
+
+    assert "97 map to 800-53 controls none of your topics owns" in row, row
+    assert _UPSTREAM_TEXT not in row, "800-171 still says the gap is PolicyForge's"
+    assert "no published crosswalk" not in row, "800-171 claims no mapping is published"
+    assert "crosswalk seed" not in row, "800-171 tells the user to seed by hand"
 
 
 def test_the_header_says_zeros_differ_and_counts_nothing():
@@ -435,13 +457,49 @@ def test_every_upstream_crosswalk_names_a_shipped_catalog():
         for path in root.glob("*/controls.json")
         for row in json.loads(path.read_text(encoding="utf-8"))
     }
-    assert PUBLISHED_UPSTREAM, "the table is empty, so the test below checks nothing"
+    # Empty since #259 (see the table's comment), so this loop checks nothing
+    # today; it binds the next entry. The branch itself is exercised below.
     for name in PUBLISHED_UPSTREAM:
         assert _canonical(name) in declared, (
             f"PUBLISHED_UPSTREAM names {name!r}, which no shipped catalog declares. "
             "If the catalog was renamed, re-key this entry; otherwise its row falls "
             "back to 'no published crosswalk yet', which is the false claim #260 removed."
         )
+
+
+def test_800_171_is_no_longer_an_upstream_gap():
+    """#259: its mapping is read now, so the table must not still claim it."""
+    from policyforge.crosswalk.overlay import _upstream_reason
+
+    assert _upstream_reason("NIST 800-171") is None
+
+
+def test_the_upstream_branch_still_prints_the_gap_for_a_listed_framework(monkeypatch):
+    """The table is empty since #259, but the kind of zero it names is 80's
+    ruling on #260 and will recur. So the branch is exercised with an entry
+    injected for a made-up framework: its row says the gap is PolicyForge's
+    and offers no command."""
+    from types import SimpleNamespace
+
+    import policyforge.crosswalk.overlay as overlay
+    from policyforge.ingest.schema import Control
+    from policyforge.zardoz.skills import _zero_row_reasons
+
+    name = "Example Published Framework"
+    monkeypatch.setitem(
+        overlay.PUBLISHED_UPSTREAM,
+        name,
+        "Its publisher maps it, and this release does not read that mapping. The zero is "
+        "a gap in PolicyForge, not in the source.",
+    )
+    controls = [Control(control_id="EPF-1", title="t", framework=name, framework_version="1")]
+    report = SimpleNamespace(
+        framework_coverage=[SimpleNamespace(framework=name, covered=0, partial=[])]
+    )
+    row = _row("\n".join(_zero_row_reasons(controls, report)), name.upper())
+
+    assert _UPSTREAM_TEXT in row, row
+    assert "crosswalk seed" not in row, row
 
 
 # ---- #264: "found" is reserved for a framework someone searched for --------

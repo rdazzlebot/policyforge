@@ -614,11 +614,12 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
       was found (#264). That zero is work nobody has done -- as far as a
       search that did not enumerate NIST OLIR can say -- and
       `SEARCHED_NONE_FOUND` holds the search record.
-    - `NIST 800-171` **has** a published mapping: NIST's own OSCAL links
-      all 97 requirements to 800-53. This release does not read it
-      (`oscal_loader` keeps only `rel="related"` links, and 800-171 encodes
-      its sources as `rel="reference"`; #259). That zero is a gap in
-      PolicyForge, not in the source, and `PUBLISHED_UPSTREAM` holds it.
+    - **A source that publishes a mapping PolicyForge does not yet read**:
+      that zero is a gap in PolicyForge, not in the source, and
+      `PUBLISHED_UPSTREAM` holds the reason. `NIST 800-171` was the case
+      until #259 -- NIST's own OSCAL links all 97 requirements to 800-53 --
+      and it now carries that mapping, so it is a crosswalk-carrying
+      catalog below. The table is empty today.
     - **A catalog that carries a crosswalk** -- HIPAA, FedRAMP, ARC-AMPE
       -- reads zero for up to three reasons AT ONCE, one per requirement,
       so its row is one counted clause per reason and the counts sum to

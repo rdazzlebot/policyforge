@@ -884,6 +884,16 @@ _LIST_ITEM_RE = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S")
 _ORDERED_RE = re.compile(r"^[ \t]*(\d+)[.)][ \t]")
 
 
+def _only_citations(line: str) -> bool:
+    """Whether `line` carries nothing but citation tags: backticks, emphasis
+    and `. ; : |` around them do not make it prose (1d on #362: `[AU-6].`
+    and `` `[AU-6]` `` after a blank line were read as prose, so the first
+    was lost and the second became a statement of its own). The same
+    reading as `generate/playbook_repair._only_citations`. A blank line is
+    not a line of citations."""
+    return bool(line.strip()) and not _CITATION_RE.sub("", line).strip(" 	`*_.;:|")
+
+
 def _ends_with_colon(line: str) -> bool:
     """Whether `line`, less its trailing citations and emphasis, ends in `:`."""
     return _CITATION_RE.sub("", line).rstrip(" \t*_`").endswith(":")
@@ -944,17 +954,20 @@ def _walk_lists(lines: list[str], heading: list[bool]) -> tuple[list[bool], list
     starts = [False] * len(lines)
     colon_lists: list[_ColonList] = []
     in_list = colon_list = blank_since = False
+    # Whether the block being built holds prose yet: a blank line ends a
+    # paragraph of prose, so it cannot end a block of only citations.
+    block_has_prose = False
     lead = ""
     lead_index = -1
     for index, line in enumerate(lines):
         if heading[index]:
-            in_list = colon_list = blank_since = False
+            in_list = colon_list = blank_since = block_has_prose = False
             lead, lead_index = "", -1
             continue
         if not line.strip():
             blank_since = True
             continue
-        prose = bool(_CITATION_RE.sub("", line).strip())
+        prose = not _only_citations(line)
         ordered = _ORDERED_RE.match(line)
         interrupts = not (
             # CommonMark: only an ordered list starting at 1 may interrupt a
@@ -975,7 +988,7 @@ def _walk_lists(lines: list[str], heading: list[bool]) -> tuple[list[bool], list
             starts[index] = not colon_list
             if colon_list:
                 colon_lists[-1].items.append([index, index])
-        elif blank_since and prose and not (in_list and line[:1].isspace()):
+        elif blank_since and prose and block_has_prose and not (in_list and line[:1].isspace()):
             # A blank line ends a paragraph, so prose after one starts a block
             # (#358): a sentence no longer runs on into the next paragraph
             # because it did not end in a stop before a capital. Inside a list
@@ -989,6 +1002,7 @@ def _walk_lists(lines: list[str], heading: list[bool]) -> tuple[list[bool], list
             else:
                 colon_lists[-1].items[-1][1] = index  # the item's continuation
         if prose:
+            block_has_prose = True
             lead, lead_index = line, index
             blank_since = False
     return starts, colon_lists

@@ -113,3 +113,40 @@ def test_a_colon_lists_loose_items_still_read_as_one():
 def test_a_wrapped_sentence_with_no_blank_line_still_joins():
     (statement,) = analyze("Acme Health must review\nlogs weekly [NIST 800-53 AU-6].")
     assert statement.citations == ("[NIST 800-53 AU-6]",)
+
+
+# 1d on #362: "citation-only" read literally lost `[AU-6].` after a blank line
+# and made a backticked tag a statement of its own; and a heading's citation
+# line, blank, then the sentence, lost the carried tag. Each keeps its tag.
+_TAG = "[NIST 800-53 AU-6]"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"Acme Health must review logs.\n\n{_TAG}",
+        f"Acme Health must review logs\n\n{_TAG}.",
+        f"Acme Health must review logs.\n\n`{_TAG}`",
+        f"Acme Health must review logs\n\n{_TAG};",
+        f"## Access\n\n{_TAG}\n\nAcme Health must review logs.",
+    ],
+    ids=[
+        "plain",
+        "tag-then-stop",
+        "backticked",
+        "tag-then-semicolon",
+        "heading-tag-blank-sentence",
+    ],
+)
+def test_a_citation_line_after_a_blank_line_keeps_its_tag(text):
+    """Conserved: the tag is on exactly one statement, and it is the
+    obligation's, not a statement made of the tag itself."""
+    (statement,) = analyze(text)
+    assert statement.citations == (_TAG,) and statement.binds
+
+
+def test_a_citation_after_a_word_is_prose_and_splits_off():
+    """Named, not a defect (1d on #362): `per [AU-6].` has a word, so after a
+    blank line it is a paragraph of its own and keeps its own tag."""
+    first, second = analyze(f"Acme Health must review logs\n\nper {_TAG}.")
+    assert first.citations == () and second.citations == (_TAG,)

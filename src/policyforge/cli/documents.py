@@ -635,7 +635,19 @@ def generate_cmd(
                 topic=topic_context,
             )
         else:
-            document = generate_standard(topic_synthesis, org, provider, topic=topic_context)
+            from policyforge.generate.playbook_repair import PlaybookRepairFailed
+            from policyforge.org.context import org_actors
+
+            try:
+                document = generate_standard(
+                    topic_synthesis,
+                    org,
+                    provider,
+                    topic=topic_context,
+                    org_actors=org_actors(config),
+                )
+            except PlaybookRepairFailed as exc:
+                raise click.ClickException(str(exc)) from exc
 
     # Fill the role placeholders here rather than trusting the prompt to have
     # done it consistently. Same document plus same config gives the same

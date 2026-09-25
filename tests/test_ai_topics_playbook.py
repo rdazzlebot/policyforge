@@ -49,17 +49,34 @@ ALL_ACTION_IDS = {
 }
 
 
+def _compliant(entries: list[dict]) -> str:
+    """A draft the Playbook repair step accepts as it stands: one sentence
+    per subcategory, citing all its actions. A Standard that would fail it
+    is regenerated or refused before it is returned (test_playbook_repair),
+    so a fake meant to test the INPUT has to answer with a passing draft."""
+    lines = ["# Draft", ""]
+    for entry in entries:
+        ids = " | ".join(f"NIST AI RMF Playbook {a['id']}" for a in entry["actions"])
+        lines += [
+            f"NIST suggests, among its {len(entry['actions'])} actions for "
+            f"{entry['subcategory']}, maintaining an inventory. [{ids}]",
+            "",
+        ]
+    return "\n".join(lines)
+
+
 class _Capture:
     """A provider that records the prompt and returns a fixed document."""
 
-    def __init__(self):
+    def __init__(self, text: str = "# Draft\n\nNIST suggests an inventory.\n"):
+        self.text = text
         self.prompts: list[str] = []
 
     def generate(self, **kwargs):
         from policyforge.llm.base import LLMResponse
 
         self.prompts.append(kwargs.get("prompt", ""))
-        return LLMResponse(text="# Draft\n\nNIST suggests an inventory.\n", model="fake")
+        return LLMResponse(text=self.text, model="fake")
 
 
 def _context(topic: dict) -> TopicContext:
@@ -84,7 +101,7 @@ def test_the_premise():
 def test_the_standard_input_carries_exactly_its_subcategories_actions(topic):
     context = _context(topic)
     expected = {a["id"] for entry in context.playbook for a in entry["actions"]}
-    provider = _Capture()
+    provider = _Capture(_compliant(context.playbook))
 
     generate_standard(
         "- An AI inventory is maintained. [NIST AI RMF GOVERN-1.6]",
@@ -223,7 +240,11 @@ def test_generate_gives_the_block_to_the_standard_only(tmp_path, monkeypatch, ti
     )
     standard = tmp_path / "standard.md"
     standard.write_text("# AI Governance Standard\n", encoding="utf-8")
-    fake = _Recorder("# AI Governance\n\nNIST suggests an inventory.\n")
+    fake = _Recorder(
+        _compliant(playbook_actions(["Govern 1"], CONTROLS))
+        if tier == "standard"
+        else "# AI Governance\n\nNIST suggests an inventory.\n"
+    )
     monkeypatch.setattr(
         cli_mod, "load_config", lambda: {"org": {"name": "Acme", "industry": "Health"}}
     )

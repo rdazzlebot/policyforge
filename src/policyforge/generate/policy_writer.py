@@ -373,7 +373,12 @@ def generate_standard(
     provider: LLMProvider,
     *,
     topic: TopicContext | None = None,
+    org_actors: tuple[str, ...] = (),
 ) -> str:
+    """Draft a Standard. For an AI topic, its Playbook sentences are checked
+    and repaired before it is returned, or `PlaybookRepairFailed` is raised
+    (#301): a Standard `policyforge check` would reject is not handed back.
+    `org_actors` are the organization's names, as `check` reads them."""
     if not topic_synthesis.strip():
         raise ValueError("topic_synthesis is empty — nothing to draft a document from.")
 
@@ -394,7 +399,13 @@ def generate_standard(
         temperature=0.2,
         max_tokens=LONG_DOCUMENT_TOKENS,
     )
-    return effort.document_text(response, what="Standard")
+    document = effort.document_text(response, what="Standard")
+    if topic is not None and topic.playbook:
+        from policyforge.generate.playbook_repair import repair_standard
+
+        actors = tuple(dict.fromkeys(a for a in (org.name, *org_actors) if a))
+        document = repair_standard(document, topic.playbook, provider, actors)
+    return document
 
 
 #: A Standard or a Procedure. From the first 20-topic cost run

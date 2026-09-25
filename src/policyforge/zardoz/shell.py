@@ -800,6 +800,7 @@ def refusal_types() -> tuple[type[BaseException], ...]:
     from policyforge.edit.apply import EchoedFenceError
     from policyforge.edit.tree import TreeEditError
     from policyforge.export.confluence_search import SearchLimitExceeded
+    from policyforge.generate.playbook_repair import PlaybookRepairFailed
     from policyforge.ingest.ai_rmf import AiRmfParseError
     from policyforge.ingest.ai_rmf_playbook import AiRmfPlaybookError
     from policyforge.ingest.govramp_export import ExportFormatError as GovRampFormatError
@@ -824,6 +825,7 @@ def refusal_types() -> tuple[type[BaseException], ...]:
         EchoedFenceError,
         TreeEditError,
         SearchLimitExceeded,
+        PlaybookRepairFailed,
         AiRmfParseError,
         AiRmfPlaybookError,
         GovRampFormatError,

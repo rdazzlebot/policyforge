@@ -50,6 +50,55 @@ def test_a_sentence_does_not_run_across_a_heading(heading):
     assert not any("Next section" in s.text for s in statements), "heading text is not a sentence"
 
 
+@pytest.mark.parametrize(
+    "boundary",
+    [
+        "***",
+        "___",
+        "- - -",
+        "* * *",
+        "Next section\n=",
+        "Next section\n==",
+        "Next section\n--",
+        "> ## Quoted heading",
+        "##",
+    ],
+    ids=["break-stars", "break-underscores", "break-spaced-dashes", "break-spaced-stars",
+         "setext-one-equals", "setext-two-equals", "setext-two-dashes", "quoted-atx", "bare-atx"],
+)  # fmt: skip
+def test_the_colon_lead_in_does_not_take_the_next_sections_citation(boundary):
+    """1d's shapes on #350, none of which the 33-Standard corpus contains:
+    the lead-in "must identify:" took the next section's citation across
+    each of them."""
+    text = f"Alpha must identify:\n\n{boundary}\n\nBravo shall review logs. {TAG_B}\n"
+
+    statements = analyze(text)
+
+    alpha = next(s for s in statements if s.text.startswith("Alpha"))
+    assert alpha.citations == (), f"the citation crossed {boundary!r}"
+    assert "Bravo" not in alpha.text
+    assert [s.citations for s in statements if s.text.startswith("Bravo")] == [(TAG_B,)]
+
+
+def test_a_paragraph_above_a_thematic_break_stays_text():
+    """`***` is never a setext underline, so the line above it is not a heading."""
+    texts = [s.text for s in analyze("Charlie must act.\n***\nDelta must act.\n")]
+    assert texts == ["Charlie must act.", "Delta must act."]
+
+
+def test_two_dashes_with_no_paragraph_above_are_neither_heading_nor_break():
+    """`--` is a setext underline only under a paragraph line; alone, it is
+    text: nothing is blanked and the text stays one block. Asked of the block
+    split directly, because the sentence splitter then joins `act. --` on its
+    own rule (no capital after the full stop), which is not this question."""
+    from policyforge.content.deontic import _heading_blocks
+
+    text = "Echo must act.\n\n--\n"
+    blanked, blocks = _heading_blocks(text)
+    assert blanked == text
+    assert blocks == [(0, text)]
+
+
 def test_a_heading_right_after_a_list_item_ends_it():
     text = f"- Charlie reviews access\n## Section\nDelta must log changes. {TAG_B}\n"
 

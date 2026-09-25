@@ -690,10 +690,19 @@ def analyze(text: str) -> list[Statement]:
     return statements
 
 
-#: A setext underline: a line of three or more `=` or `-` and nothing else.
-#: Three, not one, because a lone `-` is an empty list item; a table's
-#: separator row contains pipes and never matches.
-_SETEXT_UNDERLINE_RE = re.compile(r"^[ \t]{0,3}(?:={3,}|-{3,})[ \t]*$")
+#: An ATX heading, CommonMark's shapes: up to three spaces, 1-6 `#`, then a
+#: space or the end of the line (so a bare `##` is an empty heading), inside
+#: any number of blockquote markers (`> ## heading`). Wider than
+#: `_HEADING_LINE_RE`, which the heading-tag check still uses (#349 names it).
+_ATX_RE = re.compile(r"^[ \t]{0,3}(?:>[ \t]?)*[ \t]{0,3}#{1,6}(?:[ \t]|$)")
+#: A thematic break, CommonMark's shape: up to three spaces, then three or
+#: more of ONE of `-`, `*`, `_`, spaces allowed between (1d on #350: `***`,
+#: `___`, `- - -` and `* * *` did not end a block).
+_THEMATIC_BREAK_RE = re.compile(r"^[ \t]{0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$")
+#: A setext underline: any run of `=`, or two or more `-`, and nothing else.
+#: One `-` alone is an empty list item, so `-` needs two; `=` needs one. It
+#: is an underline only under a paragraph line (see `_heading_blocks`).
+_SETEXT_UNDERLINE_RE = re.compile(r"^[ \t]{0,3}(?:=+|-{2,})[ \t]*$")
 #: A line that cannot be setext heading text: a list item or a table row.
 _LIST_OR_TABLE_RE = re.compile(r"^[ \t]*(?:[-*+][ \t]|\d+[.)][ \t]|\|)")
 
@@ -702,24 +711,33 @@ def _heading_blocks(text: str) -> tuple[str, list[tuple[int, str]]]:
     """`text` with every heading line blanked in place (so line numbers hold),
     and the runs of lines between headings as `(offset, block)`.
 
-    ATX headings, setext underlines, and the setext heading text above an
-    underline. A `---` under a list item or table row is a thematic break,
-    not a heading underline: it still ends the block, but the line above it
-    is left as text.
+    Block boundaries, in CommonMark's precedence:
+    - an ATX heading (`## x`, a bare `##`, or `> ## x`);
+    - a setext underline under a paragraph line: the underline and the
+      line above are both heading. `---` there is setext, not a break;
+    - a thematic break anywhere else: it ends the block, and the line
+      above it stays text.
+
+    **Named, not handled:** a setext heading inside a blockquote, and
+    indented code blocks, whose contents are still read as prose.
     """
     lines = text.split("\n")
-    heading = [bool(_HEADING_LINE_RE.match(line)) for line in lines]
+    heading = [bool(_ATX_RE.match(line)) for line in lines]
     for index, line in enumerate(lines):
-        if not heading[index] and _SETEXT_UNDERLINE_RE.match(line):
+        if heading[index]:
+            continue
+        above = index - 1
+        paragraph_above = (
+            above >= 0
+            and lines[above].strip()
+            and not heading[above]
+            and not _LIST_OR_TABLE_RE.match(lines[above])
+            and not _THEMATIC_BREAK_RE.match(lines[above])
+        )
+        if paragraph_above and _SETEXT_UNDERLINE_RE.match(line):
+            heading[index] = heading[above] = True
+        elif _THEMATIC_BREAK_RE.match(line):
             heading[index] = True
-            above = index - 1
-            if (
-                above >= 0
-                and lines[above].strip()
-                and not heading[above]
-                and not _LIST_OR_TABLE_RE.match(lines[above])
-            ):
-                heading[above] = True
     blanked = [" " * len(line) if heading[i] else line for i, line in enumerate(lines)]
     text = "\n".join(blanked)
 

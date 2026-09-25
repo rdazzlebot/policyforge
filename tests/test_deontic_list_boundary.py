@@ -174,3 +174,21 @@ def test_a_lead_ins_own_citation_line_is_not_the_lead_in():
     text = "The owner must identify:\n[NIST 800-53 RA-3]\n\n- a\n- b [NIST 800-53 RA-5]"
     (statement,) = analyze(text)
     assert statement.citations == ("[NIST 800-53 RA-3]", "[NIST 800-53 RA-5]")
+
+
+@pytest.mark.parametrize("first, second", [("1. ", "2. "), ("1) ", "2) ")], ids=["dot", "paren"])
+def test_numbered_items_do_not_borrow_each_others_citation(first, second):
+    """1d on #353: inside a list, `2.` is the next item, not a paragraph line
+    it cannot interrupt. Lowercase on purpose: a capital after `2.` is cut by
+    the sentence splitter anyway and hides the defect. The expected count of
+    items comes from markdown-it."""
+    from markdown_it import MarkdownIt
+
+    text = (
+        f"{first}the owner must review logs weekly\n"
+        f"{second}the owner must rotate keys yearly [NIST 800-53 SC-12]"
+    )
+    items = sum(t.type == "list_item_open" for t in MarkdownIt("commonmark").parse(text))
+    statements = analyze(text)
+    assert len(statements) == items == 2
+    assert statements[0].citations == () and statements[1].citations == ("[NIST 800-53 SC-12]",)

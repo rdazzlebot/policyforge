@@ -99,6 +99,42 @@ def test_two_dashes_with_no_paragraph_above_are_neither_heading_nor_break():
     assert blocks == [(0, text)]
 
 
+@pytest.mark.parametrize("underline", ["---", "--", "==="])
+def test_a_playbook_obligation_underlined_as_a_heading_is_still_an_error(tmp_path, underline):
+    """9b on #350: a setext underline directly under an obligation makes the
+    line heading text, so `analyze` blanks it. `playbook_tagged_headings`
+    must then see it as a tagged heading, through the same classification,
+    or the obligation is caught by neither. Through `check_tree`, as a user
+    running `policyforge check` meets it."""
+    from policyforge.content.check import ERROR, check_tree
+
+    body = (
+        "# Standard\n\nAcme Health must maintain an AI legal register. "
+        f"[NIST AI RMF Playbook Govern 1.1 Action 1]\n{underline}\n\nMore text.\n"
+    )
+    (tmp_path / "standards").mkdir()
+    (tmp_path / "standards" / "ai.md").write_text(body, encoding="utf-8")
+
+    errors = [
+        f for f in check_tree(tmp_path, org_actors=("Acme Health",)).findings if f.severity == ERROR
+    ]
+
+    assert any("Playbook" in f.message and "line 3" in f.message for f in errors), errors
+
+
+def test_with_a_blank_line_before_the_rule_it_is_still_a_sentence():
+    """The other arm: a `---` after a blank line is a thematic break, the
+    line above stays a sentence, and the Playbook gate reads it."""
+    from policyforge.content.deontic import playbook_obligations, playbook_tagged_headings
+
+    body = (
+        "Acme Health must maintain an AI legal register. "
+        "[NIST AI RMF Playbook Govern 1.1 Action 1]\n\n---\n"
+    )
+    assert playbook_tagged_headings(body) == []
+    assert len(playbook_obligations(body, ("Acme Health",))) == 1
+
+
 def test_a_heading_right_after_a_list_item_ends_it():
     text = f"- Charlie reviews access\n## Section\nDelta must log changes. {TAG_B}\n"
 

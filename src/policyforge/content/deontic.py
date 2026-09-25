@@ -607,8 +607,14 @@ def playbook_tagged_headings(text: str) -> list[tuple[int, str]]:
     9 of its 9 Playbook tags sat on headings, and the gate reported none.
     """
     found = []
-    for number, line in enumerate(text.splitlines(), start=1):
-        if not _HEADING_LINE_RE.match(line):
+    lines = text.split("\n")
+    kinds = _line_kinds(lines)
+    for number, line in enumerate(lines, start=1):
+        # Headings as `analyze` classifies them (9b on #350): a setext
+        # heading's text line, blanked out of sentence analysis, is still
+        # a heading here, so an obligation underlined with `---` is caught
+        # by this rule rather than by neither.
+        if kinds[number - 1] not in _HEADING_TEXT:
             continue
         tags = _CITATION_RE.findall(line)
         if any(_is_playbook(part) for tag in tags for part in _parts(tag)):
@@ -654,10 +660,10 @@ def classify(sentence: str) -> str:
     return NONE
 
 
-#: Markdown headings. Structure, not statements — "### 4.1 Media Protection"
+#: Markdown headings are structure, not statements: "### 4.1 Media Protection"
 #: commits the organization to nothing, and a heading ending in a numbered
-#: section makes the sentence splitter cut in the middle of one.
-_HEADING_LINE_RE = re.compile(r"^[ \t]*#{1,6}[ \t].*$", re.MULTILINE)
+#: section makes the sentence splitter cut in the middle of one. Which lines
+#: are headings is decided once, by `_line_kinds` below.
 
 
 def analyze(text: str) -> list[Statement]:
@@ -692,8 +698,7 @@ def analyze(text: str) -> list[Statement]:
 
 #: An ATX heading, CommonMark's shapes: up to three spaces, 1-6 `#`, then a
 #: space or the end of the line (so a bare `##` is an empty heading), inside
-#: any number of blockquote markers (`> ## heading`). Wider than
-#: `_HEADING_LINE_RE`, which the heading-tag check still uses (#349 names it).
+#: any number of blockquote markers (`> ## heading`).
 _ATX_RE = re.compile(r"^[ \t]{0,3}(?:>[ \t]?)*[ \t]{0,3}#{1,6}(?:[ \t]|$)")
 #: A thematic break, CommonMark's shape: up to three spaces, then three or
 #: more of ONE of `-`, `*`, `_`, spaces allowed between (1d on #350: `***`,
@@ -705,6 +710,38 @@ _THEMATIC_BREAK_RE = re.compile(r"^[ \t]{0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}
 _SETEXT_UNDERLINE_RE = re.compile(r"^[ \t]{0,3}(?:=+|-{2,})[ \t]*$")
 #: A line that cannot be setext heading text: a list item or a table row.
 _LIST_OR_TABLE_RE = re.compile(r"^[ \t]*(?:[-*+][ \t]|\d+[.)][ \t]|\|)")
+
+
+#: Line kinds `_line_kinds` returns; the first two are heading TEXT.
+_ATX, _SETEXT, _UNDERLINE, _BREAK = "atx", "setext", "underline", "break"
+_HEADING_TEXT = (_ATX, _SETEXT)
+
+
+def _line_kinds(lines: list[str]) -> list[str | None]:
+    """Each line's block role, or None for ordinary text.
+
+    **The one classification of headings**, read by `analyze` (a boundary)
+    and by `playbook_tagged_headings` (a tagged heading). Two readings of
+    one document disagreeing is how an obligation underlined with `---` left
+    sentence analysis without becoming a heading anywhere (9b on #350).
+    """
+    kinds: list[str | None] = [_ATX if _ATX_RE.match(line) else None for line in lines]
+    for index, line in enumerate(lines):
+        if kinds[index] is not None:
+            continue
+        above = index - 1
+        paragraph_above = (
+            above >= 0
+            and lines[above].strip()
+            and kinds[above] is None
+            and not _LIST_OR_TABLE_RE.match(lines[above])
+            and not _THEMATIC_BREAK_RE.match(lines[above])
+        )
+        if paragraph_above and _SETEXT_UNDERLINE_RE.match(line):
+            kinds[index], kinds[above] = _UNDERLINE, _SETEXT
+        elif _THEMATIC_BREAK_RE.match(line):
+            kinds[index] = _BREAK
+    return kinds
 
 
 def _heading_blocks(text: str) -> tuple[str, list[tuple[int, str]]]:
@@ -722,22 +759,7 @@ def _heading_blocks(text: str) -> tuple[str, list[tuple[int, str]]]:
     indented code blocks, whose contents are still read as prose.
     """
     lines = text.split("\n")
-    heading = [bool(_ATX_RE.match(line)) for line in lines]
-    for index, line in enumerate(lines):
-        if heading[index]:
-            continue
-        above = index - 1
-        paragraph_above = (
-            above >= 0
-            and lines[above].strip()
-            and not heading[above]
-            and not _LIST_OR_TABLE_RE.match(lines[above])
-            and not _THEMATIC_BREAK_RE.match(lines[above])
-        )
-        if paragraph_above and _SETEXT_UNDERLINE_RE.match(line):
-            heading[index] = heading[above] = True
-        elif _THEMATIC_BREAK_RE.match(line):
-            heading[index] = True
+    heading = [kind is not None for kind in _line_kinds(lines)]
     blanked = [" " * len(line) if heading[i] else line for i, line in enumerate(lines)]
     text = "\n".join(blanked)
 

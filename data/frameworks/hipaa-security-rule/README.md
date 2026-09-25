@@ -17,17 +17,21 @@ sections open with the same framing sentence before their first standard:
 or business associate must, in accordance with § 164.306:"*. The loader
 drops that sentence, deliberately, so each control's statement reads as the
 regulation's own requirement (*"Implement …"*) rather than repeating it on each of the
-20 standards those sections hold. Two things are therefore **not** visible on those controls:
+20 standards those sections hold. So:
 
-- **who the obligation runs to**, a covered entity or business associate;
-- **that it applies "in accordance with § 164.306"**: the general rules,
-  including flexibility of approach (§ 164.306(b)) and the Required and
-  Addressable distinction (§ 164.306(d)).
+- **who the obligation runs to**, a covered entity or business associate, is
+  **not** visible on those controls;
+- **that it applies "in accordance with § 164.306"** is carried in each of
+  those 20 controls' `related_controls`, as `164.306`, the section exactly
+  as the lead-in cites it: the general rules, including flexibility of
+  approach (§ 164.306(b)) and the Required and Addressable distinction
+  (§ 164.306(d)).
 
 **§ 164.306 itself ships as five controls**, `164.306(a)` to `(e)`, and each
 specification keeps its own Required or Addressable tag, so the rules are in
-the catalog. **What is missing is the link** from each control back to
-§ 164.306. Recording that link is #268. § 164.302 (Applicability) and
+the catalog and `164.306` names them. The loader reads the relationship from
+the lead-in's own text, and refuses a parse in which a lead-in citing a
+section frames no control. § 164.302 (Applicability) and
 § 164.304 (Definitions) are not shipped as controls, because neither states a
 requirement to implement.
 

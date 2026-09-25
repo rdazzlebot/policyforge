@@ -900,3 +900,73 @@ def test_the_wait_refuses_a_closed_release_pr_instead_of_waiting_forever():
     # current install, tested on its own above.
     assert release._pr_still_open(ctx("OPEN")).ok
     assert not release._pr_still_open(_ctx(run=_fake_run({}))).ok, "no PR is nothing to wait for"
+
+
+# --- #391: a commit-archive formula declares its version; the PR by its branch ---
+
+_PUBLISHED = (
+    '  homepage "https://github.com/rdazzlebot/policyforge"\n'
+    '  url "https://github.com/rdazzlebot/policyforge/archive/refs/tags/v1.6.0.tar.gz"\n'
+    f'  sha256 "{"0" * 64}"\n'
+    '  license "Apache-2.0"\n'
+)
+
+
+def test_the_step_8_formula_declares_its_version(monkeypatch):
+    """9b at the 1.6.1 cut: Homebrew 7 refuses a formula whose url is a commit
+    archive and which declares no version ("version (nil)"). Step 8's formula
+    carries it, between url and sha256."""
+    monkeypatch.setattr(release.release_check, "fetch_formula", lambda url=None: _PUBLISHED)
+    ctx = _ctx(run=_fake_run({"rev-parse HEAD": (0, CUT)}))
+    formula = release._formula(ctx, release._head_archive(ctx), "1" * 64)
+    lines = formula.splitlines()
+    assert '  version "9.9.9"' in lines, formula
+    url = next(i for i, line in enumerate(lines) if line.startswith("  url "))
+    sha = next(i for i, line in enumerate(lines) if line.startswith("  sha256 "))
+    assert lines.index('  version "9.9.9"') == url + 1 < sha
+
+
+def test_a_tag_formula_declares_none(monkeypatch):
+    """Beside a tag url the version is scanned from it, and an explicit one is
+    what `brew audit --strict` calls redundant: the candidate formula has none."""
+    monkeypatch.setattr(release.release_check, "fetch_formula", lambda url=None: _PUBLISHED)
+    formula = release._formula(_ctx(), release._tag_archive(_ctx()), "1" * 64)
+    assert "version " not in formula, formula
+
+
+def test_the_install_chain_updates_homebrew_first():
+    """The image ships Homebrew 4.6.20; users have the current one. The chain
+    updates before anything is installed, so the result is the user's."""
+    steps = release._install_script("9.9.9").split(" && ")
+    assert steps[0] == "brew update --quiet"
+    assert steps.index("brew update --quiet") < next(
+        i for i, s in enumerate(steps) if s.startswith("brew install")
+    )
+
+
+def test_the_release_pr_is_found_by_its_branch_not_by_search():
+    """9b at the 1.6.1 cut: `--search` is an index and missed a PR opened a
+    moment before. The lookup names the branch `_open_pr` pushes."""
+    calls: list = []
+
+    def run(argv):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, _prs(("Release 9.9.9", 390, "OPEN")), "")
+
+    assert release._release_pr(_ctx(run=run))["number"] == 390
+    (argv,) = [a for a in calls if a[:3] == ["gh", "pr", "list"]]
+    assert "--search" not in argv
+    assert argv[argv.index("--head") + 1] == "9b/release-9.9.9"
+
+
+def test_a_version_the_published_formula_already_has_is_replaced_not_doubled(monkeypatch):
+    """ba on #392: "replaced, never duplicated" was stated and untested. A
+    published formula that already declares a version gets exactly one, the
+    release's, on a commit archive, and none on a tag url."""
+    published = _PUBLISHED.replace('  sha256 "', '  version "1.6.0"\n  sha256 "', 1)
+    monkeypatch.setattr(release.release_check, "fetch_formula", lambda url=None: published)
+    ctx = _ctx(run=_fake_run({"rev-parse HEAD": (0, CUT)}))
+    commit = release._formula(ctx, release._head_archive(ctx), "1" * 64).splitlines()
+    assert [line for line in commit if line.startswith("  version ")] == ['  version "9.9.9"']
+    tag = release._formula(_ctx(), release._tag_archive(_ctx()), "1" * 64)
+    assert "version " not in tag, tag

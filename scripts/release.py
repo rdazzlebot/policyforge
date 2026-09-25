@@ -388,8 +388,11 @@ def _release_pr(ctx: Context) -> dict:
             "main",
             "--state",
             "all",
-            "--search",
-            f"Release {ctx.version} in:title",
+            # By the branch `_open_pr` pushes, not `--search`: search is an
+            # index, and it missed a PR created a moment earlier, at the 1.6.1
+            # cut (policyforge-9b on #380). `--head` filters the list itself.
+            "--head",
+            f"9b/release-{ctx.version}",
             "--json",
             "number,state,headRefOid,mergeCommit,title",
         ]
@@ -572,7 +575,23 @@ def _formula(ctx: Context, url: str, sha: str) -> str:
         flags=re.M,
     )
     text = re.sub(r'^(\s*url ")[^"]+(")', rf"\g<1>{url}\g<2>", text, count=1, flags=re.M)
+    # A commit archive carries no version, so the formula declares one (#391).
+    # Homebrew takes a formula's version from its url; from `v1.6.1.tar.gz`
+    # that is 1.6.1, but from `archive/<sha>.tar.gz` there is none. Homebrew
+    # 4.6 guessed one ("stable 3", from the SHA's last digit) and installed;
+    # 7.0.6 refuses: "invalid attribute for formula ...: version (nil)"
+    # (policyforge-9b, at the 1.6.1 cut). Only for a commit archive: beside a
+    # tag url an explicit version is one `brew audit --strict` calls redundant.
+    text = re.sub(r'^\s*version "[^"]*"\n', "", text, flags=re.M)
+    if _COMMIT_ARCHIVE_RE.search(url):
+        text = re.sub(
+            r'^(\s*url "[^"]+"\n)', rf'\g<1>  version "{ctx.version}"\n', text, count=1, flags=re.M
+        )
     return re.sub(r'^(  sha256 ")[0-9a-f]{64}(")', rf"\g<1>{sha}\g<2>", text, count=1, flags=re.M)
+
+
+#: A GitHub archive of a commit, not of a tag: `/archive/<40 hex>.tar.gz`.
+_COMMIT_ARCHIVE_RE = re.compile(r"/archive/[0-9a-f]{40}\.tar\.gz$")
 
 
 def _head_archive(ctx: Context) -> str:
@@ -1144,12 +1163,20 @@ def _install_script(version: str) -> str:
     formula's virtualenv for `policyforge.__version__`, the string step 6
     bumps. `test "$(...)" = X` fails on a wrong version and on no output
     alike. PROBE MEASURED on #348 against the published 1.6.0 formula in this
-    image: it read 1.6.0, the arm expecting 9.9.9 failed.
+    image, on its Homebrew 4.6.20: it read 1.6.0, the arm expecting 9.9.9
+    failed. The chain now updates Homebrew first (#391), so it measures the
+    Homebrew a user installs with, not the one the image happens to ship.
     """
     python = '"$(brew --prefix local/candidate/policyforge)/libexec/bin/python"'
     read = "import policyforge, sys; sys.stdout.write(policyforge.__version__)"
     return " && ".join(
         [
+            # The Homebrew a user has, not the image's: `homebrew/brew:latest`
+            # still ships 4.6.20, and whether a run auto-updated decided whether
+            # a formula with no version installed or was refused (#391: 1d's
+            # run stayed on 4.6.20 and passed, 9b's updated to 7.0.6 and failed).
+            "brew update --quiet",
+            'echo "HOMEBREW: $(brew --version | head -1)"',
             "brew tap-new --no-git local/candidate",
             "cp /candidate/policyforge.rb "
             '"$(brew --repository)/Library/Taps/local/homebrew-candidate/Formula/"',

@@ -65,12 +65,18 @@ def write_synthesis(
     nist_controls: list[str] | None = None,
     content_class: str | None = None,
     derived_from: list[str] | None = None,
+    playbook: list[dict] | None = None,
 ) -> str:
     """Render a synthesis file: YAML frontmatter, then the requirement list.
 
     Only keys with a value are emitted, so a call with none of them writes
     the requirement list alone. `synthesize` always passes a content class,
     so every synthesis it writes says what it was drawn from.
+
+    `playbook` goes in the frontmatter and never in the body (#301): the body
+    is shared by all three tiers, and only the Standard may draw on NIST's
+    voluntary suggestions. Kept out of the text every tier reads, so no
+    tier's input has to be edited to leave it out.
     """
     import yaml
 
@@ -82,12 +88,75 @@ def write_synthesis(
         "nist_controls": nist_controls or [],
         "content_class": content_class or "",
         "derived_from": derived_from or [],
+        "playbook": playbook or [],
     }
     metadata = {k: v for k, v in metadata.items() if v}
     if not metadata:
         return body.rstrip() + "\n"
     front = yaml.safe_dump(metadata, sort_keys=False, allow_unicode=True).strip()
     return f"---\n{front}\n---\n\n{body.rstrip()}\n"
+
+
+#: The AI RMF Core, which topics anchor, and the Playbook, whose actions are
+#: keyed by the Core's subcategory ids. As `normalize_framework` keys them.
+_AI_RMF_CORE = "nist-ai-rmf"
+_PLAYBOOK = "nist-ai-rmf-playbook"
+
+
+def playbook_actions(anchor_ids: list[str], controls: list[Control]) -> list[dict]:
+    """NIST's suggested actions for the AI RMF subcategories a topic anchors.
+
+    **Derived, not listed** (#301, 80's ruling). The Core states outcomes;
+    NIST put the actions in the Playbook, keyed by the same subcategory ids,
+    so the link is NIST's and no selection is made here. A category anchor
+    ("Govern 1") covers each of its subcategories; a subcategory anchor
+    ("Govern 1.1") covers only itself.
+
+    **The Playbook is deliberately NOT in `TOPIC_ANCHORS`.** A topic does not
+    own NIST's voluntary suggestions, so `/coverage` must not count them as
+    things an organization can fail to cover. This is retrieval for the
+    Standard tier only.
+
+    Returns one entry per subcategory, in anchor order:
+    `{"subcategory": "Govern 1.1", "actions": [{"id": ..., "text": ...}]}`.
+    Empty when either catalog is not loaded.
+    """
+    core = {}
+    for control in controls:
+        if normalize_framework(control.framework) == _AI_RMF_CORE:
+            core[control.control_id] = control
+            for enhancement in control.enhancements:
+                core.setdefault(enhancement.enhancement_id, control)
+    playbook = {c.control_id: c for c in controls if normalize_framework(c.framework) == _PLAYBOOK}
+    if not core or not playbook:
+        return []
+
+    entries: list[dict] = []
+    seen: set[str] = set()
+    for anchor_id in anchor_ids:
+        control = core.get(anchor_id)
+        if control is None:
+            continue
+        anchored = (
+            [e.enhancement_id for e in control.enhancements]
+            if control.control_id == anchor_id
+            else [anchor_id]
+        )
+        for subcategory in anchored:
+            entry = playbook.get(subcategory)
+            if entry is None or subcategory in seen:
+                continue
+            seen.add(subcategory)
+            entries.append(
+                {
+                    "subcategory": subcategory,
+                    "actions": [
+                        {"id": a.enhancement_id, "text": " ".join(a.description.split())}
+                        for a in entry.enhancements
+                    ],
+                }
+            )
+    return entries
 
 
 def read_synthesis(text: str) -> tuple[dict, str]:

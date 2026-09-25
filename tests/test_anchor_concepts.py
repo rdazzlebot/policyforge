@@ -53,8 +53,45 @@ A_SITE_FILES = (
     "crosswalk/overlay.py",
     "ingest/hipaa_crosswalk_loader.py",
     "mapping/crosswalk.py",
-    "topics/satisfies.py",
 )
+
+#: **The one file guarded function by function (#335).** Every other file on
+#: either list stays per-file. `topics/satisfies.py` holds both sides: its
+#: crosswalk traversal (`document_evidence`, `nist_anchors`) maps citations
+#: ONTO 800-53, an A question, and whether a citation answers for a topic's
+#: anchor is a B question. Per-file, the B side could only be written as a
+#: hard-coded framework list or hidden behind an import from elsewhere, and
+#: the second passes this guard by hiding the name. So the unit here is the
+#: function: the population is derived with `ast` (nested included), every
+#: function is classified with a reason, and an unclassified or stale entry
+#: fails by name, so a new function lands as unclassified, never unguarded.
+#: Module-level code keeps the A rule.
+MIXED_SITE = "topics/satisfies.py"
+A, B, NEITHER = "A", "B", "neither"
+MIXED_SITE_FUNCTIONS = {
+    "Citation.key": (NEITHER, "builds a (framework, id) key; no anchor"),
+    "Reached.in_part": (NEITHER, "reads a relationship name"),
+    "Reached.reviewed": (NEITHER, "reads a provenance label"),
+    "DocumentEvidence.unreviewed": (NEITHER, "filters reached rows by provenance"),
+    "DocumentEvidence.nist_anchors": (A, "the cited ids the crosswalk traversal starts from"),
+    "DocumentEvidence.occurrences": (NEITHER, "counts citation instances"),
+    "DocumentEvidence.distinct": (NEITHER, "counts distinct citations"),
+    "resolve_framework": (NEITHER, "maps a written framework name to a loaded catalog"),
+    "split_citation": (NEITHER, "parses one tag part"),
+    "parse_citations": (NEITHER, "finds tags in a body"),
+    "_catalog_index": (NEITHER, "indexes catalog ids by framework"),
+    "document_evidence": (A, "traverses the crosswalk from the cited 800-53 ids"),
+    "_answers_for_an_anchor": (B, "whether a citation can answer for a topic anchor"),
+    "build_report": (A, "hands the crosswalk to document_evidence; asks B only via the above"),
+    "_provenance_of": (NEITHER, "labels an overlay row"),
+    "as_records": (A, "reports the crosswalk traversal's anchors"),
+    "_by_framework": (NEITHER, "groups rows for display"),
+    "format_report": (A, "reports the crosswalk traversal's anchors"),
+}
+#: Forbidden per side, as names, the same textual reading as the per-file
+#: guards. B is also kept off the traversal itself, not only the constant.
+TOPIC_ANCHOR_NAMES = ("TOPIC_ANCHORS", "anchors_a_topic")
+CROSSWALK_ANCHOR_NAMES = ("NIST_ANCHOR", "crosswalk", "nist_anchors")
 
 #: **`synthesis/merge.py` moved from A to B on 2026-09-20, and the reason it
 #: was on the wrong side is the more useful finding: the A/B boundary is not
@@ -107,15 +144,67 @@ def _code_identifiers(relative: str) -> set[str]:
     same move policyforge-9b used to establish that #166's loader change
     was comments-only — compare what runs, not what is written.
     """
+    source = (ROOT / "src" / "policyforge" / relative).read_text(encoding="utf-8")
+    return _names_in(source)
+
+
+def _names_in(source: str) -> set[str]:
+    """NAME tokens in `source`: code only, comments and strings excluded."""
+    return set(_name_counts(source))
+
+
+def _name_counts(source: str):
     import io
     import tokenize
+    from collections import Counter
 
-    source = (ROOT / "src" / "policyforge" / relative).read_text(encoding="utf-8")
-    names = set()
-    for token in tokenize.generate_tokens(io.StringIO(source).readline):
-        if token.type == tokenize.NAME:
-            names.add(token.string)
-    return names
+    return Counter(
+        token.string
+        for token in tokenize.generate_tokens(io.StringIO(source).readline)
+        if token.type == tokenize.NAME
+    )
+
+
+def _mixed_site_parts() -> tuple[dict[str, set[str]], set[str]]:
+    """Each function's code names by qualified name, and the module-level
+    code's names. Derived with `ast`, nested functions and methods included;
+    a function's names include any function nested in it, which only makes
+    the outer one's check stricter.
+
+    **One subtraction, stated:** each `from a.b.c import x` inside a function
+    removes ONE occurrence each of `a`, `b` and `c`, the module path, because
+    the B function imports `anchors_a_topic` from `mapping.crosswalk` and the
+    path is not a use of the traversal. It is counted, not set-removed, so a
+    real `crosswalk` in the same function still counts."""
+    import ast
+    import textwrap
+
+    source = (ROOT / "src" / "policyforge" / MIXED_SITE).read_text(encoding="utf-8")
+    lines = source.splitlines(keepends=True)
+    functions: dict[str, set[str]] = {}
+    inside: set[int] = set()
+
+    def visit(node, prefix):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                qualified = prefix + child.name
+                first = min([child.lineno] + [d.lineno for d in child.decorator_list])
+                segment = "".join(lines[first - 1 : child.end_lineno])
+                counts = _name_counts(textwrap.dedent(segment))
+                for node in ast.walk(child):
+                    if isinstance(node, ast.ImportFrom) and node.module:
+                        counts.subtract(node.module.split("."))
+                functions[qualified] = {name for name, n in counts.items() if n > 0}
+                inside.update(range(first, child.end_lineno + 1))
+                visit(child, qualified + ".")
+            elif isinstance(child, ast.ClassDef):
+                visit(child, prefix + child.name + ".")
+            else:
+                visit(child, prefix)
+
+    visit(ast.parse(source), "")
+    module = "".join(line for n, line in enumerate(lines, 1) if n not in inside)
+    return functions, _names_in(module)
 
 
 def test_exactly_which_catalogs_a_topic_may_anchor():
@@ -260,6 +349,57 @@ def test_no_a_site_reads_the_topic_anchor(relative: str):
             f"For the AI RMF that publishes a claim NIST declined to make: that "
             f"an 800-53 control ACHIEVES an AI RMF outcome."
         )
+
+
+def test_every_function_in_the_mixed_site_is_classified():
+    """The population is derived, so a new function fails by name until
+    someone decides its side, and a stale entry fails too: renaming the
+    B function cannot silently drop it from B (1d on #335)."""
+    functions, _ = _mixed_site_parts()
+    assert len(functions) >= 15, "the premise: the parse found the file's functions"
+
+    unclassified = sorted(set(functions) - set(MIXED_SITE_FUNCTIONS))
+    stale = sorted(set(MIXED_SITE_FUNCTIONS) - set(functions))
+    assert unclassified == [], f"{MIXED_SITE}: classify these A, B or neither: {unclassified}"
+    assert stale == [], f"{MIXED_SITE}: these classified functions no longer exist: {stale}"
+    assert {side for side, _ in MIXED_SITE_FUNCTIONS.values()} == {A, B, NEITHER}
+
+
+def test_the_mixed_sites_module_level_code_keeps_the_a_rule():
+    """Nothing at import time may read the topic anchor: the B function
+    imports it inside itself."""
+    _, module = _mixed_site_parts()
+    for forbidden in TOPIC_ANCHOR_NAMES:
+        assert forbidden not in module, f"{MIXED_SITE}: module-level code names `{forbidden}`"
+    assert "NIST_ANCHOR" in module, "the premise: the A side's import is where it was"
+
+
+@pytest.mark.parametrize("function", sorted(MIXED_SITE_FUNCTIONS))
+def test_each_mixed_site_function_stays_on_its_side(function: str):
+    """A functions keep the per-file A rule. B functions may name the topic
+    anchor and nothing of the crosswalk anchor or its traversal. Neither
+    names nothing from either side."""
+    functions, _ = _mixed_site_parts()
+    if function not in functions:
+        pytest.fail(f"{MIXED_SITE}: `{function}` is classified but gone")
+    side, _reason = MIXED_SITE_FUNCTIONS[function]
+    forbidden = {
+        A: TOPIC_ANCHOR_NAMES,
+        B: CROSSWALK_ANCHOR_NAMES,
+        NEITHER: TOPIC_ANCHOR_NAMES + CROSSWALK_ANCHOR_NAMES,
+    }[side]
+    present = sorted(set(forbidden) & functions[function])
+    assert present == [], f"{MIXED_SITE}: {side} function `{function}` names {present}"
+
+
+def test_the_mixed_site_still_has_both_sides():
+    """The other half, as for the per-file lists: deleting the traversal or
+    the credit function must not satisfy the guard."""
+    functions, _ = _mixed_site_parts()
+    a_names = set().union(*(functions[f] for f, (s, _) in MIXED_SITE_FUNCTIONS.items() if s == A))
+    b_names = set().union(*(functions[f] for f, (s, _) in MIXED_SITE_FUNCTIONS.items() if s == B))
+    assert "NIST_ANCHOR" in a_names
+    assert "anchors_a_topic" in b_names
 
 
 def test_the_crosswalk_offers_only_the_anchor_as_a_target():

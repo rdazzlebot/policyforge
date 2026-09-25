@@ -1096,3 +1096,59 @@ def test_a_set_followed_by_and_or_is_still_credited(prefix):
     subshell (bash: ON)."""
     command = f"{prefix}; python -m pytest -q | tail -1 && git push"
     assert shell_status.check_command(command) == []
+
+
+# --- #334: judge pipefail at the pipe being judged, not the line's first -----------
+
+
+def test_the_swallow_is_judged_at_its_own_pipe():
+    """policyforge-ba's #334, the unsafe direction: pipefail is ON at the
+    first pipe and OFF (bash-verified) at the flagged one, and the lint
+    asked about the first."""
+    command = (
+        "set -o pipefail; git log | tail -1; set +o pipefail; "
+        "python -m pytest -q | tail -1 && git push"
+    )
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+def test_the_mirror_clears():
+    """Off at the first pipe, ON at the flagged one (bash-verified): the
+    swallow is guarded."""
+    command = "git log | tail -1; set -o pipefail; python -m pytest -q | tail -1 && git push"
+    assert "swallowed-status" not in _rules(shell_status.check_command(command))
+
+
+def test_no_pipefail_is_judged_at_every_pipe_on_the_line():
+    """The same blind spot in `no-pipefail`: a script line whose SECOND pipe
+    runs after `set +o pipefail`."""
+    assert "no-pipefail" in _block(
+        "set -o pipefail; git log | tail -1; set +o pipefail; git diff | head -1"
+    )
+    assert "no-pipefail" not in _block("set -o pipefail; git log | tail -1; git diff | head -1")
+
+
+def test_a_status_read_after_the_line_is_judged_at_its_last_pipe():
+    """The carry into the next line asked about the FIRST pipe too. `$?` on
+    the next line belongs to the LAST pipe."""
+    assert "status-after-pipe" in _block(
+        "set -o pipefail; git log | tail -1; set +o pipefail; git diff | head -1", "rc=$?"
+    )
+    assert "status-after-pipe" not in _block(
+        "git log | tail -1; set -o pipefail; git diff | head -1", "rc=$?"
+    )
+
+
+def test_every_swallow_on_a_line_is_judged_not_only_the_first():
+    """policyforge-9b on #338, the one shape left among 4,820 bash-judged
+    cases: a guarded FIRST swallow hid an unguarded SECOND one (bash: pipefail
+    OFF at the second pipe)."""
+    command = (
+        "set -o pipefail; git log | tail -1 && echo ok; set +o pipefail; "
+        "python -m pytest -q | tail -1 && git push"
+    )
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+    guarded = (
+        "set -o pipefail; git log | tail -1 && echo ok; python -m pytest -q | tail -1 && git push"
+    )
+    assert shell_status.check_command(guarded) == []

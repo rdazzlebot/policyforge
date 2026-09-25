@@ -4,8 +4,9 @@ Standard can assert "Reviewers shall retain evidence for seven years" beside
 properly cited requirements, and until now nothing said so — the existing
 check only fires on a document citing *nothing at all*, so seven good tags
 masked three untagged obligations. **Expect new warnings on generated
-documents**; they are warnings rather than errors, so only `--strict` turns
-them into a failing exit.
+documents**: on the 33 generated Standards we measured, it reports 22. They
+are warnings rather than errors, so only `--strict` turns them into a
+failing exit.
 
 **And `policyforge check --entail` asks a model whether each cited obligation
 is actually carried by the synthesis requirements it cites.** Off by default,

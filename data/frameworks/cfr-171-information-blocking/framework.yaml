@@ -1,5 +1,6 @@
 id: cfr-171-information-blocking
 name: Information Blocking (45 CFR Part 171)
+framework_id: cfr-171-information-blocking
 licence: public-domain
 source: eCFR public API, via policyforge etl-info-blocking
 notes: A US government work, so freely redistributable. Bundled with this project and safe

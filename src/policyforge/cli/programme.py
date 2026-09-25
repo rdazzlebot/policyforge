@@ -798,8 +798,10 @@ def satisfies_cmd(
 
     Two resolution rules worth knowing, because the counts look wrong
     without them. Citing an enhancement counts as citing its control, so a
-    topic that cites AC-2(3) is not reported as never mentioning AC-2 - the
-    same reading `coverage` and `drift` use. And a topic's anchors are
+    topic that cites AC-2(3) is not reported as never mentioning AC-2, and
+    one citing Govern 1.1 is not reported as never mentioning Govern 1 - the
+    same `parent_of` reading `coverage` uses, and `drift` for the catalogs
+    topics anchor. And a topic's anchors are
     answered by its documents together rather than one file at a time, so a
     Policy is not reported as missing anchors its own Procedure cites; the
     report names how much it searched. Under --document, one file is all

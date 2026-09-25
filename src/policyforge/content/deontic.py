@@ -196,9 +196,31 @@ class Statement:
 _PLAYBOOK = "NIST AI RMF Playbook "
 
 
+#: The Playbook's framework name as written into tags, without the space.
+_PLAYBOOK_NAME = _PLAYBOOK.strip()
+
+
 def _parts(tag: str) -> list[str]:
-    """One tag's references: a merged tag names several, split on `|`."""
-    return [" ".join(p.split()) for p in tag.strip("[]").replace("\\", "").split("|") if p.strip()]
+    """One tag's references, a Playbook shorthand part written out in full (#333).
+
+    Split by `content/tags.tag_parts`, the one function `satisfies` also
+    uses. A part like `Govern 1.1 Action 2` after `NIST AI RMF Playbook
+    Govern 1.1 Action 1` inherits the Playbook, and **counts as a Playbook
+    citation only if its id resolves in the shipped Playbook catalog** (80's
+    ruling). So `[... Playbook ... | NIST 800-53 AC-2]` still has a
+    non-Playbook part, which is why this needs no list of every framework
+    name: whatever does not resolve as the Playbook is left as written, and
+    the sentence is then not Playbook-only.
+    """
+    from .tags import tag_parts
+
+    out: list[str] = []
+    for part in tag_parts(tag, (_PLAYBOOK_NAME,)):
+        playbook = part.framework == _PLAYBOOK_NAME and (
+            not part.inherited or part.rest.lower() in _playbook_ids()
+        )
+        out.append(_PLAYBOOK + part.rest if playbook else part.rest)
+    return out
 
 
 def _is_playbook(reference: str) -> bool:
@@ -322,6 +344,33 @@ def _opener_end(plain: str) -> int:
 QUOTE_MIN_WORDS = 6
 
 _PLAYBOOK_ACTIONS: dict[str, list[str]] | None = None
+_PLAYBOOK_IDS: frozenset[str] | None = None
+
+
+def _playbook_ids() -> frozenset[str]:
+    """Every id the shipped Playbook catalog holds, lower-cased: its
+    subcategories (`govern 1.1`) and their actions (`govern 1.1 action 2`).
+    What an inherited shorthand part must resolve to (#333)."""
+    global _PLAYBOOK_IDS
+    if _PLAYBOOK_IDS is None:
+        import json
+
+        from policyforge.scaffold import bundled_root
+
+        rows = json.loads(
+            bundled_root()
+            .joinpath("frameworks", "nist-ai-rmf-playbook", "controls.json")
+            .read_text(encoding="utf-8")
+        )
+        _PLAYBOOK_IDS = frozenset(
+            " ".join(i.split()).lower()
+            for row in rows
+            for i in [
+                row["control_id"],
+                *(e["enhancement_id"] for e in row.get("enhancements") or []),
+            ]
+        )
+    return _PLAYBOOK_IDS
 
 
 def _playbook_actions() -> dict[str, list[str]]:

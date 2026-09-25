@@ -46,10 +46,20 @@ Hence two rules, not one, and `EMPTY_INPUT_TOOLS` below is the second.
 
 WHAT THIS DOES NOT DO, deliberately.
 
-It does not lint the interactive shell. Nobody lints what a session types at
-a prompt, and **three of #213's seven instances were exactly that.** This
-reduces the committed surface; it does not close the class, which is why
-#213 stays open rather than being closed by this.
+It does not lint the interactive shell BY ITSELF. Three of #213's first seven
+instances, and the eighth, were typed at a prompt. Since #213, `--command`
+checks one typed command and `--hook` does the same for a Claude Code
+PreToolUse payload, so a hook can refuse a command before it runs.
+**Whether that hook is installed is the user's choice, in their own
+settings. This file does not install it,** so until someone does, the
+typed surface is exactly as unguarded as before.
+
+It does not see a status query before `&&` (`gh pr view ... && gh pr merge`:
+a question that exits 0 whatever the answer). A list of such commands would
+be the class-versus-instance trap. Nor does it see a command that exits 0
+having done nothing (an inert mutation, a no-op revert). No shell rule can,
+and checking the postcondition is the only defence. Both are stated limits
+(#213), pinned where a test can pin them.
 
 It does not require `set -o pipefail` in documentation snippets. A snippet is
 something a reader runs by hand and watches; a script is something that runs
@@ -64,6 +74,8 @@ Usage:
 
     python scripts/shell_status.py            # check; non-zero on a finding
     python scripts/shell_status.py --list     # print the population it derived
+    python scripts/shell_status.py --command 'CMD'   # one command; 1 on a finding
+    python scripts/shell_status.py --hook     # PreToolUse JSON on stdin; 2 blocks
 """
 
 from __future__ import annotations
@@ -130,15 +142,186 @@ _XARGS_RUNS_ON_EMPTY = re.compile(r"\|\s*xargs\b(?![^|]*(?:-r\b|--no-run-if-empt
 
 _CONSUMERS = "|".join(STREAM_CONSUMERS)
 
+#: A pipe, including `|&`, which pipes stderr too and discards the left
+#: side's status in the same way (ba on #328).
+_PIPE = r"\|&?\s*"
+
 #: A stream consumer whose status is then used to gate something else.
 #: `cmd | tail -4 && push` is the shape; the `&&` is what turns a discarded
 #: status into a wrong decision.
-_SWALLOWED = re.compile(rf"\|\s*(?:{_CONSUMERS})\b[^|]*&&")
+#: The candidate shape only. Whether the `&&` really gates THIS pipe is
+#: decided by `_swallowed_at`, which reads quoting and `$( )` nesting.
+_SWALLOWED = re.compile(rf"{_PIPE}(?:{_CONSUMERS})\b[^|]*&&")
+_CONSUMER_PIPE = re.compile(rf"(?<!\|){_PIPE}(?:{_CONSUMERS})\b")
+
+
+def _nesting(line: str) -> list[tuple[str, int]]:
+    """Per character: the quote it sits in ('' / "'" / '"') and its `$( )`
+    depth. **A small scanner, not a shell parser, and its limits are
+    stated:** each `$( )` opens a fresh quoting context, as the shell does,
+    so an awk `'... && ...'` inside `"$( ... )"` is still awk's. Plain
+    parentheses are counted per context, so a subshell's `)` does not close
+    the `$(` around it (policyforge-ba on #328: `$( (x | tail) && y )`).
+    Backslash escapes are honoured outside single quotes. Backticks and
+    `${ }` are not tracked."""
+    states: list[tuple[str, int]] = []
+    contexts = [["", 0]]  # per open `$(`: [quote, open plain parens]
+    i = 0
+    while i < len(line):
+        ch, context, depth = line[i], contexts[-1], len(contexts) - 1
+        quote = context[0]
+        states.append((quote, depth))
+        if ch == "\\" and quote != "'" and i + 1 < len(line):
+            states.append((quote, depth))
+            i += 2
+            continue
+        if quote == "'":
+            if ch == "'":
+                context[0] = ""
+        elif line.startswith("$(", i):
+            contexts.append(["", 0])
+            states.append((quote, depth))
+            i += 2
+            continue
+        elif ch == "(" and not quote:
+            context[1] += 1
+        elif ch == ")" and not quote and context[1]:
+            context[1] -= 1
+        elif ch == ")" and not quote and depth:
+            contexts.pop()
+        elif ch in "'\"" and not quote:
+            context[0] = ch
+        elif ch == quote:
+            context[0] = ""
+        i += 1
+    return states
+
+
+#: A statement that is only assignments up to a `$(`: `n=$(`, `out="$(`,
+#: `a=1 b=$(`. Its exit status IS the substitution's, so an `&&` after it
+#: gates the pipe inside (ba on #328: `n=$(pytest | tail -1) && git push`).
+#: `local`/`export` are NOT this: their own status masks the substitution's.
+_ASSIGNMENT_ONLY = re.compile(r"\s*(?:[A-Za-z_]\w*=[^\s;&|]*\s+)*[A-Za-z_]\w*=[\"']?")
+
+
+def _opener_of(line: str, states: list[tuple[str, int]], start: int, depth: int) -> int:
+    """Where the `$(` enclosing `start` at `depth` begins."""
+    k = start
+    while k >= 0 and states[k][1] >= depth:
+        k -= 1
+    return k - 1 if line[max(k - 1, 0) : k + 1] == "$(" else k
+
+
+def _swallowed_at(line: str) -> int | None:
+    """Where a pipe into a consumer is followed by an `&&` that gates it,
+    else None.
+
+    **The `&&` must sit at the same quoting and `$( )` depth as the pipe,
+    with no `|` or `;` between them at that level.** Each clause is
+    measured, not supposed. Replaying one session's 2,736 typed commands
+    (#213) refused `x | head -2; y && z` (the `&&` gates `y`),
+    `| awk '... n==1 && ...'` (awk's `&&`) and `"$(x | wc -l)" && y` (the
+    `&&` gates `echo`). Still refused, as it must be:
+    `cat log | awk '{print $2}' && rm log`, where the quote closes before the
+    `&&`, and `bash -c 'x | tail && y'`, where both sit inside one quote,
+    which `bash -c` runs.
+    """
+    if not _SWALLOWED.search(line):
+        return None
+    states = _nesting(line)
+    for match in _CONSUMER_PIPE.finditer(line):
+        quote, depth = states[match.start()]
+        #: After leaving a substitution whose statement is assignment-only,
+        #: the level is its depth with any quoting, and only a closing quote
+        #: or space may stand between it and the `&&`.
+        after_assignment = False
+        for i in range(match.end(), len(line)):
+            here = states[i]
+            if here[1] < depth:
+                opener = _opener_of(line, states, match.start(), depth)
+                statement = re.split(r";|&&|\|\||\||\(", line[:opener])[-1]
+                if not _ASSIGNMENT_ONLY.fullmatch(statement):
+                    break
+                quote, depth, after_assignment = None, here[1], True
+            if here[1] != depth or (quote is not None and here[0] != quote):
+                continue
+            ch = line[i]
+            if line.startswith("&&", i) and (quote is not None or here[0] == ""):
+                return match.start()
+            if ch in "|;" and (quote is not None or here[0] == ""):
+                break
+            if after_assignment and not (ch.isspace() or ch in "\"')&"):
+                break
+    return None
+
 
 #: Any pipe into a stream consumer, used for the pipefail requirement.
-_PIPES_TO_CONSUMER = re.compile(rf"\|\s*(?:{_CONSUMERS})\b")
+_PIPES_TO_CONSUMER = re.compile(rf"{_PIPE}(?:{_CONSUMERS})\b")
 
-_PIPEFAIL = re.compile(r"set\s+(?:-o\s+pipefail|-[a-zA-Z]*o[a-zA-Z]*\s+pipefail|-euo\s+pipefail)")
+#: A `set` or `shopt` statement, up to the end of its statement.
+_SET_OR_SHOPT = re.compile(r"(?<![\w-])(set|shopt)\b([^;&|]*)")
+
+
+def _pipefail_changes(line: str) -> list[tuple[int, bool]]:
+    """Every place in `line` that turns pipefail on (True) or off (False).
+
+    **On and off are read by ONE interpreter of the options, not two
+    regexes**, because two regexes drifted. #328 taught the ON regex
+    `set -o errexit -o pipefail` and left OFF knowing only
+    `set +o pipefail`, so `set +eo pipefail`, `set +o errexit +o pipefail`
+    and `shopt -uo pipefail` (bash-verified to turn it OFF) left the lint
+    believing it was still on, and it cleared `x | tail && y`. That was
+    found by policyforge-9b, in the unsafe direction.
+
+    `set`: a flag word containing `o` (`-o`, `+o`, `-euo`, `+eo`) takes the
+    next word as the option name. The word's sign decides on or off.
+    `shopt`: the flags must include `o` (set-style options); `s` turns the
+    option on and `u` turns it off.
+    """
+    changes: list[tuple[int, bool]] = []
+    for match in _SET_OR_SHOPT.finditer(line):
+        command, words = match.group(1), match.group(2).split()
+        if command == "set":
+            j = 0
+            while j < len(words):
+                word = words[j]
+                if word[:1] in "-+" and len(word) > 1 and "o" in word[1:]:
+                    if j + 1 < len(words) and words[j + 1] == "pipefail":
+                        changes.append((match.start(), word[0] == "-"))
+                    j += 2
+                    continue
+                j += 1
+        else:
+            flags = "".join(w[1:] for w in words if w.startswith("-"))
+            if "o" in flags and "pipefail" in words and ("s" in flags) != ("u" in flags):
+                changes.append((match.start(), "s" in flags))
+    return changes
+
+
+#: `$?` read anywhere on a line.
+_READS_STATUS = re.compile(r"\$\?")
+
+#: A pipe into a stream consumer, then `;`, then a statement reading `$?`:
+#: `x | tail ; echo "exit: $?"`. The `$?` is the consumer's.
+_STATUS_AFTER_PIPE = re.compile(rf"{_PIPE}(?:{_CONSUMERS})\b[^;&|]*;[^;&|]*\$\?")
+
+#: A heredoc opener, `<<EOF`, `<<-'EOF'`, `<< "EOF"`, but not a here-string
+#: `<<<`. Its body is data, unless the command it feeds is a shell, and then
+#: the body is shell and is scanned (`bash <<'EOF'`).
+#:
+#: **Measured, not supposed (#213):** replaying one session's 2,736 typed
+#: commands, review bodies and commit messages QUOTING the pattern were
+#: refused as if they ran it, which would make a hook block every PR comment
+#: that explains the rule. **Not handled, a stated limit:** a multi-line
+#: quoted string (`python -c "..."` over several lines) is still read line
+#: by line as shell. A single-line quoted string is scanned on purpose, as
+#: `bash -c 'x | tail && y'` runs it.
+_HEREDOC = re.compile(r"(?<!<)<<-?\s*(['\"]?)(?P<tag>[A-Za-z_][A-Za-z0-9_]*)\1(?!<)")
+_SHELL_READS_HEREDOC = re.compile(r"(?:^|[\s;&|(])(?:bash|sh|zsh|ksh|dash)\b[^;&|]*$")
+
+#: A line whose LAST statement is a pipe into a stream consumer, so a `$?`
+#: at the start of the next line reads the consumer's status.
+_ENDS_IN_CONSUMER_PIPE = re.compile(rf"{_PIPE}(?:{_CONSUMERS})\b[^;&|]*$")
 
 #: Exemptions, pinned by the line's own text. A reason is required: an
 #: exemption with no reason is indistinguishable from an oversight, and the
@@ -466,16 +649,86 @@ def _strip_comment(line: str) -> str:
     return "".join(out)
 
 
+def _pipefail_at(state: bool, line: str, position: int) -> bool:
+    """Whether pipefail is on at `position` in `line`, given its state
+    before the line: each `set`/`shopt` that turns it on or off earlier in
+    the line changes it, in order."""
+    for start, value in sorted(_pipefail_changes(line)):
+        if start < position:
+            state = value
+    return state
+
+
+def _first_statement(line: str) -> str:
+    """The text before the first `;`, `&&` or `||`: the statement whose `$?`
+    still refers to whatever ran on the line above."""
+    return re.split(r";|&&|\|\|", line, maxsplit=1)[0]
+
+
 def findings(sources: list[Source]) -> list[Finding]:
+    """Every rule, per source, reading pipefail as a STATE along the block.
+
+    **pipefail counts only from where it is set (#213, 80's ruling).** The
+    first version asked whether `set -o pipefail` appeared anywhere in the
+    block, so a `set` written AFTER the pipe cleared it, and
+    `swallowed-status` ignored pipefail altogether, refusing
+    `set -o pipefail; x | tail && y`, which gates correctly, while the
+    `no-pipefail` message recommended exactly that fix. Now pipefail, set
+    earlier in the same block and not since turned off with
+    `set +o pipefail`, clears `swallowed-status`, `no-pipefail` and
+    `status-after-pipe` for that pipe. A `set` in another block (another
+    workflow step, another fence) does not carry over, because that is
+    another shell.
+    """
     results: list[Finding] = []
     for source in sources:
         text = "\n".join(line for _, line in source.lines)
-        has_pipefail = bool(_PIPEFAIL.search(text))
+        pipefail = False
+        #: The previous command line ended in a pipe into a stream consumer
+        #: while pipefail was off, so a `$?` at the start of the next line
+        #: reads the consumer's status.
+        unguarded_pipe_above = False
+        #: The delimiter of a heredoc whose body is DATA (a review, a commit
+        #: message, a Python script), so its lines are not commands.
+        heredoc_end = ""
         for number, raw in source.lines:
+            if heredoc_end:
+                if raw.strip() == heredoc_end:
+                    heredoc_end = ""
+                continue
             line = _strip_comment(raw)
             if not line.strip():
                 continue
-            if _SWALLOWED.search(line):
+            opened = _HEREDOC.search(line)
+            if opened and not _SHELL_READS_HEREDOC.search(line[: opened.start()]):
+                heredoc_end = opened.group("tag")
+            piped = _PIPES_TO_CONSUMER.search(line)
+            guarded = piped is not None and _pipefail_at(pipefail, line, piped.start())
+
+            # `$?` read where it can only mean a stream consumer's status:
+            # right after `x | tail ;` on the same line, or at the start of
+            # the line after one ending in such a pipe. Instances 3 and 8 on
+            # #213. Applies to docs too: a snippet that reads `$?` there
+            # teaches the misreading.
+            status = _READS_STATUS.search(line)
+            same_line = _STATUS_AFTER_PIPE.search(line)
+            if status and (
+                (same_line and not _pipefail_at(pipefail, line, same_line.start()))
+                or (unguarded_pipe_above and _READS_STATUS.search(_first_statement(line)))
+            ):
+                results.append(
+                    Finding(
+                        source.path,
+                        number,
+                        raw,
+                        "status-after-pipe",
+                        "`$?` here is the stream consumer's status, not the command's; "
+                        "capture first (`cmd > log 2>&1; rc=$?`), or `set -o pipefail` "
+                        "before the pipe.",
+                    )
+                )
+
+            if _swallowed_at(line) is not None and not guarded:
                 results.append(
                     Finding(
                         source.path,
@@ -486,10 +739,15 @@ def findings(sources: list[Source]) -> list[Finding]:
                         "capture first (`cmd > log 2>&1; rc=$?`) and branch on `$rc`.",
                     )
                 )
-            if not (source.requires_pipefail and _PIPES_TO_CONSUMER.search(line)):
+            # Carry the state to the next line: every set/unset on this one,
+            # and whether it ENDS in an unguarded pipe into a consumer.
+            pipefail = _pipefail_at(pipefail, line, len(line) + 1)
+            unguarded_pipe_above = bool(_ENDS_IN_CONSUMER_PIPE.search(line)) and not guarded
+
+            if not (source.requires_pipefail and piped):
                 continue
 
-            if not (has_pipefail or line.strip() in PIPEFAIL_EXEMPT):
+            if not (guarded or line.strip() in PIPEFAIL_EXEMPT):
                 results.append(
                     Finding(
                         source.path,
@@ -536,10 +794,82 @@ def findings(sources: list[Source]) -> list[Finding]:
     return results
 
 
+def check_command(command: str) -> list[Finding]:
+    """The same rules over one command, as typed (#213).
+
+    **Why this exists:** three of #213's first seven instances, and the
+    eighth, were typed at a prompt, which is the surface the repository scan
+    cannot see. A rule that has to be recalled at the moment of typing fires
+    only when you are already being careful. Run from a pre-execution hook,
+    this fires anyway.
+
+    A typed command is treated like a doc snippet, not a script:
+    `no-pipefail` does not apply, because `git log | head` at a prompt is
+    watched by the person who typed it. `swallowed-status`,
+    `status-after-pipe` and `empty-input-passes` (the latter only where
+    pipefail is required, so not here) are about a status being BELIEVED,
+    and the first two apply.
+    """
+    lines = list(enumerate(command.splitlines() or [command], 1))
+    return findings([Source(path="<command>", kind="command", lines=lines)])
+
+
+def _hook(stdin_text: str) -> int:
+    """A Claude Code PreToolUse hook: exit 2 blocks the call and feeds the
+    findings back on stderr; exit 0 lets it run.
+
+    **Reads the payload itself** so the configured hook needs no `jq` pipe,
+    which would be the very shape this guards. A payload it cannot read
+    exits 1: a non-blocking error the user sees, rather than silently
+    allowing (a check that cannot run is not a pass) or blocking every
+    command (a hook that blocks everything gets removed).
+    """
+    import json
+
+    try:
+        payload = json.loads(stdin_text)
+        command = payload.get("tool_input", {}).get("command")
+    except (ValueError, AttributeError) as error:
+        print(f"shell_status --hook: unreadable payload ({error}); not checked", file=sys.stderr)
+        return 1
+    if payload.get("tool_name") != "Bash":
+        return 0
+    if not isinstance(command, str):
+        print(
+            "shell_status --hook: a Bash call with no command string; not checked", file=sys.stderr
+        )
+        return 1
+    found = check_command(command)
+    if not found:
+        return 0
+    print(
+        f"shell_status: {len(found)} finding(s) in this command. It would believe a "
+        "status that belongs to a stream consumer.\n",
+        file=sys.stderr,
+    )
+    for finding in found:
+        print(f"{finding}\n", file=sys.stderr)
+    return 2
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--list", action="store_true", help="print the derived population")
+    parser.add_argument("--command", help="check one command string instead of the repository")
+    parser.add_argument(
+        "--hook",
+        action="store_true",
+        help="read a Claude Code PreToolUse payload on stdin; exit 2 blocks the command",
+    )
     args = parser.parse_args(argv)
+
+    if args.hook:
+        return _hook(sys.stdin.read())
+    if args.command is not None:
+        found = check_command(args.command)
+        for finding in found:
+            print(f"{finding}\n", file=sys.stderr)
+        return 1 if found else 0
 
     sources = population()
 

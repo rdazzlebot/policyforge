@@ -636,3 +636,320 @@ def test_ci_still_gates_markdown_on_a_non_empty_list():
     assert "mdformat --check" in workflow, "CI no longer checks markdown at all"
     assert "set -o pipefail" in workflow
     assert '"${#files[@]}" -eq 0' in workflow, "the empty-list assertion is gone"
+
+
+# --- #213: pipefail as a state, `$?` after a pipe, and the typed command ----------
+
+
+def _block(*lines: str, kind: str = "workflow") -> set[str]:
+    return _rules(_scan(kind, *lines))
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        ("set -o pipefail", "python scripts/check.py | tail -4 && git push"),
+        ("set -o pipefail; python scripts/check.py | tail -4 && git push",),
+        ("set -euo pipefail", "python scripts/check.py | tail -4 && git push"),
+    ],
+)
+def test_pipefail_set_before_the_pipe_clears_both_rules(lines):
+    """80's ruling on #213. With pipefail on, `x | tail && y` gates
+    correctly. Refusing it contradicted the `no-pipefail` message, which
+    recommends exactly this fix, and a guard that refuses its own remedy
+    gets muted."""
+    assert _block(*lines) == set()
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        ("python scripts/check.py | tail -4 && git push", "set -o pipefail"),
+        ("python scripts/check.py | tail -4 && git push; set -o pipefail",),
+        ("set -o pipefail", "set +o pipefail", "python scripts/check.py | tail -4 && git push"),
+    ],
+)
+def test_pipefail_after_the_pipe_or_turned_off_clears_nothing(lines):
+    """Set after the pipe, on a later line or later on the same line, or
+    turned off again before it: the pipe ran without it."""
+    assert {"swallowed-status", "no-pipefail"} <= _block(*lines)
+
+
+def test_pipefail_in_another_block_does_not_carry_over():
+    """Another workflow step or another fence is another shell."""
+    earlier = shell_status.Source(
+        path="seeded.yml", kind="workflow", lines=[(1, "set -o pipefail")]
+    )
+    later = shell_status.Source(
+        path="seeded.yml",
+        kind="workflow",
+        lines=[(5, "python scripts/check.py | tail -4 && git push")],
+    )
+    assert {"swallowed-status", "no-pipefail"} <= _rules(shell_status.findings([earlier, later]))
+
+
+@pytest.mark.parametrize("kind", ["workflow", "doc", "command"])
+@pytest.mark.parametrize(
+    "lines",
+    [
+        ('python scripts/changelog_fragments.py --check | tail; echo "exit: $?"',),
+        ("python scripts/changelog_fragments.py --check | tail", 'echo "exit: $?"'),
+        ("policyforge etl-vault x | tail -3", "", "rc=$?"),
+        ("policyforge etl-vault x | grep -c ok", "if [ $? -eq 0 ]; then git push; fi"),
+    ],
+)
+def test_status_read_after_a_pipe_is_refused(kind, lines):
+    """#213's instances 3 and 8: `$?` read after `| tail` is `tail`'s. It
+    applies to doc snippets and typed commands as well as scripts, because
+    the misreading is the same wherever it is written. A blank line between
+    them does not change what `$?` refers to."""
+    assert "status-after-pipe" in _block(*lines, kind=kind)
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        ("python scripts/check.py > log 2>&1; rc=$?", "if [ $rc -eq 0 ]; then git push; fi"),
+        ("set -o pipefail", "python scripts/check.py | tail -4", "rc=$?"),
+        ("set -o pipefail; python scripts/check.py | tail; echo $?",),
+        ("python scripts/check.py | tail -4", "python scripts/check.py; echo $?"),
+        ("grep -q needle file", 'echo "found: $?"'),
+        ("python scripts/check.py | tail -4  # then read $? next", "git status"),
+    ],
+)
+def test_the_legitimate_status_reads_are_not_findings(lines):
+    """What `status-after-pipe` must ALLOW: capture-then-branch, pipefail
+    set first, a `$?` that belongs to a later command, a `$?` after a
+    command with no pipe, and prose about `$?` in a comment."""
+    assert "status-after-pipe" not in _block(*lines, kind="doc")
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "python scripts/check.py | tail -4 && git commit -m x",
+        "git rebase origin/main | tail -2 && echo rebased",
+        'python scripts/changelog_fragments.py --check | tail; echo "exit: $?"',
+        "policyforge etl-vault x | tail -3\nrc=$?",
+    ],
+)
+def test_the_typed_instances_are_refused_by_command_mode(command, capsys):
+    """#213's instances 1, 2, 3 and 8 as a session would type them. Exit 1
+    names the rule."""
+    assert shell_status.main(["--command", command]) == 1
+    assert "[" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git log --oneline | head -5",
+        "python -m pytest tests -q | tail -1",
+        "python scripts/check.py > log 2>&1; rc=$?; if [ $rc -eq 0 ]; then git push; fi",
+        "set -o pipefail; python scripts/check.py | tail -4 && git push",
+        "git ls-files -z '*.md' | xargs -0 -r mdformat --check",
+    ],
+)
+def test_command_mode_lets_ordinary_typing_through(command):
+    """A typed pipe the person watches is not a finding: `no-pipefail` does
+    not apply to a command, or the hook would block `git log | head` and be
+    removed within the hour."""
+    assert shell_status.main(["--command", command]) == 0
+
+
+def test_a_status_query_before_and_is_a_stated_limit():
+    """#213's instance A, `gh pr view ... && gh pr merge`: a question whose
+    exit code is 0 whatever the answer, then an action. **Not refused, by
+    ruling**: a list of "commands that exit 0 whatever the answer" is the
+    class-versus-instance trap, and `gh pr checks` does exit non-zero, so
+    the list is not uniform even within one tool. Pinned, so that if a rule
+    for it is ever added, this test is where it is decided."""
+    assert shell_status.check_command("gh pr view 151 --json state && gh pr merge 151") == []
+
+
+def _run_hook(payload: str) -> subprocess.CompletedProcess:
+    """The hook the way Claude Code runs it: a process, a payload on stdin."""
+    return subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "shell_status.py"), "--hook"],
+        input=payload,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+
+
+def test_the_hook_blocks_a_swallowed_status_and_says_why():
+    import json
+
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": "python scripts/check.py | tail -4 && git push"},
+    }
+    run = _run_hook(json.dumps(payload))
+    assert run.returncode == 2, (run.returncode, run.stderr)
+    assert "swallowed-status" in run.stderr
+
+
+@pytest.mark.parametrize(
+    ("payload", "code"),
+    [
+        ({"tool_name": "Bash", "tool_input": {"command": "git log --oneline | head -5"}}, 0),
+        ({"tool_name": "Read", "tool_input": {"file_path": "x | tail && y"}}, 0),
+        ({"tool_name": "Bash", "tool_input": {}}, 1),
+    ],
+)
+def test_the_hook_allows_what_it_should_and_cannot_check_is_loud(payload, code):
+    """Exit 0 lets a call run and 2 blocks it; 1 is Claude Code's
+    non-blocking error. A Bash call it cannot read is 1: not a silent pass,
+    and not a block that would stop every command."""
+    import json
+
+    assert _run_hook(json.dumps(payload)).returncode == code
+
+
+def test_an_unreadable_hook_payload_is_loud_not_a_pass():
+    run = _run_hook("not json")
+    assert run.returncode == 1
+    assert "not checked" in run.stderr
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git log --oneline | head -2; python3 -m venv --help >/dev/null && echo venv-ok",
+        "git cat-file -p HEAD:CHANGELOG.md | awk '/^## /{n++} n==1 && /^### /' | wc -l",
+        'echo "files: $(git ls-files | wc -l)" && echo done',
+    ],
+)
+def test_an_and_that_is_not_the_pipes_is_not_a_finding(command):
+    """False alarms measured by replaying one session's 2,736 typed commands
+    (#213): an `&&` in a later statement, inside an awk program, or after a
+    quoted command substitution does not gate the pipe. Each was refused
+    before `_SWALLOWED` stopped at `;` and at a quote."""
+    assert shell_status.check_command(command) == []
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "python -m pytest tests -q 2>&1 | tail -1 && git push -q origin HEAD",
+        "docker build -q -t app . 2>&1 | tail -15 && docker run --rm app",
+        "git show :f.py | tr -cd '\r' | wc -c && git commit -q -F msg.txt",
+    ],
+)
+def test_the_consequential_replay_findings_stay_refused(command):
+    """Real instances from the same replay, which the narrowing must NOT
+    lose: a push gated on `tail`, a stale image run after a failed build, and
+    a commit after a count that reads 0 when the read failed."""
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+def test_a_heredoc_body_is_data_unless_a_shell_reads_it():
+    """A review body quoting the pattern is not running it. Measured on the
+    replay: every PR comment that explained the rule was refused. A heredoc
+    fed to a shell IS shell, and is still scanned."""
+    quoted = "cat > review.md <<'EOF'\nthe shape is `x | tail && y`\nEOF\ngit status"
+    assert shell_status.check_command(quoted) == []
+    run = "bash <<'EOF'\npython scripts/check.py | tail -4 && git push\nEOF"
+    assert "swallowed-status" in _rules(shell_status.check_command(run))
+    after = "cat > m <<'EOF'\ntext\nEOF\npython scripts/check.py | tail -4 && git push"
+    assert "swallowed-status" in _rules(shell_status.check_command(after)), (
+        "the heredoc must end at its delimiter, not swallow the rest"
+    )
+
+
+def test_a_substitution_opens_its_own_quoting():
+    """An awk `&&` inside `'...'` inside `$( )` inside `"..."` is awk's.
+    Found on the same replay, four times, after the simpler scanner read a
+    quote nested in a substitution as literal. The pipe-then-`&&` inside
+    the substitution is still refused."""
+    awk = (
+        "echo \"n: $(git cat-file -p HEAD:C.md | awk '/^## /{n++} n==1 && /^### /' | wc -l)\"; echo"
+    )
+    assert shell_status.check_command(awk) == []
+    inner = 'echo "$(python scripts/check.py | tail -1 && git push)"'
+    assert "swallowed-status" in _rules(shell_status.check_command(inner))
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "n=$(python -m pytest -q | tail -1) && git push",
+        'out="$(docker build -q . | tail -5)" && docker run --rm app',
+        'echo "$( (python -m pytest -q | tail -1) && git push )"',
+        "(python -m pytest -q | tail -1) && git push",
+        "python -m pytest -q |& tail -1 && git push",
+    ],
+)
+def test_the_regressions_found_on_328_are_refused(command):
+    """policyforge-ba on #328: each was refused on the train by the plain
+    regex and ALLOWED by the first version of the scanner. An assignment-only
+    statement takes its substitution's status. A subshell's `)` must not
+    close the `$(` around it. `|&` is a pipe."""
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "local n=$(python -m pytest -q | tail -1) && git push",
+        "n=$(python -m pytest -q | tail -1) env-cmd && git push",
+    ],
+)
+def test_a_substitution_whose_status_is_masked_is_not_a_finding(command):
+    """The other side of the assignment rule. `local` returns its own
+    status, and a command after the assignment runs with it as an
+    environment variable, so neither `&&` gates the pipe."""
+    assert shell_status.check_command(command) == []
+
+
+#: Each spelling was checked against real bash (`shopt -qo pipefail` after
+#: it) on #328, not taken from documentation.
+_PIPEFAIL_ON = (
+    "set +e -o pipefail",
+    "set -o pipefail",
+    "set -euo pipefail",
+    "set -e -o pipefail",
+    "set -o errexit -o pipefail",
+    "shopt -so pipefail",
+    "shopt -s -o pipefail",
+)
+_PIPEFAIL_OFF_AGAIN = (
+    "set +o pipefail",
+    "set +eo pipefail",
+    "set +o errexit +o pipefail",
+    "shopt -uo pipefail",
+    "shopt -u -o pipefail",
+)
+
+
+@pytest.mark.parametrize(
+    "query", ["shopt -o pipefail", "shopt -qo pipefail", "shopt -q -o pipefail"]
+)
+def test_a_shopt_query_does_not_turn_pipefail_on(query):
+    """**The unsafe direction, found surviving by policyforge-ba on #328.**
+    `shopt -o pipefail` with neither `-s` nor `-u` only REPORTS the setting;
+    bash leaves pipefail off (verified). A mutant reading the query as "on"
+    passed every other test and cleared the pipe."""
+    command = f"{query}; python scripts/check.py | tail -4 && git push"
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+@pytest.mark.parametrize("spelling", _PIPEFAIL_ON)
+def test_each_bash_verified_on_spelling_clears_the_finding(spelling):
+    """ba on #328: `set -o errexit -o pipefail` was not recognised, a false
+    alarm on the lint's own recommended fix. `shopt -so` is the other
+    family."""
+    command = f"{spelling}; python scripts/check.py | tail -4 && git push"
+    assert shell_status.check_command(command) == []
+
+
+@pytest.mark.parametrize("spelling", _PIPEFAIL_OFF_AGAIN)
+def test_each_bash_verified_off_spelling_is_still_flagged(spelling):
+    """**The unsafe direction** (policyforge-9b on #328). After
+    `set -o pipefail`, each of these turns it OFF in bash, and the lint had
+    only known `set +o pipefail`. So it believed pipefail was still on and
+    CLEARED the pipe. Pinned so the on and off readings cannot drift apart
+    again."""
+    command = f"set -o pipefail; {spelling}; python scripts/check.py | tail -4 && git push"
+    assert "swallowed-status" in _rules(shell_status.check_command(command))

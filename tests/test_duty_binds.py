@@ -106,6 +106,22 @@ def test_a_gerund_noun_subject_is_an_activity_not_an_actor():
     assert classify("Monitoring is accountable for alerting on drift.") == NONE
 
 
+def test_the_it_department_is_an_actor_and_the_pronoun_is_not():
+    """1d on #371: lowercasing made the department "IT" the pronoun "it".
+    Judged by case, as a subject and as an elided subject's opening."""
+    assert classify("IT is responsible for backing up all servers nightly.") == OBLIGATION
+    assert classify("Corporate IT is accountable for patching the fleet.") == OBLIGATION
+    assert (
+        classify("IT performs the backups; and is accountable for verifying each restore.")
+        == OBLIGATION
+    )
+    assert classify("It is responsible for backing up all servers nightly.") == NONE
+    assert classify("Backups run nightly, and it is responsible for alerting.") == NONE
+    assert (
+        classify("It performs the backups; and is accountable for verifying each restore.") == NONE
+    )
+
+
 def test_a_department_spelled_like_a_gerund_is_an_actor():
     """The other direction: some departments are spelled like a gerund, and
     a head that is a noun but contains one is still an actor."""

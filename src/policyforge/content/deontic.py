@@ -796,6 +796,10 @@ def _duty_subject_is_actor(subject: str) -> bool:
         and words[0].lower() not in _DEPARTMENT_GERUNDS
     ):
         return False
+    # By case for this one word (1d on #371): "IT" is the department, "It"
+    # and "it" the pronoun.
+    if words[-1].removesuffix("'s") == "IT":
+        return True
     return words[-1].lower().removesuffix("'s") not in _NOT_ACTORS
 
 
@@ -833,7 +837,7 @@ _ELIDED_RE = re.compile(r"\b(?:and|or|but|also|then)\s*$", re.IGNORECASE)
 #: elided subject, that is who the duty would fall on.
 _DOCUMENT_OPENING_RE = re.compile(
     r"(?:(?:the|this|that|these|each|every)\s+)?(?:NIST\b|HIPAA\b|FedRAMP\b|GovRAMP\b"
-    r"|HITRUST\b|ISO\b|it\b|this\b|that\b|(?:\w+\s+){0,2}?(?:standard|policy|procedure"
+    r"|HITRUST\b|ISO\b|(?-i:[Ii]t\b)|this\b|that\b|(?:\w+\s+){0,2}?(?:standard|policy|procedure"
     r"|document|process|section|playbook|framework)s?\b)",
     re.IGNORECASE,
 )

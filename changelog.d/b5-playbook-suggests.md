@@ -4,8 +4,8 @@ one that does not as an error.** The Playbook is voluntary, and the
 generation prompts now say so. **The prompt rule reduces this but does not
 stop it**, which is why `policyforge check` reports any Playbook-cited action
 still written as a requirement. A Standard for an AI topic is also
-regenerated or refused when its Playbook sentences would fail the check (see
-below). A Procedure is not, so for a Procedure the prompt rule and
+regenerated or refused when its Playbook sentences would fail the check. A
+Procedure is not, so for a Procedure the prompt rule and
 `policyforge check` are the whole safeguard. If your organization adopts a
 suggested action as its own requirement, the document states it in a
 separate sentence without the Playbook tag, and `policyforge check` reports

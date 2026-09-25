@@ -26,7 +26,7 @@ needed a model would have the failure mode it exists to detect.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .tags import SOURCE_TAG_RE
 
@@ -636,12 +636,72 @@ def playbook_obligations(text: str, org_actors=()) -> list[Statement]:
     that also names a binding source -- `[NIST 800-53 AC-2 | NIST AI RMF
     Playbook ...]` -- carries that source's obligation, and the requirement
     strength rule governs it instead.
+
+    **A colon list is judged item by item** (80's ruling (a) on #354). The
+    lead-in and its items are one statement for citation crediting (#351),
+    but that joining never let one item's citation vouch for a sibling: in
+    `Acme Health must:` / `- maintain a register [Playbook]` / `- review
+    access [AC-2]` the joined statement cites both, reads as mixed, and the
+    Playbook item escaped. So each item is judged as "lead-in + that item"
+    against its own citations (plus any the lead-in or the list itself
+    carries), and reported at the item's line, the same verdict it gets as a
+    plain item. A lead-in with NIST as its subject (`NIST suggests:`) frames
+    every item as NIST's.
     """
-    return [
-        s
-        for s in analyze(text)
-        if s.cites_only_the_playbook and not framed_as_nists(s.text, s.citations, org_actors)
-    ]
+    statements = analyze(text)
+    units, covered = _colon_units(text, statements)
+    judged = [s for s in statements if id(s) not in covered] + units
+    return sorted(
+        (
+            s
+            for s in judged
+            if s.cites_only_the_playbook and not framed_as_nists(s.text, s.citations, org_actors)
+        ),
+        key=lambda s: s.line,
+    )
+
+
+def _colon_units(text: str, statements: list[Statement]) -> tuple[list[Statement], set[int]]:
+    """Each colon list's items as "lead-in + item" statements, and the ids of
+    the statements those lists cover (#354)."""
+    lines = text.split("\n")
+    heading = [kind is not None for kind in _line_kinds(lines)]
+    units: list[Statement] = []
+    covered: set[int] = set()
+    for colon in _walk_lists(lines, heading)[1]:
+        if colon.lead < 0 or not colon.items:
+            continue
+        lead_line, end_line = colon.lead + 1, colon.end + 1
+        before = [s for s in statements if s.line <= lead_line]
+        if not before:
+            continue
+        owner = before[-1]
+        owned = [owner] + [s for s in statements if lead_line < s.line <= end_line]
+        covered.update(id(s) for s in owned)
+
+        def joined(first: int, last: int) -> str:
+            return " ".join(" ".join(lines[first : last + 1]).split())
+
+        first_item = joined(colon.items[0][0], colon.items[0][0])
+        at = owner.text.find(first_item)
+        lead = owner.text[:at].strip() if at > 0 else joined(colon.lead, colon.lead)
+        shared = tuple(_CITATION_RE.findall(lead)) + tuple(
+            tag for index in colon.trailing for tag in _CITATION_RE.findall(lines[index])
+        )
+        for first, last in colon.items:
+            item = _LEADING_MARKER.sub("", joined(first, last))
+            own = tuple(_CITATION_RE.findall(item))
+            unit = f"{lead} {item}"
+            units.append(
+                Statement(
+                    line=first + 1,
+                    text=unit,
+                    modality=classify(unit),
+                    cited=bool(shared + own),
+                    citations=shared + own,
+                )
+            )
+    return units, covered
 
 
 def classify(sentence: str) -> str:
@@ -836,13 +896,38 @@ def _list_starts(lines: list[str], heading: list[bool]) -> list[bool]:
     colon lead-in's citation there, under its list (a draft of this rule
     orphaned one, measured over the 33 Standards).
     """
+    return _walk_lists(lines, heading)[0]
+
+
+@dataclass
+class _ColonList:
+    """A colon lead-in and its list, as line indexes (0-based) (#354)."""
+
+    lead: int
+    #: [first, last] line of each item, continuation lines included.
+    items: list[list[int]] = field(default_factory=list)
+    #: Citation-only lines under the list after a blank line: the list's own.
+    trailing: list[int] = field(default_factory=list)
+
+    @property
+    def end(self) -> int:
+        return max([self.lead, *(last for _, last in self.items), *self.trailing])
+
+
+def _walk_lists(lines: list[str], heading: list[bool]) -> tuple[list[bool], list[_ColonList]]:
+    """The ONE reading of lists: where a list gives a new block (`_list_starts`,
+    #351) and each colon lead-in's list with its items (`playbook_obligations`,
+    #354). Two walkers would disagree about where a list ends, and the gate
+    would judge items the block splitter never kept together."""
     starts = [False] * len(lines)
+    colon_lists: list[_ColonList] = []
     in_list = colon_list = blank_since = False
     lead = ""
+    lead_index = -1
     for index, line in enumerate(lines):
         if heading[index]:
             in_list = colon_list = blank_since = False
-            lead = ""
+            lead, lead_index = "", -1
             continue
         if not line.strip():
             blank_since = True
@@ -863,14 +948,23 @@ def _list_starts(lines: list[str], heading: list[bool]) -> list[bool]:
         if _LIST_ITEM_RE.match(line) and interrupts:
             if not in_list:
                 in_list, colon_list = True, _ends_with_colon(lead)
+                if colon_list:
+                    colon_lists.append(_ColonList(lead=lead_index))
             starts[index] = not colon_list
+            if colon_list:
+                colon_lists[-1].items.append([index, index])
         elif in_list and blank_since and prose and not line[:1].isspace():
             in_list = colon_list = False
             starts[index] = True
+        elif colon_list and colon_lists[-1].items:
+            if not prose and blank_since:
+                colon_lists[-1].trailing.append(index)
+            else:
+                colon_lists[-1].items[-1][1] = index  # the item's continuation
         if prose:
-            lead = line
+            lead, lead_index = line, index
             blank_since = False
-    return starts
+    return starts, colon_lists
 
 
 def _analyze_block(text: str, block_offset: int, block: str, statements: list[Statement]) -> None:

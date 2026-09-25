@@ -152,7 +152,7 @@ def test_the_readme_names_every_section_whose_lead_in_is_dropped(readme, control
 
     text = " ".join(readme.split())
     start = text.index("What is left out of each statement")
-    paragraph = text[start : text.index("Recording that link is #268", start)]
+    paragraph = text[start : text.index("ships as five controls", start)]
     named = set(re.findall(r"164\.3\d\d(?:\(a\))?", paragraph.split("each begin")[0]))
     assert named == framed, f"README names {sorted(named)}, the fixture frames {sorted(framed)}"
 
@@ -171,3 +171,11 @@ def test_the_readme_names_every_section_whose_lead_in_is_dropped(readme, control
         )
     ]
     assert f"each of the {len(held)} standards those sections hold" in text, len(held)
+
+    # #268's code half: the link the README says is carried IS carried, on
+    # exactly the controls this derivation (ElementTree over the fixture, a
+    # different instrument from the loader's regex) says are framed.
+    carrying = sorted(c["control_id"] for c in controls if "164.306" in c["related_controls"])
+    assert carrying == sorted(c["control_id"] for c in held), (carrying, len(held))
+    assert all(c["related_controls"] == ["164.306"] for c in held)
+    assert "carried in each of those 20 controls' `related_controls`, as `164.306`" in text

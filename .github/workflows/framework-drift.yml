@@ -13,6 +13,13 @@
 # It writes nothing. Applying the update is a pull request somebody opens
 # after reading the report, because deciding what a changed requirement
 # means is the part that needs a person.
+#
+# Since #369 it also reports a reworded ENHANCEMENT (AC-2(3), a CFR
+# paragraph) under its own id; before, only a control's own text and its
+# list of enhancement ids were compared. The first run after that change can
+# go red on upstream edits that were always there and never seen. That red
+# is this job succeeding, not #369 breaking it: triage the list, do not
+# loosen the check.
 name: framework-drift
 
 on:

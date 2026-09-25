@@ -147,6 +147,24 @@ NOT_CROSSWALK_ANCHORABLE: dict[str, str] = {
     ),
 }
 
+#: The catalogs that state OUTCOMES or SUGGESTIONS, not obligations, by
+#: normalized framework key (#341, 80's ruling). Their reasons are the two AI
+#: RMF entries in the table above: the Core states outcomes ("the risks are
+#: understood"), the Playbook NIST's voluntary actions toward them.
+#:
+#: **Read by the Playbook gate** (`content/deontic.py`). A sentence citing the
+#: Playbook is exempt from the gate only if it also cites a source that
+#: states obligations, because that source's strength rule then governs it.
+#: A Core citation is not one: before this, a "NIST suggests" sentence
+#: tagged `[... Playbook Map 1.6 Action 1 | NIST AI RMF Map 2.1]` escaped the
+#: gate as if the Core were binding (glm wrote three in #301's run).
+#:
+#: **Not every refusal above is here.** Information Blocking is refused as a
+#: crosswalk anchor for being conditions of an exception, a different reason;
+#: the ruling named exactly these two. A test holds this set inside the table,
+#: so a catalog cannot be non-binding without a written reason.
+NON_BINDING_FRAMEWORKS: frozenset[str] = frozenset({"nist-ai-rmf", "nist-ai-rmf-playbook"})
+
 
 class NotAnchorableError(OverlayError):
     """Seeding was refused because the catalog states conditions, not controls.

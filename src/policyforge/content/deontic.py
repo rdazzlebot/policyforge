@@ -163,14 +163,29 @@ class Statement:
 
     @property
     def cites_only_the_playbook(self) -> bool:
-        """Every one of its citations names the Playbook, and it has one.
+        """It cites the Playbook, and nothing that states an obligation.
 
         The unit both Playbook rules use (80, on #300). A sentence that also
         cites a binding source carries that source's obligation, so the
         binding source's strength rule governs it, and binding is correct.
+
+        **The AI RMF Core does not count as binding** (#341, 80's ruling). It
+        states outcomes, so a Playbook sentence that also cites the Core is
+        still NIST's suggestion and still read by the gate. The non-binding
+        set is `crosswalk.overlay.NON_BINDING_FRAMEWORKS`, not a list here.
+        The name is kept because every caller asks the same question it
+        always did: is this sentence governed by the Playbook rules?
         """
-        parts = [part for tag in self.citations for part in _parts(tag)]
-        return bool(parts) and all(_is_playbook(part) for part in parts)
+        from policyforge.crosswalk.overlay import NON_BINDING_FRAMEWORKS
+        from policyforge.mapping.crosswalk import normalize_framework
+
+        parts = [part for tag in self.citations for part in _attributed_parts(tag)]
+        if not parts:
+            return False
+        frameworks = [normalize_framework(part.framework or "") for part in parts]
+        return "nist-ai-rmf-playbook" in frameworks and all(
+            f in NON_BINDING_FRAMEWORKS for f in frameworks
+        )
 
     @property
     def weakens_a_citation(self) -> bool:

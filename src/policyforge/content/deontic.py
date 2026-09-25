@@ -383,7 +383,78 @@ def _unquoted(plain: str, quoted_from: list[list[str]]) -> str:
     return " ".join("_" if c else t for t, c in zip(tokens, covered, strict=True))
 
 
-def framed_as_nists(sentence: str, citations=()) -> bool:
+#: Where a Playbook sentence can open a second clause (#323, 80's ruling (B)):
+#: `, and` / `, but` / `, so`, a semicolon (optionally followed by one of those
+#: words) or an em dash. Closed.
+_JOINER = r"(?:,\s+(?:and|but|so)\s+|;\s+(?:(?:and|but|so)\s+)?|\s*\u2014\s*(?:(?:and|but|so)\s+)?)"
+
+#: Subjects that commit the organization when they open a clause after a
+#: joiner. Closed and case-insensitive. **"management" is deliberately NOT
+#: here**: in b5's 66 real glm sentences, "..., and management resources" is
+#: a list item, and it was the only false alarm this list produced.
+GENERIC_ACTORS = (
+    "the organization",
+    "the organisation",
+    "we",
+    "our",
+    "us",
+    "staff",
+    "employees",
+    "personnel",
+    "the team",
+    "the company",
+)
+
+
+def _alternatives(actors) -> str:
+    words = [a for a in {" ".join(str(a).split()) for a in actors} if a]
+    return "|".join(
+        r"\s+".join(re.escape(w) for w in a.split()) for a in sorted(words, key=len, reverse=True)
+    )
+
+
+def _actor_pattern(org_actors=()) -> re.Pattern[str]:
+    """Joiner, then an actor, then no further word character.
+
+    **Generic actors match in any case; the organization's own do NOT**
+    (1d on #329). Config names are proper nouns, and one-word team or vendor
+    names are also ordinary words: with teams "Security", "Compliance", "IT"
+    and vendors "Legal", "Privacy", case-insensitive matching fired on 4 of
+    the 459 shipped Playbook actions and 3 of b5's 66 sentences, every one an
+    Oxford-comma list item ("..., and legal review"). Stated limit: a
+    declared name written in another case ("ACME" for "Acme") is not caught.
+
+    A negative lookahead for a word character, rather than a word boundary,
+    follows the actor, so a name that ends in punctuation, "Foo (EU)", can
+    still match (1d on #329).
+    """
+    generic = _alternatives(GENERIC_ACTORS)
+    declared = _alternatives(org_actors)
+    actor = f"(?i:{generic})" + (f"|{declared}" if declared else "")
+    return re.compile(rf"(?i:{_JOINER})(?:{actor})(?!\w)")
+
+
+def _second_clause_actor(plain: str, org_actors=()) -> str | None:
+    """The actor opening a clause after a joiner, if it is the organization's.
+
+    **Why not "anything after a joiner must be NIST"** (80's first ruling on
+    #323, withdrawn): glm writes LISTS -- "...; establishing ...", "...; and
+    determining ...", "..., and stakeholder engagement plans" -- and that rule
+    refused 65 of b5's 66 real sentences. What must not appear is the
+    organization committing, and the organization's actors are knowable: the
+    generic ones above, plus its own name, teams and vendors from config
+    (`org_actors`, derived by `org.context.org_actors`, never typed here).
+
+    **The bound, stated:** only the joiners in `_JOINER`, and only an actor
+    that is generic or declared. An actor that is neither -- an unlisted
+    subsidiary, a person's name -- is NOT caught, and nor is a clause joined
+    some other way (a bare comma, "which", "while").
+    """
+    match = _actor_pattern(org_actors).search(_CITATION_RE.sub("", plain))
+    return match.group(0) if match else None
+
+
+def framed_as_nists(sentence: str, citations=(), org_actors=()) -> bool:
     """Whether a sentence speaks as NIST describing or suggesting (#300).
 
     **An allow-list on the subject, not a deny-list of obligation verbs**
@@ -406,10 +477,17 @@ def framed_as_nists(sentence: str, citations=()) -> bool:
     Playbook action those citations name is NIST's text, not the
     organization's obligation, and is not counted. Without citations
     nothing is exempt.
+
+    **And one main clause, NIST's (#323).** A clause after a joiner whose
+    subject is the organization -- generic, or declared in config as
+    `org_actors` -- fails, whatever its verb: "NIST suggests reviewing the
+    inventory, and Acme will adopt it". See `_second_clause_actor`.
     """
     plain = _LEADING_MARKER.sub("", _MARKUP_RE.sub("", sentence).strip())
     match = _NIST_SUBJECT.match(plain[_opener_end(plain) :])
     if not match or match.group(1).lower() in _NIST_OBLIGES:
+        return False
+    if _second_clause_actor(plain, org_actors):
         return False
     if classify(plain) not in BINDING:
         return True
@@ -436,7 +514,7 @@ def playbook_tagged_headings(text: str) -> list[tuple[int, str]]:
     return found
 
 
-def playbook_obligations(text: str) -> list[Statement]:
+def playbook_obligations(text: str, org_actors=()) -> list[Statement]:
     """Sentences citing only the NIST AI RMF Playbook, not framed as NIST's.
 
     The Playbook is voluntary: NIST's suggested actions, which it
@@ -454,7 +532,7 @@ def playbook_obligations(text: str) -> list[Statement]:
     return [
         s
         for s in analyze(text)
-        if s.cites_only_the_playbook and not framed_as_nists(s.text, s.citations)
+        if s.cites_only_the_playbook and not framed_as_nists(s.text, s.citations, org_actors)
     ]
 
 

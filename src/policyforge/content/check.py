@@ -337,7 +337,9 @@ def _check_requirement_strength(documents: list[ContentDocument]) -> list[Findin
     return findings
 
 
-def _check_playbook_obligations(documents: list[ContentDocument]) -> list[Finding]:
+def _check_playbook_obligations(
+    documents: list[ContentDocument], org_actors: tuple[str, ...] = ()
+) -> list[Finding]:
     """A sentence citing only the NIST AI RMF Playbook, not framed as NIST's (#300).
 
     **An error, not a warning** (80's ruling). The sibling checks warn so that
@@ -349,7 +351,7 @@ def _check_playbook_obligations(documents: list[ContentDocument]) -> list[Findin
     """
     findings: list[Finding] = []
     for doc in documents:
-        for statement in playbook_obligations(doc.body):
+        for statement in playbook_obligations(doc.body, org_actors):
             findings.append(
                 Finding(
                     doc.relative_path,
@@ -413,8 +415,16 @@ def _check_unanchored(documents: list[ContentDocument]) -> list[Finding]:
     return findings
 
 
-def check_tree(root: Path, *, synthesis_dir: Path | None = None) -> CheckReport:
-    """Run every local check over a content tree."""
+def check_tree(
+    root: Path, *, synthesis_dir: Path | None = None, org_actors: tuple[str, ...] = ()
+) -> CheckReport:
+    """Run every local check over a content tree.
+
+    `org_actors` are the names the organization acts under, from its config
+    (`org.context.org_actors`): the Playbook check refuses one opening a
+    clause after "NIST suggests ..." (#323). Without them only the generic
+    actors are caught.
+    """
     documents, problems = load_content_tree(root)
     report = CheckReport(documents=len(documents))
 
@@ -426,7 +436,7 @@ def check_tree(root: Path, *, synthesis_dir: Path | None = None) -> CheckReport:
     report.findings.extend(_check_uncited(documents))
     report.findings.extend(_check_unanchored(documents))
     report.findings.extend(_check_requirement_strength(documents))
-    report.findings.extend(_check_playbook_obligations(documents))
+    report.findings.extend(_check_playbook_obligations(documents, org_actors))
     if synthesis_dir is not None:
         report.findings.extend(_check_citations(documents, synthesis_dir))
 

@@ -807,16 +807,19 @@ _JUDGEMENT = frozenset({"considered", "seen"})
 #: Adjectives: what might be true, not what anyone may do (80's ruling (b)
 #: on #364). **An explicit list, never a suffix rule**: -able/-al would
 #: clear "accountable" and "responsible", and an unlisted word must stay a
-#: permission or prohibition, loudly, rather than clear an action. Taken
-#: from what follows "may (not) be" in the shipped catalogs and the 33
-#: Standards. No -ed form is ever cleared: "may not be left unattended"
-#: stays a prohibition.
+#: permission or prohibition, loudly, rather than clear an action. No -ed
+#: form is ever cleared: "may not be left unattended" stays a prohibition.
+#: **EVALUATIVE adjectives only -- the author guessing -- never DESCRIPTIVE
+#: ones, the author allowing** (80 on #375): "Signatures may be electronic"
+#: permits a form and stays a permission (1d on #375). This is 80's list on
+#: #364, plus "subject" and "able" ("may be subject to", "may not be able
+#: to"), which 80 ruled in on #375. Any other word waits for a ruling, and
+#: until then stays as it was.
 _EPISTEMIC_ADJECTIVES = frozenset(
     {
-        "necessary", "possible", "subject", "less", "more", "effective", "ineffective",
-        "qualitative", "unreliable", "measurable", "comparable", "significant", "present",
-        "helpful", "convenient", "natural", "disruptive", "suitable", "bilateral", "able",
-        "appropriate", "electronic", "visible",
+        "necessary", "possible", "measurable", "effective", "feasible", "practical",
+        "appropriate", "available", "applicable", "sufficient", "accurate", "reliable",
+        "relevant", "visible", "subject", "able",
     }
 )  # fmt: skip
 
@@ -832,7 +835,8 @@ def _epistemic_may(text: str, match: re.Match[str]) -> bool:
     "may not be done" a prohibition: an action participle is never cleared.
 
     **Known miss, left by ruling (80, option (c) out):** a thing's capability
-    with an active verb still reads as a permission or prohibition, e.g.
+    with an active verb still reads as a permission or prohibition: 3
+    sentences in the shipped catalogs, measured on #364,
     "Dynamic account creation ... may not support independent verification",
     "Such key combinations ... may not provide a trusted path", "explanations
     may not accurately summarize complex systems".

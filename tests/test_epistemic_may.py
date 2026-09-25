@@ -40,7 +40,20 @@ from policyforge.content.deontic import NONE, PERMISSION, PROHIBITION, classify
         ("Some of the functions and services may not be necessary to support operations.", NONE),
         ("Establish processes for tracking emergent risks that may not be measurable.", NONE),
         ("Organizations may be subject to laws, executive orders, and directives.", NONE),
-        ("Such energy bursts may be natural or man-made.", NONE),
+        # 80's ruled adjectives, one each (1d on #375 found eight missing).
+        ("Backup sites may not be available during a regional disaster.", NONE),
+        ("Encrypting archived media may not be feasible in every case.", NONE),
+        ("A full rebuild may not be practical for legacy systems.", NONE),
+        ("Some controls may not be applicable to cloud-hosted systems.", NONE),
+        ("A single review may not be sufficient to detect misuse.", NONE),
+        ("Vendor-supplied inventories may not be accurate.", NONE),
+        ("Older sensors may not be reliable under load.", NONE),
+        ("Some findings may not be relevant to every system.", NONE),
+        ("A second approval may be appropriate for high-risk changes.", NONE),
+        # ... and the two 80 added on #375.
+        ("Users may not be able to reach the service during maintenance.", NONE),
+        # A DESCRIPTIVE adjective permits a form: the author allowing, not guessing.
+        ("Signatures on access forms may be electronic.", PERMISSION),
         # 5b's rows that must stay, verbatim.
         ("You may not share your personal UW NetID password.", PROHIBITION),
         (
@@ -82,3 +95,16 @@ def test_a_things_capability_is_a_known_miss(sentence):
     """The three catalog sentences 80 ruled out of scope. Strict, so a fix
     that clears them is noticed and the named miss retired."""
     assert classify(sentence) == NONE
+
+
+def test_the_list_holds_80s_ruled_adjectives_and_nothing_unruled():
+    """The oracle is 80's rulings (#364 and #375), written here, not read
+    from the code under test."""
+    from policyforge.content.deontic import _EPISTEMIC_ADJECTIVES
+
+    ruled = {
+        "necessary", "possible", "measurable", "effective", "feasible", "practical",
+        "appropriate", "available", "applicable", "sufficient", "accurate", "reliable",
+        "relevant", "visible", "subject", "able",
+    }  # fmt: skip
+    assert ruled == _EPISTEMIC_ADJECTIVES

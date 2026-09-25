@@ -44,6 +44,7 @@ from __future__ import annotations
 
 # Used for exactly one thing: asking git whether a path is tracked.
 import subprocess  # nosec B404
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -192,10 +193,11 @@ class FrameworkKeyWarning(UserWarning):
     or two catalogs declaring one name with different keys (#295)."""
 
 
-def _key_roots(config: dict | None) -> list[Path]:
-    """The search paths, then the bundled catalogs, so a declaration is
-    found wherever the catalog is, and a repository's own copy shadows the
-    bundled one exactly as `discover` lets it."""
+def _catalog_roots(config: dict | None) -> list[Path]:
+    """The search paths, then the bundled catalogs: every place a catalog
+    this project can cite may live, wherever the command runs. A
+    repository's own copy shadows the bundled one exactly as `discover`
+    lets it."""
     roots = list(search_paths(config))
     try:
         from policyforge.scaffold import bundled_root
@@ -208,44 +210,33 @@ def _key_roots(config: dict | None) -> list[Path]:
     return roots
 
 
-def declared_keys(config: dict | None = None, *, roots: list[Path] | None = None) -> dict[str, str]:
-    """{name, whitespace-collapsed and lower-cased: declared key} (#295).
+def _catalog_names(
+    config: dict | None, roots: list[Path] | None
+) -> Iterator[tuple[Path, Framework, list[str]]]:
+    """Each catalog on disk, with every name it goes by: the ONE walk (#340, #295).
 
-    **Every name a catalog goes by** is mapped to the `framework_id:` its
-    `framework.yaml` declares: the manifest's `name`, and each `framework`
-    string its `controls.json` rows carry (`NIST 800-53` there, `NIST SP
-    800-53 Rev 5` in the manifest). The first root that declares a name
-    wins, as in `discover`. Two catalogs declaring one name with different
-    keys raise a `FrameworkKeyWarning` naming both. So does a declared key
-    whose name, keyed by prose alone, would land on a key that is already
-    someone's (another catalog's, or an alias target); a declaration that
-    merely differs from its name's first word is silent (#295, PR 2). The
-    declaration is kept either way.
+    The manifest's `name` (when a manifest declares one) and each
+    `framework` string its `controls.json` rows carry (`NIST 800-53` there,
+    `NIST SP 800-53 Rev 5` in the manifest), for every catalog under
+    `roots` -- by default the search paths, then the bundled root. A
+    directory reached twice is read once, the first time. Rows that cannot
+    be read cost the row names, not the manifest's.
 
-    Read from the directories rather than registered when a catalog is
-    loaded, so that keying a name does not depend on what was loaded first
-    (80's condition on #295): a citation parsed before any catalog is read
-    still gets the declared key.
+    `declared_keys` reads catalogs through this, both for the declarations
+    and for the shipped catalogs' first words (#295, PR 2).
     """
     import json
-    import warnings
 
-    from policyforge.mapping.crosswalk import prose_framework_key
-
-    found: dict[str, tuple[str, Path]] = {}
-    differing: list[tuple[str, str, Path, str]] = []
-    seen_dirs: set[Path] = set()
-    for root in roots if roots is not None else _key_roots(config):
+    seen: set[Path] = set()
+    for root in roots if roots is not None else _catalog_roots(config):
         if not root.is_dir():
             continue
         for directory in sorted(p for p in root.iterdir() if p.is_dir()):
             resolved = directory.resolve()
-            if resolved in seen_dirs:
+            if resolved in seen:
                 continue
-            seen_dirs.add(resolved)
+            seen.add(resolved)
             framework = load_framework(directory)
-            if not framework.key:
-                continue
             names = {framework.name} if framework.declared else set()
             if framework.has_controls:
                 try:
@@ -253,34 +244,87 @@ def declared_keys(config: dict | None = None, *, roots: list[Path] | None = None
                     names.update(str(r.get("framework") or "") for r in rows if isinstance(r, dict))
                 except (OSError, ValueError):
                     pass
-            for name in sorted(n for n in names if n.strip()):
-                normal = " ".join(name.lower().split())
-                if normal in found:
-                    if found[normal][0] != framework.key:
-                        warnings.warn(
-                            FrameworkKeyWarning(
-                                f"{name!r} is declared as {found[normal][0]!r} by "
-                                f"{found[normal][1]} and as {framework.key!r} by {directory}; "
-                                f"keeping {found[normal][0]!r}"
-                            ),
-                            stacklevel=2,
-                        )
-                    continue
-                found[normal] = (framework.key, directory)
-                prose = prose_framework_key(name)
-                if prose != framework.key:
-                    differing.append((name, framework.key, directory, prose))
+            yield directory, framework, sorted(n for n in names if n.strip())
 
-    # **Warn only where the difference can mislead** (80's ruling on #295, PR 2).
+
+def _shipped_first_words() -> frozenset[str]:
+    """The first word of every name a SHIPPED catalog goes by: `nist`, `hipaa`...
+
+    These are the buckets prose keying's first-word fallback fills: every
+    "NIST ..." name nobody pinned keys to `nist`, which is the collision
+    #295 exists to end. Derived from the bundled catalogs, never typed, and
+    read whatever roots the caller passed, because which catalogs ship does
+    not depend on where a command looks for others (80's ruling on #295).
+    """
+    try:
+        from policyforge.scaffold import bundled_root
+
+        bundled = Path(str(bundled_root().joinpath("frameworks")))
+    except (RuntimeError, ModuleNotFoundError, OSError):
+        return frozenset()
+    return frozenset(
+        name.lower().split()[0] for _, _, names in _catalog_names(None, [bundled]) for name in names
+    )
+
+
+def declared_keys(config: dict | None = None, *, roots: list[Path] | None = None) -> dict[str, str]:
+    """{name, whitespace-collapsed and lower-cased: declared key} (#295).
+
+    **Every name a catalog goes by** (`_catalog_names`) is mapped to the
+    `framework_id:` its `framework.yaml` declares; a catalog declaring none
+    is skipped. The first root that declares a name wins, as in `discover`.
+    Two catalogs declaring one name with different keys raise a
+    `FrameworkKeyWarning` naming both. So does a declared key whose name,
+    keyed by prose alone, lands on a KNOWN key -- see below; a declaration
+    that merely differs from an unknown first word, like `acme`, is silent
+    (#295, PR 2). The declaration is kept either way.
+
+    Read from the directories rather than registered when a catalog is
+    loaded, so that keying a name does not depend on what was loaded first
+    (80's condition on #295): a citation parsed before any catalog is read
+    still gets the declared key.
+    """
+    import warnings
+
+    from policyforge.mapping.crosswalk import FRAMEWORK_ALIASES, prose_framework_key
+
+    found: dict[str, tuple[str, Path]] = {}
+    differing: list[tuple[str, str, Path, str]] = []
+    for directory, framework, names in _catalog_names(config, roots):
+        if not framework.key:
+            continue
+        for name in names:
+            normal = " ".join(name.lower().split())
+            if normal in found:
+                if found[normal][0] != framework.key:
+                    warnings.warn(
+                        FrameworkKeyWarning(
+                            f"{name!r} is declared as {found[normal][0]!r} by "
+                            f"{found[normal][1]} and as {framework.key!r} by {directory}; "
+                            f"keeping {found[normal][0]!r}"
+                        ),
+                        stacklevel=2,
+                    )
+                continue
+            found[normal] = (framework.key, directory)
+            prose = prose_framework_key(name)
+            if prose != framework.key:
+                differing.append((name, framework.key, directory, prose))
+
+    # **Warn only where the difference can mislead** (80's rulings on #295, PR 2).
     # Every deliberate declaration differs from its name's first word --
     # "Acme Security Baseline" declared `acme-baseline` prose-keys to `acme` --
     # so warning on any difference fired on correct use, the guard that gets
-    # muted by the third run. The hazard is a prose key that is ALREADY
-    # someone's key: another catalog's declaration, or an alias target. Then a
-    # citation written before this declaration was filed under that other key.
-    from policyforge.mapping.crosswalk import FRAMEWORK_ALIASES
-
-    known = {key for key, _ in found.values()} | {target for _, target in FRAMEWORK_ALIASES}
+    # muted by the third run. The hazard is a prose key that is already a
+    # KNOWN key, because citations written before the declaration were then
+    # filed under it: (1) any declared key, (2) any alias target, or (3) the
+    # first word of a shipped catalog's name -- the shared fallback bucket,
+    # `nist` above all, that #295 exists to empty.
+    known = (
+        {key for key, _ in found.values()}
+        | {target for _, target in FRAMEWORK_ALIASES}
+        | _shipped_first_words()
+    )
     for name, key, directory, prose in differing:
         if prose in known:
             warnings.warn(

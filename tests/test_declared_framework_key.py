@@ -113,19 +113,31 @@ def test_a_byoc_declared_name_keys_by_its_declaration_with_nothing_loaded(
 
 def test_a_sibling_of_a_pinned_name_no_longer_falls_through(tmp_path, monkeypatch, fresh_keys):
     """The class #295 is about: `NIST Privacy Framework` has no alias, so its
-    prose key is bare `nist`. Declared, it keys to itself.
-
-    **Silent under 80's PR 2 rule**, because bare `nist` is neither a
-    declared key nor an alias target. Pinned so the question put to 80 on
-    the PR -- should the shared first-word bucket count as known? -- is
-    answered by a diff here, not by a surprise."""
+    prose key is bare `nist`. Declared, it keys to itself -- and **warns
+    once**, because `nist` is the first word of the shipped NIST catalogs,
+    the bucket every unpinned NIST citation was filed under (80's ruling on
+    #347, which this test was pinned to ask)."""
     _catalog(
         tmp_path / "frameworks", "nist-privacy", name="NIST Privacy Framework", key="nist-privacy"
     )
     monkeypatch.chdir(tmp_path)
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", FrameworkKeyWarning)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", FrameworkKeyWarning)
         assert normalize_framework("NIST Privacy Framework") == "nist-privacy"
+    messages = [str(w.message) for w in caught if issubclass(w.category, FrameworkKeyWarning)]
+    assert len(messages) == 1, messages
+    assert "'nist-privacy'" in messages[0] and "'nist'" in messages[0]
+
+
+def test_the_shipped_buckets_are_derived_from_the_shipped_catalogs():
+    """Rule (3) of 80's known keys: the first word of every name a shipped
+    catalog goes by, read from the tree -- so a catalog added later adds
+    its bucket without anyone typing it."""
+    from policyforge.frameworks.registry import _shipped_first_words
+
+    expected = {name.lower().split()[0] for d in _shipped() for name in _names(d)}
+    assert _shipped_first_words() == expected
+    assert {"nist", "hipaa"} <= expected and "acme" not in expected
 
 
 def test_the_fragments_own_example_declares_silently(tmp_path, monkeypatch, fresh_keys):

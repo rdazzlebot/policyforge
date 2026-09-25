@@ -9,9 +9,11 @@ money:
 - a cascade caught that exhaustion and escalated, so the row carried only
   the stronger model's cost, and the primary's re-send vanished again.
 
-**The conservation check below is the point**: in every scenario the row's
-cost is the total the fakes billed, and every billed request id is on the
-row or in its escalations. A path that loses a request fails it.
+**The conservation check below is the point**: in every scenario, where
+every attempt reports a cost, the row's cost is the total the fakes billed,
+and every billed request id is on the row or in its escalations. A path
+that loses a request fails it. Where an attempt's cost is unknown, the
+row's cost is None (the tests after it).
 """
 
 from __future__ import annotations
@@ -189,6 +191,20 @@ def test_a_stronger_model_that_never_ran_keeps_the_primary_cost(tmp_path):
     assert raised == "ConnectionError"
     assert row["cost_usd"] == pytest.approx(1.5), row
     assert {e["first_request_id"] for e in row["escalations"]} == {"gen-a", "gen-b"}
+
+
+@pytest.mark.parametrize("first_known", [True, False], ids=["retry-unknown", "first-unknown"])
+@pytest.mark.parametrize("answers", [True, False], ids=["answers", "exhausts"])
+def test_one_attempt_of_unknown_cost_leaves_the_row_unknown(first_known, answers, tmp_path):
+    """9b on #378: the same-model re-send summed only the known attempt and
+    wrote it as the total. Now the row says unknown, as the cascade does."""
+    first = _reply("", "length", cost=0.2 if first_known else None, rid="gen-a")
+    last = _reply("ok" if answers else "", "stop" if answers else "length",
+                  cost=None if first_known else 1.3, rid="gen-b")  # fmt: skip
+    row, raised = _row(_litellm("m", first, last), tmp_path / "calls.jsonl")
+    assert raised == (None if answers else "ReasoningBudgetExhausted")
+    assert row["cost_usd"] is None, row
+    assert _ids(row) == {"gen-a", "gen-b"}
 
 
 def test_the_exception_type_is_unchanged():

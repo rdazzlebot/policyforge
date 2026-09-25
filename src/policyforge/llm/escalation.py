@@ -19,9 +19,12 @@ escalation for the current call; `RecordingProvider` takes them into the
 call's one row (`CallRecord.escalations`). That row's cost is already the
 summed cost where the provider reports one (LiteLLM), so a separate row for
 the first attempt would count it twice. A call that fails keeps the same
-shape (#343): every billed request's cost is in its row's total and its id
-is on the row or in `escalations`. One row per request was considered and
-dropped (80 on #343), because that conservation is what it was for.
+shape (#343): every billed request's id is on the row or in `escalations`,
+and, when every attempt reports a cost, its cost is in the row's total. If
+any attempt's cost is unknown the row's cost is None, never the known part
+presented as the whole (9b and 1d on #378). One row per request was
+considered and dropped (80 on #343), because that conservation is what it
+was for.
 
 **`first_cost_usd` is never added to a ledger total** (#372, measured with
 fakes billing known amounts; #343 closed the error-row exception):

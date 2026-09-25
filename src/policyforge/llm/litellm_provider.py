@@ -295,8 +295,18 @@ class LiteLLMProvider(LLMProvider):
             # is truthy: a local model prices both attempts at 0.0, and
             # `0.0 or None` is None — which would turn "this was free" into
             # "nobody knows", the one distinction cost_usd exists to keep.
-            reported = [c for c in (cost, retry_cost) if c is not None]
-            cost = sum(reported) if reported else None
+            #
+            # And None if either attempt's cost is unknown: the sum of the
+            # known part alone would read as the whole bill (9b on #378, the
+            # rule the cascade follows). The first attempt's cost is kept in
+            # the row's `escalations`; a known re-send cost after an unknown
+            # first one is recorded nowhere, since the row has one cost field.
+            # LiteLLM prices by model, so both attempts are normally known or
+            # both unknown.
+            if cost is not None and retry_cost is not None:
+                cost = cost + retry_cost
+            else:
+                cost = None
             if needs_more_room(text, finish_reason):
                 # Empty again: both attempts were still billed, and this
                 # exception is the only way that reaches the ledger (#343).

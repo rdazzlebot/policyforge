@@ -129,7 +129,14 @@ def tag_parts(tag: str, frameworks, names_framework=None) -> list[TagPart]:
 
     Both readers of a merged tag's parts call this: the Playbook gate
     (`content/deontic._parts`) and traceability (`topics/satisfies
-    .parse_citations`), so the two cannot disagree about what a tag cites.
+    .parse_citations`), so both split and inherit by the same rule. **They
+    pass different `frameworks`, so they can still attribute a part
+    differently** (9b on #337): the gate knows only the Playbook's name, so
+    in `[NIST AI RMF Playbook Govern 1.1 Action 1 | NIST AI RMF Govern 1 |
+    Govern 1.1]` it reads the third part as the Playbook (it resolves there),
+    while `satisfies` reads it as the AI RMF Core, the part it follows. No
+    gate verdict depends on that today: such a tag is never Playbook-only,
+    because it names a non-Playbook framework explicitly.
     """
     names = sorted({str(f) for f in frameworks if str(f).strip()}, key=len, reverse=True)
     parts: list[TagPart] = []

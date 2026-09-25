@@ -33,6 +33,7 @@ import release_check
 #: and indentation are what the tap actually ships.
 FORMULA = """class Policyforge < Formula
   desc "Generate cross-mapped security policies"
+  homepage "https://github.com/rdazzlebot/policyforge"
   url "https://github.com/rdazzlebot/policyforge/archive/refs/tags/v1.5.0.tar.gz"
   sha256 "28136768f54dff1dd2d351869dfdbab82f701c83518e3545f663355381a84b94"
   license "Apache-2.0"
@@ -583,3 +584,37 @@ def test_the_report_accepts_a_formula_that_names_the_canonical_owner(monkeypatch
     satisfied by a report that flags every formula."""
     canonical = FORMULA.replace("rdazzlebot/policyforge", "rdazzleman/policyforge")
     assert "NOT CANONICAL" not in _report(monkeypatch, capsys, canonical)
+
+
+@pytest.mark.parametrize(
+    ("homepage", "canonical"),
+    [
+        ("https://github.com/rdazzleman/policyforge", True),
+        ("https://github.com/rdazzleman/policyforge/", True),
+        ("https://github.com/rdazzlebot/policyforge", False),  # the published formula today
+        ("https://github.com/rdazzleman/policyforge-evil", False),
+        (None, False),
+    ],
+)
+def test_the_homepage_must_name_the_canonical_repository(homepage, canonical):
+    """policyforge-9b on #348: `brew info` shows `homepage`, and the old
+    owner's works only through the 301. Compared as a string, like the url."""
+    assert release_check.names_canonical_homepage(homepage) is canonical
+
+
+def test_the_homepage_is_read_from_the_formula():
+    formula = (
+        'class Policyforge < Formula\n  homepage "https://github.com/rdazzlebot/policyforge"\n'
+    )
+    assert release_check.homepage_in_formula(formula) == "https://github.com/rdazzlebot/policyforge"
+    assert release_check.homepage_in_formula("no homepage here") is None
+
+
+def test_the_report_refuses_an_old_owner_homepage_beside_a_canonical_url(monkeypatch, capsys):
+    """The wiring test for the homepage half (9b on #348): url canonical,
+    homepage still the old owner, which is what 1.6.1 would have shipped."""
+    mixed = FORMULA.replace("rdazzlebot/policyforge/archive", "rdazzleman/policyforge/archive")
+    assert 'homepage "https://github.com/rdazzlebot/policyforge"' in mixed, "premise"
+    report = _report(monkeypatch, capsys, mixed)
+    assert "HOMEPAGE NOT CANONICAL" in report
+    assert "formula url owner : canonical" in report

@@ -101,6 +101,28 @@ def names_canonical_owner(url: str | None) -> bool:
     return bool(url) and url.startswith(CANONICAL_SOURCE_PREFIX)
 
 
+#: What a formula's `homepage` must be, exactly. `brew info` shows it, so it
+#: is something a USER fetches, and an old-owner homepage works only through
+#: the same 301 as an old-owner url (policyforge-9b on #348, with 80's ruling
+#: that both name the owner). Derived from `OWNER`, like the url prefix.
+CANONICAL_HOMEPAGE = f"https://github.com/{REPOSITORY}"
+
+_FORMULA_HOMEPAGE_RE = re.compile(r'^\s*homepage "([^"]+)"', re.MULTILINE)
+
+
+def homepage_in_formula(formula: str) -> str | None:
+    """The formula's `homepage`, as written."""
+    match = _FORMULA_HOMEPAGE_RE.search(formula)
+    return match.group(1) if match else None
+
+
+def names_canonical_homepage(homepage: str | None) -> bool:
+    """Is the formula's `homepage` the canonical repository, compared as a
+    string, never by following it, for the reason `names_canonical_owner`
+    gives. A trailing slash is tolerated; any other suffix is not."""
+    return bool(homepage) and homepage.rstrip("/") == CANONICAL_HOMEPAGE
+
+
 #: The lock the formula's resources must agree with. `runtime.txt` rather
 #: than `ci.txt`: Homebrew installs what a user runs, not the dev extras.
 LOCK = "requirements/runtime.txt"
@@ -413,6 +435,17 @@ def main(argv: list[str] | None = None) -> int:
                 "old name"
             )
             print("  -> NOT CANONICAL")
+        homepage = homepage_in_formula(formula)
+        print(
+            "  formula homepage  : "
+            f"{'canonical' if names_canonical_homepage(homepage) else homepage}"
+        )
+        if not names_canonical_homepage(homepage):
+            failures.append(
+                f"the formula's homepage is {homepage!r}, not {CANONICAL_HOMEPAGE} -- `brew info` "
+                "shows it, and it resolves only through the old owner's redirect"
+            )
+            print("  -> HOMEPAGE NOT CANONICAL")
 
         # 1b. Naming the right tag is not the same as installing it. A
         # formula edited by hand can carry the new url beside the previous

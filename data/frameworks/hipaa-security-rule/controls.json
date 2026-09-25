@@ -165,7 +165,9 @@
         }
       }
     ],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "RA-1"
     },
@@ -189,7 +191,9 @@
     "control_statement": "Identify the security official who is responsible for the development and implementation of the policies and procedures required by this subpart for the covered entity or business associate.",
     "discussion": "",
     "enhancements": [],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "CA-6, PM-2"
     },
@@ -247,7 +251,9 @@
         }
       }
     ],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "AC-1, AC-2, AC-3, AC-5, AC-6"
     },
@@ -305,7 +311,9 @@
         }
       }
     ],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "AC-1, AC-2, AC-5, AC-6"
     },
@@ -329,7 +337,9 @@
     "control_statement": "Implement a security awareness and training program for all members of its workforce (including management).",
     "discussion": "",
     "enhancements": [],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "AT-1, AT-2, AT-3, AT-4"
     },
@@ -398,7 +408,9 @@
         }
       }
     ],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {},
     "source_path": "https://www.ecfr.gov/current/title-45/section-164.308",
     "parameter_values": {},
@@ -432,7 +444,9 @@
         }
       }
     ],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "IR-1, IR-2, IR-3, IR-4"
     },
@@ -512,7 +526,9 @@
         }
       }
     ],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "CP-1, CP-2"
     },
@@ -536,7 +552,9 @@
     "control_statement": "Perform a periodic technical and nontechnical evaluation, based initially upon the standards implemented under this rule and, subsequently, in response to environmental or operational changes affecting the security of electronic protected health information, that establishes the extent to which a covered entity's or business associate's security policies and procedures meet the requirements of this subpart.",
     "discussion": "",
     "enhancements": [],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "CA-1, CA-2, CA-6, CA-7, CA-8"
     },
@@ -641,7 +659,9 @@
         }
       }
     ],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "PE-1, PE-2, PE-3, PE-3(1), PE-4, PE-5"
     },
@@ -665,7 +685,9 @@
     "control_statement": "Implement policies and procedures that specify the proper functions to be performed, the manner in which those functions are to be performed, and the physical attributes of the surroundings of a specific workstation or class of workstation that can access electronic protected health information.",
     "discussion": "",
     "enhancements": [],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "AC-3, AC-4, AC-11, AC-12, AC-16, AC-17, AC-19, PE-3, PE-5, PL-4, PS-6"
     },
@@ -689,7 +711,9 @@
     "control_statement": "Implement physical safeguards for all workstations that access electronic protected health information, to restrict access to authorized users.",
     "discussion": "",
     "enhancements": [],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "MP-2, MP-3, MP-4, PE-2, PE-3, PE-4, PE-5, PE-18"
     },
@@ -758,7 +782,9 @@
         }
       }
     ],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "CM-8, MP-1, MP-2, MP-3, MP-4, MP-5, MP-6, PE-16, PE-20"
     },
@@ -827,7 +853,9 @@
         }
       }
     ],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "AC-1, AC-3, AC-5, AC-6"
     },
@@ -851,7 +879,9 @@
     "control_statement": "Implement hardware, software, and/or procedural mechanisms that record and examine activity in information systems that contain or use electronic protected health information.",
     "discussion": "",
     "enhancements": [],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "AU-1, AU-2, AU-3, AU-4, AU-6, AU-7, AU-8"
     },
@@ -887,7 +917,9 @@
         }
       }
     ],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "CP-9, MP-2, MP-5, SC-8, SI-1, SI-7"
     },
@@ -911,7 +943,9 @@
     "control_statement": "Implement procedures to verify that a person or entity seeking access to electronic protected health information is the one claimed.",
     "discussion": "",
     "enhancements": [],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "IA-2, IA-3, IA-4, IA-8, IA-9"
     },
@@ -958,7 +992,9 @@
         }
       }
     ],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "SC-8"
     },
@@ -1114,7 +1150,9 @@
     "control_statement": "Implement reasonable and appropriate policies and procedures to comply with the standards, implementation specifications, or other requirements of this subpart, taking into account those factors specified in \u00a7 164.306(b)(2)(i), (ii), (iii), and (iv). This standard is not to be construed to permit or excuse an action that violates any other standard, implementation specification, or other requirements of this subpart. A covered entity or business associate may change its policies and procedures at any time, provided that the changes are documented and are implemented in accordance with this subpart.",
     "discussion": "",
     "enhancements": [],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "PL-1, PL-2, RA-1, RA-3"
     },
@@ -1172,7 +1210,9 @@
         }
       }
     ],
-    "related_controls": [],
+    "related_controls": [
+      "164.306"
+    ],
     "source_crosswalk": {
       "nist-800-53": "CA-2, PL-2"
     },

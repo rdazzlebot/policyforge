@@ -297,6 +297,12 @@ their fixtures. Run the suite from a clone. Don't add `tests/` back to it.
 
 ## Cutting a release
 
+**Run `python scripts/release.py X.Y.Z`** (a dry run) and then with
+`--execute`. It walks the steps below in order, and each step checks that the
+one before it happened, so none can be skipped. It never merges to `main`:
+that is the user's approval, and the script waits for it and resumes when
+re-run. The list below says what each step does and why.
+
 1. Move the `## Unreleased` changelog entries under the new version. Bump
    `version` in `pyproject.toml` and `__version__` in
    `src/policyforge/__init__.py` together; a test compares them.

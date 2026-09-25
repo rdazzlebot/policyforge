@@ -946,6 +946,50 @@ def _lands_in_bundled_catalogs(out: Path) -> bool:
     return False
 
 
+def _declare_catalog(out: Path, *, framework: str, source: str) -> str:
+    """Declare the catalog just written at `out` by its framework key (#295).
+
+    A catalog a user brings has no `framework.yaml`, so its name was keyed by
+    prose -- an alias if one matched, else its first word. The importer knows
+    what it imported, so it writes the declaration the bundled catalogs carry:
+    `framework_id:` equal to the key the name already had, so nothing keyed
+    before the import moves. The manifest says `licence: licensed`, because
+    everything these importers read is.
+
+    **A manifest already there is the user's.** Without a `framework_id` it
+    gains one line (comments and keys kept); with one, it is left alone and
+    a different value is named -- the declaration wins, and a person chose
+    it. Returns what was done, for the command to print.
+    """
+    from policyforge.mapping.crosswalk import prose_framework_key, reset_declared_keys
+
+    key = prose_framework_key(framework)
+    manifest = out.parent / "framework.yaml"
+    if not manifest.exists():
+        write_text_lf(
+            manifest,
+            f"name: {framework}\nframework_id: {key}\nlicence: licensed\nsource: {source}\n",
+        )
+        done = f"Declared {manifest}: framework_id {key}."
+    else:
+        import yaml
+
+        text = manifest.read_text(encoding="utf-8")
+        existing = (yaml.safe_load(text) or {}).get("framework_id")
+        if existing is None:
+            write_text_lf(manifest, text.rstrip("\n") + f"\nframework_id: {key}\n")
+            done = f"Declared framework_id {key} in {manifest}."
+        elif str(existing).strip() != key:
+            done = (
+                f"{manifest} already declares framework_id {existing}; the import would "
+                f"have declared {key}. Keeping yours."
+            )
+        else:
+            done = f"{manifest} already declares framework_id {key}."
+    reset_declared_keys()  # so keying later in this process reads the new declaration
+    return done
+
+
 def _guard_licensed_write(out: Path, *, force: bool, product: str, licence: str, noun: str):
     """Refuse to write a licensed catalog anywhere it could be redistributed.
 
@@ -1080,6 +1124,9 @@ def etl_hitrust(export_path: Path, version: str, out: Path | None, force: bool):
     out.parent.mkdir(parents=True, exist_ok=True)
     write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
     click.echo(f"\nWrote {len(controls)} HITRUST control references -> {out}")
+    from policyforge.ingest.hitrust import FRAMEWORK
+
+    click.echo(_declare_catalog(out, framework=FRAMEWORK, source="your MyCSF export"))
 
 
 @cli.command("etl-govramp")
@@ -1183,6 +1230,9 @@ def etl_govramp(export_path: Path, impact_level: str | None, version: str, out: 
     write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
     enhancements = sum(len(c.enhancements) for c in controls)
     click.echo(f"\nWrote {len(controls)} GovRAMP controls ({enhancements} enhancements) -> {out}")
+    from policyforge.ingest.govramp import FRAMEWORK
+
+    click.echo(_declare_catalog(out, framework=FRAMEWORK, source="your GovRAMP controls matrix"))
 
 
 @cli.command("etl-hipaa-crosswalk")

@@ -113,14 +113,55 @@ def test_a_byoc_declared_name_keys_by_its_declaration_with_nothing_loaded(
 
 def test_a_sibling_of_a_pinned_name_no_longer_falls_through(tmp_path, monkeypatch, fresh_keys):
     """The class #295 is about: `NIST Privacy Framework` has no alias, so its
-    prose key is bare `nist`, colliding with every other NIST name that falls
-    through. Declared, it keys to itself, and the disagreement is named."""
+    prose key is bare `nist`. Declared, it keys to itself.
+
+    **Silent under 80's PR 2 rule**, because bare `nist` is neither a
+    declared key nor an alias target. Pinned so the question put to 80 on
+    the PR -- should the shared first-word bucket count as known? -- is
+    answered by a diff here, not by a surprise."""
     _catalog(
         tmp_path / "frameworks", "nist-privacy", name="NIST Privacy Framework", key="nist-privacy"
     )
     monkeypatch.chdir(tmp_path)
-    with pytest.warns(FrameworkKeyWarning, match="NIST Privacy Framework.*'nist'"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FrameworkKeyWarning)
         assert normalize_framework("NIST Privacy Framework") == "nist-privacy"
+
+
+def test_the_fragments_own_example_declares_silently(tmp_path, monkeypatch, fresh_keys):
+    """80's PR 2 ruling: a user following the fragment exactly must not get a
+    warning on every command. `acme` is nobody's key, so nothing can mislead."""
+    _catalog(
+        tmp_path / "frameworks", "acme-baseline", name="Acme Security Baseline", key="acme-baseline"
+    )
+    monkeypatch.chdir(tmp_path)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FrameworkKeyWarning)
+        assert normalize_framework("Acme Security Baseline") == "acme-baseline"
+
+
+def test_a_name_that_prose_files_under_another_frameworks_key_is_warned_once(
+    tmp_path, monkeypatch, fresh_keys
+):
+    """The real hazard (80): `NIST SP 800-53 Privacy Overlay` keys by prose to
+    `nist-800-53` -- 800-53's key -- so citations written before its
+    declaration were filed under the wrong catalog. Named, with both keys."""
+    _catalog(
+        tmp_path / "frameworks",
+        "privacy-overlay",
+        name="NIST SP 800-53 Privacy Overlay",
+        key="nist-800-53-privacy-overlay",
+    )
+    assert prose_framework_key("NIST SP 800-53 Privacy Overlay") == "nist-800-53"  # the premise
+    monkeypatch.chdir(tmp_path)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", FrameworkKeyWarning)
+        assert (
+            normalize_framework("NIST SP 800-53 Privacy Overlay") == "nist-800-53-privacy-overlay"
+        )
+    messages = [str(w.message) for w in caught if issubclass(w.category, FrameworkKeyWarning)]
+    assert len(messages) == 1, messages
+    assert "'nist-800-53-privacy-overlay'" in messages[0] and "'nist-800-53'" in messages[0]
 
 
 def test_two_catalogs_declaring_one_name_differently_are_named_and_the_first_wins(
@@ -134,11 +175,10 @@ def test_two_catalogs_declaring_one_name_differently_are_named_and_the_first_win
         keys = declared_keys(roots=[first, second])
     messages = [str(w.message) for w in caught if issubclass(w.category, FrameworkKeyWarning)]
     assert keys["shared name"] == "shared-one"
-    # Two warnings, both true: the conflict, and "Shared Name" not keying
-    # to 'shared-one' by prose (which gives 'shared').
+    # One warning, the conflict. "Shared Name" prose-keys to `shared`, which is
+    # nobody's key, so its difference from 'shared-one' is silent (PR 2).
     assert any("declared as 'shared-one'" in m and "as 'shared-two'" in m for m in messages)
-    assert any("would give 'shared'" in m for m in messages)
-    assert len(messages) == 2, messages
+    assert len(messages) == 1, messages
 
 
 def test_the_bundled_catalogs_declare_from_any_working_directory(tmp_path, monkeypatch):

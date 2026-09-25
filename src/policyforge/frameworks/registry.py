@@ -216,8 +216,11 @@ def declared_keys(config: dict | None = None, *, roots: list[Path] | None = None
     string its `controls.json` rows carry (`NIST 800-53` there, `NIST SP
     800-53 Rev 5` in the manifest). The first root that declares a name
     wins, as in `discover`. Two catalogs declaring one name with different
-    keys, and a declared key that the name's prose keying would not give,
-    each raise a `FrameworkKeyWarning` naming both; the declaration is kept.
+    keys raise a `FrameworkKeyWarning` naming both. So does a declared key
+    whose name, keyed by prose alone, would land on a key that is already
+    someone's (another catalog's, or an alias target); a declaration that
+    merely differs from its name's first word is silent (#295, PR 2). The
+    declaration is kept either way.
 
     Read from the directories rather than registered when a catalog is
     loaded, so that keying a name does not depend on what was loaded first
@@ -230,6 +233,7 @@ def declared_keys(config: dict | None = None, *, roots: list[Path] | None = None
     from policyforge.mapping.crosswalk import prose_framework_key
 
     found: dict[str, tuple[str, Path]] = {}
+    differing: list[tuple[str, str, Path, str]] = []
     seen_dirs: set[Path] = set()
     for root in roots if roots is not None else _key_roots(config):
         if not root.is_dir():
@@ -265,13 +269,28 @@ def declared_keys(config: dict | None = None, *, roots: list[Path] | None = None
                 found[normal] = (framework.key, directory)
                 prose = prose_framework_key(name)
                 if prose != framework.key:
-                    warnings.warn(
-                        FrameworkKeyWarning(
-                            f"{directory} declares key {framework.key!r} for {name!r}; keying "
-                            f"the name would give {prose!r}. The declaration wins."
-                        ),
-                        stacklevel=2,
-                    )
+                    differing.append((name, framework.key, directory, prose))
+
+    # **Warn only where the difference can mislead** (80's ruling on #295, PR 2).
+    # Every deliberate declaration differs from its name's first word --
+    # "Acme Security Baseline" declared `acme-baseline` prose-keys to `acme` --
+    # so warning on any difference fired on correct use, the guard that gets
+    # muted by the third run. The hazard is a prose key that is ALREADY
+    # someone's key: another catalog's declaration, or an alias target. Then a
+    # citation written before this declaration was filed under that other key.
+    from policyforge.mapping.crosswalk import FRAMEWORK_ALIASES
+
+    known = {key for key, _ in found.values()} | {target for _, target in FRAMEWORK_ALIASES}
+    for name, key, directory, prose in differing:
+        if prose in known:
+            warnings.warn(
+                FrameworkKeyWarning(
+                    f"{directory} declares {key!r} for {name!r}, but the name alone keys to "
+                    f"{prose!r}, which is already a framework's key; citations written before "
+                    f"this declaration were filed under {prose!r}. The declaration wins."
+                ),
+                stacklevel=2,
+            )
     return {name: key for name, (key, _) in found.items()}
 
 

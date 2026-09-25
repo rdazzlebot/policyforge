@@ -261,6 +261,48 @@ _PIPES_TO_CONSUMER = re.compile(rf"{_PIPE}(?:{_CONSUMERS})\b")
 #: A `set` or `shopt` statement, up to the end of its statement.
 _SET_OR_SHOPT = re.compile(r"(?<![\w-])(set|shopt)\b([^;&|]*)")
 
+#: What may stand before a command: an operator, or a keyword that starts
+#: a command list.
+_COMMAND_STARTS = re.compile(r"(?:^|[;&|({!]|\b(?:then|do|else))$")
+
+
+def _at_command_position(line: str, states: list[tuple[str, int]], start: int) -> bool:
+    """Whether the word at `start` is where a command begins, reading only
+    the text in its own quoting context (so a quoted program's first word
+    counts, and an `echo` argument does not)."""
+    k = start
+    while k > 0 and states[k - 1] == states[start]:
+        k -= 1
+    return bool(_COMMAND_STARTS.search(line[k:start].rstrip()))
+
+
+def _reaches(line: str, states: list[tuple[str, int]], change: int, pipe: int) -> bool:
+    """Whether a pipefail change at `change` still governs the shell at `pipe`.
+
+    Its context must stay open in between. An unquoted change lasts until its
+    `$( )` or `( )` subshell closes, and a quoted one (a `bash -c` program)
+    until its quote closes. A pipe inside a quoted program is reached only
+    from inside that same program, because `bash -c` is a new shell that does
+    not inherit the outer one's pipefail. Each rule was checked against real
+    bash on #330: `x=$(set -o pipefail)`, `( set -o pipefail )` and an outer
+    `set` before `bash -c '...'` all leave the pipe without pipefail.
+    """
+    quote, depth = states[change]
+    parens = 0
+    for i in range(change, min(pipe, len(states))):
+        here = states[i]
+        if here[1] < depth or (quote and here[1] == depth and here[0] != quote):
+            return False
+        if here == (quote, depth):
+            if line[i] == "(" and not (i > 0 and line[i - 1] == "$"):
+                parens += 1
+            elif line[i] == ")":
+                parens -= 1
+                if parens < 0:
+                    return False
+    # A pipe inside a quoted program is reached only from that same program.
+    return not (pipe < len(states) and states[pipe][0] and states[pipe] != (quote, depth))
+
 
 def _pipefail_changes(line: str) -> list[tuple[int, bool]]:
     """Every place in `line` that turns pipefail on (True) or off (False).
@@ -277,9 +319,20 @@ def _pipefail_changes(line: str) -> list[tuple[int, bool]]:
     next word as the option name. The word's sign decides on or off.
     `shopt`: the flags must include `o` (set-style options); `s` turns the
     option on and `u` turns it off.
+
+    **Only a `set`/`shopt` that RUNS counts** (#330, policyforge-ba): one at
+    a command position (the start of its line or quoted program, or after
+    `;`, `&&`, `||`, `|`, `(`, `{`, `then`, `do`, `else`, `!`). A mention
+    does not count: `git commit -m "set -o pipefail in ci"` or
+    `echo set -o pipefail` left the lint believing pipefail was on, and it
+    cleared a real swallow. Which pipes a change reaches is `_pipefail_at`'s
+    question.
     """
+    states = _nesting(line)
     changes: list[tuple[int, bool]] = []
     for match in _SET_OR_SHOPT.finditer(line):
+        if not _at_command_position(line, states, match.start()):
+            continue
         command, words = match.group(1), match.group(2).split()
         if command == "set":
             j = 0
@@ -651,10 +704,15 @@ def _strip_comment(line: str) -> str:
 
 def _pipefail_at(state: bool, line: str, position: int) -> bool:
     """Whether pipefail is on at `position` in `line`, given its state
-    before the line: each `set`/`shopt` that turns it on or off earlier in
-    the line changes it, in order."""
+    before the line: each `set`/`shopt` that RUNS earlier in the line and
+    still governs the shell at `position` changes it, in order (#330). A pipe
+    inside a quoted program starts from off, because `bash -c` is a new
+    shell."""
+    states = _nesting(line)
+    if position < len(states) and states[position][0]:
+        state = False
     for start, value in sorted(_pipefail_changes(line)):
-        if start < position:
+        if start < position and _reaches(line, states, start, position):
             state = value
     return state
 

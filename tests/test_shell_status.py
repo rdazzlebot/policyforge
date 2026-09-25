@@ -953,3 +953,67 @@ def test_each_bash_verified_off_spelling_is_still_flagged(spelling):
     again."""
     command = f"set -o pipefail; {spelling}; python scripts/check.py | tail -4 && git push"
     assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+# --- #330: pipefail MENTIONED is not pipefail SET ------------------------------------
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'git commit -m "set -o pipefail in ci"; python -m pytest -q | tail -1 && git push',
+        "echo set -o pipefail; python -m pytest -q | tail -1 && git push",
+        "git log --grep 'set -o pipefail' | head; python -m pytest -q | tail -1 && git push",
+        "bash -c 'set -o pipefail'; python -m pytest -q | tail -1 && git push",
+        'echo "set -o pipefail"\npython -m pytest -q | tail -1 && git push',
+    ],
+)
+def test_pipefail_mentioned_does_not_clear_a_swallow(command):
+    """**The unsafe direction** (policyforge-ba, #330). A `set -o pipefail`
+    that is only TEXT (a commit message, an echo argument, a grep pattern), or
+    that runs in ANOTHER shell (`bash -c '...'`), left the lint believing
+    pipefail was on here, and it cleared the swallowed status that follows.
+    The last case carries the mention to the next line."""
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "set -o pipefail; python -m pytest -q | tail -1 && git push",
+        "true && set -o pipefail; python -m pytest -q | tail -1 && git push",
+        "bash -c 'set -o pipefail; python -m pytest -q | tail -1 && git push'",
+        "set -o pipefail; n=$(python -m pytest -q | tail -1) && git push",
+        "set -o pipefail\npython -m pytest -q | tail -1 && git push",
+    ],
+)
+def test_pipefail_really_set_still_clears(command):
+    """What #330's fix must ALLOW. A `set` at a command position; the same
+    `bash -c` program as the pipe; and a `$( )`, which inherits the shell's
+    options. The last case carries a real `set` to the next line."""
+    assert shell_status.check_command(command) == []
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "x=$(set -o pipefail); python -m pytest -q | tail -1 && git push",
+        "( set -o pipefail ); python -m pytest -q | tail -1 && git push",
+        "( set -o pipefail; x=$(true) ); python -m pytest -q | tail -1 && git push",
+        "set -o pipefail; bash -c 'python -m pytest -q | tail -1 && git push'",
+        "set -o pipefail\nbash -c 'python -m pytest -q | tail -1 && git push'",
+    ],
+)
+def test_pipefail_set_in_another_shell_does_not_reach_the_pipe(command):
+    """Bash-verified on #330: a `set` inside `$( )` or `( )` does not leak
+    out of that subshell, and an outer `set` does not reach a `bash -c`
+    program, which is a new shell. Each left the pipe unguarded, and the
+    lint must see it so. The `( )` case was found open while writing these."""
+    assert "swallowed-status" in _rules(shell_status.check_command(command))
+
+
+def test_pipefail_set_in_an_if_body_does_reach_the_pipe():
+    """`if ...; then set -o pipefail; fi` runs in the SAME shell (bash: ON),
+    so `then` is a command position and the change carries."""
+    command = "if true; then set -o pipefail; fi; python -m pytest -q | tail -1 && git push"
+    assert shell_status.check_command(command) == []

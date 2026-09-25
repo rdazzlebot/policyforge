@@ -566,7 +566,10 @@ def _formula(ctx: Context, url: str, sha: str) -> str:
     `homepage` from the one `OWNER` constant, as `url` is (80's ruling on
     #348): the published formula still names the old owner there, and
     `brew info` shows it to users (policyforge-9b)."""
-    text = release_check.fetch_formula()
+    # LF once, here: every pattern below anchors on "\n", and on a CRLF
+    # formula the version line would silently not be added, failing step 8
+    # exactly as #391 did (policyforge-b5 on #392; the live formula is LF).
+    text = release_check.fetch_formula().replace("\r\n", "\n")
     text = re.sub(
         r'^(\s*homepage ")[^"]+(")',
         rf"\g<1>{release_check.CANONICAL_HOMEPAGE}\g<2>",

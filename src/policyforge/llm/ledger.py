@@ -53,6 +53,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import escalation
 from .base import LLMProvider, LLMResponse
 from .boundary import classify_provider
 
@@ -115,6 +116,11 @@ class CallRecord:
     #: The provider's own id for the request. Free on the response, the
     #: first thing a vendor asks for, and unrecoverable afterwards.
     request_id: str | None = None
+    #: Every bigger-budget re-send inside this call, with the billed attempt
+    #: before it: its request id, cost and output tokens (#361). The row's
+    #: tokens and request id are the LAST attempt's; this is where the
+    #: earlier, billed ones are kept. One row per billed request is #343's.
+    escalations: tuple = ()
 
     def as_json(self) -> str:
         return json.dumps(dataclasses.asdict(self))
@@ -365,6 +371,7 @@ class RecordingProvider(LLMProvider):
             request_id=response.request_id if response else None,
             prompt_sha=prompt_digest(system, prompt),
             error=error,
+            escalations=escalation.take(),
         )
         append(record, self._path)
         if scope is not None:

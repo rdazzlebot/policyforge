@@ -178,7 +178,20 @@ class OpenAICompatProvider(LLMProvider):
         # eight on a 12-token budget; see `_anthropic_compat` for the full
         # account. Retry with room to speak.
         if needs_more_room(text, choice.get("finish_reason")):
+            from . import escalation
+
             second = retry_budget(max_tokens)
+            first_usage = data.get("usage") or {}
+            # Said before it is sent, and kept for this call's ledger row (#361).
+            escalation.announce(
+                model=self.model,
+                first_max_tokens=max_tokens,
+                max_tokens=second,
+                input_tokens=first_usage.get("prompt_tokens"),
+                first_request_id=data.get("id"),
+                first_output_tokens=first_usage.get("completion_tokens"),
+                first_stop_reason=choice.get("finish_reason"),
+            )
             data = self._post({**payload, "max_tokens": second})
             choice = (data.get("choices") or [{}])[0]
             message = choice.get("message") or {}

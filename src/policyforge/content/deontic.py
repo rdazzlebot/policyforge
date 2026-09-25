@@ -658,12 +658,78 @@ def analyze(text: str) -> list[Statement]:
     a heading and binds nothing. Left alone that reported every correctly
     cited requirement in the corpus as a weakened one, which is precisely
     the kind of false positive that teaches people to ignore the check.
+
+    **A heading ends a sentence, and nothing is credited across one (#349).**
+    Headings used to be blanked and then read straight through, so a
+    sentence ending `... [Playbook Map 1.6 Action 8].` ran across `## 3.` and
+    `### 3.1` into `- **CAT-01:** ... shall ensure ... [NIST AI RMF Map 2]`,
+    and the gate read CAT-01's obligation and citation as NIST's suggestion
+    (18 of 2,501 statements across 33 generated Standards). Sentences are
+    now split within each run of lines between headings, ATX or setext.
     """
-    text = _HEADING_LINE_RE.sub(lambda m: " " * len(m.group(0)), text)
+    text, blocks = _heading_blocks(text)
 
     statements: list[Statement] = []
-    for piece_start, raw in _sentences(text):
-        offset = piece_start + (len(raw) - len(raw.lstrip()))
+    for block_offset, block in blocks:
+        _analyze_block(text, block_offset, block, statements)
+    return statements
+
+
+#: A setext underline: a line of three or more `=` or `-` and nothing else.
+#: Three, not one, because a lone `-` is an empty list item; a table's
+#: separator row contains pipes and never matches.
+_SETEXT_UNDERLINE_RE = re.compile(r"^[ \t]{0,3}(?:={3,}|-{3,})[ \t]*$")
+#: A line that cannot be setext heading text: a list item or a table row.
+_LIST_OR_TABLE_RE = re.compile(r"^[ \t]*(?:[-*+][ \t]|\d+[.)][ \t]|\|)")
+
+
+def _heading_blocks(text: str) -> tuple[str, list[tuple[int, str]]]:
+    """`text` with every heading line blanked in place (so line numbers hold),
+    and the runs of lines between headings as `(offset, block)`.
+
+    ATX headings, setext underlines, and the setext heading text above an
+    underline. A `---` under a list item or table row is a thematic break,
+    not a heading underline: it still ends the block, but the line above it
+    is left as text.
+    """
+    lines = text.split("\n")
+    heading = [bool(_HEADING_LINE_RE.match(line)) for line in lines]
+    for index, line in enumerate(lines):
+        if not heading[index] and _SETEXT_UNDERLINE_RE.match(line):
+            heading[index] = True
+            above = index - 1
+            if (
+                above >= 0
+                and lines[above].strip()
+                and not heading[above]
+                and not _LIST_OR_TABLE_RE.match(lines[above])
+            ):
+                heading[above] = True
+    blanked = [" " * len(line) if heading[i] else line for i, line in enumerate(lines)]
+    text = "\n".join(blanked)
+
+    blocks: list[tuple[int, str]] = []
+    offset, start = 0, None
+    for index, line in enumerate(blanked):
+        if heading[index]:
+            if start is not None:
+                blocks.append((start, text[start : offset - 1]))
+                start = None
+        elif start is None:
+            start = offset
+        offset += len(line) + 1
+    if start is not None:
+        blocks.append((start, text[start:]))
+    return text, blocks
+
+
+def _analyze_block(text: str, block_offset: int, block: str, statements: list[Statement]) -> None:
+    """The sentences of one run of lines between headings, appended to
+    `statements`. A leading citation is credited backwards only to a
+    sentence in this same block."""
+    first_in_block = len(statements)
+    for piece_start, raw in _sentences(block):
+        offset = block_offset + piece_start + (len(raw) - len(raw.lstrip()))
         sentence = raw.strip()
         if not sentence:
             continue
@@ -688,7 +754,8 @@ def analyze(text: str) -> list[Statement]:
             offset += len(sentence) - len(stripped)
             sentence = stripped
 
-        if trailing_citation and statements:
+        carried: tuple[str, ...] = ()
+        if trailing_citation and len(statements) > first_in_block:
             previous = statements[-1]
             statements[-1] = Statement(
                 line=previous.line,
@@ -697,11 +764,15 @@ def analyze(text: str) -> list[Statement]:
                 cited=True,
                 citations=previous.citations + tuple(peeled),
             )
+        elif trailing_citation:
+            # Nothing above it in this block: a citation opening a block
+            # belongs to the sentence it opens, never to one across a heading.
+            carried = tuple(peeled)
 
         if not sentence:
             continue
 
-        inline = tuple(_CITATION_RE.findall(sentence))
+        inline = carried + tuple(_CITATION_RE.findall(sentence))
         statements.append(
             Statement(
                 line=text.count("\n", 0, offset) + 1,
@@ -711,7 +782,6 @@ def analyze(text: str) -> list[Statement]:
                 citations=inline,
             )
         )
-    return statements
 
 
 def weakened_citations(text: str) -> list[Statement]:

@@ -172,7 +172,8 @@ def test_effort_announces_its_own_2x_retry(capsys):
         effort.call(Fake(), system="s", prompt="p", max_tokens=1000)
     said = capsys.readouterr().err
     assert "standard/y" in said and "max_tokens 2,000" in said and "cut off" in said
-    escalation.take()
+    # Unwrapped, so no row took it; the scope dropped it on exit (#372).
+    assert escalation.take() == ()
 
 
 def test_the_anthropic_shim_announces_its_re_send(capsys):
@@ -211,10 +212,11 @@ def test_the_anthropic_shim_announces_its_re_send(capsys):
         call_messages_api(
             client, model="claude-sonnet-5", system="s", prompt="p", max_tokens=64, temperature=0.2
         )
+        # Taken inside the block: on exit, an unrecorded escalation is dropped.
+        (e,) = escalation.take()
     said = capsys.readouterr().err
     assert calls == [64, 512]
     assert "standard/w" in said and "max_tokens 512" in said and "worst case $" in said
-    (e,) = escalation.take()
     assert e["first_request_id"] == "req_1" and e["input_tokens"] == 900
 
 
@@ -239,4 +241,95 @@ def test_the_openai_compatible_provider_announces_its_re_send(capsys, monkeypatc
         provider.generate(system="s", prompt="p", max_tokens=64)
     said = capsys.readouterr().err
     assert "synthesis/z" in said and "max_tokens 512" in said and "unpriced" in said
-    escalation.take()
+    assert escalation.take() == ()
+
+
+# ---- #372: what a ledger total may add, and where a pending escalation goes ----
+
+
+def _rows(path):
+    return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+def test_first_cost_is_already_in_a_row_that_has_a_cost(tmp_path, capsys):
+    """LiteLLM's 8x path sums both attempts into the row, and `effort`'s 2x
+    path gives the first attempt its own row. Either way the rows alone add
+    up to what was billed, so adding `first_cost_usd` would count it twice."""
+    completion = _Completion(
+        _reply("", "length", cost=0.20, rid="a"), _reply("ok", "stop", cost=1.00, rid="b")
+    )
+    provider = _wrapped("anthropic/claude-sonnet-5", completion, tmp_path / "l.jsonl")
+    with ledger.about("t", site="generate"):
+        provider.generate(system="s", prompt="p", max_tokens=100)
+    (row,) = _rows(tmp_path / "l.jsonl")
+    assert row["cost_usd"] == pytest.approx(1.20), "billed 0.20 + 1.00"
+    assert row["escalations"][0]["first_cost_usd"] == 0.20
+
+    from policyforge.llm import effort
+    from policyforge.llm.base import LLMResponse
+
+    replies = [
+        LLMResponse(text="part", model="m", stop_reason="length", output_tokens=9, cost_usd=0.20),
+        LLMResponse(text="whole", model="m", stop_reason="stop", cost_usd=0.40),
+    ]
+
+    class Fake:
+        model = "m"
+
+        def generate(self, **kwargs):
+            return replies.pop(0)
+
+    path = tmp_path / "e.jsonl"
+    wrapped = ledger.RecordingProvider(
+        Fake(), provider_name="fake", provider_class="cloud", path=path
+    )
+    with ledger.about("t", site="generate"):
+        effort.call(wrapped, system="s", prompt="p", max_tokens=1000)
+    rows = _rows(path)
+    assert sum(r["cost_usd"] for r in rows) == pytest.approx(0.60), "billed 0.20 + 0.40"
+    assert [len(r["escalations"]) for r in rows] == [0, 1]
+    assert rows[1]["escalations"][0]["first_cost_usd"] == 0.20, "the first row, repeated"
+
+
+def test_on_an_error_row_first_cost_is_the_only_record(tmp_path, capsys):
+    """The re-send fails too: the row has no cost, `first_cost_usd` is the
+    only trace of the first charge, and the re-send's charge is recorded
+    nowhere. That last part is #343; when it is fixed, this test changes."""
+    completion = _Completion(
+        _reply("", "length", cost=0.20, rid="a"), _reply("", "length", cost=1.30, rid="b")
+    )
+    provider = _wrapped("anthropic/claude-sonnet-5", completion, tmp_path / "l.jsonl")
+    from policyforge.llm._inline_thinking import ReasoningBudgetExhausted
+
+    with ledger.about("t", site="generate"), pytest.raises(ReasoningBudgetExhausted):
+        provider.generate(system="s", prompt="p", max_tokens=100)
+    (row,) = _rows(tmp_path / "l.jsonl")
+    assert row["error"] and row["cost_usd"] is None
+    assert row["escalations"][0]["first_cost_usd"] == 0.20
+    assert "1.3" not in json.dumps(row), "#343: the re-send's charge is in no row"
+
+
+def test_an_unrecorded_calls_escalation_does_not_reach_the_next_row(tmp_path, capsys):
+    """1d on #366: `_pending` was drained only by a recorded call, so an
+    escalation from an unwrapped call landed in the next, unrelated row."""
+    with ledger.about("unrecorded", site="generate"):
+        escalation.announce(model="local/q", first_max_tokens=64, max_tokens=512)
+    completion = _Completion(_reply("fine", "stop", cost=0.01, completion=10))
+    provider = _wrapped("anthropic/claude-sonnet-5", completion, tmp_path / "l.jsonl")
+    with ledger.about("recorded", site="generate"):
+        provider.generate(system="s", prompt="p", max_tokens=100)
+    (row,) = _rows(tmp_path / "l.jsonl")
+    assert row["subject"] == "recorded" and row["escalations"] == []
+
+
+def test_a_nested_scope_keeps_its_own_escalations(tmp_path, capsys):
+    """The inner block's unrecorded escalation neither reaches the outer
+    block's row nor survives the inner block."""
+    completion = _Completion(_reply("fine", "stop", cost=0.01, completion=10))
+    provider = _wrapped("anthropic/claude-sonnet-5", completion, tmp_path / "l.jsonl")
+    with ledger.about("outer", site="generate"):
+        with ledger.about("inner", site="generate"):
+            escalation.announce(model="local/q", first_max_tokens=64, max_tokens=512)
+        provider.generate(system="s", prompt="p", max_tokens=100)
+    (row,) = _rows(tmp_path / "l.jsonl")
+    assert row["subject"] == "outer" and row["escalations"] == []

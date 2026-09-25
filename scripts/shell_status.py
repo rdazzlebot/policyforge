@@ -81,6 +81,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import functools
 import re
 import subprocess
 import sys
@@ -213,8 +214,19 @@ def _opener_of(line: str, states: list[tuple[str, int]], start: int, depth: int)
 
 
 def _swallowed_at(line: str) -> int | None:
-    """Where a pipe into a consumer is followed by an `&&` that gates it,
-    else None.
+    """The first pipe whose status an `&&` swallows, else None. See
+    `_swallowed_positions`, which the rule uses: a line can hold more than one."""
+    positions = _swallowed_positions(line)
+    return positions[0] if positions else None
+
+
+def _swallowed_positions(line: str) -> list[int]:
+    """EVERY pipe into a consumer that is followed by an `&&` gating it.
+
+    **Every one, not the first** (policyforge-9b on #338, over 4,820 bash-judged
+    cases): returning only the first let a guarded first swallow hide an
+    unguarded second one, as in `set -o pipefail; a | tail && x;
+    set +o pipefail; b | tail && push`.
 
     **The `&&` must sit at the same quoting and `$( )` depth as the pipe,
     with no `|` or `;` between them at that level.** Each clause is
@@ -227,8 +239,9 @@ def _swallowed_at(line: str) -> int | None:
     which `bash -c` runs.
     """
     if not _SWALLOWED.search(line):
-        return None
+        return []
     states = _nesting(line)
+    found: list[int] = []
     for match in _CONSUMER_PIPE.finditer(line):
         quote, depth = states[match.start()]
         #: After leaving a substitution whose statement is assignment-only,
@@ -247,12 +260,13 @@ def _swallowed_at(line: str) -> int | None:
                 continue
             ch = line[i]
             if line.startswith("&&", i) and (quote is not None or here[0] == ""):
-                return match.start()
+                found.append(match.start())
+                break
             if ch in "|;" and (quote is not None or here[0] == ""):
                 break
             if after_assignment and not (ch.isspace() or ch in "\"')&"):
                 break
-    return None
+    return found
 
 
 #: Any pipe into a stream consumer, used for the pipefail requirement.
@@ -813,6 +827,11 @@ def _pipefail_at(state: bool, line: str, position: int, blocks: tuple[str, ...] 
     return state
 
 
+def _pipefail_at_position(state: bool, line: str, blocks: tuple[str, ...], position: int) -> bool:
+    """`_pipefail_at` with the line-level arguments first, for `functools.partial`."""
+    return _pipefail_at(state, line, position, blocks)
+
+
 def _pipefail_after(state: bool, line: str, blocks: tuple[str, ...] = ()) -> bool:
     """Pipefail in the top-level shell AFTER `line`, carried to the next line.
 
@@ -893,7 +912,12 @@ def findings(sources: list[Source]) -> list[Finding]:
             if opened and not _SHELL_READS_HEREDOC.search(line[: opened.start()]):
                 heredoc_end = opened.group("tag")
             piped = _PIPES_TO_CONSUMER.search(line)
-            guarded = piped is not None and _pipefail_at(pipefail, line, piped.start(), blocks)
+            # **Every rule asks about the pipe it is judging** (#334, policyforge-ba).
+            # One `guarded`, taken at the line's FIRST consumer pipe, answered for
+            # all of them, so `set -o pipefail; a | tail; set +o pipefail;
+            # b | tail && c` was cleared although bash has pipefail OFF at `b`.
+            # The line-start state is kept, since the carry below updates it.
+            on_at = functools.partial(_pipefail_at_position, pipefail, line, blocks)
 
             # `$?` read where it can only mean a stream consumer's status:
             # right after `x | tail ;` on the same line, or at the start of
@@ -903,7 +927,7 @@ def findings(sources: list[Source]) -> list[Finding]:
             status = _READS_STATUS.search(line)
             same_line = _STATUS_AFTER_PIPE.search(line)
             if status and (
-                (same_line and not _pipefail_at(pipefail, line, same_line.start(), blocks))
+                (same_line and not on_at(same_line.start()))
                 or (unguarded_pipe_above and _READS_STATUS.search(_first_statement(line)))
             ):
                 results.append(
@@ -918,7 +942,7 @@ def findings(sources: list[Source]) -> list[Finding]:
                     )
                 )
 
-            if _swallowed_at(line) is not None and not guarded:
+            if any(not on_at(position) for position in _swallowed_positions(line)):
                 results.append(
                     Finding(
                         source.path,
@@ -930,16 +954,19 @@ def findings(sources: list[Source]) -> list[Finding]:
                     )
                 )
             # Carry the state to the next line: every set/unset on this one,
-            # and whether it ENDS in an unguarded pipe into a consumer.
+            # and whether it ENDS in an unguarded pipe into a consumer -- asked
+            # at that LAST pipe, whose status a `$?` on the next line reads.
+            ends = _ENDS_IN_CONSUMER_PIPE.search(line)
+            unguarded_pipe_above = ends is not None and not on_at(ends.start())
             pipefail = _pipefail_after(pipefail, line, blocks)
             blocks = _blocks_at(line, _nesting(line), blocks)[1]
             carried_quote = _open_quote_after(line)
-            unguarded_pipe_above = bool(_ENDS_IN_CONSUMER_PIPE.search(line)) and not guarded
 
             if not (source.requires_pipefail and piped):
                 continue
 
-            if not (guarded or line.strip() in PIPEFAIL_EXEMPT):
+            unguarded = [m for m in _PIPES_TO_CONSUMER.finditer(line) if not on_at(m.start())]
+            if unguarded and line.strip() not in PIPEFAIL_EXEMPT:
                 results.append(
                     Finding(
                         source.path,

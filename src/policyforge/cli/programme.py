@@ -141,8 +141,9 @@ def addresses_cmd(requirement: str, topics_path: Path, controls_paths):
     HITRUST - and this resolves it through the crosswalk to the topics the
     registry anchors, then names the owner and the pages.
 
-    Every claim says how it was reached: anchored directly, inherited from a
-    parent control, or reached through a published crosswalk. The last is
+    Every claim says how it was reached: anchored directly, inherited from an
+    anchored parent (a control, or an AI RMF category), or reached through a
+    published crosswalk. The last is
     the weakest and is labelled as such, because a mapping is not evidence
     that anybody wrote the requirement down.
     """

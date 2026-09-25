@@ -13,6 +13,7 @@ The properties this report is only worth running if it holds:
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -844,3 +845,96 @@ def test_a_bare_nist_citation_cannot_become_resolvable_by_adding_a_catalog():
         "that is the merged-key defect, and --strict would go green as it happened"
     )
     assert two.unknown == ["NIST 03.01.01"]
+
+
+# --- which citations answer for an anchor (#335) --------------------------
+
+_SHIPPED = Path(__file__).resolve().parent.parent / "data" / "frameworks"
+
+
+def test_the_command_credits_an_ai_rmf_citation_to_its_anchor(tmp_path, monkeypatch):
+    """**Through the command** (#335). An AI topic anchoring `Govern 1`,
+    whose Standard cites only `Govern 1.1`, answers for its anchor. Before,
+    `/satisfies` credited only `nist-800-53` citations, so every AI anchor
+    read "cited nowhere": 19 of 19 across the shipped registry's five AI
+    topics, measured on the 1.6.0 matrix's real Standards.
+
+    The other arm, in the same tree: a topic whose Standard cites only the
+    **Playbook's** `Govern 1.1` still has `Govern 1` cited nowhere. The ids
+    are textually the Core's; crediting them would let NIST's suggestions
+    answer for a Core anchor."""
+    from policyforge.cli import cli
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config").mkdir()
+    standards = tmp_path / "docs" / "standards"
+    standards.mkdir(parents=True)
+    (standards / "ai-core.md").write_text(
+        "# AI Core\n\nLegal requirements are understood. [NIST AI RMF Govern 1.1]\n",
+        encoding="utf-8",
+    )
+    (standards / "ai-playbook.md").write_text(
+        "# AI Playbook\n\nNIST suggests maintaining awareness. [NIST AI RMF Playbook Govern 1.1]\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "config" / "topics.yaml").write_text(
+        "topics:\n"
+        "  - name: AI Core\n    owner: AI\n    nist_controls: [Govern 1]\n"
+        "  - name: AI Playbook\n    owner: AI\n    nist_controls: [Govern 1]\n",
+        encoding="utf-8",
+    )
+    args = ["satisfies", "--all", "--json"]
+    for catalog in ("nist-ai-rmf", "nist-ai-rmf-playbook"):
+        args += ["--controls", str(_SHIPPED / catalog / "controls.json")]
+
+    result = CliRunner().invoke(cli, args)
+
+    assert result.exit_code == 0, result.output
+    # Matched to its topic by filename, as a freshly generated tree is.
+    records = {
+        Path(r["document"]).stem: r for r in json.loads(result.output[result.output.index("[") :])
+    }
+    assert [c["framework"] for c in records["ai-core"]["cited"]] == ["nist-ai-rmf"]
+    assert [c["framework"] for c in records["ai-playbook"]["cited"]] == ["nist-ai-rmf-playbook"], (
+        "the premise: the Playbook citation resolves, so its refusal is a choice"
+    )
+    assert records["ai-core"]["anchored_not_cited"] == []
+    assert records["ai-playbook"]["anchored_not_cited"] == ["Govern 1"]
+
+
+def test_every_shipped_catalog_is_credited_exactly_when_a_topic_may_anchor_it():
+    """**Derived, not listed** (1d on #335). For each shipped catalog: a
+    topic anchoring one of its ids, and a document citing that id under the
+    catalog's own framework name. The anchor counts as cited exactly when
+    `anchors_a_topic` accepts the framework, so a catalog added to
+    `TOPIC_ANCHORS` is credited without anyone editing this test, and one
+    left out is not."""
+    from policyforge.ingest.schema import load_controls
+    from policyforge.mapping.crosswalk import anchors_a_topic, normalize_framework
+
+    catalogs = [load_controls(p) for p in sorted(_SHIPPED.glob("*/controls.json"))]
+    controls = [c for catalog in catalogs for c in catalog]
+    crosswalk = build_crosswalk(controls)
+    credited, refused, unresolvable = [], [], []
+
+    for catalog in catalogs:
+        framework, requirement_id = catalog[0].framework, catalog[0].control_id
+        topics = [Topic(name="T", owner="O", nist_controls=[requirement_id])]
+        document = FakeDocument(f"Text. [{framework} {requirement_id}]\n", slug="t")
+        (evidence,) = build_report(
+            [document], controls=controls, crosswalk=crosswalk, topics=topics
+        )
+        if (normalize_framework(framework), requirement_id) not in {c.key for c in evidence.cited}:
+            unresolvable.append(framework)
+            continue
+        if anchors_a_topic(framework):
+            assert evidence.anchored_not_cited == [], framework
+            credited.append(framework)
+        else:
+            assert evidence.anchored_not_cited == [requirement_id], framework
+            refused.append(framework)
+
+    # Premises, not the expectation: the loop above is the expectation.
+    assert {normalize_framework(f) for f in credited} >= {"nist-800-53", "nist-ai-rmf"}
+    assert "NIST AI RMF Playbook" in refused, "the case #335's review named"
+    assert len(credited) + len(refused) + len(unresolvable) == len(catalogs)

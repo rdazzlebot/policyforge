@@ -292,10 +292,10 @@ def test_first_cost_is_already_in_a_row_that_has_a_cost(tmp_path, capsys):
     assert rows[1]["escalations"][0]["first_cost_usd"] == 0.20, "the first row, repeated"
 
 
-def test_on_an_error_row_first_cost_is_the_only_record(tmp_path, capsys):
-    """The re-send fails too: the row has no cost, `first_cost_usd` is the
-    only trace of the first charge, and the re-send's charge is recorded
-    nowhere. That last part is #343; when it is fixed, this test changes."""
+def test_on_an_error_row_first_cost_is_already_in_the_row(tmp_path, capsys):
+    """The re-send fails too. Until #343 the row had no cost and the
+    re-send's $1.30 was in no row; now the row carries both charges, so
+    `first_cost_usd` is an addend on no row, this one included."""
     completion = _Completion(
         _reply("", "length", cost=0.20, rid="a"), _reply("", "length", cost=1.30, rid="b")
     )
@@ -305,9 +305,9 @@ def test_on_an_error_row_first_cost_is_the_only_record(tmp_path, capsys):
     with ledger.about("t", site="generate"), pytest.raises(ReasoningBudgetExhausted):
         provider.generate(system="s", prompt="p", max_tokens=100)
     (row,) = _rows(tmp_path / "l.jsonl")
-    assert row["error"] and row["cost_usd"] is None
-    assert row["escalations"][0]["first_cost_usd"] == 0.20
-    assert "1.3" not in json.dumps(row), "#343: the re-send's charge is in no row"
+    assert row["error"] and row["cost_usd"] == pytest.approx(1.50), "billed 0.20 + 1.30"
+    assert row["escalations"][0]["first_cost_usd"] == 0.20, "already in the 1.50"
+    assert row["request_id"] == "b", "the re-send's own id is on the row"
 
 
 def test_an_unrecorded_calls_escalation_does_not_reach_the_next_row(tmp_path, capsys):

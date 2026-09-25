@@ -18,20 +18,22 @@ measurement and is not done here.
 escalation for the current call; `RecordingProvider` takes them into the
 call's one row (`CallRecord.escalations`). That row's cost is already the
 summed cost where the provider reports one (LiteLLM), so a separate row for
-the first attempt would count it twice. Splitting attempts into rows is
-#343's change.
+the first attempt would count it twice. A call that fails keeps the same
+shape (#343): every billed request's cost is in its row's total and its id
+is on the row or in `escalations`. One row per request was considered and
+dropped (80 on #343), because that conservation is what it was for.
 
-**When `first_cost_usd` may be added to a ledger total** (#372, measured with
-fakes billing known amounts):
+**`first_cost_usd` is never added to a ledger total** (#372, measured with
+fakes billing known amounts; #343 closed the error-row exception):
 
-- **Never, on a row that has a cost.** On LiteLLM's 8x path the row's
-  `cost_usd` already sums both attempts. On `effort`'s 2x path the first
-  attempt is its own row, and the escalation on the second row repeats it.
-  The sum of row costs equals what was billed on both paths.
-- **On an error row it is the only record of the first charge.** When the
-  re-send fails too, the call raises and its row has no response, so
-  `cost_usd` is None. **The re-send's own charge is recorded nowhere**, and
-  that is #343: $0.20 + $1.30 billed, $0.00 in the row, $0.20 here.
+- **On a row that has a cost.** On LiteLLM's 8x path the row's `cost_usd`
+  already sums both attempts. On `effort`'s 2x path the first attempt is
+  its own row, and the escalation on the second row repeats it. The sum of
+  row costs equals what was billed on both paths.
+- **On an error row too.** When the re-send fails, the exception carries
+  what both attempts billed, so the row's `cost_usd` is the sum: $0.20 +
+  $1.30 billed, $1.50 in the row, and the $0.20 here is already in it. A
+  provider that reports no cost leaves the row's cost None, as on success.
 
 **Scoped to `ledger.about`.** Each `about` block starts a fresh pending list
 and closes it on exit, so an escalation from a call that recorded no row
@@ -66,8 +68,8 @@ class Escalation:
     price_source: str | None
     #: The billed attempt that came back empty or cut off.
     first_request_id: str | None
-    #: Already counted in any row that has a cost: never add it to one. On an
-    #: error row it is the only record of this charge (see the module doc).
+    #: Already counted in its row's cost, error rows included (#343): never
+    #: add it to one (see the module doc).
     first_cost_usd: float | None
     first_output_tokens: int | None
     first_stop_reason: str | None

@@ -119,9 +119,9 @@ class CallRecord:
     #: Every bigger-budget re-send inside this call, with the billed attempt
     #: before it: its request id, cost and output tokens (#361). The row's
     #: tokens and request id are the LAST attempt's; this is where the
-    #: earlier, billed ones are kept. One row per billed request is #343's.
-    #: Their `first_cost_usd` is never an addend to a row with a cost; on an
-    #: error row it is the only record of that charge (#372).
+    #: earlier, billed ones are kept, on a failed call as on a good one (#343).
+    #: Their `first_cost_usd` is already in the row's cost: never an addend
+    #: to it, error rows included (#372, #343).
     escalations: tuple = ()
 
     def as_json(self) -> str:

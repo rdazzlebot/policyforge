@@ -383,9 +383,16 @@ def test_each_mixed_site_function_stays_on_its_side(function: str):
     if function not in functions:
         pytest.fail(f"{MIXED_SITE}: `{function}` is classified but gone")
     side, _reason = MIXED_SITE_FUNCTIONS[function]
+    # B may not reach the traversal by calling it either: every A function's
+    # own name is forbidden to B, derived from the classification rather than
+    # listed, so a function classified A later is covered too (1d on #342:
+    # `document_evidence` called inside the B function stayed green).
+    a_functions = tuple(
+        name.rsplit(".", 1)[-1] for name, (s, _) in MIXED_SITE_FUNCTIONS.items() if s == A
+    )
     forbidden = {
         A: TOPIC_ANCHOR_NAMES,
-        B: CROSSWALK_ANCHOR_NAMES,
+        B: CROSSWALK_ANCHOR_NAMES + a_functions,
         NEITHER: TOPIC_ANCHOR_NAMES + CROSSWALK_ANCHOR_NAMES,
     }[side]
     present = sorted(set(forbidden) & functions[function])

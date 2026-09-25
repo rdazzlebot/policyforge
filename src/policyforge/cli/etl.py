@@ -946,6 +946,55 @@ def _lands_in_bundled_catalogs(out: Path) -> bool:
     return False
 
 
+def _add_framework_id(manifest: Path, key: str) -> str:
+    """Add `framework_id: key` to the user's own `manifest`, or say why not.
+
+    **The file is the user's, so it is never left worse** (1d on #347). One
+    that does not parse, or does not hold a mapping, is not touched. After
+    the line is appended, the file is parsed again and must hold exactly
+    what it held plus `framework_id`; otherwise -- a `...` document-end
+    marker puts the line in a second document, for one -- its original
+    bytes are put back. Every outcome is said, never "Declared" for a file
+    that did not take the declaration.
+    """
+    import yaml
+
+    original = manifest.read_bytes()
+    add = f"Add `framework_id: {key}` to it yourself."
+    try:
+        before = yaml.safe_load(original.decode("utf-8"))
+    except (yaml.YAMLError, UnicodeDecodeError) as exc:
+        return f"{manifest} could not be read ({type(exc).__name__}), so it was left alone. {add}"
+    if before is None:
+        before = {}
+    if not isinstance(before, dict):
+        return f"{manifest} does not hold a mapping, so it was left alone. {add}"
+    if "framework_id" in before:
+        existing = str(before["framework_id"] or "").strip()
+        if not existing:
+            return f"{manifest} declares an empty framework_id, so it was left alone. {add}"
+        if existing != key:
+            return (
+                f"{manifest} already declares framework_id {existing}; the import would "
+                f"have declared {key}. Keeping yours."
+            )
+        return f"{manifest} already declares framework_id {key}."
+
+    text = original.decode("utf-8")
+    write_text_lf(manifest, text.rstrip("\r\n") + f"\nframework_id: {key}\n")
+    try:
+        after = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        after = None
+    if after != {**before, "framework_id": key}:
+        manifest.write_bytes(original)
+        return (
+            f"{manifest} did not take an appended framework_id (it would have changed what "
+            f"the file says), so it was put back as it was. {add}"
+        )
+    return f"Declared framework_id {key} in {manifest}."
+
+
 def _declare_catalog(out: Path, *, framework: str, source: str) -> str:
     """Declare the catalog just written at `out` by its framework key (#295).
 
@@ -972,21 +1021,13 @@ def _declare_catalog(out: Path, *, framework: str, source: str) -> str:
         )
         done = f"Declared {manifest}: framework_id {key}."
     else:
-        import yaml
+        done = _add_framework_id(manifest, key)
+    # Both caches, so a long-running process keys the new declaration and
+    # knows the new catalog's name in a tag (1d on #347).
+    from policyforge.content.tags import reset_known_framework_names
 
-        text = manifest.read_text(encoding="utf-8")
-        existing = (yaml.safe_load(text) or {}).get("framework_id")
-        if existing is None:
-            write_text_lf(manifest, text.rstrip("\n") + f"\nframework_id: {key}\n")
-            done = f"Declared framework_id {key} in {manifest}."
-        elif str(existing).strip() != key:
-            done = (
-                f"{manifest} already declares framework_id {existing}; the import would "
-                f"have declared {key}. Keeping yours."
-            )
-        else:
-            done = f"{manifest} already declares framework_id {key}."
-    reset_declared_keys()  # so keying later in this process reads the new declaration
+    reset_declared_keys()
+    reset_known_framework_names()
     # Where a declaration is made is where its prose collision is shown (80 on #347).
     from policyforge.frameworks.registry import key_collisions
 

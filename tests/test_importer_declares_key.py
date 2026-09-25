@@ -121,3 +121,48 @@ def test_nothing_is_declared_when_nothing_is_written(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert not list(tmp_path.rglob("framework.yaml"))
+
+
+# -- a manifest the user wrote is never left worse (1d on #347) ----------------------
+
+
+@pytest.mark.parametrize(
+    ("written", "said"),
+    [
+        ("name: GovRAMP\n...\n", "was put back as it was"),
+        ("name: [unclosed\n", "could not be read (ParserError)"),
+        ("- one\n- two\n", "does not hold a mapping"),
+        ("name: GovRAMP\nframework_id:\n", "declares an empty framework_id"),
+    ],
+    ids=["document-end-marker", "unparseable", "list-topped", "empty-key"],
+)
+def test_a_manifest_that_cannot_take_the_line_is_left_byte_identical(tmp_path, written, said):
+    out = tmp_path / "catalogs" / "govramp" / "controls.json"
+    out.parent.mkdir(parents=True)
+    manifest = out.parent / "framework.yaml"
+    manifest.write_bytes(written.encode("utf-8"))
+
+    result = _govramp(tmp_path, out)
+
+    assert result.exit_code == 0, (result.output, result.exception)
+    assert manifest.read_bytes() == written.encode("utf-8")
+    assert said in result.output
+    assert "Add `framework_id: govramp` to it yourself." in result.output
+    assert "Declared" not in result.output
+
+
+def test_an_import_resets_the_tag_name_cache_too(tmp_path, monkeypatch):
+    """1d on #347: keys and tag names are cached separately, and a long-running
+    process must know the new catalog's name in a tag after an import."""
+    from policyforge.content import tags
+    from policyforge.ingest.govramp import FRAMEWORK
+
+    monkeypatch.chdir(tmp_path)
+    tags.reset_known_framework_names()
+    try:
+        assert FRAMEWORK not in tags.known_framework_names()  # primes the cache
+        result = _govramp(tmp_path, tmp_path / "frameworks" / "govramp" / "controls.json")
+        assert result.exit_code == 0, result.output
+        assert FRAMEWORK in tags.known_framework_names()
+    finally:
+        tags.reset_known_framework_names()

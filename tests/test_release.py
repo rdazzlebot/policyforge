@@ -957,3 +957,16 @@ def test_the_release_pr_is_found_by_its_branch_not_by_search():
     (argv,) = [a for a in calls if a[:3] == ["gh", "pr", "list"]]
     assert "--search" not in argv
     assert argv[argv.index("--head") + 1] == "9b/release-9.9.9"
+
+
+def test_a_version_the_published_formula_already_has_is_replaced_not_doubled(monkeypatch):
+    """ba on #392: "replaced, never duplicated" was stated and untested. A
+    published formula that already declares a version gets exactly one, the
+    release's, on a commit archive, and none on a tag url."""
+    published = _PUBLISHED.replace('  sha256 "', '  version "1.6.0"\n  sha256 "', 1)
+    monkeypatch.setattr(release.release_check, "fetch_formula", lambda url=None: published)
+    ctx = _ctx(run=_fake_run({"rev-parse HEAD": (0, CUT)}))
+    commit = release._formula(ctx, release._head_archive(ctx), "1" * 64).splitlines()
+    assert [line for line in commit if line.startswith("  version ")] == ['  version "9.9.9"']
+    tag = release._formula(_ctx(), release._tag_archive(_ctx()), "1" * 64)
+    assert "version " not in tag, tag

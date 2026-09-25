@@ -572,8 +572,13 @@ def parameters_cmd(
             for topic in load_topics(topics_path)
             for control_id in topic.nist_controls
         }
-        # An anchor claims its enhancements, the same rule coverage.py uses,
-        # so AC-2 in the registry brings AC-2(1)'s parameters with it.
+        # An anchor claims its enhancements by id prefix, so AC-2 in the
+        # registry brings AC-2(1)'s parameters with it. **Deliberately NOT
+        # coverage's `parent_of`** (#318): that rule reads no framework and
+        # is only ever given the anchorable catalogs, while this filters
+        # every loaded catalog. Swapped in here, it claimed 72 NIST AI RMF
+        # Playbook rows (`Govern 1.1` under an anchored `Govern 1`), and a
+        # topic owns nothing in the Playbook.
         controls = [
             c
             for c in controls

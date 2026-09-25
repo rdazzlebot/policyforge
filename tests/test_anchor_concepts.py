@@ -151,26 +151,26 @@ def test_a_category_claims_its_subcategories():
     """`Govern 1` must claim `Govern 1.1`..`Govern 1.7`.
 
     "Anchoring a control also claims its enhancements" is the registry's
-    documented rule, implemented by `_parent_of`. Before the AI RMF
-    grammar was added, `_parent_of('Govern 1.1')` returned `None`, so a
+    documented rule, implemented by `parent_of`. Before the AI RMF
+    grammar was added, `parent_of('Govern 1.1')` returned `None`, so a
     topic anchoring the category claimed **nothing** and seven
     subcategories reported orphaned — no error, a plausible number, and a
     topic author would have "fixed" it by anchoring all seven by hand.
     **The workaround looks like diligence**, which is what makes the
     silence expensive.
     """
-    from policyforge.topics.coverage import _parent_of
+    from policyforge.topics.coverage import parent_of
 
-    assert _parent_of("Govern 1.1") == "Govern 1"
-    assert _parent_of("Manage 4.3") == "Manage 4"
-    assert _parent_of("AC-2(1)") == "AC-2"
+    assert parent_of("Govern 1.1") == "Govern 1"
+    assert parent_of("Manage 4.3") == "Manage 4"
+    assert parent_of("AC-2(1)") == "AC-2"
     # A top-level identifier has no parent, in either grammar.
-    assert _parent_of("Govern 1") is None
-    assert _parent_of("AC-2") is None
+    assert parent_of("Govern 1") is None
+    assert parent_of("AC-2") is None
     # Catalogs no topic can anchor keep returning None: a grammar listed
     # for a framework nothing anchors would be untestable.
-    assert _parent_of("03.01.01") is None
-    assert _parent_of("164.308(a)(1)") is None
+    assert parent_of("03.01.01") is None
+    assert parent_of("164.308(a)(1)") is None
 
 
 def test_the_two_concepts_are_different_kinds_of_thing():
@@ -329,7 +329,7 @@ def test_the_catalog_count_is_derived_not_remembered():
 def test_a_topic_anchoring_ai_rmf_categories_covers_them_end_to_end(tmp_path):
     """**The user's path, not the helper's.**
 
-    `test_a_category_claims_its_subcategories` exercises `_parent_of`
+    `test_a_category_claims_its_subcategories` exercises `parent_of`
     directly, which proves the regex and nothing about whether a topic
     registry can actually own an AI RMF category. Running the right
     function with your own arguments is not evidence about the product.

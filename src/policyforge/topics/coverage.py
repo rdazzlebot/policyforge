@@ -55,6 +55,12 @@ from policyforge.topics.registry import Topic
 #:
 #: Add a pattern when a catalog becomes anchorable, not before: a grammar
 #: listed here for a framework no topic can anchor is untestable.
+#:
+#: **The one copy** (#318). `/bundle`, `/addresses`, `/satisfies` and the
+#: programme's parameter scope each kept their own 800-53-only rule, each
+#: with a comment saying it matched this one; none knew the AI RMF, so
+#: `/addresses` found no owner for 72 of the 905 ids `/coverage` owns. They
+#: all call `parent_of` now.
 _PARENT_RES = (
     # 800-53 / FedRAMP / ARC-AMPE: AC-2(1) -> AC-2
     re.compile(r"^([A-Za-z]{2}-\d+)\(\d+\)$"),
@@ -247,7 +253,12 @@ def scope_label(controls, baseline: str | None = None) -> str:
     return f"{baseline} baseline ({listed})" if baseline else f"all controls ({listed})"
 
 
-def _parent_of(requirement_id: str) -> str | None:
+def parent_of(requirement_id: str) -> str | None:
+    """The control `requirement_id` hangs off, or None if it is not a child.
+
+    `AC-2(1)` -> `AC-2`; `Govern 1.1` -> `Govern 1`. Every view that treats
+    anchoring a control as claiming its children calls this, so they agree.
+    """
     for pattern in _PARENT_RES:
         match = pattern.match(requirement_id)
         if match:
@@ -294,7 +305,7 @@ def analyze_coverage(
     inherited: dict[str, list[str]] = {}
     children: dict[str, list[str]] = {}
     for requirement_id in report.in_scope:
-        parent = _parent_of(requirement_id)
+        parent = parent_of(requirement_id)
         if parent:
             children.setdefault(parent, []).append(requirement_id)
 

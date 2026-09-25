@@ -38,12 +38,16 @@ def _owner_of(state, prefix: str) -> str:
 
 def test_bundle_counts_an_ai_rmf_anchor_as_the_teams(state):
     """The AI team owns its AI RMF anchors. With the AI RMF dropped from the
-    anchorable half, the team would answer for nothing."""
+    anchorable half, the team would answer for nothing.
+
+    22 is its 5 anchored categories and their 17 subcategories, /coverage's
+    figure. It read 5 until #318: /bundle claimed the categories and none of
+    the subcategories beneath them."""
     owner = _owner_of(state, "AI Governance")
 
     out = skills._bundle(state, owner.split())
 
-    assert f"{owner} owns 1 topic(s) and answers for 5 requirement(s)." in out
+    assert f"{owner} owns 1 topic(s) and answers for 22 requirement(s)." in out
 
 
 def _coverage_counts(state) -> dict[str, int]:
@@ -69,30 +73,66 @@ def _coverage_counts(state) -> dict[str, int]:
     return counts
 
 
-def test_every_800_53_teams_bundle_agrees_with_coverage(state):
+def test_every_teams_bundle_agrees_with_coverage(state):
     """**The twin, derived rather than pinned** (1d on #317). Pinning only
     "not zero" let the opposite mutation through: with every catalog treated
     as anchorable, Security Program / GRC went from 50 to 87, counting
-    800-171 and FedRAMP ids as its own. Every owner whose topics anchor only
-    800-53 must answer for exactly what /coverage attributes to it.
+    800-171 and FedRAMP ids as its own. Every owner must answer for exactly
+    what /coverage attributes to it.
 
-    AI owners are left out on purpose: /coverage credits their subcategories
-    to the anchored category and /bundle does not yet -- that disagreement
-    is #318, whose agreement test covers every owner.
+    **Every owner, AI included** (#318). Until /bundle used coverage's
+    `parent_of`, it credited an AI team with only the categories it named:
+    the five AI owners answered for 19 requirements where /coverage
+    attributes 91, because no subcategory reached its anchored category.
     """
     import re
 
     ai = re.compile(r"^(Govern|Map|Measure|Manage)\s+\d")
     counts = _coverage_counts(state)
-    owners = sorted(
-        {t.owner for t in state.topics}
-        - {t.owner for t in state.topics if any(ai.match(a) for a in t.nist_controls)}
-    )
-    assert len(owners) >= 15, "the population: every 800-53 owner in the shipped registry"
+    owners = sorted({t.owner for t in state.topics})
+    ai_owners = {t.owner for t in state.topics if any(ai.match(a) for a in t.nist_controls)}
+    assert len(owners) >= 20, "the population: every owner in the shipped registry"
+    assert len(ai_owners) == 5, "the premise: the AI owners #318 was about are in it"
 
     for owner in owners:
         header = skills._bundle(state, owner.split()).splitlines()[0]
         assert f"answers for {counts[owner]} requirement(s)." in header, (owner, header)
+
+
+def test_addresses_names_coverages_owner_for_every_requirement(state):
+    """**The agreement test** (#318), over the whole population /coverage
+    computes, not a sample. /addresses found no owner for 72 of the 905 ids
+    /coverage owns -- every AI RMF subcategory -- because it kept its own
+    800-53-only parent rule. For every id: /addresses names /coverage's
+    owner, and names someone only where /coverage does."""
+    from policyforge.mapping.crosswalk import build_crosswalk
+    from policyforge.topics.bundles import requirement_view
+    from policyforge.topics.coverage import analyze_coverage, scope_label, split_by_adoption
+
+    controls = skills._controls(state)
+    nist, _unadopted, other = split_by_adoption(state.topics, controls)
+    crosswalk = build_crosswalk(controls)
+    report = analyze_coverage(
+        state.topics, nist, scope=scope_label(nist, None), other_controls=other, crosswalk=crosswalk
+    )
+    owner_of = {t.name: t.owner for t in state.topics}
+    assert len(report.covered) >= 900, "the population: every requirement /coverage owns"
+    assert any(r.startswith("Govern 1.") for r in report.covered), "the premise: AI subcategories"
+
+    wrong = {}
+    for requirement_id in report.in_scope:
+        view = requirement_view(
+            state.topics, nist, requirement_id, other_controls=other, crosswalk=crosswalk
+        )
+        named = {claim.owner for claim in view.claims}
+        expected = (
+            {owner_of[report.covered[requirement_id]]}
+            if requirement_id in report.covered
+            else set()
+        )
+        if named != expected:
+            wrong[requirement_id] = (sorted(named), sorted(expected))
+    assert wrong == {}
 
 
 def test_addresses_finds_the_topic_anchoring_an_ai_rmf_category(state):

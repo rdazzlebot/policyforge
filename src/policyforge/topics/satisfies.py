@@ -48,16 +48,9 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
+from policyforge.topics.coverage import parent_of
 
 _HEADING_RE = re.compile(r"^#{1,6}\s+(?P<title>.+?)\s*$")
-#: `AC-2(3)` -> `AC-2`. The same shape `coverage._parent_of` matches.
-_ENHANCEMENT_RE = re.compile(r"^([A-Za-z]{2}-\d+)\(\d+\)$")
-
-
-def _parent_of(requirement_id: str) -> str | None:
-    match = _ENHANCEMENT_RE.match(requirement_id)
-    return match.group(1) if match else None
-
 
 PUBLISHED = "published crosswalk"
 REVIEWED = "overlay, reviewed"
@@ -431,10 +424,12 @@ def build_report(
             reached.add(citation.requirement_id)
             # Citing AC-2(3) is mentioning AC-2: the enhancement is part of
             # the control it enhances. `coverage` reads the relation the
-            # other way round (anchoring AC-2 claims AC-2(3)) and `drift`
-            # the same way this does, so a topic that cites IR-3(1) and
-            # IR-3(3) is not reported as never mentioning IR-3.
-            parent = _parent_of(citation.requirement_id)
+            # other way round (anchoring AC-2 claims AC-2(3)) through the same
+            # `parent_of` (#318), so a topic that cites IR-3(1) and IR-3(3)
+            # is not reported as never mentioning IR-3. **Only 800-53 reaches
+            # this line**: the framework test above skips every AI RMF
+            # citation, so `parent_of`'s AI RMF grammar does nothing here.
+            parent = parent_of(citation.requirement_id)
             if parent:
                 reached.add(parent)
     searched = Counter(keys)

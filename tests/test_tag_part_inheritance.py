@@ -151,17 +151,20 @@ def test_the_inversion_is_gone_the_right_wording_is_quiet_and_the_wrong_one_erro
     [
         ("[NIST AI RMF Playbook Govern 1.1 Action 1 | Govern 1.1 Action 2]", True),
         ("[NIST AI RMF Playbook Govern 1.1 Action 1 | Govern 1.1]", True),  # a subcategory resolves
-        # Inherited, but resolving in no Playbook entry: NOT a Playbook citation.
-        ("[NIST AI RMF Playbook Govern 1.1 Action 1 | Govern 9.9 Action 1]", False),
+        # Inherited but resolving nowhere: STILL the Playbook's (80 on #340,
+        # reversing #337's rule), so an invented id cannot make the sentence
+        # mixed and escape the gate; `check` reports the part itself.
+        ("[NIST AI RMF Playbook Govern 1.1 Action 1 | Govern 9.9 Action 1]", True),
+        # A part naming a framework on disk is that framework's, not inherited.
         ("[NIST AI RMF Playbook Govern 1.1 Action 1 | NIST 800-53 AC-2]", False),
-        ("[NIST AI RMF Playbook Govern 1.1 Action 1 | HITRUST CSF 01.a]", False),
+        ("[NIST AI RMF Playbook Govern 1.1 Action 1 | HIPAA 164.308(a)(1)(i)]", False),
         # The other framework first: the shorthand inherits IT, not the Playbook.
         ("[NIST 800-53 AC-2 | Govern 1.1 Action 2]", False),
         # Nothing to inherit from.
         ("[Govern 1.1 Action 2]", False),
     ],
 )
-def test_only_a_resolving_inherited_part_counts_as_the_playbook(tag, playbook_only):
+def test_an_inherited_part_is_the_playbooks_resolving_or_not(tag, playbook_only):
     (statement,) = analyze(f"NIST suggests reviewing the inventory. {tag}\n")
     assert statement.cites_only_the_playbook is playbook_only
 

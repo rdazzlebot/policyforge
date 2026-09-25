@@ -26,7 +26,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .deontic import NONE, playbook_obligations, playbook_tagged_headings, weakened_citations
+from .deontic import (
+    NONE,
+    playbook_obligations,
+    playbook_tagged_headings,
+    unresolved_playbook_parts,
+    weakened_citations,
+)
 from .tags import source_tags
 from .tree import ContentDocument, load_content_tree
 
@@ -370,6 +376,18 @@ def _check_playbook_obligations(
                     f"line {line}: a heading cites the NIST AI RMF Playbook, which makes every "
                     "step beneath it read as NIST's instruction -- put the Playbook citation "
                     f'on a "NIST suggests ..." sentence inside the section — "{heading[:70]}"',
+                    ERROR,
+                )
+            )
+        # An invented shorthand id, on its own terms (#340, 80's ruling (a)).
+        for line, citation in unresolved_playbook_parts(doc.body):
+            findings.append(
+                Finding(
+                    doc.relative_path,
+                    f"line {line}: `{citation}` -- no such NIST AI RMF Playbook subcategory "
+                    "or action. A part of a Playbook tag that names no framework on disk "
+                    "inherits the Playbook, so its id must be one the Playbook publishes; if "
+                    "it cites another framework, name it in full, or add that catalog.",
                     ERROR,
                 )
             )

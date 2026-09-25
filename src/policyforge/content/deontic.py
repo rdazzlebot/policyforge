@@ -204,23 +204,61 @@ def _parts(tag: str) -> list[str]:
     """One tag's references, a Playbook shorthand part written out in full (#333).
 
     Split by `content/tags.tag_parts`, the one function `satisfies` also
-    uses. A part like `Govern 1.1 Action 2` after `NIST AI RMF Playbook
-    Govern 1.1 Action 1` inherits the Playbook, and **counts as a Playbook
-    citation only if its id resolves in the shipped Playbook catalog** (80's
-    ruling). So `[... Playbook ... | NIST 800-53 AC-2]` still has a
-    non-Playbook part, which is why this needs no list of every framework
-    name: whatever does not resolve as the Playbook is left as written, and
-    the sentence is then not Playbook-only.
-    """
-    from .tags import tag_parts
+    uses, against the one list of framework names both read
+    (`tags.known_framework_names`, every catalog on disk). A part naming
+    another framework -- `NIST 800-53 AC-2`, or an abbreviation that resolves
+    to exactly one known catalog, `HIPAA 164.308(a)(1)` -- is that framework's
+    and not inherited. A part naming none inherits the part before it (#333).
 
+    **An inherited Playbook part is the Playbook's whether or not its id
+    resolves** (80's ruling on #340). #337 counted it only if it resolved, so
+    an invented `Govern 9.9 Action 1` left the sentence mixed, and the gate
+    never read it: adding one bogus id turned an ERROR into a strength
+    warning (1d). Now the sentence stays Playbook-only, and `check` reports
+    the unresolvable part as its own ERROR (`unresolved_playbook_parts`).
+    """
     out: list[str] = []
-    for part in tag_parts(tag, (_PLAYBOOK_NAME,)):
-        playbook = part.framework == _PLAYBOOK_NAME and (
-            not part.inherited or part.rest.lower() in _playbook_ids()
-        )
-        out.append(_PLAYBOOK + part.rest if playbook else part.rest)
+    for part in _attributed_parts(tag):
+        out.append(_PLAYBOOK + part.rest if part.framework == _PLAYBOOK_NAME else part.citation)
     return out
+
+
+def _attributed_parts(tag: str):
+    """`tag_parts` against every known framework name plus the Playbook's,
+    with an abbreviation that names exactly one known catalog kept as its
+    own framework, as `satisfies` does."""
+    from policyforge.mapping.crosswalk import normalize_framework
+    from policyforge.topics.satisfies import resolve_framework
+
+    from .tags import known_framework_names, tag_parts
+
+    names = {_PLAYBOOK_NAME, *known_framework_names()}
+    keys = {normalize_framework(n): () for n in names}
+    return tag_parts(tag, names, lambda word: bool(resolve_framework(word, keys)))
+
+
+def unresolved_playbook_parts(text: str) -> list[tuple[int, str]]:
+    """(line, citation) for each shorthand part that inherits the Playbook
+    and names no Playbook subcategory or action (#340, 80's ruling (a)).
+
+    An invented citation in a compliance document is an error on its own
+    terms, whatever else the sentence says: `[NIST AI RMF Playbook Govern 1.1
+    Action 1 | Govern 9.9 Action 1]` names an action NIST never published.
+    **Inherited parts only**, as ruled: a part that writes the Playbook's
+    name in full and still fails to resolve is reported by `satisfies` as an
+    unknown citation, not here.
+    """
+    found = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        for tag in _CITATION_RE.findall(line):
+            for part in _attributed_parts(tag):
+                if (
+                    part.framework == _PLAYBOOK_NAME
+                    and part.inherited
+                    and part.rest.lower() not in _playbook_ids()
+                ):
+                    found.append((number, part.citation))
+    return found
 
 
 def _is_playbook(reference: str) -> bool:

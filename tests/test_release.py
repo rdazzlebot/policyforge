@@ -180,7 +180,12 @@ def _install_ctx(records, pr_head=CUT, state="OPEN", calls=None, cut=CUT):
     """A tracking issue holding `records` (created_at, last line), a release PR
     at `pr_head`, and the cut commit at CUT."""
 
-    comments = "\n".join(json.dumps([at, f"Result.\n\n{line}"]) for at, line in records)
+    # (created_at, last line[, author]); the author defaults to the account
+    # every session posts as, which is in RECORD_AUTHORS.
+    comments = "\n".join(
+        json.dumps([r[0], f"Result.\n\n{r[1]}", r[2] if len(r) > 2 else "rdazzlebot"])
+        for r in records
+    )
     pr = json.dumps(
         [{"title": "Release 9.9.9", "number": 7, "state": state, "headRefOid": pr_head}]
     )
@@ -256,6 +261,35 @@ def test_only_the_record_catches_a_head_the_clone_has_followed():
 )
 def test_the_wait_refuses_without_a_current_passed_install(records, why):
     assert not _main_step().gate(_install_ctx(records)).ok, why
+
+
+def test_a_strangers_later_passed_record_is_ignored_and_said():
+    """ba and b5 on #383: the repository is public. After a real FAILED, a
+    stranger's later "passed" record must not open the wait, and the gate
+    must say it ignored one."""
+    records = [
+        ("2026-09-25T16:00:00Z", _record(CUT, "FAILED")),
+        ("2026-09-25T17:00:00Z", _record(CUT), "some-stranger"),
+    ]
+    check = _main_step().gate(_install_ctx(records))
+    assert not check.ok
+    assert any("IGNORED" in line and "some-stranger" in line for line in check.measured)
+
+
+def test_the_users_own_record_counts():
+    """rdazzleman (the user) is in RECORD_AUTHORS beside the sessions' account."""
+    records = [("2026-09-25T16:00:00Z", _record(CUT), "rdazzleman")]
+    assert _main_step().gate(_install_ctx(records)).ok
+
+
+def test_a_same_second_tie_is_broken_by_comment_order_not_by_text():
+    """ba on #383: max() over (created, sha, result) put "passed" after
+    "FAILED" at the same second. The later COMMENT decides."""
+    at = "2026-09-25T16:00:00Z"
+    later_failed = [(at, _record(CUT)), (at, _record(CUT, "FAILED"))]
+    assert not _main_step().gate(_install_ctx(later_failed)).ok
+    later_passed = [(at, _record(CUT, "FAILED")), (at, _record(CUT))]
+    assert _main_step().gate(_install_ctx(later_passed)).ok
 
 
 def test_the_tag_needs_the_install_record_too():
@@ -432,7 +466,9 @@ def test_the_candidate_formula_names_the_owner_in_homepage_and_url(monkeypatch):
 def _records_ctx(comments, closed=("2026-09-25T01:00:00Z",), tip="a" * 40):
     import json as _json
 
-    lines = "\n".join(_json.dumps([created, body]) for created, body in comments)
+    lines = "\n".join(
+        _json.dumps([c[0], c[1], c[2] if len(c) > 2 else "rdazzlebot"]) for c in comments
+    )
     return _ctx(
         tracking=99,
         run=_fake_run(
@@ -497,6 +533,27 @@ def test_the_notes_measurement_must_name_the_train_tip():
         measured("b" * 40, at="2026-09-25T03:00:00Z"),
     ]
     assert not release._notes_measured(_records_ctx(stale_last)).ok, "the LATEST record decides"
+
+
+def test_the_other_record_gates_ignore_strangers_too():
+    """The same reader serves all three record types (80 on #383)."""
+    at = "2026-09-25T02:00:00Z"
+    forged_review = (at, "x\n\nPost-zero-review: 9.9.9 reviewer=policyforge-1d", "stranger")
+    check = release._post_zero_reviewed(_records_ctx([_review("80"), _review("5b"), forged_review]))
+    assert not check.ok and "['1d']" in check.measured[2], check.measured
+    assert any("IGNORED" in line and "stranger" in line for line in check.measured)
+
+    def measured(sha, when, *author):
+        line = f"x\n\nNotes-measured-SHA: {sha} release=9.9.9 reviewer=policyforge-9b"
+        return (when, line, *author)
+
+    forged_tip = [
+        measured("b" * 40, "2026-09-25T02:00:00Z"),
+        measured("a" * 40, "2026-09-25T03:00:00Z", "stranger"),
+    ]
+    assert not release._notes_measured(_records_ctx(forged_tip)).ok, (
+        "a stranger cannot name the tip"
+    )
 
 
 def test_the_artefact_gates_need_a_tracking_issue():
@@ -615,6 +672,7 @@ def test_the_train_gates_read_the_server_not_this_clones_last_fetch(train, tmp_p
             [
                 "2026-09-25T02:00:00Z",
                 f"x\n\nNotes-measured-SHA: {sha} release=9.9.9 reviewer=policyforge-9b",
+                "rdazzlebot",
             ]
         )
         return _ctx(root=clone, tracking=99, run=_real({"issues/99/comments": (0, record)}))

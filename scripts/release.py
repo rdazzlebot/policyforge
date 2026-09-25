@@ -593,13 +593,13 @@ INSTALL_LINE = re.compile(
 def _install_record(ctx: Context) -> tuple[str, str]:
     """(sha, result) of the LATEST install record for this release, or ("", "")."""
     found = [
-        (created, match.group(1), match.group(3))
-        for created, line in _tracking_records(ctx)
+        (created, position, match.group(1), match.group(3))
+        for created, position, line in _tracking_records(ctx)
         if (match := INSTALL_LINE.match(line)) and match.group(2) == ctx.version
     ]
     if not found:
         return "", ""
-    _, sha, result = max(found)
+    _, _, sha, result = max(found)
     return sha, result
 
 
@@ -629,6 +629,7 @@ def _head_installed(ctx: Context) -> Check:
             f"STALE: the install was of {sha[:12]}, and the PR head is now {head[:12]}; "
             "whatever moved the head must be installed before anyone is asked to approve it"
         )
+    measured += _ignored(ctx, INSTALL_LINE)
     return Check(bool(sha) and result == "passed" and sha == head == cut, measured)
 
 
@@ -848,8 +849,24 @@ MEASURE_LINE = re.compile(
 )
 
 
-def _tracking_records(ctx: Context) -> list[tuple[str, str]]:
-    """(created_at, last non-empty line) for every comment on the tracking issue."""
+#: The GitHub logins whose comments on the tracking issue count as records
+#: (80's ruling on #383): the account every session posts as, and the user's.
+#: By LOGIN, an identity, not by `author_association`, which is a role any
+#: future collaborator would hold. The repository is public: without this,
+#: a stranger's later "Release-install: <head> release=X result=passed"
+#: overrode a real FAILED and opened the approval wait and the tag
+#: (policyforge-ba and policyforge-b5 on #383, separately).
+RECORD_AUTHORS = frozenset({"rdazzlebot", "rdazzleman"})
+
+
+def _tracking_records(ctx: Context) -> list[tuple[str, int, str]]:
+    """(created_at, position, last non-empty line) for every comment on the
+    tracking issue by a `RECORD_AUTHORS` login, in the order GitHub lists them.
+
+    `position` breaks a same-second tie by comment order, never by the line's
+    text, which put "passed" after "FAILED" (ba on #383). Comments by anyone
+    else are not records: they are ignored, and kept in `ctx.notes` so each
+    gate can say it ignored them (`_ignored`)."""
     if not ctx.tracking:
         return []
     out = ctx.run(
@@ -859,19 +876,36 @@ def _tracking_records(ctx: Context) -> list[tuple[str, str]]:
             "--paginate",
             f"repos/{release_check.REPOSITORY}/issues/{ctx.tracking}/comments",
             "--jq",
-            ".[] | [.created_at, .body] | @json",
+            ".[] | [.created_at, .body, .user.login] | @json",
         ]
     ).stdout
-    records = []
-    for line in (out or "").splitlines():
+    records: list[tuple[str, int, str]] = []
+    ignored: list[list[str]] = []
+    for position, line in enumerate((out or "").splitlines()):
         try:
-            created, body = json.loads(line)
+            created, body, login = json.loads(line)
         except ValueError:
             continue
         lines = [x.strip() for x in (body or "").splitlines() if x.strip()]
-        if lines:
-            records.append((created, lines[-1]))
+        if not lines:
+            continue
+        if login in RECORD_AUTHORS:
+            records.append((created, position, lines[-1]))
+        else:
+            ignored.append([str(login), lines[-1]])
+    ctx.notes["ignored records"] = json.dumps(ignored)
     return records
+
+
+def _ignored(ctx: Context, pattern: re.Pattern[str]) -> list[str]:
+    """A measured line for each record-shaped line `pattern` matches that was
+    posted by someone outside `RECORD_AUTHORS`: said, not silently dropped."""
+    ignored = json.loads(ctx.notes.get("ignored records") or "[]")
+    return [
+        f"IGNORED a record by {login} (not in {sorted(RECORD_AUTHORS)}): {line[:80]}"
+        for login, line in ignored
+        if pattern.match(line)
+    ]
 
 
 def _milestone_zero_at(ctx: Context) -> str:
@@ -904,7 +938,7 @@ def _post_zero_reviewed(ctx: Context) -> Check:
     zero_at = _milestone_zero_at(ctx)
     after = {
         match.group(2)
-        for created, line in _tracking_records(ctx)
+        for created, _position, line in _tracking_records(ctx)
         if (match := REVIEW_LINE.match(line))
         and match.group(1) == ctx.version
         and zero_at
@@ -918,6 +952,7 @@ def _post_zero_reviewed(ctx: Context) -> Check:
             f"post-zero reviews on #{ctx.tracking} after it: {sorted(after) or 'none'}",
             f"missing (each posts `Post-zero-review: {ctx.version} reviewer=policyforge-<handle>` "
             f"as a comment's last line): {missing or 'none'}",
+            *_ignored(ctx, REVIEW_LINE),
         ],
     )
 
@@ -927,11 +962,11 @@ def _notes_measured(ctx: Context) -> Check:
         return Check(False, ["no --tracking-issue given, so there is no record to read"])
     tip = _server_tip(ctx, f"{TRAIN_PREFIX}{ctx.version}")
     measured = [
-        (created, match.group(1))
-        for created, line in _tracking_records(ctx)
+        (created, position, match.group(1))
+        for created, position, line in _tracking_records(ctx)
         if (match := MEASURE_LINE.match(line)) and match.group(2) == ctx.version
     ]
-    latest = max(measured)[1] if measured else ""
+    latest = max(measured)[2] if measured else ""
     return Check(
         bool(tip) and latest == tip,
         [
@@ -939,6 +974,7 @@ def _notes_measured(ctx: Context) -> Check:
             f"latest `Notes-measured-SHA:` for {ctx.version} on #{ctx.tracking}: "
             f"{latest[:12] or 'none'} "
             "(must be the tip: a measurement before the last merge may be stale)",
+            *_ignored(ctx, MEASURE_LINE),
         ],
     )
 

@@ -135,6 +135,22 @@ def test_addresses_names_coverages_owner_for_every_requirement(state):
     assert wrong == {}
 
 
+def test_an_ai_teams_inherited_claims_are_worded_as_subcategories(state):
+    """80's ruling on #335: NIST's term under an AI RMF category is
+    *subcategories*, not enhancements. Measured where a user reads it: the
+    note `/addresses` prints beside an inherited claim, and the summary line
+    `/bundle` prints for an AI team, which must not call its anchored
+    category a control."""
+    addressed = skills._addresses(state, ["Govern", "1.1"])
+    assert "AI Governance & Accountability" in addressed, "the premise: an inherited claim"
+    assert "an AI RMF category's subcategories" in addressed
+
+    owner = _owner_of(state, "AI Governance")
+    bundled = skills._bundle(state, owner.split())
+    assert "17 inherited from an anchored parent (a control, or an AI RMF category)." in bundled
+    assert "parent control" not in bundled
+
+
 def test_addresses_finds_the_topic_anchoring_an_ai_rmf_category(state):
     out = skills._addresses(state, ["Govern", "1"])
 

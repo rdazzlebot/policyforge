@@ -52,8 +52,9 @@ CROSSWALKED = "crosswalked"
 ROUTE_NOTES = {
     DIRECT: "anchored directly by this topic",
     INHERITED: (
-        "inherited — the parent control is anchored, and anchoring a control "
-        "claims its enhancements"
+        "inherited — the parent is anchored, and anchoring an item claims what "
+        "sits beneath it: a control's enhancements, or an AI RMF category's "
+        "subcategories"
     ),
     CROSSWALKED: (
         "reached through the published crosswalk from an anchored NIST control, "
@@ -165,7 +166,8 @@ class TeamBundle:
                 lines.append("      no published documents")
         lines += [
             "",
-            f"{len(direct)} anchored directly, {len(inherited)} inherited from a parent control.",
+            f"{len(direct)} anchored directly, {len(inherited)} inherited from an anchored "
+            "parent (a control, or an AI RMF category).",
         ]
 
         if self.frameworks:

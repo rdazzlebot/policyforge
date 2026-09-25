@@ -38,9 +38,21 @@ class _Completion:
         return self.replies[min(len(self.calls) - 1, len(self.replies) - 1)]
 
 
+#: A known price, so these tests hold with or without `litellm` installed
+#: (CI installs it only as an extra). Per token: $2/M in, $10/M out.
+PRICE = (2e-06, 1e-05, "test-price")
+
+
+@pytest.fixture(autouse=True)
+def _known_price(monkeypatch, request):
+    """Every test prices at PRICE, except the ones that read the real table."""
+    if request.node.name != "test_the_real_price_table_names_its_entry":
+        monkeypatch.setattr(escalation, "_price", lambda model: None if "local" in model else PRICE)
+
+
 def _wrapped(model, completion, path):
-    inner = LiteLLMProvider(model=model)
-    inner._completion = completion
+    # The provider's own injection point: no `litellm` import is needed.
+    inner = LiteLLMProvider(model=model, completion=completion)
     return ledger.RecordingProvider(
         inner, provider_name="litellm", provider_class="cloud", path=path
     )
@@ -60,7 +72,8 @@ def test_a_re_send_is_announced_and_both_attempts_are_in_the_ledger(tmp_path, ca
     said = capsys.readouterr().err
     assert "standard/ai-evaluation-measurement" in said, "the topic"
     assert "max_tokens 131,072" in said and "16,384" in said, "the new budget and the old"
-    assert "worst case $" in said and "claude-sonnet-5" in said, "priced at the model's list price"
+    worst = 1000 * PRICE[0] + 131072 * PRICE[1]
+    assert f"worst case ${worst:.4f} at test-price's list price" in said, "the new budget, priced"
     assert "$0.1985, billed" in said, "the empty first attempt was billed"
     assert [c["max_tokens"] for c in completion.calls] == [16384, 131072]
 
@@ -73,11 +86,25 @@ def test_a_re_send_is_announced_and_both_attempts_are_in_the_ledger(tmp_path, ca
     assert first["subject"] == "standard/ai-evaluation-measurement"
 
 
-def test_the_worst_case_is_the_new_budget_at_the_list_price():
-    """The arithmetic, shown: input at the input price plus the NEW max_tokens
-    at the output price, from LiteLLM's own table entry, which is named."""
+def test_the_real_price_table_names_its_entry():
+    """With `litellm` installed, a routed model string is priced from LiteLLM's
+    own table, with the entry named. Skipped where `litellm` is not installed:
+    there the warning says "unpriced", which the unknown-model test holds."""
+    pytest.importorskip("litellm")
     price = escalation._price("openrouter/anthropic/claude-sonnet-5")
     assert price is not None, "the premise: the model is in LiteLLM's table under some name"
+    assert price[2] in {
+        "openrouter/anthropic/claude-sonnet-5",
+        "anthropic/claude-sonnet-5",
+        "claude-sonnet-5",
+    }
+
+
+def test_the_worst_case_is_the_new_budget_at_the_list_price():
+    """The arithmetic, shown: input at the input price plus the NEW max_tokens
+    at the output price, from the model's price entry, which is named."""
+    price = escalation._price("openrouter/anthropic/claude-sonnet-5")
+    assert price == PRICE
     out = io.StringIO()
     e = escalation.announce(
         model="openrouter/anthropic/claude-sonnet-5",

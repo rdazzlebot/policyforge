@@ -120,6 +120,8 @@ class CallRecord:
     #: before it: its request id, cost and output tokens (#361). The row's
     #: tokens and request id are the LAST attempt's; this is where the
     #: earlier, billed ones are kept. One row per billed request is #343's.
+    #: Their `first_cost_usd` is never an addend to a row with a cost; on an
+    #: error row it is the only record of that charge (#372).
     escalations: tuple = ()
 
     def as_json(self) -> str:
@@ -216,9 +218,13 @@ def about(subject: str, *, site: str | None = None, content_class: str | None = 
     """
     scope = Scope(subject=subject, site=site, content_class=content_class)
     token = _scope.set(scope)
+    # Escalations are scoped with it (#372): one announced by a call that
+    # recorded no row is dropped here, not taken by an unrelated later row.
+    pending = escalation.begin()
     try:
         yield scope
     finally:
+        escalation.end(pending)
         _scope.reset(token)
 
 

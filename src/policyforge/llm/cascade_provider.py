@@ -125,11 +125,20 @@ class CascadeProvider(LLMProvider):
         # reported on its own terms rather than chained to the first one.
         # "Pro also ran out of room" is the useful message; "Pro failed
         # while handling Flash failing" buries it.
+        #
+        # A cost of None means "billed, amount unknown" (a provider that
+        # reports no cost), so the sum stays None rather than becoming the
+        # known part presented as the whole. The known parts are not lost:
+        # each billed attempt is in the row's `escalations` (1d on #378). An
+        # exception with no `cost_usd` at all never reached a bill we can see.
         try:
             response = call(self._escalate_to)
         except Exception as second:
             if billed is not None:
-                second.cost_usd = (getattr(second, "cost_usd", None) or 0.0) + billed
+                if not hasattr(second, "cost_usd"):
+                    second.cost_usd = billed
+                elif second.cost_usd is not None:
+                    second.cost_usd += billed
             raise
         if billed is not None and response.cost_usd is not None:
             response.cost_usd += billed

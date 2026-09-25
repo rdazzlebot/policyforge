@@ -151,5 +151,45 @@ def test_the_openai_compatible_re_send_records_its_id(tmp_path, monkeypatch):
     assert _ids(row) == {"r1", "r2"}
 
 
+@pytest.mark.parametrize("answers", [True, False], ids=["answers", "exhausts"])
+def test_a_stronger_model_of_unknown_cost_leaves_the_row_unknown(answers, tmp_path, monkeypatch):
+    """1d on #378: a stronger half that reports no cost billed an unknown
+    amount, so the row's cost is None whether it answers or runs out too,
+    never the primary's $1.50 standing in for the whole bill. The known
+    parts are in the escalations."""
+    from policyforge.llm.openai_compat_provider import OpenAICompatProvider
+
+    strong = OpenAICompatProvider(model="local/q", base_url="http://localhost:1/v1")
+    usage = {"prompt_tokens": 5, "completion_tokens": 64}
+    empty = {"choices": [{"message": {"content": ""}, "finish_reason": "length"}]}
+    good = {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
+    posts = [{"id": "r1", **(good if answers else empty), "usage": usage}]
+    posts += [] if answers else [{"id": "r2", **empty, "usage": usage}]
+    monkeypatch.setattr(strong, "_post", lambda payload: posts.pop(0))
+    provider = CascadeProvider(primary=_litellm("flash", EMPTY_A, EMPTY_B), escalate_to=strong)
+    row, raised = _row(provider, tmp_path / "calls.jsonl")
+    assert raised == (None if answers else "ReasoningBudgetExhausted")
+    assert row["cost_usd"] is None, row
+    known = [e["first_cost_usd"] for e in row["escalations"] if e["first_cost_usd"] is not None]
+    assert known == [0.2, 1.3]
+
+
+def test_a_stronger_model_that_never_ran_keeps_the_primary_cost(tmp_path):
+    """The stronger half fails before any bill (an endpoint down): the row's
+    cost is what the primary billed, not unknown."""
+
+    class _Down:
+        model = "pro"
+
+        def generate(self, **kwargs):
+            raise ConnectionError("endpoint down")
+
+    provider = CascadeProvider(primary=_litellm("flash", EMPTY_A, EMPTY_B), escalate_to=_Down())
+    row, raised = _row(provider, tmp_path / "calls.jsonl")
+    assert raised == "ConnectionError"
+    assert row["cost_usd"] == pytest.approx(1.5), row
+    assert {e["first_request_id"] for e in row["escalations"]} == {"gen-a", "gen-b"}
+
+
 def test_the_exception_type_is_unchanged():
     assert issubclass(ReasoningBudgetExhausted, RuntimeError)

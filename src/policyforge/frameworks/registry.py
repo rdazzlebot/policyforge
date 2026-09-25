@@ -178,6 +178,61 @@ def discover(config: dict | None = None, *, roots: list[Path] | None = None) -> 
     return list(found.values())
 
 
+def _catalog_roots(config: dict | None) -> list[Path]:
+    """The search paths, then the bundled catalogs: every place a catalog
+    this project can cite may live, wherever the command runs."""
+    roots = list(search_paths(config))
+    try:
+        from policyforge.scaffold import bundled_root
+
+        bundled = Path(str(bundled_root().joinpath("frameworks")))
+        if bundled.is_dir():
+            roots.append(bundled)
+    except (RuntimeError, ModuleNotFoundError, OSError):
+        pass
+    return roots
+
+
+def known_framework_names(
+    config: dict | None = None, *, roots: list[Path] | None = None
+) -> frozenset[str]:
+    """Every framework name a catalog on disk goes by (#340).
+
+    The manifest's `name` and each `framework` string its `controls.json`
+    rows carry (`NIST 800-53` there, `NIST SP 800-53 Rev 5` in the manifest),
+    for every catalog under the search paths and the bundled root -- so a
+    catalog a user brings, under `frameworks/` or `local_content/`, is known
+    as surely as a shipped one. Derived from the catalogs, never typed.
+
+    The ONE list of names both readers of a tag's parts use (80's ruling on
+    #340): the Playbook gate, to tell a part naming another framework from a
+    shorthand part that inherits, and `satisfies`, which adds the catalogs it
+    has loaded.
+    """
+    import json
+
+    names: set[str] = set()
+    seen: set[Path] = set()
+    for root in roots if roots is not None else _catalog_roots(config):
+        if not root.is_dir():
+            continue
+        for directory in sorted(p for p in root.iterdir() if p.is_dir()):
+            resolved = directory.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            framework = load_framework(directory)
+            if framework.declared:
+                names.add(framework.name)
+            if framework.has_controls:
+                try:
+                    rows = json.loads(framework.controls_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                names.update(str(r.get("framework") or "") for r in rows if isinstance(r, dict))
+    return frozenset(n for n in names if n.strip())
+
+
 def is_tracked(path: Path) -> bool | None:
     """Whether git tracks anything under `path`.
 

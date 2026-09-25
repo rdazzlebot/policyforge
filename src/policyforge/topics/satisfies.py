@@ -264,9 +264,13 @@ def parse_citations(body: str, frameworks=(), ids=None) -> list[tuple[str, str, 
     carried there. Silently: the requirements were simply absent from the
     report, which is the failure this command exists to catch.
     """
-    from policyforge.content.tags import SOURCE_TAG_RE, tag_parts
+    from policyforge.content.tags import SOURCE_TAG_RE, known_framework_names, tag_parts
 
-    known = sorted({str(f) for f in frameworks}, key=len, reverse=True)
+    # The catalogs loaded, plus every catalog on disk: the ONE list of names
+    # the Playbook gate also reads (#340), so a part naming a framework that
+    # is not loaded is still that framework's, and is reported unknown rather
+    # than inherited by the part before it.
+    known = sorted({str(f) for f in frameworks} | known_framework_names(), key=len, reverse=True)
     found: list[tuple[str, str, str, str]] = []
     section = ""
     for line in body.splitlines():

@@ -30,6 +30,10 @@ from tests.test_escalation import PRICE, _Completion, _reply
 @pytest.fixture(autouse=True)
 def _known_price(monkeypatch):
     monkeypatch.setattr(escalation, "_price", lambda model: PRICE)
+    # Another test may announce a re-send with no ledger wrapper to collect
+    # it; that entry would be taken into the first row recorded here (seen
+    # in the full suite, not alone: an id of None among these ids).
+    escalation.take()
 
 
 def _litellm(model, *replies):

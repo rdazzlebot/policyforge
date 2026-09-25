@@ -942,6 +942,52 @@ def _analyze_block(text: str, block_offset: int, block: str, statements: list[St
 _ATX_MARKS_RE = re.compile(r"^[ \t]{0,3}(?:>[ \t]?)*[ \t]{0,3}#{1,6}[ \t]*|[ \t]+#+[ \t]*$")
 
 
+#: Every modal phrase `_MODALITY_PATTERNS` matches, lowercase, longest first.
+_HEADING_MODALS = "|".join(
+    sorted(
+        {
+            phrase
+            for _, pattern in _MODALITY_PATTERNS
+            for phrase in pattern.pattern.split("(?:", 1)[1].rsplit(")", 1)[0].split("|")
+        },
+        key=len,
+        reverse=True,
+    )
+)
+_HEADING_MODAL_RE = re.compile(rf"\b(?:{_HEADING_MODALS})\b", re.IGNORECASE)
+#: Words that open a clause rather than assert (80's ruling on #357).
+_QUESTION_WORDS = frozenset({"what", "how", "why", "when", "which", "who", "whom", "where"})
+#: A modal right after these belongs to a relative clause inside a noun
+#: phrase: "Controls That Must Be Applied" names a topic (b5, put to 80).
+_RELATIVES = frozenset({"that", "which", "who", "whom", "whose"})
+
+
+def _states_something(heading: str) -> bool:
+    """Whether a heading asserts, so its modality counts (80's ruling on #357).
+
+    **Subject + modal + verb, in any case, and passive counts.** "Password
+    Must Be Rotated" and "Acme Health must retain ..." assert. These are
+    titles: "What Employees Must Do" (opens with a question word),
+    "Must-Have Controls" (the modal leads, and is hyphenated into an
+    adjective), and "Shall Statements" (the modal leads: the word is named,
+    not used). A modal with no subject before it, or no verb after it, is not
+    an obligation. A phrase that is complete in itself ("are prohibited")
+    may end the heading.
+    """
+    plain = " ".join(_MARKUP_RE.sub("", _CITATION_RE.sub("", heading)).split())
+    words = plain.lower().split()
+    if not words or words[0].strip(":,") in _QUESTION_WORDS:
+        return False
+    for match in _HEADING_MODAL_RE.finditer(plain):
+        before = plain[: match.start()].split()
+        if not before or before[-1].lower() in _RELATIVES:
+            continue
+        after = plain[match.end() :]
+        if re.match(r"\s+[A-Za-z]", after) or re.fullmatch(r"[.!]?\s*", after):
+            return True
+    return False
+
+
 def heading_statements(text: str) -> list[Statement]:
     """Every heading as a statement, from the one classifier, `_line_kinds`.
 
@@ -977,7 +1023,8 @@ def heading_statements(text: str) -> list[Statement]:
             Statement(
                 line=start + 1,
                 text=heading,
-                modality=classify(heading),
+                # A title states nothing, whatever words it uses (#357).
+                modality=classify(heading) if _states_something(heading) else NONE,
                 cited=bool(citations),
                 citations=citations,
                 heading=True,

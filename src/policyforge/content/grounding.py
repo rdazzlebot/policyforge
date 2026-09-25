@@ -162,10 +162,22 @@ def claims(body: str) -> list[Claim]:
 def _section_starts(body: str) -> list[int]:
     """The line each section starts on: every heading, ATX or setext, as
     `deontic._line_kinds` classifies them (#352). This used an ATX-only
-    regex of its own, so a setext heading did not start a section here."""
-    from .deontic import heading_statements
+    regex of its own, so a setext heading did not start a section here.
 
-    return [h.line for h in heading_statements(body)]
+    **Read from the classifier, not from `heading_statements`** (ba on
+    #357): that drops a heading with no text, so a bare `##` started no
+    section and the obligation under it joined the citing section above.
+    Every heading starts one, empty or not: the first line of each run of
+    heading text. A test holds this equal to markdown-it's headings.
+    """
+    from .deontic import _HEADING_TEXT, _SETEXT, _line_kinds
+
+    kinds = _line_kinds(body.split("\n"))
+    return [
+        n
+        for n, kind in enumerate(kinds, start=1)
+        if kind in _HEADING_TEXT and not (kind == _SETEXT and n > 1 and kinds[n - 2] == _SETEXT)
+    ]
 
 
 def _section_of(line: int, boundaries: list[int]) -> int:
@@ -205,14 +217,24 @@ def unanchored(body: str) -> list[Unanchored]:
     # adoption a person should confirm went unreported. Only the Playbook:
     # widening it to every non-binding citation would change the rule's
     # reach across all documents.
-    citing_sections |= {
-        _section_of(s.line, boundaries) for s in analyze(body) if s.cites_the_playbook
-    }
-    return [
-        Unanchored(c)
-        for c in found
-        if not c.anchored and _section_of(c.line, boundaries) in citing_sections
-    ]
+    statements = analyze(body)
+    citing_sections |= {_section_of(s.line, boundaries) for s in statements if s.cites_the_playbook}
+
+    # **A heading that heads nothing is judged where it stands** (1d on #357).
+    # The realistic shape is an obligation closing a citing section, then
+    # `---`, then `## 2. Next`: the underline makes the obligation a heading
+    # that opens an EMPTY section, which never cites, so it was skipped. A
+    # heading whose own section holds no statement is judged in the section
+    # before it.
+    populated = {_section_of(s.line, boundaries) for s in statements}
+
+    def section(claim: Claim) -> int:
+        own = _section_of(claim.line, boundaries)
+        if claim.heading and own not in populated:
+            return _section_of(claim.line - 1, boundaries)
+        return own
+
+    return [Unanchored(c) for c in found if not c.anchored and section(c) in citing_sections]
 
 
 def premises_for(claim: Claim, requirements: list[Requirement]) -> list[Requirement]:

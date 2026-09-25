@@ -61,6 +61,33 @@ def test_every_row_of_the_table_is_reported(tmp_path, block, expected, is_headin
     assert ("heading" in warnings[0]) is is_heading, warnings[0]
 
 
+@pytest.mark.parametrize(
+    "block",
+    [f"{MUST}\n---", f"The retention rule.\n{MUST}\n---", f"{MUST}\n==="],
+    ids=["setext", "setext-2line", "setext-equals"],
+)
+def test_an_obligation_closing_a_citing_section_is_reported(tmp_path, block):
+    """1d on #357, the realistic shape: the citation ABOVE, then the
+    obligation made a heading by its underline, then the next section. That
+    heading opens an empty section, so it is judged in the section it closes,
+    which cites."""
+    body = f"# Standard\n\n{CITED_BELOW}\n\n{block}\n\n## 2. Next\n\nNothing cited here.\n"
+    (tmp_path / "standards").mkdir()
+    (tmp_path / "standards" / "s.md").write_text(body, encoding="utf-8")
+    messages = [f.message for f in check_tree(tmp_path).findings if UNCITED in f.message]
+    assert len(messages) == 1 and "heading" in messages[0], messages
+
+
+def test_a_heading_with_its_own_content_is_still_judged_in_its_own_section(tmp_path):
+    """The other arm: a binding heading that DOES head content is judged
+    there. Its own section cites nothing, so it stays silent even though
+    the section before it cites."""
+    body = f"# Standard\n\n{CITED_BELOW}\n\n## {MUST}\n\nNothing cited here.\n"
+    (tmp_path / "standards").mkdir()
+    (tmp_path / "standards" / "s.md").write_text(body, encoding="utf-8")
+    assert [f.message for f in check_tree(tmp_path).findings if UNCITED in f.message] == []
+
+
 def test_a_two_line_setext_heading_is_read_whole(tmp_path):
     """The obligation on the FIRST line of a two-line setext heading: the
     whole paragraph is the heading, so it is reported, not only its last line."""
@@ -85,6 +112,66 @@ def test_a_setext_heading_starts_a_section_for_the_uncited_check(tmp_path, under
     (tmp_path / "standards" / "s.md").write_text(body, encoding="utf-8")
     messages = [f.message for f in check_tree(tmp_path).findings if UNCITED in f.message]
     assert messages == []
+
+
+@pytest.mark.parametrize(
+    ("title", "warns"),
+    [
+        ("Password Must Be Rotated", True),
+        ("Acme Health must retain all records for six years.", True),
+        ("Personal Devices Are Prohibited", True),
+        ("What Employees Must Do", False),
+        ("What Managers Must Know", False),
+        ("Must-Have Controls", False),
+        ("Shall Statements", False),
+        ("Shall and Should: How to Read This Standard", False),
+        ("Controls That Must Be Applied", False),
+        ("Required Training", False),
+    ],
+)
+def test_80s_table_a_heading_warns_only_if_it_asserts(tmp_path, title, warns):
+    """80's ruling on #357: subject + modal + verb, in any case, and passive
+    counts. A title that only mentions a modal names a topic. Placed as 9b
+    placed them: the heading's own section cites."""
+    messages = [m for m in _findings(tmp_path, f"## {title}") if "heading" in m]
+    assert bool(messages) is warns, messages
+
+
+SECTION_SHAPES = {
+    "bare-atx": "Plans must be kept. [NIST 800-53 PL-1]\n\n##\n\nAcme must act.\n",
+    "bare-h1": "Plans must be kept. [NIST 800-53 PL-1]\n\n#\n\nAcme must act.\n",
+    "atx-trailing-space": "Plans must be kept. [NIST 800-53 PL-1]\n\n## \n\nAcme must act.\n",
+    "atx": "# Title\n\nText.\n\n## Scope\n\nMore.\n",
+    "setext-two-line": "Intro.\n\nThe rule\nand more\n---\n\nBody.\n",
+    "setext-equals": "Title\n=\n\nBody.\n\n## Next\n",
+    "quoted-atx": "Intro.\n\n> ## Quoted\n\nBody.\n",
+    "break-not-heading": "Intro.\n\n---\n\nBody.\n",
+}
+
+
+@pytest.mark.parametrize("shape", sorted(SECTION_SHAPES))
+def test_section_starts_are_markdown_its_headings(shape):
+    """**The oracle is markdown-it** (ba on #357), an independent parser: the
+    lines the uncited check starts sections on are exactly the lines
+    markdown-it opens a heading on. A bare `##` is a heading there."""
+    from markdown_it import MarkdownIt
+
+    from policyforge.content.grounding import _section_starts
+
+    body = SECTION_SHAPES[shape]
+    oracle = [
+        t.map[0] + 1 for t in MarkdownIt("commonmark").parse(body) if t.type == "heading_open"
+    ]
+    assert _section_starts(body) == oracle
+
+
+def test_an_obligation_under_a_bare_heading_is_in_its_own_section(tmp_path):
+    """The case ba found: a bare `##` must start a section, so the uncited
+    obligation below it is not judged in the citing section above."""
+    body = f"# Standard\n\n{CITED_BELOW}\n\n##\n\nAcme Health must act on it.\n"
+    (tmp_path / "standards").mkdir()
+    (tmp_path / "standards" / "s.md").write_text(body, encoding="utf-8")
+    assert [f.message for f in check_tree(tmp_path).findings if UNCITED in f.message] == []
 
 
 def test_a_descriptive_heading_stays_silent(tmp_path):

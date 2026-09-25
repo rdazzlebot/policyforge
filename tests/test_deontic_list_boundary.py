@@ -37,7 +37,7 @@ def _read(text: str) -> list[tuple[str, tuple[str, ...]]]:
         ("\n", "* "),
         ("\n", "+ "),
         ("\n", "1. "),
-        ("\n", "2) "),
+        ("\n", "1) "),
         ("\n  ", "- "),
     ],
     ids=["dash", "blank-line", "star", "plus", "numbered", "paren", "indented"],
@@ -134,3 +134,43 @@ def test_an_indented_continuation_stays_with_its_item():
 def test_a_lead_in_whose_colon_carries_a_citation_is_still_a_lead_in():
     (statement,) = analyze(f"The owner must identify: {CITE}\n- the logs\n- the reviewers")
     assert statement.binds and statement.citations == (CITE,)
+
+
+# Second line of each: does it open a list? Expected answers come from
+# markdown-it (the project's own CommonMark parser), never from the rule under
+# test (1d on #353: only an ordered list starting at 1 interrupts a paragraph).
+_SHAPES = [
+    "Logs must be retained for no fewer than\n90) days [NIST 800-53 AU-11].",
+    "Access is reviewed each quarter, and\n2. rounds are recorded [NIST 800-53 AC-2].",
+    "Access is reviewed each quarter, and\n1. rounds are recorded [NIST 800-53 AC-2].",
+    "Access is reviewed each quarter.\n- rounds are recorded [NIST 800-53 AC-2].",
+    "Access is reviewed each quarter.\n\n2. rounds are recorded [NIST 800-53 AC-2].",
+    "Access is reviewed each quarter.\n\n90) rounds are recorded [NIST 800-53 AC-2].",
+]
+
+
+def _commonmark_opens_a_list(text: str) -> bool:
+    from markdown_it import MarkdownIt
+
+    tokens = MarkdownIt("commonmark").parse(text)
+    return any(t.type in ("bullet_list_open", "ordered_list_open") for t in tokens)
+
+
+@pytest.mark.parametrize("text", _SHAPES, ids=range(len(_SHAPES)))
+def test_a_line_splits_off_exactly_when_commonmark_opens_a_list_there(text):
+    split = len(analyze(text)) == 2
+    assert split == _commonmark_opens_a_list(text), _read(text)
+
+
+def test_the_shapes_include_both_answers():
+    """Otherwise the comparison above could agree by being constant."""
+    answers = {_commonmark_opens_a_list(t) for t in _SHAPES}
+    assert answers == {True, False}
+
+
+def test_a_lead_ins_own_citation_line_is_not_the_lead_in():
+    """1d on #353: the lead-in is the last line that is not only citations,
+    so a citation under the colon line does not hide the colon."""
+    text = "The owner must identify:\n[NIST 800-53 RA-3]\n\n- a\n- b [NIST 800-53 RA-5]"
+    (statement,) = analyze(text)
+    assert statement.citations == ("[NIST 800-53 RA-3]", "[NIST 800-53 RA-5]")

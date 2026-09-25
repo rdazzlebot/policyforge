@@ -800,6 +800,8 @@ def _heading_blocks(text: str) -> tuple[str, list[tuple[int, str]]]:
 
 #: A list item's opening line: `-`, `*` or `+`, or `1.` / `1)`, then a space.
 _LIST_ITEM_RE = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S")
+#: An ordered item's number, which decides whether it may interrupt a paragraph.
+_ORDERED_RE = re.compile(r"^[ \t]*(\d+)[.)][ \t]")
 
 
 def _ends_with_colon(line: str) -> bool:
@@ -814,7 +816,10 @@ def _list_starts(lines: list[str], heading: list[bool]) -> list[bool]:
     sentence splitter ends a sentence only before a capital, a quote, `[` or
     `(`, so without this `The owner must review logs.` ran on into `- item
     ... [AU-6]` and borrowed its citation, blank line or not, and so did one
-    item into the next.
+    item into the next. As in CommonMark, too, an ordered marker other than
+    `1` directly under paragraph text does NOT start a list: `no fewer than`
+    / `90) days` is one sentence wrapped across lines. The tests take their
+    expected answer for each shape from markdown-it, not from this rule.
 
     **Except a colon lead-in's list.** `The owner must identify:` is carried
     by its items, so the lead-in and every item of its list stay one block.
@@ -843,7 +848,19 @@ def _list_starts(lines: list[str], heading: list[bool]) -> list[bool]:
             blank_since = True
             continue
         prose = bool(_CITATION_RE.sub("", line).strip())
-        if _LIST_ITEM_RE.match(line):
+        ordered = _ORDERED_RE.match(line)
+        interrupts = not (
+            # CommonMark: only an ordered list starting at 1 may interrupt a
+            # paragraph, so `...no fewer than` / `90) days` is one paragraph
+            # (1d on #353, confirmed against markdown-it).
+            ordered
+            and not in_list
+            and int(ordered.group(1)) != 1
+            and index > 0
+            and lines[index - 1].strip()
+            and not heading[index - 1]
+        )
+        if _LIST_ITEM_RE.match(line) and interrupts:
             if not in_list:
                 in_list, colon_list = True, _ends_with_colon(lead)
             starts[index] = not colon_list

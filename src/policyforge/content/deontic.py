@@ -778,6 +778,8 @@ def _heading_blocks(text: str) -> tuple[str, list[tuple[int, str]]]:
     blanked = [" " * len(line) if heading[i] else line for i, line in enumerate(lines)]
     text = "\n".join(blanked)
 
+    list_start = _list_starts(lines, heading)
+
     blocks: list[tuple[int, str]] = []
     offset, start = 0, None
     for index, line in enumerate(blanked):
@@ -787,10 +789,71 @@ def _heading_blocks(text: str) -> tuple[str, list[tuple[int, str]]]:
                 start = None
         elif start is None:
             start = offset
+        elif list_start[index]:
+            blocks.append((start, text[start : offset - 1]))
+            start = offset
         offset += len(line) + 1
     if start is not None:
         blocks.append((start, text[start:]))
     return text, blocks
+
+
+#: A list item's opening line: `-`, `*` or `+`, or `1.` / `1)`, then a space.
+_LIST_ITEM_RE = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S")
+
+
+def _ends_with_colon(line: str) -> bool:
+    """Whether `line`, less its trailing citations and emphasis, ends in `:`."""
+    return _CITATION_RE.sub("", line).rstrip(" \t*_`").endswith(":")
+
+
+def _list_starts(lines: list[str], heading: list[bool]) -> list[bool]:
+    """True for each line where a list gives a new block (#351).
+
+    **A list item starts a block, as in CommonMark** (80's ruling): the
+    sentence splitter ends a sentence only before a capital, a quote, `[` or
+    `(`, so without this `The owner must review logs.` ran on into `- item
+    ... [AU-6]` and borrowed its citation, blank line or not, and so did one
+    item into the next.
+
+    **Except a colon lead-in's list.** `The owner must identify:` is carried
+    by its items, so the lead-in and every item of its list stay one block.
+    The lead-in is the last line before the list's first item that is not
+    blank and not only citations.
+
+    A list ends at a heading, or at an unindented line of prose after a
+    blank line; that line starts a block of its own, so a paragraph after a
+    colon's list is not read as one of its items. An indented line, or one
+    straight after an item with no blank line (CommonMark's lazy
+    continuation), stays with the item. **A line of only citations never
+    ends a list or starts a block**, blank line or not: it is the trailing
+    citation `analyze` credits backwards, and the generated Standards put a
+    colon lead-in's citation there, under its list (a draft of this rule
+    orphaned one, measured over the 33 Standards).
+    """
+    starts = [False] * len(lines)
+    in_list = colon_list = blank_since = False
+    lead = ""
+    for index, line in enumerate(lines):
+        if heading[index]:
+            in_list = colon_list = blank_since = False
+            lead = ""
+            continue
+        if not line.strip():
+            blank_since = True
+            continue
+        prose = bool(_CITATION_RE.sub("", line).strip())
+        if _LIST_ITEM_RE.match(line):
+            if not in_list:
+                in_list, colon_list = True, _ends_with_colon(lead)
+            starts[index] = not colon_list
+        elif in_list and blank_since and prose and not line[:1].isspace():
+            in_list = colon_list = False
+            starts[index] = True
+        if prose:
+            lead = line
+            blank_since = False
+    return starts
 
 
 def _analyze_block(text: str, block_offset: int, block: str, statements: list[Statement]) -> None:

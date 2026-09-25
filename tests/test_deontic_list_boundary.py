@@ -107,3 +107,30 @@ def test_line_numbers_still_point_at_the_item():
         f"Intro line.\n\nThe owner must review logs.\n- item two shall log {CITE}."
     )
     assert [s.line for s in statements] == [1, 3, 4]
+
+
+def test_a_colon_lists_citation_under_the_list_stays_with_the_lead_in():
+    """The generated Standards' own shape: the lead-in, a blank line, the
+    items, a blank line, then the citation alone on its line. A draft of
+    this fix read that citation as a new paragraph and orphaned it."""
+    text = (
+        "Scientific integrity considerations shall be documented, including:\n\n"
+        "- Experimental design\n- Construct validation\n\n"
+        "[NIST AI RMF Map 2.3]\n\nThe owner must review logs."
+    )
+    statements = analyze(text)
+    assert statements[0].binds and statements[0].citations == ("[NIST AI RMF Map 2.3]",)
+    assert statements[-1].text == "The owner must review logs."
+    assert statements[-1].citations == ()
+
+
+def test_an_indented_continuation_stays_with_its_item():
+    """A loose item's second paragraph, indented under it, is the item's."""
+    text = f"The owner must identify:\n\n- the logs\n\n  kept for a year {CITE}\n\n- the reviewers"
+    (statement,) = analyze(text)
+    assert statement.citations == (CITE,)
+
+
+def test_a_lead_in_whose_colon_carries_a_citation_is_still_a_lead_in():
+    (statement,) = analyze(f"The owner must identify: {CITE}\n- the logs\n- the reviewers")
+    assert statement.binds and statement.citations == (CITE,)

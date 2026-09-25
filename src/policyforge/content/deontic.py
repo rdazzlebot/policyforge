@@ -110,10 +110,11 @@ def _sentences(text: str) -> list[tuple[int, str]]:
 
     **The direction of that failure is silence.** A document whose
     requirements were all correctly cited and all written as "should
-    consider" read as clean. Counted over the shipped catalogs, 324 of
-    1,844 identifiers contain a dot and four catalogs are **entirely**
-    dotted — `cfr-171-information-blocking`, `hipaa-security-rule`,
-    `cfr-42-part-2-sud-records` and `nist-800-171-r3`. The check worked
+    consider" read as clean. Measured at 05e5046 (control and enhancement
+    ids in every shipped `controls.json`): 914 of 2,434 identifiers contain
+    a dot, and six catalogs are **entirely** dotted, including HIPAA. When
+    this was fixed it was 324 of 1,844 and four; both catalogs added since
+    (ONC 170.315, the AI RMF Playbook) are entirely dotted. The check worked
     for 800-53, FedRAMP and ARC-AMPE, and not for the framework this
     product exists to serve.
 

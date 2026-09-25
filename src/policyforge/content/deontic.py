@@ -726,6 +726,119 @@ def _colon_units(
     return units, covered
 
 
+#: The one modal-free obligation `classify` reads (#363, 80's ruling): an
+#: actor "is/are responsible|accountable for" doing something. The subject is
+#: taken from the start of its clause (`_DUTY_CLAUSE`) and judged by
+#: `_duty_subject_is_actor`; the complement must be a gerund, not a noun
+#: ("responsible for any use of" is `none`, 5b's C4 on #360). Kept OUT of
+#: `_MODALITY_PATTERNS`, whose alternatives `_HEADING_MODALS` reads as modal
+#: phrases.
+_DUTY_RE = re.compile(
+    r"\b(?:is|are)\s+(?:(?:also|jointly|solely|ultimately|directly)\s+)?"
+    r"(?:responsible|accountable)\s+for\s+"
+    r"(?!(?:\w*thing|during|morning|evening|ceiling|string|spring|king|ring|wing"
+    r"|sibling|offspring)\b)[a-z]{2,}ing\b",
+    re.IGNORECASE,
+)
+
+#: Where the duty's clause starts: the last of these before "is/are". The
+#: joiners are the ones a Playbook sentence may use (`_JOINER`), plus a colon.
+_DUTY_CLAUSE = re.compile(r",\s+(?:and|but|so)\s+|;\s*|:\s+|\s*—\s*")
+
+#: Subject heads that are not an actor: a document or a framework (5b's hazard
+#: 2 on #363: 90 of 139 "X does Y" hits in Standards had one), a pronoun that
+#: may stand for either, or a relative ("a team that is responsible for ...",
+#: which is how all 3 of the corpus's NIST-suggests hits read).
+_NOT_ACTORS = frozenset(
+    {
+        "standard", "standards", "policy", "policies", "procedure", "procedures",
+        "document", "documents", "process", "processes", "section", "sections",
+        "control", "controls", "requirement", "requirements", "rule", "rules",
+        "framework", "frameworks", "catalog", "catalogs", "playbook", "nist", "rmf",
+        "hipaa", "fedramp", "govramp", "hitrust", "iso",
+        "it", "this", "that", "these", "those", "which", "who", "whom", "whose",
+    }
+)  # fmt: skip
+
+
+#: One-word departments that are spelled like a gerund. A one-word subject
+#: ending in -ing is an activity ("Testing is responsible for ...") unless it
+#: is one of these (1d's caution from #367, in both directions).
+_DEPARTMENT_GERUNDS = frozenset(
+    {
+        "engineering", "accounting", "marketing", "purchasing", "nursing", "billing",
+        "networking", "manufacturing", "recruiting", "contracting", "licensing",
+        "housekeeping", "consulting", "publishing", "banking",
+    }
+)  # fmt: skip
+
+
+def _duty_subject_is_actor(subject: str) -> bool:
+    """Whether the words before "is/are responsible for" name an actor.
+
+    The head is the last word before any "of" ("The owner of this Standard"
+    is headed by "owner"). It fails when it is in `_NOT_ACTORS`, and when the
+    whole subject is one gerund ("Testing is responsible for ..."), which is
+    an activity, not someone, unless it is a department in
+    `_DEPARTMENT_GERUNDS` ("Engineering"). **Stated limits:** a pronoun that
+    does stand for a team ("...: it is accountable for implementing ...",
+    one sentence in 5b's corpus) is not bound; a one-word department ending
+    in -ing that is not listed is not bound; and a document noun inside a
+    longer head ("Standard owner") is judged by its last word only.
+    """
+    head = re.split(r"\s+of\s+", subject.strip(), maxsplit=1, flags=re.IGNORECASE)[0]
+    words = re.findall(r"[A-Za-z][\w'-]*", _CITATION_RE.sub("", head))
+    if not words:
+        return False
+    if (
+        len(words) == 1
+        and words[0].lower().endswith("ing")
+        and words[0].lower() not in _DEPARTMENT_GERUNDS
+    ):
+        return False
+    return words[-1].lower().removesuffix("'s") not in _NOT_ACTORS
+
+
+def _assigns_duty(visible: str) -> bool:
+    """Whether an actor is made responsible or accountable for doing something.
+
+    **Never inside NIST's own speech** (#177: the Playbook suggests, never
+    requires): a sentence whose subject is NIST or the Playbook, after one
+    allowed opener, does not bind through this rule, whatever its later
+    clauses say. Its modal words are still read by `classify`, as before.
+    """
+    plain = _LEADING_MARKER.sub("", visible.strip())
+    if _NIST_SUBJECT.match(plain[_opener_end(plain) :]):
+        return False
+    for match in _DUTY_RE.finditer(plain):
+        before = plain[: match.start()]
+        starts = [m.end() for m in _DUTY_CLAUSE.finditer(before)]
+        subject = before[starts[-1] if starts else 0 :]
+        if _ELIDED_RE.search(subject):
+            # "X performs A; and is accountable for ensuring B": the subject
+            # is the sentence's, so the sentence's opening is what is judged.
+            if not _DOCUMENT_OPENING_RE.match(plain):
+                return True
+        elif _duty_subject_is_actor(subject):
+            return True
+    return False
+
+
+#: A clause whose subject is elided: it ends in a conjunction ("...; and is
+#: accountable for ..."), which also catches a verb phrase run on without a
+#: boundary ("This Standard applies to X and is responsible for ...").
+_ELIDED_RE = re.compile(r"\b(?:and|or|but|also|then)\s*$", re.IGNORECASE)
+
+#: A sentence that opens on a document, a framework or a bare pronoun: with an
+#: elided subject, that is who the duty would fall on.
+_DOCUMENT_OPENING_RE = re.compile(
+    r"(?:(?:the|this|that|these|each|every)\s+)?(?:NIST\b|HIPAA\b|FedRAMP\b|GovRAMP\b"
+    r"|HITRUST\b|ISO\b|it\b|this\b|that\b|(?:\w+\s+){0,2}?(?:standard|policy|procedure"
+    r"|document|process|section|playbook|framework)s?\b)",
+    re.IGNORECASE,
+)
+
+
 def classify(sentence: str) -> str:
     """The strongest modality the sentence carries.
 
@@ -734,15 +847,39 @@ def classify(sentence: str) -> str:
     (which may be electronic)" is an obligation with a permitted detail,
     not a permission. Reading it as the latter would report the firmest
     sentence in the document as its weakest.
+
+    **Obligations without a modal: one family binds, the rest do not, by
+    ruling** (80 on #363, from 5b's count over 83 generated Standards and 45
+    Procedures). An actor "is/are responsible|accountable for" doing
+    something binds (`_assigns_duty`; 7 of 10 sampled did, and the other 3
+    were NIST's suggestions). These do NOT bind, deliberately, and are not a
+    gap to fix:
+
+    - **Imperatives, and "Team does X".** A Procedure step is an instruction
+      that carries out the Standard requirement above it, which holds the
+      citation. Binding them takes Procedures from 2.4% to 65.1% binding and
+      adds 2,842 "binds but cites nothing" warnings on correct steps. A
+      Standard's 108 imperatives are 73% quoted catalog text. **A modal
+      introduces an obligation; an instruction carries one out.** "Never ..."
+      and "Do not ..." are imperatives too.
+    - **"will"**: 0 of 20 bound; 10 of 13 in Standards were NIST suggesting.
+    - **"is/are to (be)"**: 0 of 11; relative clauses.
+    - **"is/are expected to"**: 3 of 3 had a document as subject.
+    - **"is/are subject to"**: splits between internal rules and legal
+      applicability, too fragile for a cue.
     """
     visible = _MARKUP_RE.sub("", sentence)
+    found = NONE
     for modality, pattern in _MODALITY_PATTERNS:
         if any(
             not (_states_no_requirement(visible, m) or _epistemic_may(visible, m))
             for m in pattern.finditer(visible)
         ):
-            return modality
-    return NONE
+            found = modality
+            break
+    if found not in BINDING and _assigns_duty(visible):
+        return OBLIGATION
+    return found
 
 
 #: The predicates #360 added: "X is required." binds like its verb twin "X

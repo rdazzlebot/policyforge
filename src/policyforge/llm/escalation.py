@@ -34,9 +34,11 @@ fakes billing known amounts):
   that is #343: $0.20 + $1.30 billed, $0.00 in the row, $0.20 here.
 
 **Scoped to `ledger.about`.** Each `about` block starts a fresh pending list
-and discards it on exit, so an escalation from a call that recorded no row
-(an unwrapped provider) cannot land in a later, unrelated row. Outside any
-`about` block there is one list, and the next recorded call takes it.
+and closes it on exit, so an escalation from a call that recorded no row
+(an unwrapped provider) cannot land in a later, unrelated row. One still
+pending at exit is not dropped silently: `end` names its billed first
+attempt on stderr (80 on #373). Outside any `about` block there is one
+list, and the next recorded call takes it.
 """
 
 from __future__ import annotations
@@ -160,8 +162,22 @@ def begin():
     return _pending.set([])
 
 
-def end(token) -> None:
-    """Discard what `begin` started, restoring the enclosing list."""
+def end(token, out=None) -> None:
+    """Close what `begin` started, restoring the enclosing list.
+
+    An escalation still pending here was announced by a call that recorded
+    no row, so this is its last chance to be seen. It is written to stderr
+    with its billed first attempt rather than dropped silently (80 on #373):
+    losing it without a word would be #343's failure again.
+    """
+    for e in _pending.get() or ():
+        (out or sys.stderr).write(
+            f"Warning: no ledger row recorded the re-send of {e.subject or 'a request'} "
+            f"to {e.model}; its billed first attempt was request "
+            f"{e.first_request_id or 'unknown'}, "
+            + (f"${e.first_cost_usd:.4f}" if e.first_cost_usd is not None else "cost unknown")
+            + ".\n"
+        )
     _pending.reset(token)
 
 

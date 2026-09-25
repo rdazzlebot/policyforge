@@ -172,7 +172,8 @@ def test_effort_announces_its_own_2x_retry(capsys):
         effort.call(Fake(), system="s", prompt="p", max_tokens=1000)
     said = capsys.readouterr().err
     assert "standard/y" in said and "max_tokens 2,000" in said and "cut off" in said
-    # Unwrapped, so no row took it; the scope dropped it on exit (#372).
+    # Unwrapped, so no row took it: the scope closed it on exit and said so.
+    assert "no ledger row recorded the re-send of standard/y" in said
     assert escalation.take() == ()
 
 
@@ -313,13 +314,36 @@ def test_an_unrecorded_calls_escalation_does_not_reach_the_next_row(tmp_path, ca
     """1d on #366: `_pending` was drained only by a recorded call, so an
     escalation from an unwrapped call landed in the next, unrelated row."""
     with ledger.about("unrecorded", site="generate"):
-        escalation.announce(model="local/q", first_max_tokens=64, max_tokens=512)
+        escalation.announce(
+            model="local/q",
+            first_max_tokens=64,
+            max_tokens=512,
+            first_request_id="gen-lost",
+            first_cost_usd=0.2,
+        )
+    closed = capsys.readouterr().err
     completion = _Completion(_reply("fine", "stop", cost=0.01, completion=10))
     provider = _wrapped("anthropic/claude-sonnet-5", completion, tmp_path / "l.jsonl")
     with ledger.about("recorded", site="generate"):
         provider.generate(system="s", prompt="p", max_tokens=100)
     (row,) = _rows(tmp_path / "l.jsonl")
     assert row["subject"] == "recorded" and row["escalations"] == []
+    # Not dropped silently (80 on #373): the closing scope names what no row took.
+    assert "no ledger row recorded the re-send of unrecorded" in closed
+    assert "gen-lost" in closed and "$0.2000" in closed
+    assert "no ledger row" not in capsys.readouterr().err, "a recorded call warns nothing"
+
+
+def test_a_taken_escalation_is_not_reported_as_lost(tmp_path, capsys):
+    """The passing case: the row took it, so the scope has nothing to say."""
+    completion = _Completion(
+        _reply("", "length", cost=0.2, rid="a"), _reply("ok", "stop", cost=1.0, rid="b")
+    )
+    provider = _wrapped("anthropic/claude-sonnet-5", completion, tmp_path / "l.jsonl")
+    with ledger.about("t", site="generate"):
+        provider.generate(system="s", prompt="p", max_tokens=100)
+    said = capsys.readouterr().err
+    assert "re-sending t" in said and "no ledger row" not in said
 
 
 def test_a_nested_scope_keeps_its_own_escalations(tmp_path, capsys):

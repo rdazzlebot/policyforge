@@ -124,17 +124,17 @@ def _keys():
 
 
 def test_the_order_is_the_procedure():
-    """Two install tests (the user's ruling on #255): the branch archive
-    before the tag, the candidate formula before publishing, the published
-    one last."""
+    """Two install tests (the user's ruling on #255): the release PR head
+    installed BEFORE the user's approval (#381, "Install first"), the
+    candidate formula before publishing, the published one last."""
     keys = _keys()
     order = [
         "train-final",
         "changelog",
         "version",
         "release-pr",
+        "head-install",
         "main",
-        "branch-install",
         "tag",
         "candidate-install",
         "publish",
@@ -145,7 +145,9 @@ def test_the_order_is_the_procedure():
 
 def test_outward_steps_are_exactly_the_ones_that_leave_this_clone():
     outward = {s.key for s in release.steps() if s.outward}
-    assert outward == {"release-pr", "tag", "publish"}
+    # head-install posts its record on the tracking issue: that leaves the clone.
+    assert outward == {"release-pr", "head-install", "tag", "publish"}
+    assert "branch-install" not in _keys(), "the post-approval install is gone (#381)"
 
 
 def test_the_user_merges_main_and_the_script_never_does():
@@ -168,22 +170,132 @@ def _fake_run(responses):
     return run
 
 
-def test_the_tag_step_refuses_until_a_branch_install_has_passed():
+# --- #381: install the release PR head BEFORE the user's approval -------------------
+
+CUT = "c" * 40
+MOVED = "d" * 40
+
+
+def _install_ctx(records, pr_head=CUT, state="OPEN", calls=None, cut=CUT):
+    """A tracking issue holding `records` (created_at, last line), a release PR
+    at `pr_head`, and the cut commit at CUT."""
+
+    comments = "\n".join(json.dumps([at, f"Result.\n\n{line}"]) for at, line in records)
+    pr = json.dumps(
+        [{"title": "Release 9.9.9", "number": 7, "state": state, "headRefOid": pr_head}]
+    )
+    fake = _fake_run(
+        {
+            "issues/99/comments": (0, comments),
+            "pr list": (0, pr),
+            "rev-parse HEAD": (0, cut),
+        }
+    )
+
+    def run(argv):
+        if calls is not None:
+            calls.append(argv)
+        return fake(argv)
+
+    return _ctx(tracking=99, run=run)
+
+
+def _record(sha, result="passed", version="9.9.9"):
+    return f"Release-install: {sha} release={version} result={result}"
+
+
+def _main_step():
+    return next(s for s in release.steps() if s.key == "main")
+
+
+def test_the_wait_opens_only_with_a_passed_install_of_the_current_head():
+    """The user approves with the install in hand: the wait's gate holds only
+    when the latest record passed and names the PR head and the cut."""
+    ctx = _install_ctx([("2026-09-25T16:00:00Z", _record(CUT))])
+    assert _main_step().gate(ctx).ok
+    assert run_steps([_main_step()], ctx, execute=True, out=lambda s: None) == 5, "waits"
+
+
+def test_a_head_that_moved_after_the_install_is_refused_before_the_wait():
+    """#381's must-show: the PR head moves after the install. The installed
+    SHA comes from the record, so the wait refuses (a gate failure, not 5)
+    and says the install is stale."""
+    ctx = _install_ctx([("2026-09-25T16:00:00Z", _record(CUT))], pr_head=MOVED)
+    check = _main_step().gate(ctx)
+    assert not check.ok
+    assert any("STALE" in line and MOVED[:12] in line for line in check.measured), check.measured
+    out: list[str] = []
+    assert run_steps([_main_step()], ctx, execute=True, out=out.append) == 11
+    assert not any("WAITING" in line for line in out), "never reaches the approval wait"
+
+
+def test_only_the_record_catches_a_head_the_clone_has_followed():
+    """The head moved and this clone's HEAD moved with it (someone pulled):
+    the PR head and the cut now AGREE, so only the SHA taken from the record
+    shows the install was of another commit. A guard reading the head at
+    the moment of checking would pass here by construction."""
+    ctx = _install_ctx([("2026-09-25T16:00:00Z", _record(CUT))], pr_head=MOVED, cut=MOVED)
+    check = _main_step().gate(ctx)
+    assert not check.ok and any("STALE" in line for line in check.measured), check.measured
+
+
+@pytest.mark.parametrize(
+    "records, why",
+    [
+        ([], "no install recorded"),
+        ([("2026-09-25T16:00:00Z", _record(CUT, "FAILED"))], "the install failed"),
+        ([("2026-09-25T16:00:00Z", _record(CUT, version="9.9.8"))], "another release's record"),
+        (
+            [
+                ("2026-09-25T16:00:00Z", _record(CUT)),
+                ("2026-09-25T17:00:00Z", _record(CUT, "FAILED")),
+            ],
+            "the LATEST record decides",
+        ),
+    ],
+)
+def test_the_wait_refuses_without_a_current_passed_install(records, why):
+    assert not _main_step().gate(_install_ctx(records)).ok, why
+
+
+def test_the_tag_needs_the_install_record_too():
     tag = next(s for s in release.steps() if s.key == "tag")
-    ctx = _ctx(run=_fake_run({}))
-    assert not tag.gate(ctx).ok
-    ctx.notes["branch install"] = "passed"
-    assert tag.gate(ctx).ok
+    assert not tag.gate(_install_ctx([])).ok
+    assert tag.gate(_install_ctx([("2026-09-25T16:00:00Z", _record(CUT))])).ok
 
 
-def test_after_tagging_the_branch_install_counts_as_done():
-    """Resume fix: branch-install's own gate needs NO tag, so without this a
-    re-run after the tag step would stop at branch-install."""
-    step = next(s for s in release.steps() if s.key == "branch-install")
-    tagged = _ctx(run=_fake_run({"ls-remote --tags origin v9.9.9": (0, "abc\trefs/tags/v9.9.9")}))
-    assert step.post(tagged).ok
-    untagged = _ctx(run=_fake_run({}))
-    assert not step.post(untagged).ok
+def test_the_install_posts_its_record_where_the_wait_reads_it(monkeypatch):
+    """The act installs the cut's archive and posts a comment whose LAST line
+    is the record `_install_record` parses, for the SHA it installed."""
+    calls: list = []
+    ctx = _install_ctx([], calls=calls)
+    ctx.hash_url = lambda url: "0" * 64
+    ctx.install = lambda formula, version: (True, True, ["ok"])
+    monkeypatch.setattr(
+        release.release_check,
+        "fetch_formula",
+        lambda url=None: '  homepage "x"\n  url "x"\n  sha256 "' + "0" * 64 + '"\n',
+    )
+    release._install_head(ctx)
+    posted = [a for a in calls if a[:2] == ["gh", "api"] and a[2].endswith("issues/99/comments")]
+    assert len(posted) == 1
+    body = posted[0][-1].removeprefix("body=")
+    last = [line for line in body.splitlines() if line.strip()][-1]
+    match = release.INSTALL_LINE.match(last)
+    assert match and match.groups() == (CUT, "9.9.9", "passed"), last
+    assert CUT in release._head_archive(ctx)
+
+
+def test_a_dry_run_prints_the_order_with_the_install_before_the_approval(capsys, monkeypatch):
+    """The plan is printed before any gate runs; walking the steps is stubbed
+    so this touches no network."""
+    monkeypatch.setattr(release, "run_steps", lambda *a, **k: 0)
+    assert release.main(["9.9.9"]) == 0
+    text = capsys.readouterr().out
+    assert text.index(". head-install:") < text.index(". main:") < text.index(". tag:"), text
+    monkeypatch.setattr(release, "run_steps", lambda *a, **k: 0)
+    assert release.main(["9.9.9", "--execute"]) == 0
+    assert "The cut, in order" not in capsys.readouterr().out, "the plan is a dry-run aid"
 
 
 def test_the_milestone_must_be_zero_by_both_instruments():
@@ -726,5 +838,7 @@ def test_the_wait_refuses_a_closed_release_pr_instead_of_waiting_forever():
 
     closed = main.gate(ctx("CLOSED"))
     assert not closed.ok and "#4 CLOSED" in closed.measured[0]
-    assert main.gate(ctx("OPEN")).ok
-    assert not main.gate(_ctx(run=_fake_run({}))).ok, "no PR at all is nothing to wait for"
+    # The PR-state half of the wait's gate; since #381 the gate also needs a
+    # current install, tested on its own above.
+    assert release._pr_still_open(ctx("OPEN")).ok
+    assert not release._pr_still_open(_ctx(run=_fake_run({}))).ok, "no PR is nothing to wait for"

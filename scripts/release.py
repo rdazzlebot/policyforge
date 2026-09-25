@@ -37,11 +37,17 @@ THE CONTRACT, stated once and held by every step:
   it reports what it is waiting for and exits 5, and a re-run after the
   user's merge continues.
 
-TWO INSTALL TESTS (the user's ruling on #255, relayed by 80): the BRANCH
-archive of main's merge commit is installed in a clean container before any
-tag exists, then the CANDIDATE formula (the tag's archive) is installed
-before it is published to the tap, and `release_check.py` checks the
-PUBLISHED formula last.
+TWO INSTALL TESTS (the user's ruling on #255, relayed by 80), the first of
+them BEFORE the user's approval ("Install first", the user to 1d directly,
+2026-09-25, #381): the release PR HEAD's archive is installed in a clean
+container and the result posted on the tracking issue as a
+`Release-install:` record, so the user approves main with it in hand. The
+wait refuses a head that moved after the install (the installed SHA is read
+from the record, never fetched at the moment of checking), and main's step
+then proves its merge tree is that head's, so the install carries across the
+merge. Then the CANDIDATE formula (the tag's archive) is installed before it
+is published to the tap, and `release_check.py` checks the PUBLISHED formula
+last.
 
 EXIT CODES: 0 done; 5 waiting on the user; 6 an outward step not confirmed;
 10+i a failed gate at step i; 40+i a failed postcondition at step i; 2 a
@@ -569,9 +575,89 @@ def _formula(ctx: Context, url: str, sha: str) -> str:
     return re.sub(r'^(  sha256 ")[0-9a-f]{64}(")', rf"\g<1>{sha}\g<2>", text, count=1, flags=re.M)
 
 
-def _branch_archive(ctx: Context) -> str:
-    sha = ctx.notes.get("main_sha", "")
+def _head_archive(ctx: Context) -> str:
+    """The archive of the cut commit, which is the release PR's head."""
+    sha = ctx.git("rev-parse", "HEAD")
     return f"https://github.com/{release_check.REPOSITORY}/archive/{sha}.tar.gz"
+
+
+#: The install record, a tracking-issue comment's LAST line, as the other
+#: artefact gates' records are: which commit was installed, for which
+#: release, and how it went. Persistent because the script exits at the
+#: user's approval (5) and is re-run after it, and the tag needs to know.
+INSTALL_LINE = re.compile(
+    r"^Release-install: ([0-9a-f]{40}) release=(\S+) result=(passed|FAILED|did-not-run|refused)\s*$"
+)
+
+
+def _install_record(ctx: Context) -> tuple[str, str]:
+    """(sha, result) of the LATEST install record for this release, or ("", "")."""
+    found = [
+        (created, match.group(1), match.group(3))
+        for created, line in _tracking_records(ctx)
+        if (match := INSTALL_LINE.match(line)) and match.group(2) == ctx.version
+    ]
+    if not found:
+        return "", ""
+    _, sha, result = max(found)
+    return sha, result
+
+
+def _head_installed(ctx: Context) -> Check:
+    """The release PR's head passed a clean-container install, and is still
+    the head (#381, the user's "Install first").
+
+    **The installed SHA comes from the install record, never from a fetch
+    at the moment of checking** (the charge's --match-head-commit rule): it
+    is compared with the PR's head as it is now and with the cut commit
+    this script made. If the head moved after the install, the install is
+    of a commit nobody is being asked to approve, so it is STALE.
+    """
+    if not ctx.tracking:
+        return Check(False, ["no --tracking-issue given, so there is no install record to read"])
+    sha, result = _install_record(ctx)
+    pr = _release_pr(ctx)
+    head = pr.get("headRefOid", "") if pr else ""
+    cut = ctx.git("rev-parse", "HEAD")
+    measured = [
+        f"install record for {ctx.version} on #{ctx.tracking}: "
+        f"{sha[:12] or 'none'} {result or ''}".rstrip(),
+        f"release PR head now {head[:12] or '-'}, cut commit {cut[:12] or '-'}",
+    ]
+    if sha and head and sha != head:
+        measured.append(
+            f"STALE: the install was of {sha[:12]}, and the PR head is now {head[:12]}; "
+            "whatever moved the head must be installed before anyone is asked to approve it"
+        )
+    return Check(bool(sha) and result == "passed" and sha == head == cut, measured)
+
+
+def _install_head(ctx: Context) -> None:
+    """Install the cut commit's archive, then post the record on the tracking
+    issue, where the user reads it before approving the main merge."""
+    sha = ctx.git("rev-parse", "HEAD")
+    url = _head_archive(ctx)
+    _install(ctx, url, "head install")
+    said = ctx.notes.get("head install", "did not run")
+    result = {"passed": "passed", "FAILED": "FAILED", "did not run": "did-not-run"}.get(
+        said, "refused"
+    )
+    body = (
+        f"Container install of the {ctx.version} release PR head `{sha}` "
+        f"({url}), by `scripts/release.py`: **{said}**.\n\n"
+        f"Release-install: {sha} release={ctx.version} result={result}"
+    )
+    posted = ctx.run(
+        [
+            "gh",
+            "api",
+            f"repos/{release_check.REPOSITORY}/issues/{ctx.tracking}/comments",
+            "-f",
+            f"body={body}",
+        ]
+    )
+    if posted.returncode != 0:
+        ctx.notes["head install"] = f"{said}, but the record was not posted to #{ctx.tracking}"
 
 
 def _tag_archive(ctx: Context) -> str:
@@ -584,14 +670,31 @@ def _install_check(ctx: Context, url: str, note: str) -> Check:
     return Check(False, [f"{note}: not yet run"])
 
 
-def _branch_install_done(ctx: Context) -> Check:
-    """Done if it passed in this run, or if the tag exists: the tag step's
-    gate refuses to tag until a branch install has passed, so a tag is proof
-    one did. Without the second half a re-run after tagging would stop here,
-    since this step's own gate requires that no tag exists."""
-    if not _no_tag(ctx).ok:
-        return Check(True, [f"tag {ctx.tag} exists, so the pre-tag branch install passed"])
-    return _install_check(ctx, _branch_archive(ctx), "branch install")
+def _all(*checks: Check) -> Check:
+    """Several checks as one gate: every value printed, all must hold."""
+    return Check(all(c.ok for c in checks), [line for c in checks for line in c.measured])
+
+
+def _head_install_ready(ctx: Context) -> Check:
+    """Before installing: a record to write to, the PR open AT the cut commit
+    (not at something pushed after it), and its archive served."""
+    pr = _release_pr(ctx)
+    head = pr.get("headRefOid", "") if pr else ""
+    cut = ctx.git("rev-parse", "HEAD")
+    return _all(
+        Check(
+            bool(ctx.tracking),
+            [f"tracking issue: {'#' + str(ctx.tracking) if ctx.tracking else 'none'}"],
+        ),
+        Check(
+            bool(pr) and pr.get("state") == "OPEN" and head == cut,
+            [
+                f"release PR {'#' + str(pr['number']) if pr else 'none'} head {head[:12] or '-'} "
+                f"is the cut commit {cut[:12]}: {head == cut}"
+            ],
+        ),
+        _archive_served(_head_archive)(ctx),
+    )
 
 
 def _install(ctx: Context, url: str, note: str) -> None:
@@ -896,33 +999,31 @@ def steps() -> list[Step]:
             would="commit, push the cut branch and open a PR against main",
         ),
         Step(
-            "main",
-            "the user merges the release PR",
-            WAIT,
-            _pr_still_open,
-            _main_merged,
-            would="the user's approval and merge of the release PR in GitHub",
+            "head-install",
+            "install the release PR's head in a clean container, before approval",
+            ACT,
+            _head_install_ready,
+            _head_installed,
+            _install_head,
+            outward=True,
+            would=(
+                "build and install the release PR head's archive with Homebrew in a "
+                "container, and post the result on the tracking issue"
+            ),
         ),
         Step(
-            "branch-install",
-            "install main's merge commit in a clean container, before any tag",
-            ACT,
-            lambda c: Check(
-                _no_tag(c).ok and _archive_served(_branch_archive)(c).ok,
-                _no_tag(c).measured + _archive_served(_branch_archive)(c).measured,
-            ),
-            _branch_install_done,
-            lambda c: _install(c, _branch_archive(c), "branch install"),
-            would="build and install the branch archive with Homebrew in a container",
+            "main",
+            "the user merges the release PR, with the install result in hand",
+            WAIT,
+            lambda c: _all(_pr_still_open(c), _head_installed(c)),
+            _main_merged,
+            would="the user's approval and merge of the release PR in GitHub",
         ),
         Step(
             "tag",
             "tag main's merge commit and publish the GitHub Release",
             ACT,
-            lambda c: Check(
-                _install_check(c, "", "branch install").ok and _no_tag(c).ok,
-                _install_check(c, "", "branch install").measured + _no_tag(c).measured,
-            ),
+            lambda c: _all(_head_installed(c), _no_tag(c)),
             _tagged,
             _tag,
             outward=True,
@@ -1092,7 +1193,15 @@ def main(argv: list[str] | None = None) -> int:
         tracking=args.tracking_issue,
     )
     print(f"release {ctx.tag}: {'EXECUTE' if args.execute else 'DRY RUN (nothing will change)'}")
-    return run_steps(steps(), ctx, execute=args.execute)
+    plan = steps()
+    if not args.execute:
+        # The whole order first: a dry run stops at the first step that would
+        # act, so without this it would never show what comes after (#381).
+        print("\nThe cut, in order:")
+        for index, step in enumerate(plan, 1):
+            kind = step.kind + (", outward" if step.outward else "")
+            print(f"  {index:>2}. {step.key}: {step.title} [{kind}]")
+    return run_steps(plan, ctx, execute=args.execute)
 
 
 if __name__ == "__main__":

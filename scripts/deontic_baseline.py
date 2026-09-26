@@ -129,6 +129,12 @@ def main(argv: list[str] | None = None) -> int:
         "--write", action="store_true", help="write the new baseline after printing"
     )
     args = parser.parse_args(argv)
+    # The printout goes into a PR, so it is UTF-8 wherever it is sent. On
+    # Windows a redirected stdout otherwise takes the console codepage: the
+    # printout for #376 came out cp1252 (a `§` as 0xA7), and a character
+    # cp1252 lacks would have crashed it before a word of the diff printed.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
     new = record()
     old = json.loads(BASELINE.read_text(encoding="utf-8"))["docs"] if BASELINE.exists() else {}
     printed = changes(old, new)

@@ -395,9 +395,19 @@ def _bump(ctx: Context) -> None:
 # DERIVED, every pin in every tracked text file, and CLASSIFIED rather than
 # filtered, so a pin in a new file is rewritten or refused, never skipped:
 #
-#     instruction   anywhere else     rewritten to this release
+#     instruction   INSTALL_DOCS      rewritten to this release
 #     history       CHANGELOG.md      what a past release said; never touched
 #     test          under tests/      fixtures; never touched
+#     unclassified  anywhere else     REFUSED, naming the file
+#
+# **Instructions are declared, not inferred** (policyforge-b5 on #430). A
+# pin elsewhere may be a record, not a command: "epoch 24 installed
+# ...@v1.6.0" in MEASUREMENTS.md must not become the new release, and a
+# conserved count cannot see that over-replacement (#252's shape). So a
+# pin outside these files stops the cut until someone says which it is.
+
+#: The files whose pins ARE install instructions (80's sweep on #413).
+INSTALL_DOCS = frozenset({"README.md"})
 
 #: A pin of `<owner>/policyforge` at a release, as an install command writes
 #: it. The owner is captured so a pin naming the redirect's old owner is
@@ -407,7 +417,16 @@ def _bump(ctx: Context) -> None:
 #: `rdazzleman/PolicyForge` as this repository, so a case-sensitive match
 #: skipped a pin that installs. The `v` is captured apart, because a tag
 #: IS case-sensitive: `@V1.6.0` names no tag, and is refused, not moved.
-_PIN_RE = re.compile(r"([A-Za-z0-9_.-]+)/policyforge(?:\.git)?@(v)(\d+\.\d+\.\d+)\b", re.IGNORECASE)
+#:
+#: The version includes a pre-release suffix (`1.7.0rc1`, `1.7.0-rc.1`), so
+#: one is rewritten whole rather than skipped or half-moved (policyforge-b5
+#: on #430). It ends on a letter or digit, so a sentence's full stop after
+#: the pin is not part of it.
+_PIN_RE = re.compile(
+    r"([A-Za-z0-9_.-]+)/policyforge(?:\.git)?@(v)"
+    r"(\d+\.\d+\.\d+(?:-?[A-Za-z](?:[0-9A-Za-z.]*[0-9A-Za-z])?)?)(?![0-9A-Za-z])",
+    re.IGNORECASE,
+)
 #: The same shape for `git grep -E`, which finds the lines `_PIN_RE` reads.
 _PIN_ERE = r"[A-Za-z0-9_.-]+/policyforge(\.git)?@v[0-9]+\.[0-9]+\.[0-9]+"
 
@@ -427,7 +446,9 @@ class Pin:
             return "history"
         if self.path.startswith("tests/"):
             return "test"
-        return "instruction"
+        if self.path in INSTALL_DOCS:
+            return "instruction"
+        return "unclassified"
 
     @property
     def canonical(self) -> bool:
@@ -458,7 +479,8 @@ def _pins(ctx: Context, at: str = "") -> list[Pin] | None:
 
 def _pin_lines(pins: list[Pin]) -> list[str]:
     by_kind = {
-        kind: [p for p in pins if p.kind == kind] for kind in ("instruction", "history", "test")
+        kind: [p for p in pins if p.kind == kind]
+        for kind in ("instruction", "history", "test", "unclassified")
     }
     return [f"install pins: {', '.join(f'{k} {len(v)}' for k, v in by_kind.items())}"]
 
@@ -470,15 +492,21 @@ def _pins_ready(ctx: Context) -> Check:
     instructions = [p for p in pins if p.kind == "instruction"]
     foreign = [p for p in instructions if not p.canonical]
     untagged = [p for p in instructions if p.marker != "v"]
+    unclassified = [p for p in pins if p.kind == "unclassified"]
     ctx.notes["pins"] = str(len(instructions))
     return Check(
-        not foreign and not untagged,
+        not foreign and not untagged and not unclassified,
         [
             *_pin_lines(pins),
             *(f"names another owner, rewrite it by hand first: {p}" for p in foreign),
             *(
                 f"`@V` names no tag (tags are case-sensitive), fix it by hand: {p}"
                 for p in untagged
+            ),
+            *(
+                f"a pin outside INSTALL_DOCS, instruction or record? Declare the file, "
+                f"or keep it out of the tree: {p}"
+                for p in unclassified
             ),
         ],
     )

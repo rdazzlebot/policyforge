@@ -1243,14 +1243,16 @@ def test_instruction_pins_move_and_history_and_fixtures_do_not(tmp_path):
                 f"pipx install git+https://github.com/{_OWNER}@v1.6.0\n"
                 f"and again {_OWNER}.git@v1.5.0\n"
             ),
-            "docs/install.md": f"Pinned: {_OWNER}@v1.6.0\n",
             "CHANGELOG.md": f"## 1.6.0\n\nInstall with {_OWNER}@v1.6.0\n",
             "tests/fixture.md": f"{_OWNER}@v1.6.0\n",
         },
     )
     ctx = _pin_ctx(root)
     gate = release._pins_ready(ctx)
-    assert gate.ok and "install pins: instruction 3, history 1, test 1" in gate.measured
+    assert (
+        gate.ok
+        and "install pins: instruction 2, history 1, test 1, unclassified 0" in gate.measured
+    )
     assert not release._pins_current(ctx).ok
     release._repin(ctx)
     after = release._pins_current(ctx)
@@ -1350,3 +1352,34 @@ def test_a_capital_v_names_no_tag_and_is_refused(tmp_path):
     root = _git_repo(tmp_path, {"README.md": f"{_OWNER}@V1.6.0\n"})
     gate = release._pins_ready(_pin_ctx(root))
     assert not gate.ok and any("names no tag" in line for line in gate.measured)
+
+
+def test_a_pin_quoted_as_a_record_elsewhere_is_refused_not_rewritten(tmp_path):
+    """policyforge-b5 on #430: "epoch 24 installed ...@v1.6.0" is a record. Read
+    as an instruction it became the new release, and the conserved count
+    called that success (#252's shape). A pin outside INSTALL_DOCS stops
+    the cut, naming the file, and nothing is written."""
+    record = f"Epoch 24 installed {_OWNER}@v1.6.0.\n"
+    root = _git_repo(tmp_path, {"README.md": f"{_OWNER}@v1.6.0\n", "MEASUREMENTS.md": record})
+    gate = release._pins_ready(_pin_ctx(root))
+    assert not gate.ok
+    assert any("MEASUREMENTS.md:1" in line and "INSTALL_DOCS" in line for line in gate.measured)
+    assert "unclassified 1" in gate.measured[0]
+    assert (root / "MEASUREMENTS.md").read_text() == record
+
+
+def test_a_pre_release_pin_moves_whole_and_a_full_stop_stays(tmp_path):
+    """policyforge-b5 on #430: `1.7.0rc1` was skipped and `1.7.0-rc.1` half-moved."""
+    # `d` is the case that tells a suffix ending on a letter or digit from one
+    # that may end on a dot: the full stop after `rc1` is not the version's.
+    text = (
+        f"a {_OWNER}@v1.7.0rc1\nb {_OWNER}@v1.7.0-rc.1\nc {_OWNER}@v1.6.0.\nd {_OWNER}@v1.7.0rc1.\n"
+    )
+    root = _git_repo(tmp_path, {"README.md": text})
+    ctx = _pin_ctx(root)
+    assert release._pins_ready(ctx).ok
+    release._repin(ctx)
+    assert release._pins_current(ctx).ok
+    assert (root / "README.md").read_text() == (
+        f"a {_OWNER}@v9.9.9\nb {_OWNER}@v9.9.9\nc {_OWNER}@v9.9.9.\nd {_OWNER}@v9.9.9.\n"
+    )

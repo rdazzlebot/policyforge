@@ -265,7 +265,8 @@ def cost_parts(records) -> tuple[float, int]:
     0. A local model's call counts as priced at 0.0 by its boundary class,
     since it is free although its endpoint reports no price. Never add the
     known part up as the whole: that was #378's defect one level above the
-    row, measured in 7 of 27 real ledgers.
+    row: 6 of 27 session ledgers on 2026-09-26 mixed them, counting a local
+    call as free (b5 on #379; 9b corrected a first count of 7).
 
     **A row whose total is unknown still has known parts** (#382): its last
     attempt's `last_cost_usd`, and each escalation's `first_cost_usd`. Both

@@ -12,6 +12,5 @@ line, to `policyforge ledger`'s totals (now `$0.2666 + 13 unpriced`), and to
 the `generated_by` record in each document's frontmatter. That record keeps
 `cost_usd` only when every call was priced, and now always adds
 `cost_known_usd` and `calls_unpriced`. A local model's calls count as free.
-In the ledgers we checked, 7 of 27 had calls of unknown cost that the old
-totals left out. Documents generated earlier keep their record as it was;
-there, a missing `calls_unpriced` means it was not recorded.
+Documents generated earlier keep their record as it was; there, a missing
+`calls_unpriced` means it was not recorded.

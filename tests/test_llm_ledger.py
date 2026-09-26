@@ -359,7 +359,7 @@ def test_totals_distinguish_unpriced_from_free():
 
 def test_one_unpriced_call_does_not_leave_the_rest_standing_as_the_whole():
     """#379: the sum of the priced calls was the group's cost whenever any
-    was priced. 7 of 27 real ledgers mixed the two."""
+    was priced. 6 of 27 session ledgers mixed the two (#379)."""
     mixed = Totals()
     mixed.add(CallRecord("t", "p", "cloud", "m", None, None, cost_usd=0.25))
     mixed.add(CallRecord("t", "p", "cloud", "m", None, None))

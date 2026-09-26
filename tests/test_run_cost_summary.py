@@ -4,7 +4,7 @@ The rule, for this summary, the provenance stamp and `policyforge ledger`'s
 totals: a total is a total only when every call is priced; otherwise the
 known part and the count of calls of unknown cost are both said, and never
 merged. A local model's call is priced at 0.0 by its boundary class.
-Measured before this: 7 of 27 real ledgers mixed priced and unpriced calls,
+Measured before this: 6 of 27 session ledgers mixed priced and unpriced calls,
 and every total over them presented the known part as the whole.
 """
 

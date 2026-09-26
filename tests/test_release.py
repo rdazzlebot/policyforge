@@ -1212,3 +1212,174 @@ def test_a_failed_push_is_refused_even_while_the_tap_already_matches(tmp_path, m
     assert "push" in ctx.notes["publish"] and "exited 128" in ctx.notes["publish"]
     check = release._published(ctx)
     assert not check.ok, check.measured
+
+
+# --- #413: the install pins move with the cut ----------------------------------
+
+_OWNER = release.release_check.REPOSITORY  # "<owner>/policyforge"
+
+
+def _git_repo(tmp_path, files: dict[str, str]) -> Path:
+    """A real repository, so `git grep` itself is what is measured."""
+    for name, text in files.items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8", newline="\n")
+    ident = ["-c", "user.name=t", "-c", "user.email=t@example.invalid"]
+    for argv in (["init", "-q"], ["add", "-A"], [*ident, "commit", "-qm", "base"]):
+        subprocess.run(["git", "-C", str(tmp_path), *argv], check=True, capture_output=True)
+    return tmp_path
+
+
+def _pin_ctx(root: Path) -> Context:
+    return _ctx(root=root, run=release._real_run)
+
+
+def test_instruction_pins_move_and_history_and_fixtures_do_not(tmp_path):
+    root = _git_repo(
+        tmp_path,
+        {
+            "README.md": (
+                f"pipx install git+https://github.com/{_OWNER}@v1.6.0\n"
+                f"and again {_OWNER}.git@v1.5.0\n"
+            ),
+            "CHANGELOG.md": f"## 1.6.0\n\nInstall with {_OWNER}@v1.6.0\n",
+            "tests/fixture.md": f"{_OWNER}@v1.6.0\n",
+        },
+    )
+    ctx = _pin_ctx(root)
+    gate = release._pins_ready(ctx)
+    assert (
+        gate.ok
+        and "install pins: instruction 2, history 1, test 1, unclassified 0" in gate.measured
+    )
+    assert not release._pins_current(ctx).ok
+    release._repin(ctx)
+    after = release._pins_current(ctx)
+    assert after.ok, after.measured
+    assert (root / "README.md").read_text() == (
+        f"pipx install git+https://github.com/{_OWNER}@v9.9.9\nand again {_OWNER}.git@v9.9.9\n"
+    )
+    assert "@v1.6.0" in (root / "CHANGELOG.md").read_text()
+    assert "@v1.6.0" in (root / "tests" / "fixture.md").read_text()
+
+
+def test_a_pin_naming_another_owner_is_refused_not_moved(tmp_path):
+    """A redirect is not a reference: the old owner is fixed by hand, not
+    silently re-versioned into a working-looking stale URL."""
+    root = _git_repo(
+        tmp_path,
+        {"README.md": "pipx install git+https://github.com/rdazzlebot/policyforge@v1.6.0\n"},
+    )
+    gate = release._pins_ready(_pin_ctx(root))
+    assert not gate.ok and any("another owner" in line for line in gate.measured)
+
+
+def test_no_answer_from_git_grep_is_not_zero_pins():
+    failed = _ctx(
+        run=lambda argv: subprocess.CompletedProcess(argv, 128, "", "fatal: not a git repository")
+    )
+    assert not release._pins_ready(failed).ok
+    assert not release._pins_current(failed).ok
+
+
+def test_a_pin_lost_by_the_rewrite_fails_the_step(tmp_path):
+    root = _git_repo(tmp_path, {"README.md": f"{_OWNER}@v1.6.0\n{_OWNER}@v1.6.0\n"})
+    ctx = _pin_ctx(root)
+    assert release._pins_ready(ctx).ok
+    (root / "README.md").write_text(f"{_OWNER}@v9.9.9\n", encoding="utf-8")
+    check = release._pins_current(ctx)
+    assert not check.ok and any("2 before, 1 after" in line for line in check.measured)
+
+
+def test_the_cut_at_head_reads_the_committed_pins(tmp_path):
+    root = _git_repo(tmp_path, {"README.md": f"{_OWNER}@v1.6.0\n"})
+    ctx = _pin_ctx(root)
+    pins_row = lambda: next(r for r in release._cut_at_head(ctx) if "install pins" in r[1])  # noqa: E731
+    release._repin(ctx)
+    assert pins_row()[0] is False, "rewritten but not committed: HEAD still says 1.6.0"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-qam",
+            "cut",
+        ],
+        check=True,
+    )
+    assert pins_row()[0] is True
+
+
+def test_the_pins_move_inside_the_cut_commit():
+    keys = _keys()
+    assert keys.index("version") < keys.index("install-pins") < keys.index("release-pr")
+    step = next(s for s in release.steps() if s.key == "install-pins")
+    assert step.commits_to == "release-pr"
+
+
+def test_this_repositorys_install_pins_all_name_the_canonical_owner():
+    """The population the step will meet: README's pipx lines (80's sweep on
+    #413 found two, both in README). Asserted as a property, not a count."""
+    pins = release._pins(_ctx(root=release.REPO_ROOT, run=release._real_run))
+    assert pins is not None
+    instructions = [p for p in pins if p.kind == "instruction"]
+    assert instructions and all(p.canonical for p in instructions)
+    assert any(p.path == "README.md" for p in instructions)
+
+
+def test_a_pin_in_another_case_is_moved_and_keeps_its_spelling(tmp_path):
+    """policyforge-ba on #430: GitHub installs `rdazzleman/PolicyForge@v1.6.0`,
+    and a case-sensitive match skipped it."""
+    owner = _OWNER.split("/")[0]
+    spelled = f"{owner.upper()}/PolicyForge.GIT@v1.6.0"
+    root = _git_repo(tmp_path, {"README.md": f"pipx install git+https://github.com/{spelled}\n"})
+    ctx = _pin_ctx(root)
+    assert release._pins_ready(ctx).ok
+    release._repin(ctx)
+    assert release._pins_current(ctx).ok
+    assert (root / "README.md").read_text() == (
+        f"pipx install git+https://github.com/{owner.upper()}/PolicyForge.GIT@v9.9.9\n"
+    )
+
+
+def test_a_capital_v_names_no_tag_and_is_refused(tmp_path):
+    root = _git_repo(tmp_path, {"README.md": f"{_OWNER}@V1.6.0\n"})
+    gate = release._pins_ready(_pin_ctx(root))
+    assert not gate.ok and any("names no tag" in line for line in gate.measured)
+
+
+def test_a_pin_quoted_as_a_record_elsewhere_is_refused_not_rewritten(tmp_path):
+    """policyforge-b5 on #430: "epoch 24 installed ...@v1.6.0" is a record. Read
+    as an instruction it became the new release, and the conserved count
+    called that success (#252's shape). A pin outside INSTALL_DOCS stops
+    the cut, naming the file, and nothing is written."""
+    record = f"Epoch 24 installed {_OWNER}@v1.6.0.\n"
+    root = _git_repo(tmp_path, {"README.md": f"{_OWNER}@v1.6.0\n", "MEASUREMENTS.md": record})
+    gate = release._pins_ready(_pin_ctx(root))
+    assert not gate.ok
+    assert any("MEASUREMENTS.md:1" in line and "INSTALL_DOCS" in line for line in gate.measured)
+    assert "unclassified 1" in gate.measured[0]
+    assert (root / "MEASUREMENTS.md").read_text() == record
+
+
+def test_a_pre_release_pin_moves_whole_and_a_full_stop_stays(tmp_path):
+    """policyforge-b5 on #430: `1.7.0rc1` was skipped and `1.7.0-rc.1` half-moved."""
+    # `d` is the case that tells a suffix ending on a letter or digit from one
+    # that may end on a dot: the full stop after `rc1` is not the version's.
+    text = (
+        f"a {_OWNER}@v1.7.0rc1\nb {_OWNER}@v1.7.0-rc.1\nc {_OWNER}@v1.6.0.\nd {_OWNER}@v1.7.0rc1.\n"
+    )
+    root = _git_repo(tmp_path, {"README.md": text})
+    ctx = _pin_ctx(root)
+    assert release._pins_ready(ctx).ok
+    release._repin(ctx)
+    assert release._pins_current(ctx).ok
+    assert (root / "README.md").read_text() == (
+        f"a {_OWNER}@v9.9.9\nb {_OWNER}@v9.9.9\nc {_OWNER}@v9.9.9.\nd {_OWNER}@v9.9.9.\n"
+    )

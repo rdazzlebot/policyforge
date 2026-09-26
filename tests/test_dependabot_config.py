@@ -50,18 +50,22 @@ def test_the_lock_directories_are_one_block_grouped_per_dependency():
     assert len(blocks) == 1, blocks
     (block,) = blocks
     assert set(_dirs(block)) == {"/", "/requirements"}
-    grouped = [
-        g for g in (block.get("groups") or {}).values() if g.get("group-by") == "dependency-name"
-    ]
-    assert grouped, "no group sets group-by: dependency-name"
-    # The group must cover EVERY dependency (policyforge-9b on #454): narrowed
-    # to `["pydantic*"]`, every other bump went back to one pull request per
-    # directory -- #414's defect -- and the assert above still passed. So:
-    # all names, and nothing that filters them back out.
-    assert any(
-        g.get("patterns") == ["*"]
-        and not g.get("exclude-patterns")
-        and not g.get("dependency-type")
-        and not g.get("update-types")
-        for g in grouped
-    ), f"the dependency-name group does not cover every dependency: {grouped}"
+    groups = block.get("groups") or {}
+    # The per-dependency group must be the ONLY group, and cover every
+    # dependency, every version update (policyforge-9b on #454). Each of
+    # these went back to one pull request per directory -- #414's defect --
+    # with a weaker version of this test green: `patterns` narrowed to
+    # `["pydantic*"]`; `applies-to: security-updates`, which drops version
+    # bumps out of the group; a narrower group listed first, which wins on
+    # Dependabot's first-match order. So this is a WHITELIST of what the
+    # group may say, not a list of the keys known to narrow it: a key added
+    # tomorrow fails here until someone decides it is harmless.
+    assert len(groups) == 1, f"the per-dependency group must be the only group: {sorted(groups)}"
+    ((name, group),) = groups.items()
+    assert set(group) <= {"patterns", "group-by", "applies-to"}, (
+        f"group {name!r} carries {sorted(set(group) - {'patterns', 'group-by', 'applies-to'})}, "
+        "which can narrow it"
+    )
+    assert group.get("group-by") == "dependency-name", group
+    assert group.get("patterns") == ["*"], group
+    assert group.get("applies-to", "version-updates") == "version-updates", group

@@ -14,6 +14,7 @@ from policyforge.content.deontic import _line_kinds, analyze
 
 AC2 = "[NIST 800-53 AC-2]"
 CP2 = "*[NIST CP-2(7)]*"
+AU2 = "[NIST 800-53 AU-2]"
 
 
 def _texts(text: str) -> list[str]:
@@ -106,6 +107,48 @@ def test_a_citation_indented_under_a_colon_list_is_the_whole_lists():
     text = f"Acme Health must:\n\n- maintain a register;\n- review access quarterly.\n\n  {AC2}\n"
     units, _ = _colon_units(text, analyze(text))
     assert [(u.line, u.citations) for u in units] == [(3, (AC2,)), (4, (AC2,))]
+
+
+# ---- three shapes #376 changed that the corpus does not contain (9b on #421) --
+
+
+def test_a_fence_after_a_paragraph_is_a_block_of_its_own():
+    """Before #376 the paragraph, the fence and the sentence after it read as
+    one statement carrying the paragraph's citation. The fence now ends it,
+    as a blank line would."""
+    text = f"The owner must log changes {AU2}:\n```\nlogger --all\n```\nReview it weekly.\n"
+    statements = analyze(text)
+    assert [(s.line, s.citations) for s in statements] == [(1, (AU2,)), (2, ()), (5, ())]
+    assert statements[-1].text == "Review it weekly."
+
+
+def test_a_hash_line_inside_a_fence_is_code_not_a_heading():
+    """Before #376 it was a heading and a section start, which split the
+    section the fence sits in: a defect, now gone."""
+    from policyforge.content.grounding import _section_starts
+
+    text = "## Scope\n\nThe owner must act.\n\n```\n# not a heading\nrun it\n```\n\nMore text.\n"
+    kinds = _line_kinds(text.split("\n"))
+    assert [i + 1 for i, kind in enumerate(kinds) if kind] == [1]
+    assert _section_starts(text) == [1]
+
+
+def test_a_heading_inside_a_list_item_is_a_heading_with_its_text_clean():
+    """CommonMark reads `- ## x` as a heading inside a list item, and since
+    #376 so does `deontic`. Its text is the heading's, not "- ## x"."""
+    from policyforge.content.deontic import heading_statements
+
+    text = f"Intro text.\n\n- ## Access must be reviewed\n- The owner shall log {AU2}.\n"
+    (heading,) = heading_statements(text)
+    assert (heading.line, heading.text, heading.modality) == (
+        3,
+        "Access must be reviewed",
+        "obligation",
+    )
+    assert [s.text for s in analyze(text)] == ["Intro text.", f"- The owner shall log {AU2}."]
+    for marker in ("* ", "+ ", "1. ", "> - "):
+        (h,) = heading_statements(f"{marker}## Access must be reviewed\n")
+        assert h.text == "Access must be reviewed", marker
 
 
 # ---- the structure is markdown-it's ------------------------------------------

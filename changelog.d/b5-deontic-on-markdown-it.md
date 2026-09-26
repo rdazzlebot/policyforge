@@ -17,4 +17,8 @@ obligation in the same section.
 
 `policyforge check` now takes a document's structure (headings, lists,
 paragraphs and breaks) from a CommonMark parser, not its own patterns.
-Across those 128 documents, nothing else it reports changed.
+Across those 128 documents, nothing else it reports changed. Three shapes
+none of them contains do change: a code block is read on its own, not
+joined to the paragraph before it; a `#` line inside a code block is no
+longer taken for a heading; and a heading inside a list item (`- ## ...`)
+is checked like any other heading.

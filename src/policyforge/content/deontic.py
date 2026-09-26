@@ -1115,7 +1115,8 @@ class _Structure:
 @dataclass
 class _Leaf:
     """A block of text markdown-it found: a paragraph, or a code, fence or
-    HTML block, which `analyze` still reads as prose (unchanged by #376)."""
+    HTML block. `analyze` still reads a code block's text as prose, but since
+    #376 each is a block of its own (see `_structure`)."""
 
     first: int
     last: int
@@ -1148,9 +1149,20 @@ def _structure(text: str) -> _Structure:
     drift):
     - a setext underline of a lone `-` is not an underline (see the note on
       `_line_kinds`): its paragraph stays in sentence analysis;
-    - code, fenced and HTML blocks are read as prose, as they always were,
+    - the text of code, fenced and HTML blocks is still read as prose,
       although markdown-it knows they are code;
     - a colon lead-in introduces only a list that is not inside a list item.
+
+    **Changed by #376, and absent from the generated corpus, so the
+    conservation test cannot pin them** (9b on #421; each has a hand-written
+    test in `test_deontic_block_structure.py`):
+    - a code, fenced or HTML block is now a block of its own. A fence right
+      after a paragraph no longer joins it, so the paragraph's citation is
+      not credited to the sentence after the fence;
+    - a `#` line inside a fence is code, not a heading or a section start.
+      Before, it was both, which was a defect;
+    - a heading inside a list item (`- ## x`) is a heading, as CommonMark
+      reads it. Before, it was a list line, read as a sentence.
     """
     lines = text.split("\n")
     kinds: list[str | None] = [None] * len(lines)
@@ -1452,9 +1464,12 @@ def _analyze_block(text: str, block_offset: int, block: str, statements: list[St
         )
 
 
-#: An ATX heading's markup: indentation, blockquote markers and the opening
-#: `#`s, and an optional closing run of `#`s.
-_ATX_MARKS_RE = re.compile(r"^[ \t]{0,3}(?:>[ \t]?)*[ \t]{0,3}#{1,6}[ \t]*|[ \t]+#+[ \t]*$")
+#: An ATX heading's markup: indentation, the container markers in front of it
+#: (blockquote `>`, and a list item's `-`, `*`, `+` or `1.`), the opening `#`s,
+#: and an optional closing run of `#`s. The list markers since #376, where a
+#: heading inside a list item (`- ## x`) became a heading, as CommonMark reads
+#: it, and its text came out as "- ## x" (9b on #421).
+_ATX_MARKS_RE = re.compile(r"^[ \t]*(?:(?:>|[-*+]|\d{1,9}[.)])[ \t]*)*#{1,6}[ \t]*|[ \t]+#+[ \t]*$")
 
 
 #: Every modal phrase `_MODALITY_PATTERNS` matches, lowercase, longest first.

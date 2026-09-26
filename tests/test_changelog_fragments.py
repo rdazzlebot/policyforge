@@ -359,3 +359,19 @@ def test_a_pointer_whose_subject_is_any_other_noun_is_not_yet_caught(
 ) -> None:
     write(tmp_path, "a.md", f"**A change.** {sentence}\n")
     assert frag.check(tmp_path), "caught: remove the xfail and move it to the refused tests"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "known miss, named in _POSITIONAL's comment: a pointer followed by it/the/a "
+        "or a number reads as a comparison and passes, the price of letting "
+        "'a change below 5%' through (policyforge-b5 on #420). Strict, so it goes "
+        "red the day it is caught."
+    ),
+)
+def test_a_pointer_followed_by_what_reads_as_a_complement_is_not_yet_caught(
+    tmp_path: Path,
+) -> None:
+    write(tmp_path, "a.md", "**A change.** The fix above it also covers HIPAA.\n")
+    assert frag.check(tmp_path), "caught: remove the xfail and move it to the refused tests"

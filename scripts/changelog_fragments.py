@@ -122,7 +122,13 @@ _WHERE = r"(?:above|below)"
 #:
 #: **A comparison is not a pointer.** A noun then a position then a
 #: complement ("a change below 5%", "a fix below 1.0", "below the
-#: catalog") compares; a pointer has nothing after the position. "You see
+#: catalog") compares; a pointer usually has nothing after the position.
+#: **Usually, and that is the price** (policyforge-b5 on #420): a pointer
+#: followed by `it`, `the`, `a` or a number reads as a comparison and
+#: passes ("The fix above it also covers HIPAA."). The test file holds it
+#: as a strict expected miss. Refusing it would refuse "a change below
+#: 5%" with it, and comparisons are the commoner shape in this project's
+#: notes. "You see
 #: below" describes rather than directs, and passes. `section` is not in the
 #: noun list: a fragment may use `###`, so "the section below" is within it.
 _ADVERB = r"(?:(?:the|further|just|also|directly|immediately)\s+)?"

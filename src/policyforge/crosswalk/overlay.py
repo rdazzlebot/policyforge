@@ -308,6 +308,26 @@ SEARCHED_NONE_FOUND: dict[str, str] = {
         "NIST OLIR and CPRT catalogs enumerated in full; their datasets' elements "
         "not enumerated; record on #264, #279"
     ),
+    # 45 CFR 164 Subparts D and E (#409). Searched by `policyforge-f8` (5b) on
+    # 2026-09-26 06:14-06:35 UTC; the full record is on #409. Enumerated: NIST
+    # OLIR's live catalog (102 entries; positive control CSF entry 186 found)
+    # and CPRT's framework list (211 versions). Every HIPAA entry in either
+    # maps the Security Rule: `HIPAA-Sec-Rule-800-53-5.1.1`'s 279 reference
+    # elements cite 164.308-316 only, and SP 800-66r2 names 164.410, 504 and
+    # 508 only inside quoted 164.314 text. NOT searched: HHS (hhs.gov returns
+    # 403 to a scripted client), third parties (HITRUST is licensed and never
+    # ingested; vendor crosswalks), and the NIST Privacy Framework's own
+    # crosswalks, which map that framework, not the Privacy Rule.
+    "HIPAA Privacy Rule": (
+        "searched 2026-09-26 UTC (#409) by policyforge-f8; NIST OLIR and CPRT "
+        "enumerated, every HIPAA entry maps the Security Rule; HHS and third "
+        "parties not enumerated; record on #409"
+    ),
+    "HIPAA Breach Notification Rule": (
+        "searched 2026-09-26 UTC (#409) by policyforge-f8; NIST OLIR and CPRT "
+        "enumerated, every HIPAA entry maps the Security Rule; HHS and third "
+        "parties not enumerated; record on #409"
+    ),
 }
 
 

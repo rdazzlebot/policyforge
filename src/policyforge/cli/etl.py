@@ -1826,3 +1826,132 @@ def etl_csf(out: Path, oscal_path: Path | None, olir_path: Path | None):
     )
     for focal, target in refused:
         click.echo(f"Refused {focal} -> {target}: no control of 800-53 rev 5 has that id.")
+
+
+@cli.command("etl-hipaa-privacy")
+@click.option(
+    "--date",
+    default=None,
+    help="The eCFR date to read, or `latest`. Defaults to the pinned date both catalogs "
+    "were built from; the scheduled drift job passes `latest`.",
+)
+@click.option(
+    "--frameworks",
+    "frameworks_dir",
+    default=Path("data/frameworks"),
+    type=click.Path(path_type=Path, file_okay=False),
+    help="Where the two catalog directories live.",
+)
+@click.option(
+    "--saved",
+    "saved_dir",
+    default=None,
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    help="Parse saved copies instead of fetching: renderer-D.html, ecfr-D.xml, "
+    "renderer-E.html, ecfr-E.xml and renderer-E-<pre-rule date>.html.",
+)
+def etl_hipaa_privacy(date: str | None, frameworks_dir: Path, saved_dir: Path | None):
+    """Fetch HIPAA's Breach Notification Rule (Subpart D) and Privacy Rule
+    (Subpart E) from eCFR and parse them into two catalogs. A US federal
+    regulation, so safe to bundle.
+
+    eCFR STILL PRINTS TEXT A COURT VACATED. Purl v. HHS vacated the 2024
+    reproductive-health amendments, and eCFR has not removed them. Both
+    catalogs carry eCFR's text as printed, and the Privacy Rule's
+    framework.yaml marks the vacated paragraphs: they are not used for
+    generation, `check` warns on a citation to one, and where the rule only
+    revised a paragraph, the pre-rule wording that binds again is quoted
+    from eCFR's own earlier text. This is the project's reading of the
+    judgment, not legal advice; the catalog README carries the long form.
+
+    Refuses, and writes nothing, if eCFR's renderer and its XML disagree on
+    any section's words, if either subpart's shape changes, or if the
+    vacated text is not exactly what was pinned.
+    """
+    import dataclasses
+    import hashlib
+    import json
+
+    import yaml
+
+    from policyforge.ingest import hipaa_privacy as hp
+    from policyforge.ingest.provenance import record_source_provenance
+
+    date = date or hp.PIN_DATE
+    if date == "latest":
+        from policyforge.ingest.ecfr import current_date
+
+        date = current_date(hp.TITLE)
+
+    def read(name: str) -> str:
+        return (saved_dir / name).read_bytes().decode("utf-8")
+
+    fetched: dict[str, tuple[str, str]] = {}
+
+    def subpart(letter: str) -> tuple[str, str]:
+        if letter not in fetched:
+            if saved_dir is None:
+                fetched[letter] = hp.fetch(date, letter)
+            else:
+                fetched[letter] = (read(f"renderer-{letter}.html"), read(f"ecfr-{letter}.xml"))
+        return fetched[letter]
+
+    written = []
+    try:
+        pre_rule = (
+            read(f"renderer-E-{hp.PRE_RULE_DATE}.html")
+            if saved_dir is not None
+            else hp.fetch(hp.PRE_RULE_DATE, "E")[0]
+        )
+        for (name, first, last), letter, directory, extent in (
+            (hp.BREACH, "D", hp.BREACH_DIR, hp.BREACH_EXTENT),
+            (hp.PRIVACY, "E", hp.PRIVACY_DIR, hp.PRIVACY_EXTENT),
+        ):
+            html, xml = subpart(letter)
+            found = hp.sections(html, first, last)
+            hp.require_text_agrees(found, hp.xml_section_texts(xml, first, last))
+            controls = hp.to_controls(
+                hp.without_definitions(found), name, f"45 CFR 164 Subpart {letter}"
+            )
+            hp.require_extent(controls, extent, name)
+            status = None
+            if letter == "E":
+                status = hp.vacated_status(
+                    found,
+                    hp.sections(pre_rule, first, last),
+                    pre_rule_sha256=hashlib.sha256(pre_rule.encode("utf-8")).hexdigest(),
+                )
+            written.append((frameworks_dir / directory, controls, status, letter))
+    except hp.HipaaPrivacyError as exc:
+        # Nothing is written for either catalog: a refused parse of one
+        # subpart must not leave the other half-updated beside it.
+        raise click.ClickException(str(exc)) from exc
+
+    for directory, controls, status, letter in written:
+        out = directory / "controls.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
+        manifest = directory / "framework.yaml"
+        if status is not None and manifest.exists():
+            data = yaml.safe_load(manifest.read_text(encoding="utf-8")) or {}
+            data["vacated"] = status
+            write_text_lf(
+                manifest, yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=88)
+            )
+        stamp = record_source_provenance(
+            manifest,
+            source_ref=date,
+            source_url=hp.renderer_url(date, letter),
+            content=out.read_bytes(),
+        )
+        paragraphs = sum(len(c.enhancements) for c in controls)
+        click.echo(
+            f"Parsed {len(controls)} sections and {paragraphs} paragraphs of Subpart {letter} "
+            f"(eCFR {date}) -> {out}" + (f"; provenance sha256:{stamp[:16]}…" if stamp else "")
+        )
+        if status is not None:
+            revised = sum(len(r["ids"]) for r in status["revised"].values())
+            click.echo(
+                f"  Marked {len(status['added'])} vacated and {revised} revised-and-vacated "
+                f"unit(s) of the 2024 rule ({hp.JUDGMENT})."
+            )

@@ -136,12 +136,34 @@ class Proposal:
     nameless: int = 0
 
 
-def requirements_of(controls, framework: str) -> list[Requirement]:
+def requirements_of(controls, framework: str, vacated: dict | None = None) -> list[Requirement]:
+    """Each requirement of `framework`, as a model is asked about it.
+
+    Text a court vacated is not asked about (#409): a catalog whose manifest
+    marks paragraphs `vacated:` is read through `vacated.for_generation`, as
+    synthesis reads it, so no mapping is proposed for text that binds nobody,
+    and a revised paragraph is proposed from the wording that binds.
+    `vacated` defaults to the manifests on disk.
+    """
+    from policyforge.mapping.crosswalk import normalize_framework
+
+    if vacated is None:
+        from policyforge.frameworks.registry import config_or_defaults
+        from policyforge.frameworks.vacated import declared_vacated
+
+        vacated = declared_vacated(config_or_defaults("vacated paragraphs were read"))
     wanted = framework.casefold()
     found = []
     for control in controls:
         if control.framework.casefold() != wanted:
             continue
+        status = vacated.get(normalize_framework(control.framework))
+        if status is not None:
+            from policyforge.frameworks.vacated import for_generation
+
+            control = for_generation(control, status)
+            if control is None:
+                continue
         found.append(
             Requirement(control.control_id, control.title, control.control_statement or "")
         )

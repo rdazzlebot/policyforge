@@ -358,6 +358,15 @@ ANCHOR_DECISIONS: dict[str, str] = {
         "no published mapping was found (#264); reached only through a crosswalk an "
         "organisation seeds"
     ),
+    "hipaa-privacy-rule": (
+        "no published mapping to 800-53 (#409): the Privacy Rule governs uses and "
+        "disclosures, not security controls; reached only through a crosswalk an "
+        "organisation seeds (80, on #409)"
+    ),
+    "hipaa-breach-notification-rule": (
+        "no published mapping to 800-53 (#409); reached only through a crosswalk an "
+        "organisation seeds (80, on #409)"
+    ),
     "nist-csf-2-0": (
         "outcomes, like the AI RMF Core's, reached through NIST's own mapping to 800-53 "
         "(OLIR 186), whose links read as partial; a topic anchors the 800-53 controls "

@@ -26,3 +26,8 @@ tests/fixtures/deontic_corpus/documents/** -text
 # the pinned one (#408), for the same reason as the Playbook's above.
 tests/fixtures/oscal_csf_2_0.json -text
 tests/fixtures/olir_186_csf_2_0_to_800-53r5.xlsx -text
+
+# Byte-exact: the Privacy Rule's manifest records the SHA-256 of the pre-rule
+# eCFR file it quotes (#409), and `etl-hipaa-privacy` on these fixtures must
+# reproduce that record on every platform.
+tests/fixtures/ecfr_164_subparts_d_e/** -text

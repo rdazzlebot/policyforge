@@ -269,6 +269,7 @@ class LiteLLMProvider(LLMProvider):
 
         response = self._create(payload, temperature)
         text, finish_reason, cost, stripped = self._read(response)
+        last_cost = cost
 
         if needs_more_room(text, finish_reason):
             second = retry_budget(max_tokens)
@@ -286,6 +287,7 @@ class LiteLLMProvider(LLMProvider):
             )
             response = self._create({**payload, "max_tokens": second}, temperature)
             text, finish_reason, retry_cost, stripped = self._read(response)
+            last_cost = retry_cost
             # Both calls are billed, so both are reported. Charging a
             # comparison only for the successful attempt would make a model
             # that needs the retry look cheaper than one that does not,
@@ -299,10 +301,10 @@ class LiteLLMProvider(LLMProvider):
             # And None if either attempt's cost is unknown: the sum of the
             # known part alone would read as the whole bill (9b on #378, the
             # rule the cascade follows). The first attempt's cost is kept in
-            # the row's `escalations`; a known re-send cost after an unknown
-            # first one is recorded nowhere, since the row has one cost field.
-            # LiteLLM prices by model, so both attempts are normally known or
-            # both unknown.
+            # the row's `escalations`, and the re-send's own cost travels as
+            # `last_cost_usd`, which the row keeps when its total is None
+            # (#382). LiteLLM prices by model, so both attempts are normally
+            # known or both unknown.
             known = cost is not None and retry_cost is not None
             cost = cost + retry_cost if known else None
             if needs_more_room(text, finish_reason):
@@ -337,6 +339,7 @@ class LiteLLMProvider(LLMProvider):
                 getattr(usage, "prompt_tokens_details", None), "cached_tokens", None
             ),
             request_id=getattr(response, "id", None),
+            last_cost_usd=last_cost,
         )
 
     def supports_effort(self) -> bool:
@@ -402,6 +405,7 @@ class LiteLLMProvider(LLMProvider):
                 f"{self.model} was asked for JSON matching a schema and returned "
                 f"something else: {response.text[:160]!r}",
                 text=response.text,
+                response=response,
             ) from exc
         return response
 

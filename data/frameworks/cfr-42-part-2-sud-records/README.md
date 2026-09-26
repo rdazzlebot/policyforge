@@ -210,7 +210,8 @@ CPRT enumerated 2026-09-26 UTC, #279):
 - **NIST OLIR, listed in full:** all 102 informative references, of every
   status (Final, Draft, Archive, Work-in-progress). None matches 42 CFR
   Part 2 (the search pattern was first tested against Part 2's real title).
-- **NIST CPRT, listed in full:** all 197 frameworks across 216 versions.
+- **NIST CPRT, listed in full:** all 197 frameworks (211 versions listed;
+  5 frameworks list no version).
   None is 42 CFR Part 2, and the only health datasets are the four HIPAA
   Security Rule mappings, whose source is 45 CFR 164, not Title 42.
 

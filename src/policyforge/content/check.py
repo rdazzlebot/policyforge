@@ -346,6 +346,15 @@ def _check_requirement_strength(documents: list[ContentDocument]) -> list[Findin
         if doc.tier not in _BINDING_TIERS:
             continue
         for statement in weakened_citations(doc.body):
+            # A Procedure step is an instruction carrying out an obligation
+            # the Standard above it states (#363): "Security Operations
+            # distributes the plan" is how a step is meant to read, so a
+            # cited step with no modality is not "a requirement stated as
+            # fact" there (80's ruling on #412; 266 such warnings over the
+            # 45 generated Procedures). A step weakened to "should" or "may"
+            # is still reported, in every tier.
+            if doc.tier == "procedure" and statement.modality == NONE:
+                continue
             how = (
                 f"as a {statement.modality}"
                 if statement.modality != NONE

@@ -215,19 +215,33 @@ def section_text(section: Section) -> str:
 
 
 def xml_section_texts(xml: str, first: int, last: int) -> dict[str, str]:
-    """{section id: its text from the versioner XML, whitespace removed}."""
-    import xml.etree.ElementTree as ET
+    """{section id: its text from the versioner XML, whitespace removed}.
 
-    root = ET.fromstring(xml)
+    Read with patterns, as the Security loader reads the same file
+    (`hipaa_loader._SECTION_RE`), not with an XML parser: the standard
+    library's is open to entity expansion, and this project's SAST refuses
+    it. The unit is every `<P>` in the section, tags removed and entities
+    decoded.
+    """
+    import html
+
     texts = {}
-    for div in root.iter("DIV8"):
-        sid = div.get("N", "")
-        match = _SECTION_ID.match(sid)
-        if div.get("TYPE") != "SECTION" or not match or not first <= int(match.group(1)) <= last:
+    for match in _XML_SECTION.finditer(xml):
+        number = int(match.group("id").split(".")[1])
+        if not first <= number <= last:
             continue
-        paragraphs = ["".join(p.itertext()) for p in div.iter("P")]
-        texts[sid] = re.sub(r"\s+", "", "".join(paragraphs))
+        paragraphs = [
+            html.unescape(re.sub(r"<[^>]+>", "", p))
+            for p in _XML_PARAGRAPH.findall(match.group("body"))
+        ]
+        texts[match.group("id")] = re.sub(r"\s+", "", "".join(paragraphs))
     return texts
+
+
+_XML_SECTION = re.compile(
+    r'<DIV8 N="(?P<id>164\.\d+)" TYPE="SECTION"[^>]*>(?P<body>.*?)</DIV8>', re.DOTALL
+)
+_XML_PARAGRAPH = re.compile(r"<P>(.*?)</P>", re.DOTALL)
 
 
 def require_text_agrees(found: list[Section], xml_texts: dict[str, str]) -> None:

@@ -277,10 +277,12 @@ def test_the_shell_passes_the_relationships_the_cli_passes():
     cli_source = inspect.getsource(programme)
     shell_source = inspect.getsource(skills._coverage)
 
-    assert "relationships=accepted_relationships" in cli_source, (
-        "the CLI no longer passes relationships; this test's premise is gone"
-    )
-    assert "relationships=accepted_relationships" in shell_source, (
+    # Since #408 both read `relationships_for`, which layers a catalog's
+    # declared relationship under the overlays' accepted rows; the property
+    # is unchanged: one function, called the same way by both.
+    call = "relationships=relationships_for("
+    assert call in cli_source, "the CLI no longer passes relationships; this test's premise is gone"
+    assert call in shell_source, (
         "the shell does not pass relationships, so a reviewed `superset` "
         "mapping counts as full coverage here and partial in the CLI"
     )

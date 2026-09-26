@@ -21,3 +21,8 @@ tests/fixtures/airc_ai_rmf_playbook.json -text
 # over these bytes, in its README, and a checkout that rewrote their line
 # endings would name a different corpus.
 tests/fixtures/deontic_corpus/documents/** -text
+
+# Byte-exact: `etl-csf` refuses either CSF 2.0 source whose SHA-256 is not
+# the pinned one (#408), for the same reason as the Playbook's above.
+tests/fixtures/oscal_csf_2_0.json -text
+tests/fixtures/olir_186_csf_2_0_to_800-53r5.xlsx -text

@@ -12,7 +12,11 @@ from __future__ import annotations
 import pytest
 
 from policyforge.content.deontic import analyze, playbook_obligations
-from policyforge.crosswalk.overlay import NON_BINDING_FRAMEWORKS, NOT_CROSSWALK_ANCHORABLE
+from policyforge.crosswalk.overlay import (
+    NON_BINDING_FRAMEWORKS,
+    NOT_CROSSWALK_ANCHORABLE,
+    OUTCOME_CATALOGS,
+)
 from policyforge.mapping.crosswalk import normalize_framework
 
 PLAYBOOK = "NIST AI RMF Playbook Map 1.6 Action 1"
@@ -25,8 +29,14 @@ def _flags(sentence: str) -> int:
 
 @pytest.mark.parametrize(
     "other",
-    ["NIST AI RMF Map 1.6", "NIST AI RMF Govern 1"],
-    ids=["core-subcategory", "core-category"],
+    [
+        "NIST AI RMF Map 1.6",
+        "NIST AI RMF Govern 1",
+        # CSF 2.0 states outcomes too (80, on #408), by either name it ships under.
+        "NIST CSF 2.0 GV.OC-01",
+        "NIST Cybersecurity Framework 2.0 GV.OC-01",
+    ],
+    ids=["core-subcategory", "core-category", "csf-by-row-name", "csf-by-manifest-name"],
 )
 def test_a_playbook_obligation_is_refused_even_with_a_core_tag(other):
     """The case the ruling is about: the organization's obligation, tagged
@@ -68,8 +78,10 @@ def test_the_non_binding_set_is_the_refusal_tables_ai_rmf_entries():
     """Named once, beside the refusal table, and held inside it: a catalog
     cannot be non-binding without a written reason there."""
     refused = {normalize_framework(name) for name in NOT_CROSSWALK_ANCHORABLE}
-    assert refused >= NON_BINDING_FRAMEWORKS
-    assert {"nist-ai-rmf", "nist-ai-rmf-playbook"} == NON_BINDING_FRAMEWORKS
+    assert refused | set(OUTCOME_CATALOGS) >= NON_BINDING_FRAMEWORKS
+    assert not refused & set(OUTCOME_CATALOGS), "a reason in both tables is two reasons"
+    # CSF 2.0 by 80's ruling on #408: outcomes, as the Core.
+    assert {"nist-ai-rmf", "nist-ai-rmf-playbook", "nist-csf"} == NON_BINDING_FRAMEWORKS
     assert "cfr-171-information-blocking" not in NON_BINDING_FRAMEWORKS, (
         "refused for a different reason; the ruling named exactly the two AI RMF catalogs"
     )

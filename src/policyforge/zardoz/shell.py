@@ -803,6 +803,7 @@ def refusal_types() -> tuple[type[BaseException], ...]:
     from policyforge.generate.playbook_repair import PlaybookRepairFailed
     from policyforge.ingest.ai_rmf import AiRmfParseError
     from policyforge.ingest.ai_rmf_playbook import AiRmfPlaybookError
+    from policyforge.ingest.csf import CsfError
     from policyforge.ingest.govramp_export import ExportFormatError as GovRampFormatError
     from policyforge.ingest.hitrust_export import ExportFormatError as HitrustFormatError
     from policyforge.ingest.onc_loader import OncParseError
@@ -828,6 +829,7 @@ def refusal_types() -> tuple[type[BaseException], ...]:
         PlaybookRepairFailed,
         AiRmfParseError,
         AiRmfPlaybookError,
+        CsfError,
         GovRampFormatError,
         HitrustFormatError,
         OncParseError,

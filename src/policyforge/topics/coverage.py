@@ -43,8 +43,11 @@ from policyforge.mapping.crosswalk import normalize_framework
 from policyforge.topics.anchoring import parent_of
 from policyforge.topics.registry import Topic
 
+#: A link its source published untyped and declared incomplete; see
+#: `crosswalk.overlay.RELATIONSHIPS` for its meaning (#408).
+SOURCE_UNTYPED = "source-untyped"
 #: Relationships under which one control covers only part of a requirement.
-PARTIAL_RELATIONSHIPS = frozenset({"superset", "intersects"})
+PARTIAL_RELATIONSHIPS = frozenset({"superset", "intersects", SOURCE_UNTYPED})
 
 
 def reaches_in_full(
@@ -57,9 +60,10 @@ def reaches_in_full(
 
     **The one reading of "partial"** (#185; 80's condition on #377). A pair
     with no recorded relationship reaches in full, which is what every pair
-    did before relationships were recorded; one recorded as `superset` or
-    `intersects` reaches only in part, and whether that is enough is a
-    person's call. `/coverage` and every reach through the crosswalk ask
+    did before relationships were recorded; one in `PARTIAL_RELATIONSHIPS`
+    (`superset` or `intersects` from a reviewer, `source-untyped` from a
+    catalog's manifest, #408) reaches only in part, and whether that is enough
+    is a person's call. `/coverage` and every reach through the crosswalk ask
     this, so none of them reads the relationship table a second way.
     """
     return relationships.get((framework, requirement_id, nist_id)) not in PARTIAL_RELATIONSHIPS
@@ -73,13 +77,22 @@ class FrameworkCoverage:
     covered: list[str] = field(default_factory=list)
     uncovered: list[str] = field(default_factory=list)
     #: Reached only through owned controls recorded as covering part of the
-    #: requirement (`superset` or `intersects`).
+    #: requirement: a relationship in `PARTIAL_RELATIONSHIPS` (`superset`,
+    #: `intersects`, or a catalog's declared `source-untyped`).
     partial: list[str] = field(default_factory=list)
     #: True when the framework is counted per LEVEL requirement ("01.a
     #: Level 1") rather than per control -- HITRUST, whose crosswalk is
     #: published per level (#282). The report says so, because the unit is
     #: what the number means.
     per_level: bool = False
+    #: When the framework's published links are `source-untyped` (#408): the
+    #: requirements its source links to no 800-53 control at all. The source
+    #: declares its mapping incomplete, so these are "not mapped by the
+    #: source", never "no 800-53 equivalent". None for every other framework.
+    unmapped_by_source: list[str] | None = None
+    #: Who published that mapping, as the catalog's manifest names it
+    #: (`crosswalk_source:`), for the report's wording. Empty when undeclared.
+    source_name: str = ""
 
     @property
     def total(self) -> int:
@@ -273,6 +286,7 @@ def analyze_coverage(
     other_controls: list[Control] | None = None,
     crosswalk: dict[str, dict[str, list[str]]] | None = None,
     relationships: dict[tuple[str, str, str], str] | None = None,
+    crosswalk_sources: dict[str, str] | None = None,
 ) -> CoverageReport:
     """Compute ownership coverage of `nist_controls` by `topics`.
 
@@ -284,7 +298,12 @@ def analyze_coverage(
 
     `relationships` maps (framework, requirement id, NIST id) to the
     relationship an organization recorded for that pair — see
-    `crosswalk.overlay.accepted_relationships`.
+    `crosswalk.overlay.relationships_for`.
+
+    `crosswalk_sources` names who published each framework's mapping, by
+    framework key (`registry.declared_crosswalk_sources`, #408). It is read
+    from the manifests on disk only when a `source-untyped` framework is in
+    the report, so no other report pays for it.
     """
     report = CoverageReport(scope=scope)
     report.in_scope = _in_scope_ids(nist_controls)
@@ -339,6 +358,7 @@ def analyze_coverage(
             crosswalk,
             owned=set(report.covered) | set(report.contested),
             relationships=relationships or {},
+            crosswalk_sources=crosswalk_sources,
         )
 
     return report
@@ -350,10 +370,26 @@ def _framework_coverage(
     *,
     owned: set[str],
     relationships: dict[tuple[str, str, str], str],
+    crosswalk_sources: dict[str, str] | None = None,
 ) -> list[FrameworkCoverage]:
     """Which non-NIST requirements are reachable from an owned NIST control."""
     reachable: dict[str, set[str]] = {}
     in_part: dict[str, set[str]] = {}
+    # Read from the same table as `reaches_in_full`, so both callers agree.
+    untyped = {f for (f, _, _), rel in relationships.items() if rel == SOURCE_UNTYPED}
+    if untyped and crosswalk_sources is None:
+        from policyforge.frameworks.registry import (
+            config_or_defaults,
+            declared_crosswalk_sources,
+        )
+
+        crosswalk_sources = declared_crosswalk_sources(
+            config_or_defaults("crosswalk sources were read")
+        )
+    linked: dict[str, set[str]] = {}
+    for mapped in crosswalk.values():
+        for framework, equivalent_ids in mapped.items():
+            linked.setdefault(framework, set()).update(equivalent_ids)
     for nist_id in owned:
         for framework, equivalent_ids in crosswalk.get(nist_id, {}).items():
             for requirement_id in equivalent_ids:
@@ -394,6 +430,14 @@ def _framework_coverage(
                 partial=sorted(r for r in requirement_ids if r in part),
                 uncovered=sorted(r for r in requirement_ids if r not in hit and r not in part),
                 per_level=framework in per_level,
+                unmapped_by_source=(
+                    sorted(r for r in requirement_ids if r not in linked.get(framework, set()))
+                    if framework in untyped
+                    else None
+                ),
+                source_name=(crosswalk_sources or {}).get(framework, "")
+                if framework in untyped
+                else "",
             )
         )
     return coverage
@@ -477,6 +521,23 @@ def format_report(report: CoverageReport, *, show_all: bool = False) -> str:
                 lines.append("    " + ", ".join(shown[index : index + 4]))
             if len(shown) < len(framework.partial):
                 lines.append(f"    ... and {len(framework.partial) - len(shown)} more (--show-all)")
+        if framework.unmapped_by_source is not None:
+            # Generic wording, the source named from the manifest (80, on #449).
+            source = (
+                f"{framework.source_name} (the source of this crosswalk)"
+                if framework.source_name
+                else "the source of this crosswalk"
+            )
+            lines.append(
+                f"  {source[0].upper()}{source[1:]} publishes this mapping untyped and "
+                "declares it incomplete, so every link counts as partial."
+            )
+            if framework.unmapped_by_source:
+                lines.append(
+                    f"  {len(framework.unmapped_by_source)} of the requirements not reached "
+                    f"are not mapped by {source}, which is not the same as having no "
+                    "800-53 equivalent."
+                )
         if framework.uncovered:
             shown = framework.uncovered if show_all else framework.uncovered[:12]
             lines.append("  Not reached:")

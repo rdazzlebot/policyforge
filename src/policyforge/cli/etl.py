@@ -1714,3 +1714,115 @@ def generate_parser_cmd(
     click.echo(
         f"Promoted -> {target}. Add it to your test suite and commit it like any other source file."
     )
+
+
+@cli.command("etl-csf")
+@click.option(
+    "--out",
+    default=Path("data/frameworks/nist-csf-2-0/controls.json"),
+    type=click.Path(path_type=Path),
+    help="Where to write the parsed control data.",
+)
+@click.option(
+    "--oscal",
+    "oscal_path",
+    default=None,
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    help="Parse a saved copy of NIST's CSF 2.0 OSCAL catalog instead of fetching. It must "
+    "be the pinned file, byte for byte.",
+)
+@click.option(
+    "--olir",
+    "olir_path",
+    default=None,
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    help="Parse a saved copy of the OLIR 186 workbook instead of fetching. It must be the "
+    "pinned file, byte for byte.",
+)
+def etl_csf(out: Path, oscal_path: Path | None, olir_path: Path | None):
+    """Fetch NIST CSF 2.0 and NIST's mapping of it to SP 800-53, and parse
+    them into this project's data schema. A US government work, so safe to
+    bundle.
+
+    CSF 2.0 STATES OUTCOMES, as the AI RMF Core does: a citation to it
+    supports no obligation on its own. It is reached through its crosswalk
+    to 800-53, not anchored.
+
+    NIST's mapping (OLIR 186) is untyped and NIST marks it not
+    comprehensive, so every link reads as partial coverage, and a
+    subcategory it does not link is "not mapped by NIST", not "has no 800-53
+    equivalent". Both files are pinned by their SHA-256, and any other file
+    is refused; on the scheduled drift job that refusal is the job working.
+    The catalog's README carries the long form.
+    """
+    import dataclasses
+    import json
+
+    from policyforge.ingest import csf
+    from policyforge.ingest.oscal_loader import (
+        CATALOG_URL_CSF_2_0,
+        NIST_CSF_2_0,
+        parse_oscal_catalog,
+        require_csf_2_0_extent,
+    )
+    from policyforge.ingest.provenance import record_source_provenance
+    from policyforge.scaffold import bundled_root
+
+    def read(path: Path | None, url: str) -> bytes:
+        if path is not None:
+            click.echo(f"Parsing saved copy {path} instead of fetching {url}.")
+            return path.read_bytes()
+        return csf.fetch(url)
+
+    rows = json.loads(
+        bundled_root()
+        .joinpath("frameworks", "nist-800-53-r5", "controls.json")
+        .read_text(encoding="utf-8")
+    )
+    ids_800_53 = {r["control_id"] for r in rows} | {
+        e["enhancement_id"] for r in rows for e in r.get("enhancements") or []
+    }
+    try:
+        raw_catalog = read(oscal_path, CATALOG_URL_CSF_2_0)
+        csf.require_sha256(raw_catalog, csf.CATALOG_SHA256, "The CSF 2.0 OSCAL catalog")
+        raw_olir = read(olir_path, csf.OLIR_186_URL)
+        csf.require_sha256(raw_olir, csf.OLIR_186_SHA256, "The OLIR 186 workbook")
+        catalog = json.loads(raw_catalog)
+        controls, withdrawn = parse_oscal_catalog(catalog, dialect=NIST_CSF_2_0)
+        require_csf_2_0_extent(controls)
+        links, families, refused = csf.parse_olir_186(raw_olir, ids_800_53)
+        family_links = csf.attach(controls, links, families)
+    except (csf.CsfError, ValueError) as exc:
+        # A refused file is the pin WORKING, as for the AI RMF Playbook: a
+        # clean error line naming the reason, and nothing written.
+        raise click.ClickException(str(exc)) from exc
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
+    # `source_ref` is the catalog's OWN `metadata.version` (1.2.0 when pinned),
+    # which NIST versions separately from the repository tag the URL names
+    # (v1.5.0); both are recorded, the tag in `source_url` (80, on #449).
+    version = catalog["catalog"]["metadata"]["version"]
+    csf.record_family_links(out.parent / "framework.yaml", family_links)
+    stamp = record_source_provenance(
+        out.parent / "framework.yaml",
+        source_ref=version,
+        source_url=CATALOG_URL_CSF_2_0,
+        content=out.read_bytes(),
+    )
+    if stamp is not None:
+        click.echo(f"Recorded provenance: {version} sha256:{stamp[:16]}… -> {out.parent}")
+    subcategories = sum(len(c.enhancements) for c in controls)
+    click.echo(
+        f"Parsed {len(controls)} categories and {subcategories} subcategories "
+        f"(CSF 2.0, OSCAL {version}) -> {out}"
+    )
+    click.echo(f"Excluded {withdrawn} withdrawn CSF 1.1 elements.")
+    click.echo(
+        f"Carried NIST's {sum(map(len, links.values()))} links to 800-53 controls on "
+        f"{len(links)} CSF ids, all resolved; "
+        f"{sum(map(len, families.values()))} family links on {len(families)}, kept as family "
+        "links and never expanded."
+    )
+    for focal, target in refused:
+        click.echo(f"Refused {focal} -> {target}: no control of 800-53 rev 5 has that id.")

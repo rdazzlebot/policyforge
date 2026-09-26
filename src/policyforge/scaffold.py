@@ -41,6 +41,7 @@ BUNDLED_CATALOGS = (
     "nist-800-53-r5",
     "nist-ai-rmf",
     "nist-ai-rmf-playbook",
+    "nist-csf-2-0",
 )
 
 #: Bring-your-own catalogs: only the README explaining how to supply one.

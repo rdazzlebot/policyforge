@@ -102,7 +102,7 @@ def test_a_misspelled_declaration_is_refused_rather_than_read_as_full(tmp_path):
     """Anything outside PARTIAL_RELATIONSHIPS reads as full coverage, so a
     typo would count every CSF pair covered. It must stop, naming the file."""
     _catalog(tmp_path, "nist-csf-2-0", CSF, "source-untypd")
-    with pytest.raises(ValueError, match="source-untypd.*not one of"):
+    with pytest.raises(ValueError, match=r"source-untypd.*not one of"):
         declared_crosswalk_relationships(roots=[tmp_path])
 
 

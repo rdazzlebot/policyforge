@@ -125,9 +125,7 @@ def test_no_other_catalogs_coverage_moves():
     from policyforge.topics.registry import load_topics
 
     frameworks = ROOT / "data" / "frameworks"
-    controls = [
-        c for p in sorted(frameworks.glob("*/controls.json")) for c in load_controls(p)
-    ]
+    controls = [c for p in sorted(frameworks.glob("*/controls.json")) for c in load_controls(p)]
     nist = [c for c in controls if c.framework == "NIST 800-53"]
     other = [c for c in controls if c.framework != "NIST 800-53"]
     topics = load_topics(ROOT / "config" / "topics.example.yaml")
@@ -228,7 +226,7 @@ def test_attach_refuses_a_focal_id_the_core_does_not_have():
     from policyforge.ingest.schema import Control
 
     core = [Control(control_id="GV.OC", title="t", framework="NIST CSF 2.0", framework_version="2")]
-    with pytest.raises(csf.CsfError, match="ID.AM-06"):
+    with pytest.raises(csf.CsfError, match=r"ID\.AM-06"):
         csf.attach(core, {"ID.AM-06": ["AC-2"]}, {})
 
 
@@ -258,7 +256,6 @@ OLIR_FIXTURE = ROOT / "tests" / "fixtures" / "olir_186_csf_2_0_to_800-53r5.xlsx"
 
 
 def test_etl_on_the_pinned_files_writes_the_shipped_catalog(tmp_path):
-
 
     from click.testing import CliRunner
 

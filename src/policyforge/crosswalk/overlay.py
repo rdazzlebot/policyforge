@@ -186,7 +186,7 @@ NON_BINDING_FRAMEWORKS: frozenset[str] = frozenset(
 #: the reasons for the rest.
 OUTCOME_CATALOGS: dict[str, str] = {
     "nist-csf": (
-        "NIST CSF 2.0 states outcomes (\"the organizational mission is understood\"), "
+        'NIST CSF 2.0 states outcomes ("the organizational mission is understood"), '
         "not obligations, as the AI RMF Core does; a citation to it commits nobody to "
         "anything on its own. See data/frameworks/nist-csf-2-0/README.md."
     ),

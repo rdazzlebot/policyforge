@@ -392,9 +392,7 @@ def document_evidence(
                     requirement_id=requirement_id,
                     via=anchor,
                     provenance=_provenance_of(row),
-                    relationship=(
-                        getattr(row, "relationship", "") if row is not None else ""
-                    )
+                    relationship=(getattr(row, "relationship", "") if row is not None else "")
                     or declared_relationships.get(framework, "")
                     or "unspecified",
                     reviewed_by=str((getattr(row, "reviewed_by", {}) or {}).get("who", "")),

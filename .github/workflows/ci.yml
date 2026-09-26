@@ -228,3 +228,30 @@ jobs:
       # section this directory replaces.
       - name: Changelog fragments are well-formed
         run: python scripts/changelog_fragments.py --check
+
+  # The prompt version ledger only grows (#424). tests/test_prompt_fingerprint_file.py
+  # holds the ledger equal to the registry, but against the ledger as committed
+  # in the SAME change, so a change that edits a prompt and rewrites its
+  # recorded fingerprint passes it. This compares with the BASE branch's
+  # ledger, which the change cannot edit. pull_request only, as above: on a
+  # push there is no base to hold it to. Exit 2 (the base did not resolve) is
+  # a failure, never a pass.
+  prompt-ledger:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0  # origin/<base> has to exist to be read
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # Through `env:`, never `${{ }}` in `run:`: a branch name is attacker
+      # text (see the changelog job above).
+      - name: Nothing the base recorded is changed or removed
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: python scripts/prompt_ledger_grows.py --base "origin/$BASE_REF"

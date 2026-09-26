@@ -19,8 +19,11 @@ GATE = ROOT / "scripts" / "check.py"
 
 #: Scripts CI runs that the gate is NOT expected to run, each with a reason.
 #:
-#: **Empty on purpose.** A name here is a decision that the gate may be
-#: weaker than CI in one place, and it should cost someone an argument.
+#: **Short on purpose** (this used to say "empty", while holding an entry).
+#: A name here is a decision that the gate may be weaker than CI in one
+#: place, and it should cost someone an argument. Both entries are the same
+#: argument: the script needs a base branch, which exists only once a pull
+#: request does.
 GATE_NEED_NOT_RUN: dict[str, str] = {
     "changelog_guard": (
         "needs two facts that do not exist before a pull request does: "
@@ -29,6 +32,14 @@ GATE_NEED_NOT_RUN: dict[str, str] = {
         "Found by this test rather than named in #212 -- deriving the "
         "population from ci.yml surfaced a second instance of the same class, "
         "and this one is a genuine exception rather than an omission."
+    ),
+    "prompt_ledger_grows": (
+        "needs `--base origin/<base-ref>`, the branch a pull request targets, "
+        "and compares the ledger against THAT branch's; a local pre-push run "
+        "does not know which train a branch is headed for, and guessing one "
+        "would be a check answering an adjacent question (#424). The half "
+        "that needs no base -- the ledger equals the registry -- does run in "
+        "the gate, through tests/test_prompt_fingerprint_file.py."
     ),
 }
 

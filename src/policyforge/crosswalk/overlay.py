@@ -260,11 +260,26 @@ SEARCHED_NONE_FOUND: dict[str, str] = {
         # the 2024 final rule 89 FR 12472 and the 2020 rules; the HITRUST CSF
         # v11.7.0 authoritative-sources list; NIST SP 800-66r2; site searches
         # of nist.gov, csrc.nist.gov, hhs.gov, samhsa.gov, healthit.gov and
-        # 405d.hhs.gov. NOT enumerated: NIST OLIR/CPRT, which is where a
-        # formal mapping would be registered. The published HIPAA crosswalks
-        # map the Security Rule, which 2.16 does not incorporate, so they do
-        # not reach Part 2 transitively.
-        "searched 2026-09-24 UTC by policyforge-f8; NIST OLIR/CPRT not enumerated; record on #264"
+        # 405d.hhs.gov. The published HIPAA crosswalks map the Security Rule,
+        # which 2.16 does not incorporate, so they do not reach Part 2
+        # transitively.
+        #
+        # Then, on 2026-09-26 00:23-00:26 UTC, `policyforge-f8` ENUMERATED
+        # NIST OLIR and CPRT in full, where a formal mapping would be
+        # registered, through the undocumented JSON routes their own pages
+        # call: OLIR's 102 informative references (every status; no paging)
+        # and CPRT's 197 frameworks, 211 framework versions (5 frameworks
+        # list none), each listing's sha256 on #279. The counts were
+        # re-measured on the same snapshot hashes by policyforge-1d (both) and
+        # policyforge-ba (CPRT); #279's first report said 216 versions.
+        # A self-tested pattern (42 CFR / Part 2 / substance / SAMHSA / SUD)
+        # found 0 hits in either. Its stated limits, kept here because
+        # dropping them would overstate the search: catalog METADATA only,
+        # not every dataset's elements (a Part 2 element inside a dataset
+        # named for something else would not show); only OLIR and CPRT.
+        "searched 2026-09-24 UTC (#264) and 2026-09-26 UTC (#279) by policyforge-f8; "
+        "NIST OLIR and CPRT catalogs enumerated in full; their datasets' elements "
+        "not enumerated; record on #264, #279"
     ),
 }
 

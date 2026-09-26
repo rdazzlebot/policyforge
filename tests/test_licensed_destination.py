@@ -77,7 +77,7 @@ def test_a_destination_the_boundary_would_not_read_as_licensed_is_refused(
     result = ETLS[etl](monkeypatch, project, "--out", str(out), "--force")
     assert result.exit_code != 0, result.output
     assert "would be read as" in result.output
-    assert "must stay on local models" in result.output
+    assert "your boundary settings for licensed content would not apply" in result.output
     assert "local_content/" in result.output, "the refusal names where to write instead"
     assert not out.exists()
 

@@ -1093,10 +1093,11 @@ def _guard_licensed_write(out: Path, *, force: bool, product: str, licence: str,
     landing = classify_path(out, config, assume_written=True)
     if landing.klass != LICENSED:
         raise click.ClickException(
-            f"{out} would be read as {landing.klass} ({landing.reason}), and "
-            f"content of that class may be sent to a hosted model. A {product} is "
-            f"licensed and must stay on local models. Write it under local_content/, "
-            f"e.g. --out local_content/{_suggested_dir(product)}/controls.json."
+            f"{out} would be read as {landing.klass} ({landing.reason}), so your "
+            f"boundary settings for licensed content would not apply to this {product}: "
+            "it would go wherever that class of content may go. Write it under "
+            f"local_content/, e.g. --out local_content/{_suggested_dir(product)}/"
+            "controls.json, so they do."
         )
 
     # Gitignored destinations need no permission: a file git will never

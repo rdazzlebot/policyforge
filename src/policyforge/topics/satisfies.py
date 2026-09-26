@@ -65,6 +65,10 @@ UNREVIEWED = "overlay, NOT REVIEWED"
 #: `source-untyped` (#408) and printed NIST's untyped CSF links as satisfied.
 PARTIAL = PARTIAL_RELATIONSHIPS
 
+#: A requirement reached through a source's link to a whole 800-53 family
+#: (#448): never satisfied, and never a control-level pair.
+FAMILY_ROUTE = "family"
+
 
 @dataclass
 class Citation:
@@ -101,10 +105,16 @@ class Reached:
     reviewed_by: str = ""
     flags: list[str] = field(default_factory=list)
     sections: list[str] = field(default_factory=list)
+    #: `crosswalked` (a control-level pair) or `family` (#448): the source
+    #: linked the requirement to a WHOLE 800-53 family, and the document
+    #: cites a control in it. `via` is then the family, never a control.
+    route: str = "crosswalked"
 
     @property
     def in_part(self) -> bool:
-        return self.relationship in PARTIAL
+        # A family link is evidence toward the requirement, never coverage of
+        # it (80's ruling on #448), whatever relationship it carries.
+        return self.route == FAMILY_ROUTE or self.relationship in PARTIAL
 
     @property
     def reviewed(self) -> bool:
@@ -313,8 +323,14 @@ def document_evidence(
     crosswalk: dict[str, dict[str, list[str]]],
     provenance: dict[tuple[str, str, str], object] | None = None,
     declared_relationships: dict[str, str] | None = None,
+    family_links: dict[str, dict[str, frozenset[str]]] | None = None,
 ) -> DocumentEvidence:
     """What one document can be shown against.
+
+    `family_links` is each catalog's links to whole 800-53 families
+    (`declared_family_links`, #448), defaulting to the manifests on disk. A
+    document citing a control in a linked family reaches the linked
+    requirement by the `family` route: in part, never satisfied.
 
     `anchored_not_cited` is left empty here and filled by `build_report`,
     which can see the topic's other documents; see its docstring for why
@@ -334,6 +350,8 @@ def document_evidence(
     """
     if declared_relationships is None:
         declared_relationships = _declared_relationships()
+    if family_links is None:
+        family_links = _declared_family_links()
     index = _catalog_index(controls)
     evidence = DocumentEvidence(
         path=getattr(document, "relative_path", str(getattr(document, "path", ""))),
@@ -402,6 +420,33 @@ def document_evidence(
                     flags=list(getattr(row, "flags", []) or []),
                     sections=list(sections),
                 )
+
+    # Family links (#448, 80's ruling): a requirement its source linked to a
+    # whole 800-53 family is reached when the document cites a control in
+    # that family. Only for a catalog that is loaded, and only where no
+    # control-level pair already reached it: a family link adds nothing
+    # beside one, and must never stand in for one.
+    in_family: dict[str, list[str]] = {}
+    for citation in evidence.cited:
+        if citation.framework == NIST_ANCHOR:
+            sections = in_family.setdefault(citation.requirement_id.split("-")[0].upper(), [])
+            sections.extend(s for s in citation.sections if s not in sections)
+    for framework, links in sorted(family_links.items()):
+        if framework not in index:
+            continue
+        for requirement_id, families in sorted(links.items()):
+            key = (framework, requirement_id)
+            hit = sorted(f for f in families if f in in_family)
+            if not hit or key in cited or key in reached:
+                continue
+            reached[key] = Reached(
+                framework=framework,
+                requirement_id=requirement_id,
+                via=", ".join(hit),
+                relationship="family",
+                sections=[s for f in hit for s in in_family[f]],
+                route=FAMILY_ROUTE,
+            )
     evidence.reached = sorted(reached.values(), key=lambda r: (r.framework, r.requirement_id))
     return evidence
 
@@ -433,6 +478,12 @@ def _declared_relationships() -> dict[str, str]:
     )
 
     return declared_crosswalk_relationships(config_or_defaults("crosswalk relationships were read"))
+
+
+def _declared_family_links() -> dict[str, dict[str, frozenset[str]]]:
+    from policyforge.frameworks.registry import config_or_defaults, declared_family_links
+
+    return declared_family_links(config_or_defaults("family links were read"))
 
 
 def build_report(
@@ -562,7 +613,7 @@ def as_records(evidences: list[DocumentEvidence]) -> list[dict]:
                 {
                     "framework": r.framework,
                     "requirement_id": r.requirement_id,
-                    "route": "crosswalked",
+                    "route": r.route,
                     "via": r.via,
                     "provenance": r.provenance,
                     "relationship": r.relationship,
@@ -622,7 +673,8 @@ def format_report(evidences: list[DocumentEvidence]) -> str:
                 if citation.qualifier:
                     shown += f" ({citation.qualifier})"
                 lines.append(f"  {shown:<28} {where}")
-        for framework, reached in sorted(_by_framework(evidence.reached).items()):
+        crosswalked = [r for r in evidence.reached if r.route != FAMILY_ROUTE]
+        for framework, reached in sorted(_by_framework(crosswalked).items()):
             lines.append("")
             lines.append(f"Reached through the crosswalk — {framework.upper()} ({len(reached)})")
             lines.append("-" * 60)
@@ -636,6 +688,17 @@ def format_report(evidences: list[DocumentEvidence]) -> str:
                 if item.flags:
                     note += f", {', '.join(item.flags)}"
                 lines.append(f"  {item.requirement_id:<24} {extent:<10} via {item.via}  [{note}]")
+        families = [r for r in evidence.reached if r.route == FAMILY_ROUTE]
+        for framework, reached in sorted(_by_framework(families).items()):
+            # 80's ruling on #448: in part, never satisfied, and saying why.
+            lines.append("")
+            lines.append(f"Reached through a family link — {framework.upper()} ({len(reached)})")
+            lines.append("-" * 60)
+            for item in reached:
+                lines.append(
+                    f"  {item.requirement_id:<24} {'in part':<10} via the {item.via} family  "
+                    "[its source linked it to the whole family, not to any control in it]"
+                )
         if evidence.cited and not evidence.reached and not evidence.nist_anchors:
             lines.append("")
             lines.append("Reached through the crosswalk — none, and not for want of coverage")

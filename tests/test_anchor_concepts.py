@@ -85,6 +85,7 @@ MIXED_SITE_FUNCTIONS = {
     "build_report": (A, "hands the crosswalk to document_evidence; asks B only via the above"),
     "_provenance_of": (NEITHER, "labels an overlay row"),
     "_declared_relationships": (NEITHER, "reads each catalog's declared relationship (#408)"),
+    "_declared_family_links": (NEITHER, "reads each catalog's links to whole families (#448)"),
     "as_records": (A, "reports the crosswalk traversal's anchors"),
     "_by_framework": (NEITHER, "groups rows for display"),
     "format_report": (A, "reports the crosswalk traversal's anchors"),

@@ -216,6 +216,12 @@ def _enhancement_changes(old, new) -> list[ControlChange]:
     return found
 
 
+def _whole_family(control_id: str) -> str:
+    """An 800-53 id's two-letter family (`AC` for `AC-2(3)`), the unit a
+    source's family link names (#448)."""
+    return control_id.split("-", 1)[0].strip().upper()
+
+
 #: How a document was reached: through a citation that resolved, or only by
 #: the shape of an 800-53 id in one that did not (80's ruling on #418).
 RESOLVED = "resolved"
@@ -244,8 +250,17 @@ def documents_reached(
     crosswalk=None,
     catalogs: dict[str, set[str]] | None = None,
     families: dict[str, dict[str, str]] | None = None,
+    family_links: dict[str, dict[str, frozenset[str]]] | None = None,
 ) -> dict[str, dict[str, str]]:
     """Control id -> {document: how it was reached, `RESOLVED` or `BY_SHAPE`}.
+
+    **Through a family link, both ways** (80's ruling on #448, #377's hub
+    rule being symmetric): `family_links` (`declared_family_links`) says a
+    catalog's id stands for a whole 800-53 family (CSF 2.0's `GV.OC-03 ->
+    PT`). A change to any control in that family reaches a document citing
+    the id, and a change to the id reaches a document citing any control in
+    the family. It never makes two 800-53 controls of one family reach each
+    other: that stays #377's control-level rule.
 
     Walks the content tree rather than the corpus, because the question is
     which *files you maintain* need re-reading, and those are the ones under
@@ -335,11 +350,20 @@ def documents_reached(
 
     own: dict[str, set[str]] = {}
     hub: dict[str, set[str]] = {}
+    links = family_links or {}
+    # By 800-53 family (`AC`): changed 800-53 controls, for citations of a
+    # linked id; and changed linked ids, for citations of 800-53 controls.
+    in_linked_family: dict[str, set[str]] = {}
+    linked_to_family: dict[str, set[str]] = {}
     for changed in controls:
         for family in fam(changed, key):
             own.setdefault(family, set()).add(changed)
         for family in hubs(changed, framework, reverse):
             hub.setdefault(family, set()).add(changed)
+        if key == NIST_ANCHOR or key in identity:
+            in_linked_family.setdefault(_whole_family(changed), set()).add(changed)
+        for whole in links.get(key, {}).get(changed, ()):
+            linked_to_family.setdefault(whole, set()).add(changed)
 
     def known(catalog: str, requirement_id: str) -> bool:
         # A standard cited by its paragraph is not "known" here and needs not
@@ -360,6 +384,11 @@ def documents_reached(
             hub_families = {family_of(requirement_id, NIST_ANCHOR)}
         for family in hub_families:
             hit |= hub.get(family, set())
+        # Family links, both ways (#448).
+        if cited == NIST_ANCHOR or cited in identity:
+            hit |= linked_to_family.get(_whole_family(requirement_id), set())
+        for whole in links.get(cited, {}).get(requirement_id, ()):
+            hit |= in_linked_family.get(whole, set())
         return hit
 
     def resolutions(written: str, requirement_id: str) -> list[tuple[str, str]]:
@@ -423,6 +452,7 @@ def assess_impact(
     crosswalk=None,
     catalogs=None,
     families=None,
+    family_links=None,
 ) -> dict[str, Impact]:
     """Work out what each changed control reaches.
 
@@ -453,6 +483,7 @@ def assess_impact(
             crosswalk=crosswalk,
             catalogs=catalogs,
             families=families,
+            family_links=family_links,
         )
         for control_id, paths in reached.items():
             impacts[control_id].documents.extend(sorted(paths))
@@ -641,6 +672,7 @@ def analyze_drift(
     crosswalk=None,
     catalogs=None,
     families=None,
+    family_links=None,
 ) -> DriftReport:
     """`crosswalk` is `build_crosswalk` over every catalog loaded (the drift
     command passes the installation's); by default, the diffed catalog's
@@ -655,6 +687,11 @@ def analyze_drift(
         from policyforge.topics.anchoring import families_for
 
         families = families_for([*(old_controls or []), *(new_controls or [])])
+    if family_links is None:
+        # The manifests' links to whole families (#448), as `families` above.
+        from policyforge.frameworks.registry import config_or_defaults, declared_family_links
+
+        family_links = declared_family_links(config_or_defaults("family links were read"))
     changes = diff_catalogs(old_controls, new_controls)
     return DriftReport(
         old_version=(old_controls[0].framework_version if old_controls else ""),
@@ -672,5 +709,6 @@ def analyze_drift(
             crosswalk=crosswalk,
             catalogs=catalogs,
             families=families,
+            family_links=family_links,
         ),
     )

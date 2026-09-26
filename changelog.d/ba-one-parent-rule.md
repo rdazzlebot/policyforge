@@ -29,5 +29,7 @@ none.
 
 **`programme parameters` includes 800-171's organisation-defined
 parameters** where a topic anchors the 800-53 controls NIST maps them to,
-and each such row in the ledger says `(from NIST 800-171)`. Rows from any
-catalog other than 800-53 are now labelled with it, FedRAMP's included.
+and each such row in the ledger says `(from NIST 800-171)`. The ledger now
+names each row's source catalog: every row from a catalog other than 800-53
+says where it came from, FedRAMP's included. The ledger's keys are
+unchanged, so decisions already recorded carry over.

@@ -155,8 +155,15 @@ _LOOPBACK_NAMES = frozenset({"localhost", "localhost.localdomain", ""})
 
 
 def _is_loopback(host) -> bool:
+    """Only the machine itself. Anything this cannot read is NOT loopback:
+    the first version passed every non-str host, so `getaddrinfo(b"host")`
+    made a real lookup (policyforge-b5 on #434)."""
+    if host is None:
+        return True  # getaddrinfo(None, port): the local host, by definition
+    if isinstance(host, (bytes, bytearray)):
+        host = bytes(host).decode("ascii", errors="replace")
     if not isinstance(host, str):
-        return True  # a unix socket or an already-resolved local form
+        return False
     name = host.strip("[]").lower()
     if name in _LOOPBACK_NAMES:
         return True
@@ -192,7 +199,10 @@ def no_network(monkeypatch):
     `ConnectEx` below Python, so an asyncio connection to a LITERAL IP there
     passes. A hostname still needs a lookup, which is refused. No test here
     uses asyncio networking today; if one starts to, this sentence is the
-    gap to close.
+    gap to close. **Child processes** are not covered either: a subprocess
+    has its own sockets. policyforge-b5 measured the suite's 1,570 child
+    processes on #434, and all were local git or scripts; a test that starts
+    one which fetches is outside this guard.
     """
     real_getaddrinfo = socket.getaddrinfo
     real_gethostbyname = socket.gethostbyname

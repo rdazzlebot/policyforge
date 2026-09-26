@@ -87,3 +87,22 @@ def test_a_datagram_to_loopback_is_allowed():
         pass
     finally:
         sock.close()
+
+
+@pytest.mark.parametrize("resolver", ["getaddrinfo", "gethostbyname", "gethostbyname_ex"])
+def test_a_host_given_as_bytes_is_refused_too(resolver):
+    """policyforge-b5 on #434: every non-str host was passed as loopback, so
+    `getaddrinfo(b"www.ecfr.gov")` made a real lookup."""
+    call = getattr(socket, resolver)
+    with pytest.raises(NetworkUsedInTest, match="ecfr"):
+        call(b"www.ecfr.gov", 443) if resolver == "getaddrinfo" else call(b"www.ecfr.gov")
+
+
+def test_bytes_loopback_and_the_local_host_are_allowed():
+    for host in (b"localhost", b"127.0.0.1", None):
+        try:
+            socket.getaddrinfo(host, 80)
+        except NetworkUsedInTest:  # pragma: no cover - the failure being guarded
+            pytest.fail(f"{host!r} was refused")
+        except OSError:
+            pass

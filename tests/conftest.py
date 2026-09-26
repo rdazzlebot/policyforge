@@ -33,6 +33,8 @@ one covers a key in the developer's shell, the other covers a key on disk.
 from __future__ import annotations
 
 import importlib.util
+import ipaddress
+import socket
 from pathlib import Path
 
 import pytest
@@ -113,7 +115,11 @@ def pytest_configure(config):
 
 @pytest.fixture(autouse=True)
 def no_live_credentials(monkeypatch):
-    """Strip provider credentials so no test can reach a real service.
+    """Strip provider credentials so no test can reach a real MODEL provider.
+
+    Not every service needs a credential: eCFR does not, and a test that
+    stubbed only half its fetch reached it live (#432). `no_network` below
+    is what stops that; this stops a keyed provider.
 
     Autouse and unconditional. A test that wants a model injects a fake;
     there is no legitimate reason for the suite to hold a live key, and
@@ -140,3 +146,123 @@ def ledger_writes_nowhere_real(monkeypatch, tmp_path):
     from policyforge.llm import ledger
 
     monkeypatch.setattr(ledger, "DEFAULT_LEDGER_PATH", tmp_path / "calls.jsonl")
+
+
+#: Hosts a test may connect to: the machine itself. Tests name
+#: `localhost:11434` for a local model with the transport stubbed; loopback
+#: is allowed so a stub that misses fails on its own terms, not on this.
+_LOOPBACK_NAMES = frozenset({"localhost", "localhost.localdomain", ""})
+
+
+def _is_loopback(host) -> bool:
+    """Only the machine itself. Anything this cannot read is NOT loopback:
+    the first version passed every non-str host, so `getaddrinfo(b"host")`
+    made a real lookup (policyforge-b5 on #434)."""
+    if host is None:
+        return True  # getaddrinfo(None, port): the local host, by definition
+    if isinstance(host, (bytes, bytearray)):
+        host = bytes(host).decode("ascii", errors="replace")
+    if not isinstance(host, str):
+        return False
+    name = host.strip("[]").lower()
+    if name in _LOOPBACK_NAMES:
+        return True
+    try:
+        return ipaddress.ip_address(name.split("%")[0]).is_loopback
+    except ValueError:
+        return False
+
+
+class NetworkUsedInTest(RuntimeError):
+    """A test reached past this machine. Not an `OSError`, so no HTTP client
+    reads it as a connection failure to retry or to report as the server's."""
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """Refuse name lookups, connections and datagrams beyond loopback (#432).
+
+    `test_etl_hipaa_fetches_and_parses` stubbed the XML fetch and not the
+    date lookup before it, so it called eCFR live; one CI run at a commit
+    failed on eCFR's 403 while another at the same commit passed. A red
+    that is about a third party's rate limiter teaches a reader to re-run,
+    and re-running is what hides a real red. Refused at the socket, before
+    any client library, so a new unstubbed call is found by the test that
+    makes it, with the host named, whatever library it goes through.
+
+    **What is patched, exactly** (policyforge-ba on #434, who found the
+    first version claimed "every lookup" and patched one resolver):
+    `getaddrinfo`, `gethostbyname`, `gethostbyname_ex`, `gethostbyaddr`;
+    `socket.connect`, `connect_ex`, `sendto`, `sendmsg`.
+
+    **Not covered, named:** Windows' asyncio Proactor connects through
+    `ConnectEx` below Python, so an asyncio connection to a LITERAL IP there
+    passes. A hostname still needs a lookup, which is refused. No test here
+    uses asyncio networking today; if one starts to, this sentence is the
+    gap to close. **Child processes** are not covered either: a subprocess
+    has its own sockets. policyforge-b5 measured the suite's 1,570 child
+    processes on #434, and all were local git or scripts; a test that starts
+    one which fetches is outside this guard.
+    """
+    real_getaddrinfo = socket.getaddrinfo
+    real_gethostbyname = socket.gethostbyname
+    real_gethostbyname_ex = socket.gethostbyname_ex
+    real_gethostbyaddr = socket.gethostbyaddr
+    real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
+    real_sendto = socket.socket.sendto
+    real_sendmsg = getattr(socket.socket, "sendmsg", None)  # absent on Windows
+
+    def refuse(host):
+        raise NetworkUsedInTest(
+            f"this test reached the network ({host!r}); stub the call instead (#432)"
+        )
+
+    def getaddrinfo(host, *args, **kwargs):
+        if not _is_loopback(host):
+            refuse(host)
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    def by_name(real):
+        def lookup(host, *args, **kwargs):
+            if not _is_loopback(host):
+                refuse(host)
+            return real(host, *args, **kwargs)
+
+        return lookup
+
+    def sendto(self, data, *rest):
+        address = rest[-1]  # sendto(data, address) or sendto(data, flags, address)
+        if isinstance(address, tuple) and not _is_loopback(address[0]):
+            refuse(address[0])
+        return real_sendto(self, data, *rest)
+
+    def sendmsg(self, buffers, ancdata=(), flags=0, address=None):
+        if isinstance(address, tuple) and not _is_loopback(address[0]):
+            refuse(address[0])
+        return real_sendmsg(self, buffers, ancdata, flags, *((address,) if address else ()))
+
+    def connect(self, address):
+        if isinstance(address, tuple) and not _is_loopback(address[0]):
+            refuse(address[0])
+        return real_connect(self, address)
+
+    def connect_ex(self, address):
+        if isinstance(address, tuple) and not _is_loopback(address[0]):
+            refuse(address[0])
+        return real_connect_ex(self, address)
+
+    # boto3 with no credentials asks the cloud instance-metadata service at
+    # 169.254.169.254 for some. On a CI runner, a cloud VM, that address
+    # answers: three Bedrock construction tests were talking to the runner's
+    # metadata service (found by this guard, #432). botocore's own switch.
+    monkeypatch.setenv("AWS_EC2_METADATA_DISABLED", "true")
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
+    monkeypatch.setattr(socket, "gethostbyname", by_name(real_gethostbyname))
+    monkeypatch.setattr(socket, "gethostbyname_ex", by_name(real_gethostbyname_ex))
+    monkeypatch.setattr(socket, "gethostbyaddr", by_name(real_gethostbyaddr))
+    monkeypatch.setattr(socket.socket, "sendto", sendto)
+    if real_sendmsg is not None:
+        monkeypatch.setattr(socket.socket, "sendmsg", sendmsg)
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)

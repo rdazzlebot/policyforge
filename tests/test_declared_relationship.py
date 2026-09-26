@@ -156,3 +156,61 @@ def test_an_organisations_reviewed_row_overrides_the_declaration(declared):
     table = relationships_for(controls, [reviewed], declared=declared)
     assert table[("nist-csf", "PR.AA-01", "AC-2")] == "equal"
     assert _covered(controls, table).get("nist-csf") == 1
+
+
+def test_coverage_names_what_the_source_left_unmapped(declared):
+    """80 on #408: an unmapped CSF id is "not mapped by NIST", never "no
+    800-53 equivalent". Only a `source-untyped` framework gets the note."""
+    from policyforge.topics.coverage import format_report
+
+    controls = [
+        *_controls(),
+        Control(control_id="GV.OC", title="t", framework=CSF, framework_version="2.0"),
+    ]
+    topics = [Topic(name="T", owner="O", nist_controls=["AC-2"])]
+    report = analyze_coverage(
+        topics,
+        [c for c in controls if c.framework == "NIST 800-53"],
+        other_controls=[c for c in controls if c.framework != "NIST 800-53"],
+        crosswalk=build_crosswalk(controls),
+        relationships=relationships_for(controls, [], declared=declared),
+    )
+    by_name = {f.framework: f for f in report.framework_coverage}
+    assert by_name["nist-csf"].unmapped_by_source == ["GV.OC"]
+    assert by_name["hipaa"].unmapped_by_source is None
+    text = format_report(report)
+    assert text.count("not mapped by the source") == 1
+    assert "declares it incomplete" in text
+
+
+class _Document:
+    def __init__(self, body):
+        self.body = body
+        self.title = "D"
+        self.relative_path = "d.md"
+        self.tier = "standard"
+        self.topic = ""
+
+
+@pytest.mark.parametrize("with_overlay", [False, True], ids=["unseeded", "seeded"])
+def test_satisfies_reports_a_csf_pair_in_part_and_hipaa_satisfied(declared, with_overlay):
+    """`satisfies` reads the one partial set and the declared relationship, as
+    `coverage` does: it printed NIST's untyped CSF links as "satisfied",
+    through a private copy of the partial set that lacked `source-untyped`."""
+    from policyforge.crosswalk.overlay import accepted_rows, apply_overlays
+    from policyforge.topics.satisfies import document_evidence
+
+    controls = _controls()
+    overlays = [seed_overlay(controls, CSF, declared=declared)] if with_overlay else []
+    apply_overlays(controls, overlays)
+    evidence = document_evidence(
+        _Document("Acme must manage accounts. [NIST 800-53 AC-2]\n"),
+        controls=controls,
+        crosswalk=build_crosswalk(controls),
+        provenance=accepted_rows(overlays),
+        declared_relationships=declared,
+    )
+    reached = {(r.framework, r.requirement_id): r for r in evidence.reached}
+    assert reached[("nist-csf", "PR.AA-01")].in_part
+    assert reached[("nist-csf", "PR.AA-01")].relationship == "source-untyped"
+    assert not reached[("hipaa", "164.308(a)(3)(i)")].in_part

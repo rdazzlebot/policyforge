@@ -1547,6 +1547,75 @@
         }
       ]
     },
+    "etl-csf": {
+      "help": "Fetch NIST CSF 2.0 and NIST's mapping of it to SP 800-53, and parse\nthem into this project's data schema. A US government work, so safe to\nbundle.\n\nCSF 2.0 STATES OUTCOMES, as the AI RMF Core does: a citation to it\nsupports no obligation on its own. It is reached through its crosswalk\nto 800-53, not anchored.\n\nNIST's mapping (OLIR 186) is untyped and NIST marks it not\ncomprehensive, so every link reads as partial coverage, and a\nsubcategory it does not link is \"not mapped by NIST\", not \"has no 800-53\nequivalent\". Both files are pinned by their SHA-256, and any other file\nis refused; on the scheduled drift job that refusal is the job working.\nThe catalog's README carries the long form.",
+      "name": "etl-csf",
+      "params": [
+        {
+          "default": "data/frameworks/nist-csf-2-0/controls.json",
+          "help": "Where to write the parsed control data.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Parse a saved copy of NIST's CSF 2.0 OSCAL catalog instead of fetching. It must be the pinned file, byte for byte.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "oscal_path",
+          "nargs": 1,
+          "opts": [
+            "--oscal"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": false,
+            "exists": true,
+            "file_okay": true,
+            "name": "file"
+          }
+        },
+        {
+          "default": null,
+          "help": "Parse a saved copy of the OLIR 186 workbook instead of fetching. It must be the pinned file, byte for byte.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "olir_path",
+          "nargs": 1,
+          "opts": [
+            "--olir"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": false,
+            "exists": true,
+            "file_okay": true,
+            "name": "file"
+          }
+        }
+      ]
+    },
     "etl-fedramp": {
       "help": "Fetch FedRAMP's published control tailoring and apply it to 800-53.\n\nPublic domain - a US federal program, same basis as the NIST and eCFR\nsources. Read from `fedramp-consolidated-rules.json` in `FedRAMP/rules`,\nwhich that repository calls its canonical rules dataset.\n\nThis writes a profile, not a baseline. FedRAMP's machine-readable\nLow/Moderate/High baseline selection used to live in\n`GSA/fedramp-automation`, and that repository no longer exists - so\nnothing here says which controls a given system must implement, and\n`Control.baseline` is deliberately left unset rather than guessed. What\nit does carry is FedRAMP's own two additions to the controls it does\nspeak to: the organization-defined values FedRAMP has already decided,\nand the guidance it layers on top. See ingest/fedramp.py.",
       "name": "etl-fedramp",

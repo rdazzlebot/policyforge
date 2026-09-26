@@ -49,6 +49,7 @@ from dataclasses import dataclass, field
 
 from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
 from policyforge.topics.anchoring import anchor_keys, families_for, regulatory_families
+from policyforge.topics.coverage import PARTIAL_RELATIONSHIPS
 
 _HEADING_RE = re.compile(r"^#{1,6}\s+(?P<title>.+?)\s*$")
 
@@ -57,8 +58,9 @@ REVIEWED = "overlay, reviewed"
 UNREVIEWED = "overlay, NOT REVIEWED"
 
 #: Relationships under which the control covers only part of the requirement.
-#: The same reading `coverage` uses.
-PARTIAL = frozenset({"superset", "intersects"})
+#: `coverage`'s set itself, not a copy of it: the copy here lacked
+#: `source-untyped` (#408) and printed NIST's untyped CSF links as satisfied.
+PARTIAL = PARTIAL_RELATIONSHIPS
 
 
 @dataclass
@@ -307,6 +309,7 @@ def document_evidence(
     controls,
     crosswalk: dict[str, dict[str, list[str]]],
     provenance: dict[tuple[str, str, str], object] | None = None,
+    declared_relationships: dict[str, str] | None = None,
 ) -> DocumentEvidence:
     """What one document can be shown against.
 
@@ -320,7 +323,14 @@ def document_evidence(
 
     `controls` must be the catalogs as `load_catalogs` returns them, with
     overlays already applied, since the crosswalk is read from them.
+
+    `declared_relationships` is each framework's declared crosswalk relationship
+    (`declared_crosswalk_relationships`, #408), which a published pair with
+    no overlay row carries, as `relationships_for` gives it to `coverage`.
+    It defaults to the manifests on disk.
     """
+    if declared_relationships is None:
+        declared_relationships = _declared_relationships()
     index = _catalog_index(controls)
     evidence = DocumentEvidence(
         path=getattr(document, "relative_path", str(getattr(document, "path", ""))),
@@ -382,7 +392,11 @@ def document_evidence(
                     requirement_id=requirement_id,
                     via=anchor,
                     provenance=_provenance_of(row),
-                    relationship=getattr(row, "relationship", "unspecified") or "unspecified",
+                    relationship=(
+                        getattr(row, "relationship", "") if row is not None else ""
+                    )
+                    or declared_relationships.get(framework, "")
+                    or "unspecified",
                     reviewed_by=str((getattr(row, "reviewed_by", {}) or {}).get("who", "")),
                     flags=list(getattr(row, "flags", []) or []),
                     sections=list(sections),
@@ -411,6 +425,15 @@ def _answers_for_an_anchor(framework: str) -> bool:
     return anchors_a_topic(framework)
 
 
+def _declared_relationships() -> dict[str, str]:
+    from policyforge.frameworks.registry import (
+        config_or_defaults,
+        declared_crosswalk_relationships,
+    )
+
+    return declared_crosswalk_relationships(config_or_defaults("crosswalk relationships were read"))
+
+
 def build_report(
     documents,
     *,
@@ -418,6 +441,7 @@ def build_report(
     crosswalk: dict[str, dict[str, list[str]]],
     provenance: dict[tuple[str, str, str], object] | None = None,
     topics=(),
+    declared_relationships: dict[str, str] | None = None,
 ) -> list[DocumentEvidence]:
     """Evidence for each of `documents`, in the order given.
 
@@ -442,11 +466,17 @@ def build_report(
     # name-only match would report nothing for a tree that was just
     # generated. See the same fallback in the `satisfies` command.
     anchors_of = {slugify(t.name): list(t.nist_controls) for t in topics}
+    if declared_relationships is None:
+        declared_relationships = _declared_relationships()
     evidences = []
     keys = []
     for document in documents:
         evidence = document_evidence(
-            document, controls=controls, crosswalk=crosswalk, provenance=provenance
+            document,
+            controls=controls,
+            crosswalk=crosswalk,
+            provenance=provenance,
+            declared_relationships=declared_relationships,
         )
         slug = slugify(evidence.topic)
         if slug not in anchors_of:

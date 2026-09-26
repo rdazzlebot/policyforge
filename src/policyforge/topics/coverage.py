@@ -43,8 +43,11 @@ from policyforge.mapping.crosswalk import normalize_framework
 from policyforge.topics.anchoring import parent_of
 from policyforge.topics.registry import Topic
 
+#: A link its source published untyped and declared incomplete; see
+#: `crosswalk.overlay.RELATIONSHIPS` for its meaning (#408).
+SOURCE_UNTYPED = "source-untyped"
 #: Relationships under which one control covers only part of a requirement.
-PARTIAL_RELATIONSHIPS = frozenset({"superset", "intersects", "source-untyped"})
+PARTIAL_RELATIONSHIPS = frozenset({"superset", "intersects", SOURCE_UNTYPED})
 
 
 def reaches_in_full(
@@ -80,6 +83,11 @@ class FrameworkCoverage:
     #: published per level (#282). The report says so, because the unit is
     #: what the number means.
     per_level: bool = False
+    #: When the framework's published links are `source-untyped` (#408): the
+    #: requirements its source links to no 800-53 control at all. The source
+    #: declares its mapping incomplete, so these are "not mapped by the
+    #: source", never "no 800-53 equivalent". None for every other framework.
+    unmapped_by_source: list[str] | None = None
 
     @property
     def total(self) -> int:
@@ -354,6 +362,12 @@ def _framework_coverage(
     """Which non-NIST requirements are reachable from an owned NIST control."""
     reachable: dict[str, set[str]] = {}
     in_part: dict[str, set[str]] = {}
+    # Read from the same table as `reaches_in_full`, so both callers agree.
+    untyped = {f for (f, _, _), rel in relationships.items() if rel == SOURCE_UNTYPED}
+    linked: dict[str, set[str]] = {}
+    for mapped in crosswalk.values():
+        for framework, equivalent_ids in mapped.items():
+            linked.setdefault(framework, set()).update(equivalent_ids)
     for nist_id in owned:
         for framework, equivalent_ids in crosswalk.get(nist_id, {}).items():
             for requirement_id in equivalent_ids:
@@ -394,6 +408,11 @@ def _framework_coverage(
                 partial=sorted(r for r in requirement_ids if r in part),
                 uncovered=sorted(r for r in requirement_ids if r not in hit and r not in part),
                 per_level=framework in per_level,
+                unmapped_by_source=(
+                    sorted(r for r in requirement_ids if r not in linked.get(framework, set()))
+                    if framework in untyped
+                    else None
+                ),
             )
         )
     return coverage
@@ -477,6 +496,17 @@ def format_report(report: CoverageReport, *, show_all: bool = False) -> str:
                 lines.append("    " + ", ".join(shown[index : index + 4]))
             if len(shown) < len(framework.partial):
                 lines.append(f"    ... and {len(framework.partial) - len(shown)} more (--show-all)")
+        if framework.unmapped_by_source is not None:
+            lines.append(
+                "  Its source publishes this mapping untyped and declares it incomplete, so "
+                "every link counts as partial."
+            )
+            if framework.unmapped_by_source:
+                lines.append(
+                    f"  {len(framework.unmapped_by_source)} of the requirements not reached "
+                    "carry no link from the source at all: not mapped by the source, which "
+                    "is not the same as having no 800-53 equivalent."
+                )
         if framework.uncovered:
             shown = framework.uncovered if show_all else framework.uncovered[:12]
             lines.append("  Not reached:")

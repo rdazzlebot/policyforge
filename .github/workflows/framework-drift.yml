@@ -143,3 +143,18 @@ jobs:
           policyforge drift \
             --controls data/frameworks/nist-800-171-r3/controls.json \
             --detail --fail-on-change
+
+      # Both CSF files are pinned by SHA-256, so a new edition of either is
+      # refused before anything is written: that red is this job working.
+      # The mapping's family links live in framework.yaml, which `drift`
+      # does not read, so the refusal is what catches a change to them.
+      - name: Fetch the current NIST CSF 2.0 and its OLIR 186 mapping
+        if: always()
+        run: policyforge etl-csf
+
+      - name: What changed in NIST CSF 2.0
+        if: always()
+        run: |
+          policyforge drift \
+            --controls data/frameworks/nist-csf-2-0/controls.json \
+            --detail --fail-on-change

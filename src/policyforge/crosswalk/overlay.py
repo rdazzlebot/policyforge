@@ -169,9 +169,28 @@ NOT_CROSSWALK_ANCHORABLE: dict[str, str] = {
 #:
 #: **Not every refusal above is here.** Information Blocking is refused as a
 #: crosswalk anchor for being conditions of an exception, a different reason;
-#: the ruling named exactly these two. A test holds this set inside the table,
-#: so a catalog cannot be non-binding without a written reason.
-NON_BINDING_FRAMEWORKS: frozenset[str] = frozenset({"nist-ai-rmf", "nist-ai-rmf-playbook"})
+#: the ruling named exactly these two. A test holds this set inside the two
+#: reason tables, so a catalog cannot be non-binding without a written reason.
+#:
+#: **And not every member is refused.** CSF 2.0 states outcomes as the Core
+#: does, but NIST publishes its mapping to 800-53, so it can be seeded and its
+#: reason lives in `OUTCOME_CATALOGS` below instead (80, on #408: `check` must
+#: not treat a CSF citation as supporting an obligation on its own any more
+#: than an AI RMF Core citation).
+NON_BINDING_FRAMEWORKS: frozenset[str] = frozenset(
+    {"nist-ai-rmf", "nist-ai-rmf-playbook", "nist-csf"}
+)
+
+#: Non-binding catalogs that CAN anchor a crosswalk, with the reason each is
+#: non-binding, by normalized framework key. The refusal table above holds
+#: the reasons for the rest.
+OUTCOME_CATALOGS: dict[str, str] = {
+    "nist-csf": (
+        "NIST CSF 2.0 states outcomes (\"the organizational mission is understood\"), "
+        "not obligations, as the AI RMF Core does; a citation to it commits nobody to "
+        "anything on its own. See data/frameworks/nist-csf-2-0/README.md."
+    ),
+}
 
 
 class NotAnchorableError(OverlayError):

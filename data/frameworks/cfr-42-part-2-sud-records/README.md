@@ -200,15 +200,25 @@ Subpart C. Neither section this catalog ships cites anything in Subpart
 C, so nothing here reaches 800-53 through them. The rest of Part 2 was
 not read for this; only the two shipped sections were.
 
-**What "not found" rests on** (searched 2026-09-24 UTC, #264):
+**What "not found" rests on** (searched 2026-09-24 UTC, #264; NIST OLIR and
+CPRT enumerated 2026-09-26 UTC, #279):
 
 - the § 2.16 text, and the 2020 and 2024 Part 2 final rules
 - the HITRUST CSF v11.7.0 list of authoritative sources
 - NIST SP 800-66r2, and site-scoped searches of nist.gov, csrc.nist.gov,
   hhs.gov, samhsa.gov, healthit.gov and 405d.hhs.gov
+- **NIST OLIR, listed in full:** all 102 informative references, of every
+  status (Final, Draft, Archive, Work-in-progress). None matches 42 CFR
+  Part 2 (the search pattern was first tested against Part 2's real title).
+- **NIST CPRT, listed in full:** all 197 frameworks (211 versions listed;
+  5 frameworks list no version).
+  None is 42 CFR Part 2, and the only health datasets are the four HIPAA
+  Security Rule mappings, whose source is 45 CFR 164, not Title 42.
 
-**Not ruled out:** the NIST OLIR and CPRT catalogs could not be listed, and
-OLIR is where a formal mapping would be registered. The OCR crosswalk's
-contents were not readable. Commercial frameworks were not checked. If a
+**Not ruled out:** OLIR and CPRT were listed through the undocumented
+endpoints NIST's own pages call, and what was searched is each catalog's
+metadata, not every dataset's individual elements. The snapshots' hashes
+are on #279, so a later run can check whether the catalogs changed. The OCR
+crosswalk's contents were not readable. Commercial frameworks were not checked. If a
 mapping turns up, Part 2 moves to the same footing as 800-171 (see its
 README).

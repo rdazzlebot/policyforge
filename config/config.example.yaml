@@ -90,7 +90,7 @@ frameworks:
   # against your export's own level labels (case and spacing ignored); a
   # name that matches none is refused, naming the nearest labels.
   # scoping:
-  #   hitrust:
+  #   hitrust-csf:          # the key the HITRUST importer writes (HITRUST-CSF)
   #     maturity: 2
   #     overlays: ["<an overlay level label from your export>"]
 

@@ -98,3 +98,56 @@ def test_scoping_is_read_from_config_and_a_bad_maturity_is_refused():
     for bad in ("two", 0, True):
         with pytest.raises(ValueError, match="must be a level number"):
             level_scopes({"frameworks": {"scoping": {NAME: {"maturity": bad}}}})
+
+
+def _hitrust_catalog():
+    """Built under the framework name the real HITRUST importer writes, which
+    the tests above never used: they built the catalog and the config key
+    from one constant, so a mismatch between them could not show (1d on
+    #461). The config keys below are written by hand."""
+    from policyforge.ingest.hitrust import FRAMEWORK
+
+    requirements = [
+        Requirement("R.1 Level 1", "Level 1", "A synthetic statement.", MATURITY),
+        Requirement("R.1 Level 2", "Level 2", "A synthetic statement.", MATURITY),
+    ]
+    return [Control("R.1", "R.1", FRAMEWORK, "v1", requirements=requirements)]
+
+
+def _hitrust_coverage(config_key: str):
+    catalog = _hitrust_catalog()
+    config = {"frameworks": {"scoping": {config_key: {"maturity": 1}}}}
+    crosswalk = {"AC-2": {"hitrust-csf": ["R.1 Level 1", "R.1 Level 2"]}}
+    (result,) = _framework_coverage(
+        catalog, crosswalk, owned={"AC-2"}, relationships={}, family_links={},
+        scopes=level_scopes(config),
+    )  # fmt: skip
+    return result
+
+
+def test_the_key_the_importer_writes_applies():
+    result = _hitrust_coverage("hitrust-csf")
+    assert set(result.covered) == {"R.1 Level 1"} and result.scoping
+
+
+def test_a_key_that_names_no_loaded_framework_is_refused_not_skipped():
+    """`hitrust` normalises to `hitrust`, not `hitrust-csf`: the scope was
+    skipped and the report said nothing was declared."""
+    for key in ("hitrust", "HITRUST CSF"):
+        with pytest.raises(ValueError, match=r"not a loaded per-level framework.*hitrust-csf"):
+            _hitrust_coverage(key)
+
+
+def test_the_documented_example_key_is_the_one_the_importer_writes():
+    """The example is what a user copies. It named `hitrust`, which applied to
+    nothing (1d on #461): read its commented key and resolve it."""
+    import re
+    from pathlib import Path
+
+    from policyforge.ingest.hitrust import FRAMEWORK
+
+    example = Path(__file__).resolve().parent.parent / "config" / "config.example.yaml"
+    text = example.read_text(encoding="utf-8")
+    block = text[text.index("  # scoping:") :]
+    (key,) = re.findall(r"^  #   ([\w-]+):", block, flags=re.M)[:1]
+    assert normalize_framework(key) == normalize_framework(FRAMEWORK)

@@ -573,6 +573,19 @@ def _framework_coverage(
         else:
             ids.append(control.control_id)
             ids.extend(e.enhancement_id for e in control.enhancements)
+    # A declared key that names no loaded per-level framework is refused (1d
+    # on #461): `hitrust` normalises to `hitrust`, but the importer writes
+    # `HITRUST-CSF`, so the scope was skipped in silence and the report then
+    # told the user who declared it that nothing was declared. With no
+    # per-level framework loaded at all there is no level line to mislead,
+    # so a declaration is simply unused.
+    unmatched = sorted(set(scopes) - per_level)
+    if unmatched and per_level:
+        raise ValueError(
+            f"frameworks.scoping names {', '.join(unmatched)}, which is not a loaded "
+            f"per-level framework; the loaded ones are {', '.join(sorted(per_level))}. "
+            "Use that key."
+        )
     stood_in: dict[str, dict[str, str]] = {}
     for framework, controls in scoped.items():
         counted, stood_in[framework] = _scoped_requirements(controls, framework, scopes[framework])

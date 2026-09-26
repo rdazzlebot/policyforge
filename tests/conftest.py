@@ -33,6 +33,8 @@ one covers a key in the developer's shell, the other covers a key on disk.
 from __future__ import annotations
 
 import importlib.util
+import ipaddress
+import socket
 from pathlib import Path
 
 import pytest
@@ -113,7 +115,11 @@ def pytest_configure(config):
 
 @pytest.fixture(autouse=True)
 def no_live_credentials(monkeypatch):
-    """Strip provider credentials so no test can reach a real service.
+    """Strip provider credentials so no test can reach a real MODEL provider.
+
+    Not every service needs a credential: eCFR does not, and a test that
+    stubbed only half its fetch reached it live (#432). `no_network` below
+    is what stops that; this stops a keyed provider.
 
     Autouse and unconditional. A test that wants a model injects a fake;
     there is no legitimate reason for the suite to hold a live key, and
@@ -140,3 +146,72 @@ def ledger_writes_nowhere_real(monkeypatch, tmp_path):
     from policyforge.llm import ledger
 
     monkeypatch.setattr(ledger, "DEFAULT_LEDGER_PATH", tmp_path / "calls.jsonl")
+
+
+#: Hosts a test may connect to: the machine itself. Tests name
+#: `localhost:11434` for a local model with the transport stubbed; loopback
+#: is allowed so a stub that misses fails on its own terms, not on this.
+_LOOPBACK_NAMES = frozenset({"localhost", "localhost.localdomain", ""})
+
+
+def _is_loopback(host) -> bool:
+    if not isinstance(host, str):
+        return True  # a unix socket or an already-resolved local form
+    name = host.strip("[]").lower()
+    if name in _LOOPBACK_NAMES:
+        return True
+    try:
+        return ipaddress.ip_address(name.split("%")[0]).is_loopback
+    except ValueError:
+        return False
+
+
+class NetworkUsedInTest(RuntimeError):
+    """A test reached past this machine. Not an `OSError`, so no HTTP client
+    reads it as a connection failure to retry or to report as the server's."""
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """Refuse every DNS lookup and connection beyond loopback (#432).
+
+    `test_etl_hipaa_fetches_and_parses` stubbed the XML fetch and not the
+    date lookup before it, so it called eCFR live; one CI run at a commit
+    failed on eCFR's 403 while another at the same commit passed. A red
+    that is about a third party's rate limiter teaches a reader to re-run,
+    and re-running is what hides a real red. Refused at the socket, before
+    any client library, so a new unstubbed call is found by the test that
+    makes it, with the host named, whatever library it goes through.
+    """
+    real_getaddrinfo = socket.getaddrinfo
+    real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
+
+    def refuse(host):
+        raise NetworkUsedInTest(
+            f"this test reached the network ({host!r}); stub the call instead (#432)"
+        )
+
+    def getaddrinfo(host, *args, **kwargs):
+        if not _is_loopback(host):
+            refuse(host)
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    def connect(self, address):
+        if isinstance(address, tuple) and not _is_loopback(address[0]):
+            refuse(address[0])
+        return real_connect(self, address)
+
+    def connect_ex(self, address):
+        if isinstance(address, tuple) and not _is_loopback(address[0]):
+            refuse(address[0])
+        return real_connect_ex(self, address)
+
+    # boto3 with no credentials asks the cloud instance-metadata service at
+    # 169.254.169.254 for some. On a CI runner, a cloud VM, that address
+    # answers: three Bedrock construction tests were talking to the runner's
+    # metadata service (found by this guard, #432). botocore's own switch.
+    monkeypatch.setenv("AWS_EC2_METADATA_DISABLED", "true")
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)

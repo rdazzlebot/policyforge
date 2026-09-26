@@ -107,6 +107,10 @@ def test_etl_hipaa_fetches_and_parses(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "policyforge.ingest.hipaa_loader.fetch_ecfr_subpart_c_xml", lambda **kwargs: fixture
     )
+    # The date lookup runs before the fetch when no --date is given, and was
+    # unstubbed: this test called eCFR's versioner live and failed on its 403
+    # (#432).
+    monkeypatch.setattr("policyforge.ingest.hipaa_loader.current_ecfr_date", lambda: "2026-01-01")
     out_path = tmp_path / "hipaa-controls.json"
 
     result = CliRunner().invoke(cli, ["etl-hipaa", "--out", str(out_path)])

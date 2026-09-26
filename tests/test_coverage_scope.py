@@ -505,8 +505,9 @@ def test_the_upstream_branch_still_prints_the_gap_for_a_listed_framework(monkeyp
 # ---- #264: "found" is reserved for a framework someone searched for --------
 #
 # The seed branch printed "no published crosswalk yet" for every catalog in
-# no table. For Part 2 a search was made (policyforge-f8, record on #264) and
-# found nothing, OLIR not enumerated; for a BYOC catalog nobody searched at
+# no table. For Part 2 a search was made (policyforge-f8, records on #264
+# and #279: NIST OLIR and CPRT enumerated on 2026-09-26, their datasets'
+# elements not) and found nothing; for a BYOC catalog nobody searched at
 # all. The two now print different claims, and each test asserts text only
 # its own branch writes.
 

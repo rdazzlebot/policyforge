@@ -50,4 +50,18 @@ def test_the_lock_directories_are_one_block_grouped_per_dependency():
     assert len(blocks) == 1, blocks
     (block,) = blocks
     assert set(_dirs(block)) == {"/", "/requirements"}
-    assert any(g.get("group-by") == "dependency-name" for g in (block.get("groups") or {}).values())
+    grouped = [
+        g for g in (block.get("groups") or {}).values() if g.get("group-by") == "dependency-name"
+    ]
+    assert grouped, "no group sets group-by: dependency-name"
+    # The group must cover EVERY dependency (policyforge-9b on #454): narrowed
+    # to `["pydantic*"]`, every other bump went back to one pull request per
+    # directory -- #414's defect -- and the assert above still passed. So:
+    # all names, and nothing that filters them back out.
+    assert any(
+        g.get("patterns") == ["*"]
+        and not g.get("exclude-patterns")
+        and not g.get("dependency-type")
+        and not g.get("update-types")
+        for g in grouped
+    ), f"the dependency-name group does not cover every dependency: {grouped}"

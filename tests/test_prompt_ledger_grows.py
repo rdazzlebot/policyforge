@@ -163,3 +163,26 @@ def test_a_hand_edit_is_still_refused_after_the_base_grew(tmp_path):
     _head(root, head)
     code, lines = _run(root)
     assert code == 1 and any("edit.plan v3" in line for line in lines), lines
+
+
+def test_a_base_sharing_no_history_is_no_answer(tmp_path):
+    """policyforge-9b on #435: an unrelated base resolves, but there is no
+    branch point to compare with, so nothing was compared (#436)."""
+    root = _repo(tmp_path, LEDGER)
+    tree = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD^{tree}"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    ).stdout.strip()
+    orphan = subprocess.run(
+        ["git", "-C", str(root), *IDENT, "commit-tree", tree, "-m", "unrelated"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    ).stdout.strip()
+    code, lines = _run(root, base=orphan)
+    assert code == 2, lines
+    assert any("share no history" in line for line in lines), lines

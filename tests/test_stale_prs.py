@@ -644,3 +644,12 @@ def test_an_approval_from_a_declared_stake_alone_is_not_ready():
     counted = _say(HEAD, "approved", "policyforge-1d")
     assert not stale_prs.approved_at_head({"headRefOid": HEAD, "comments": [staked]})
     assert stale_prs.approved_at_head({"headRefOid": HEAD, "comments": [staked, counted]})
+
+
+@pytest.mark.parametrize("token", ["counted=no.", "COUNTED=NO", "(retracted)"])
+def test_an_approval_with_an_unknown_token_alone_is_not_ready(token):
+    """policyforge-b5 on #428: without the tokens passed to `shape_of`, a
+    mistyped stake read as a counted approval, and the suite stayed green."""
+    approval = _say(HEAD, "approved", "policyforge-9b")
+    approval["body"] += f" {token}"
+    assert not stale_prs.approved_at_head({"headRefOid": HEAD, "comments": [approval]})

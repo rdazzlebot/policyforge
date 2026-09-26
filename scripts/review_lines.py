@@ -31,9 +31,22 @@ approval is counted, not whose finding stands. **This tool cannot DETECT a
 stake**; it honours one a reader declares. An undeclared stake is still a
 review judgement, and the charge's rule is still the source. Before #425
 this pattern ended at `reviewer=`, so a line carrying the token did not
-parse and the verdict VANISHED, objection included (measured). Any other
-trailing token is kept, reported, and does not count: an unknown word on
-a verdict line is reported rather than dropped, as an unknown verdict is.
+parse and the verdict VANISHED, objection included (measured).
+
+The tokens, exactly (policyforge-b5 and policyforge-ba on #428):
+
+    counted=no     a declared stake: read, reported, never counts
+    counted=yes    known, and counts, as a line with no token does
+    both           never counts: the line says two things, so the
+                   safe reading wins
+    anything else  UNKNOWN TOKEN: kept and reported rather than dropped,
+                   as an unknown verdict is; never counts, and never
+                   retires an objection, since it might be crediting a
+                   review that was not there (`reviewer=x (retracted)`,
+                   `counted=no.`, `COUNTED=NO`)
+
+**A token goes LAST.** Placed before `reviewer=`, the line still does not
+parse and vanishes, as any reordered line always has.
 
 THE SIX LOCATION STATES. **`MALFORMED` is not among them** -- it is a
 property of the line's SHAPE, asked on its own axis, and listing it here
@@ -481,6 +494,9 @@ def objection_states(lines: list[Line]) -> list[tuple[Line, str, Line | None]]:
             if later.reviewer == line.reviewer
             and later.verdict == "approved"
             and later.shape.well_formed
+            # A token this reader does not know might be a retraction
+            # (policyforge-ba on #428): the objection stays OPEN.
+            and not later.shape.unknown_tokens
             and later.location.label in RETIRING_LOCATIONS
         ]
         # `location.at_head`, not `counts`: a declared stake (#425) changes

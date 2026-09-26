@@ -867,3 +867,18 @@ def test_the_report_names_counted_and_declared_readers_apart(monkeypatch, capsys
     assert "approvals at head from counted readers: policyforge-1d" in out
     assert "declared a stake: policyforge-9b" in out
     assert "UNCOUNTED (declared stake)" in out
+
+
+def test_an_approval_with_an_unknown_token_does_not_retire_an_objection():
+    """policyforge-ba on #428: "(retracted)" is reported as a fault on the same
+    screen; it must not also quietly withdraw the objection."""
+    objection = _line(review_lines.verdict_lines([_declared("changes-requested", tail="")])[0])
+    for tail in ("(retracted)", "counted=no.", "COUNTED=NO"):
+        approval = _line(review_lines.verdict_lines([_declared("approved", tail=tail)])[0])
+        ((_, state, _),) = review_lines.objection_states([objection, approval])
+        assert state == "OPEN", tail
+
+
+def test_both_count_tokens_on_one_line_never_count():
+    (both,) = review_lines.verdict_lines([_declared(tail="counted=no counted=yes")])
+    assert not _line(both).counts

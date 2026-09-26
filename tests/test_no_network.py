@@ -106,3 +106,15 @@ def test_bytes_loopback_and_the_local_host_are_allowed():
             pytest.fail(f"{host!r} was refused")
         except OSError:
             pass
+
+
+def test_a_connection_to_a_bytes_host_is_refused():
+    """policyforge-b5 on #434: `connect((b"host", port))` resolves the name
+    itself, below Python's resolver functions, so only the decode in
+    `_is_loopback` stops it (#436)."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        with pytest.raises(NetworkUsedInTest, match="ecfr"):
+            sock.connect((b"www.ecfr.gov", 443))
+    finally:
+        sock.close()

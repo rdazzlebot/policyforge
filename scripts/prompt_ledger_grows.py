@@ -20,6 +20,14 @@ it could not read is worse than the review it replaces (policyforge-b5 on
 ledger (a branch from before #236) is a readable fact, not a missing answer:
 there is nothing recorded to hold, and it says so rather than passing quietly.
 
+**Against the branch point, not the base's tip** (policyforge-ba on #435).
+The ledger is compared with `git merge-base HEAD <base>`. Run locally on
+a branch whose base has since grown, the tip holds versions this branch
+never saw, and comparing with it reported them "removed here": a false
+alarm, and a check that cries wolf gets ignored. In CI the checkout is
+the pull request's merge commit, whose merge-base with the base IS the
+tip, so CI's answer does not change.
+
 CI checks out the pull request with full history (`fetch-depth: 0`), so
 `origin/<base>` exists; run locally, fetch first.
 """
@@ -76,9 +84,16 @@ def main(argv: list[str] | None = None, root: Path = ROOT, out=print) -> int:
         out("  In CI the checkout needs fetch-depth: 0; locally, fetch the base first.")
         return 2
 
-    shown = _git(root, "show", f"{args.base}:{args.path}")
+    fork = _git(root, "merge-base", "HEAD", args.base)
+    point = (fork.stdout or "").strip()
+    if fork.returncode != 0 or not point:
+        out(f"NO ANSWER: HEAD and {args.base!r} share no history, so nothing was compared.")
+        return 2
+    out(f"comparing with {args.base} at the branch point {point[:12]}")
+
+    shown = _git(root, "show", f"{point}:{args.path}")
     if shown.returncode != 0:
-        if _git(root, "cat-file", "-e", f"{args.base}:{args.path}").returncode != 0:
+        if _git(root, "cat-file", "-e", f"{point}:{args.path}").returncode != 0:
             out(f"{args.base} holds no {args.path}: nothing recorded there to hold.")
             return 0
         out(f"NO ANSWER: {args.base}:{args.path} exists and could not be read.")

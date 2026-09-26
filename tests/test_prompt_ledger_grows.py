@@ -53,6 +53,19 @@ def _head(root: Path, ledger: dict | None) -> None:
         path.write_text(json.dumps(ledger), encoding="utf-8")
 
 
+def _branch_then_grow_base(root: Path) -> None:
+    """Branch `feature` off `base`, then add a version on `base` alone: the
+    base has grown since the branch point."""
+    subprocess.run(["git", "-C", str(root), "checkout", "-q", "-b", "feature"], check=True)
+    grown = copy.deepcopy(LEDGER)
+    grown["prompts"]["edit.plan"]["4"] = [{"fingerprint": "dddddddddddd", "first_seen": "c9"}]
+    blob = json.dumps(grown)
+    subprocess.run(["git", "-C", str(root), "checkout", "-q", "base"], check=True)
+    (root / grows.LEDGER).write_text(blob, encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), *IDENT, "commit", "-qam", "base grows"], check=True)
+    subprocess.run(["git", "-C", str(root), "checkout", "-q", "feature"], check=True)
+
+
 def _run(root: Path, base: str = "base") -> tuple[int, list[str]]:
     lines: list[str] = []
     return grows.main(["--base", base], root=root, out=lines.append), lines
@@ -66,7 +79,7 @@ def test_a_new_version_passes(tmp_path):
     _head(root, head)
     code, lines = _run(root)
     assert code == 0, lines
-    assert "3 version(s) recorded there, 5 here, 0 changed or removed" in lines[0]
+    assert any("3 version(s) recorded there, 5 here, 0 changed or removed" in x for x in lines)
 
 
 def test_the_hand_edit_422_left_to_review_is_refused(tmp_path):
@@ -103,13 +116,17 @@ def test_a_base_that_does_not_resolve_is_no_answer_not_a_pass(tmp_path):
     root = _repo(tmp_path, LEDGER)
     code, lines = _run(root, base="origin/no-such-branch")
     assert code == 2 and lines[0].startswith("NO ANSWER"), lines
+    # The diagnosis a person acts on: fetch the base. Without the resolve
+    # check the merge-base step still exits 2, but says "share no history",
+    # which points at the wrong fix.
+    assert "does not resolve" in lines[0] and "fetch" in lines[1], lines
 
 
 def test_a_base_ledger_that_is_not_a_ledger_is_no_answer(tmp_path):
     root = _repo(tmp_path, "{not json")
     _head(root, LEDGER)
     code, lines = _run(root)
-    assert code == 2 and lines[0].startswith("NO ANSWER"), lines
+    assert code == 2 and any(x.startswith("NO ANSWER") for x in lines), lines
 
 
 def test_a_base_with_no_ledger_passes_and_says_so(tmp_path):
@@ -117,11 +134,32 @@ def test_a_base_with_no_ledger_passes_and_says_so(tmp_path):
     root = _repo(tmp_path, None)
     _head(root, LEDGER)
     code, lines = _run(root)
-    assert code == 0 and "nothing recorded there to hold" in lines[0], lines
+    assert code == 0 and any("nothing recorded there to hold" in x for x in lines), lines
 
 
 def test_a_ledger_deleted_here_is_refused(tmp_path):
     root = _repo(tmp_path, LEDGER)
     _head(root, None)
     code, lines = _run(root)
-    assert code == 1 and "gone here" in lines[0], lines
+    assert code == 1 and any("gone here" in x for x in lines), lines
+
+
+def test_a_base_that_grew_after_the_branch_point_is_not_a_removal(tmp_path):
+    """policyforge-ba on #435: against the base's TIP, a version added there
+    after this branch forked read as "removed here", a false alarm."""
+    root = _repo(tmp_path, LEDGER)
+    _branch_then_grow_base(root)
+    code, lines = _run(root)
+    assert code == 0, lines
+    assert "branch point" in lines[0]
+
+
+def test_a_hand_edit_is_still_refused_after_the_base_grew(tmp_path):
+    """The branch point must not blind it: the edit is this branch's."""
+    root = _repo(tmp_path, LEDGER)
+    _branch_then_grow_base(root)
+    head = copy.deepcopy(LEDGER)
+    head["prompts"]["edit.plan"]["3"][0]["fingerprint"] = "ffffffffffff"
+    _head(root, head)
+    code, lines = _run(root)
+    assert code == 1 and any("edit.plan v3" in line for line in lines), lines

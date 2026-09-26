@@ -13,6 +13,7 @@ bare-`ARC` tag; and that no reader can quietly grow its own copy again.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -166,8 +167,10 @@ def test_every_reader_uses_the_one_shape():
     from policyforge.frameworks import drift
 
     assert apply._SOURCE_TAG_RE is SOURCE_TAG_RE
-    assert drift._SOURCE_TAG_RE is SOURCE_TAG_RE
     assert deontic._CITATION_RE is SOURCE_TAG_RE
+    # Drift reads tags through `satisfies.parse_citations`, which reads the
+    # one shape, so it keeps no pattern of its own (#377).
+    assert not any(isinstance(v, re.Pattern) for v in vars(drift).values())
 
 
 def test_the_edit_path_refuses_a_revision_that_drops_a_bare_arc_tag():
@@ -212,7 +215,7 @@ def test_drift_reaches_a_document_that_cites_through_a_bare_arc_tag(tmp_path):
         encoding="utf-8",
     )
 
-    hits = documents_citing({"PE-3"}, tmp_path)
+    hits = documents_citing({"PE-3"}, tmp_path, framework="NIST 800-53", catalog_ids={"PE-3"})
 
     assert hits == {"PE-3": ["standards/physical.md"]}
 

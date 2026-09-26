@@ -36,40 +36,33 @@ did before relationships were recorded.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 
 from policyforge.ingest.schema import Control
 from policyforge.mapping.crosswalk import normalize_framework
+from policyforge.topics.anchoring import parent_of
 from policyforge.topics.registry import Topic
-
-#: How a child identifier names its parent, per catalog grammar.
-#:
-#: **"Anchoring a control also claims its enhancements" is implemented
-#: here, so a grammar this does not know silently claims nothing.** A
-#: topic anchoring `Govern 1` used to report seven orphans -- no error, a
-#: plausible number, and a topic author would have "fixed" it by anchoring
-#: all seven subcategories, arriving at a correct-looking registry built
-#: around a defect. The workaround looks like diligence, which is what
-#: makes the silence expensive.
-#:
-#: Add a pattern when a catalog becomes anchorable, not before: a grammar
-#: listed here for a framework no topic can anchor is untestable.
-#:
-#: **The one copy** (#318). `/bundle`, `/addresses`, `/satisfies` and the
-#: programme's parameter scope each kept their own 800-53-only rule, each
-#: with a comment saying it matched this one; none knew the AI RMF, so
-#: `/addresses` found no owner for 72 of the 905 ids `/coverage` owns. They
-#: all call `parent_of` now.
-_PARENT_RES = (
-    # 800-53 / FedRAMP / ARC-AMPE: AC-2(1) -> AC-2
-    re.compile(r"^([A-Za-z]{2}-\d+)\(\d+\)$"),
-    # NIST AI RMF: Govern 1.1 -> Govern 1
-    re.compile(r"^([A-Za-z]+ \d+)\.\d+$"),
-)
 
 #: Relationships under which one control covers only part of a requirement.
 PARTIAL_RELATIONSHIPS = frozenset({"superset", "intersects"})
+
+
+def reaches_in_full(
+    framework: str,
+    requirement_id: str,
+    nist_id: str,
+    relationships: dict[tuple[str, str, str], str],
+) -> bool:
+    """Whether owning `nist_id` accounts for all of `requirement_id`.
+
+    **The one reading of "partial"** (#185; 80's condition on #377). A pair
+    with no recorded relationship reaches in full, which is what every pair
+    did before relationships were recorded; one recorded as `superset` or
+    `intersects` reaches only in part, and whether that is enough is a
+    person's call. `/coverage` and every reach through the crosswalk ask
+    this, so none of them reads the relationship table a second way.
+    """
+    return relationships.get((framework, requirement_id, nist_id)) not in PARTIAL_RELATIONSHIPS
 
 
 @dataclass
@@ -253,17 +246,14 @@ def scope_label(controls, baseline: str | None = None) -> str:
     return f"{baseline} baseline ({listed})" if baseline else f"all controls ({listed})"
 
 
-def parent_of(requirement_id: str) -> str | None:
-    """The control `requirement_id` hangs off, or None if it is not a child.
-
-    `AC-2(1)` -> `AC-2`; `Govern 1.1` -> `Govern 1`. Every view that treats
-    anchoring a control as claiming its children calls this, so they agree.
-    """
-    for pattern in _PARENT_RES:
-        match = pattern.match(requirement_id)
-        if match:
-            return match.group(1)
-    return None
+def _in_scope_pairs(controls: list[Control]) -> list[tuple[str, str]]:
+    """(id, framework) for every control and enhancement: the parent rule
+    reads the framework (#377), so the id alone is not enough."""
+    pairs: list[tuple[str, str]] = []
+    for control in controls:
+        pairs.append((control.control_id, control.framework))
+        pairs.extend((e.enhancement_id, control.framework) for e in control.enhancements)
+    return pairs
 
 
 def _in_scope_ids(controls: list[Control]) -> list[str]:
@@ -304,8 +294,8 @@ def analyze_coverage(
     direct: dict[str, list[str]] = {}
     inherited: dict[str, list[str]] = {}
     children: dict[str, list[str]] = {}
-    for requirement_id in report.in_scope:
-        parent = parent_of(requirement_id)
+    for requirement_id, framework in _in_scope_pairs(nist_controls):
+        parent = parent_of(requirement_id, framework)
         if parent:
             children.setdefault(parent, []).append(requirement_id)
 
@@ -367,11 +357,10 @@ def _framework_coverage(
     for nist_id in owned:
         for framework, equivalent_ids in crosswalk.get(nist_id, {}).items():
             for requirement_id in equivalent_ids:
-                relationship = relationships.get((framework, requirement_id, nist_id))
-                if relationship in PARTIAL_RELATIONSHIPS:
-                    in_part.setdefault(framework, set()).add(requirement_id)
-                else:
+                if reaches_in_full(framework, requirement_id, nist_id, relationships):
                     reachable.setdefault(framework, set()).add(requirement_id)
+                else:
+                    in_part.setdefault(framework, set()).add(requirement_id)
 
     # **Counted in the unit the crosswalk records.** A control carrying level
     # requirements (HITRUST) is counted per requirement, every level the

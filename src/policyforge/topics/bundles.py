@@ -34,7 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from policyforge.mapping.crosswalk import normalize_framework
-from policyforge.topics.coverage import parent_of
+from policyforge.topics.anchoring import anchor_keys
 from policyforge.topics.registry import Topic
 
 #: Anchored by name. The strongest claim: somebody wrote this control id
@@ -248,18 +248,26 @@ class RequirementView:
 
 
 def _requirement_ids(controls) -> list[str]:
-    ids: list[str] = []
+    return list(_frameworks_of(controls))
+
+
+def _frameworks_of(controls) -> dict[str, str]:
+    """{requirement id: its catalog's framework}, in catalog order. The parent
+    rule reads the framework (#377); the ids of the catalogs topics anchor do
+    not collide, so one map serves them all."""
+    frameworks: dict[str, str] = {}
     for control in controls:
-        ids.append(control.control_id)
-        ids.extend(e.enhancement_id for e in control.enhancements)
-    return ids
+        frameworks[control.control_id] = control.framework
+        for enhancement in control.enhancements:
+            frameworks[enhancement.enhancement_id] = control.framework
+    return frameworks
 
 
 def _claims_for(
     topics: list[Topic],
     requirement_id: str,
     *,
-    catalog_ids: set[str],
+    catalog: dict[str, str],
 ) -> list[OwnedRequirement]:
     """Direct and inherited claims on one NIST requirement.
 
@@ -267,13 +275,13 @@ def _claims_for(
     specifically-anchored enhancement can sit with a different team than its
     parent without either being reported as contested.
     """
-    parent = parent_of(requirement_id)
+    keys = anchor_keys(requirement_id, catalog.get(requirement_id, ""))
     direct, inherited = [], []
     for topic in topics:
-        anchors = [a for a in topic.nist_controls if a in catalog_ids]
+        anchors = [a for a in topic.nist_controls if a in catalog]
         if requirement_id in anchors:
             direct.append(OwnedRequirement(requirement_id, topic.name, topic.owner, route=DIRECT))
-        elif parent and parent in anchors:
+        elif keys & set(anchors):
             inherited.append(
                 OwnedRequirement(requirement_id, topic.name, topic.owner, route=INHERITED)
             )
@@ -304,9 +312,9 @@ def team_bundle(
     if not mine:
         return bundle
 
-    catalog_ids = set(_requirement_ids(nist_controls))
-    for requirement_id in _requirement_ids(nist_controls):
-        for claim in _claims_for(mine, requirement_id, catalog_ids=catalog_ids):
+    catalog = _frameworks_of(nist_controls)
+    for requirement_id in catalog:
+        for claim in _claims_for(mine, requirement_id, catalog=catalog):
             bundle.requirements.append(claim)
 
     if crosswalk:
@@ -338,10 +346,10 @@ def requirement_view(
     """
     wanted = requirement_id.strip()
     view = RequirementView(requirement_id=wanted)
-    catalog_ids = set(_requirement_ids(nist_controls))
+    catalog = _frameworks_of(nist_controls)
 
-    if wanted in catalog_ids:
-        view.claims = _claims_for(topics, wanted, catalog_ids=catalog_ids)
+    if wanted in catalog:
+        view.claims = _claims_for(topics, wanted, catalog=catalog)
     else:
         other_ids = set(_requirement_ids(other_controls or []))
         if wanted not in other_ids:
@@ -352,8 +360,8 @@ def requirement_view(
         # is a reverse lookup and every hit is explicitly marked as such.
         for nist_id, mapped in (crosswalk or {}).items():
             for equivalent in mapped.values():
-                if wanted in equivalent and nist_id in catalog_ids:
-                    for claim in _claims_for(topics, nist_id, catalog_ids=catalog_ids):
+                if wanted in equivalent and nist_id in catalog:
+                    for claim in _claims_for(topics, nist_id, catalog=catalog):
                         view.claims.append(
                             OwnedRequirement(
                                 requirement_id=wanted,

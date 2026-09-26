@@ -63,10 +63,37 @@ def test_a_playbook_change_reaches_no_topic(anchor):
     assert _reach("Govern 1.1", "nist-ai-rmf-playbook", anchor) == []
 
 
-def test_a_catalog_reached_through_a_crosswalk_keeps_its_rule():
-    """FedRAMP ids are 800-53's; drift reached topics by them before, and
-    whether it should is not this issue's question."""
-    assert _reach("AC-2(3)", "fedramp", "AC-2") == ["Topic"]
+def _shipped_drift(directory: str, control_id: str, *anchors: str) -> list[str]:
+    """A real change to one control of a shipped catalog, through `analyze_drift`,
+    so the crosswalk is the one that catalog actually carries."""
+    old = load_controls(CATALOGS / directory / "controls.json")
+    new = copy.deepcopy(old)
+    target = next(c for c in new if c.control_id == control_id)
+    target.control_statement += " Reworded upstream."
+    report = analyze_drift(old, new, topics=[_topic(*anchors)])
+    return report.impacts[control_id].topics
+
+
+def test_a_catalog_reached_through_a_crosswalk_reaches_through_it():
+    """80's ruling (B) on #377: a catalog topics do not anchor reaches them
+    through its crosswalk to 800-53, not by id shape. Given no crosswalk,
+    FedRAMP's `AC-2(3)` reaches nothing, though it reads like 800-53's."""
+    assert _reach("AC-2(3)", "fedramp", "AC-2") == []
+
+
+def test_fedramp_drift_is_unchanged_through_its_own_crosswalk():
+    """80's condition (3): FedRAMP asserted unchanged. Its shipped crosswalk
+    maps each id to 800-53's same id, so the topic anchoring AC-6 is reached
+    as it was by id shape, and one anchoring a different control is not."""
+    assert _shipped_drift("fedramp", "AC-6", "AC-6") == ["Topic"]
+    assert _shipped_drift("fedramp", "AC-6", "AC-2") == []
+
+
+def test_an_800_171_change_reaches_the_topics_owning_what_nist_maps_it_to():
+    """New in #377: 800-171 reached no topic in drift before. NIST's own
+    mapping sends 03.01.01 to AC-2 and three of its enhancements."""
+    assert _shipped_drift("nist-800-171-r3", "03.01.01", "AC-2") == ["Topic"]
+    assert _shipped_drift("nist-800-171-r3", "03.01.01", "CP-9") == []
 
 
 def test_the_real_drift_path_carries_the_framework():

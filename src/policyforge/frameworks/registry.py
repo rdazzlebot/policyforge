@@ -103,6 +103,10 @@ class Framework:
     #: Who published that crosswalk, for a report's wording (#449): CSF 2.0's
     #: is `NIST OLIR 186`. Empty when undeclared.
     crosswalk_source: str = ""
+    #: `family_links:` as the manifest writes it (#449): a source's link from
+    #: one of this catalog's ids to a WHOLE family of another catalog, never
+    #: to a control in it. Read by `declared_family_links` (#448).
+    family_links: dict = field(default_factory=dict)
 
     @property
     def redistributable(self) -> bool:
@@ -149,6 +153,7 @@ def load_framework(directory: Path) -> Framework:
         structure_only=tuple(str(i) for i in (data.get("structure_only") or ())),
         crosswalk_relationship=str(data.get("crosswalk_relationship") or "").strip(),
         crosswalk_source=str(data.get("crosswalk_source") or "").strip(),
+        family_links=dict(data.get("family_links") or {}),
     )
 
 
@@ -460,6 +465,42 @@ def declared_crosswalk_sources(
             continue
         for key in {framework.key, *(normalize_framework(n) for n in names)} - {""}:
             found.setdefault(key, framework.crosswalk_source)
+    return found
+
+
+def declared_family_links(
+    config: dict | None = None, *, roots: list[Path] | None = None
+) -> dict[str, dict[str, frozenset[str]]]:
+    """{framework key: {its id: the 800-53 families its source links it to}}
+    (#448, 80's ruling 2 on #408): CSF 2.0's `GV.OC-03 -> PT`,
+    `PR.IR-03 -> CP, IR`. A family link names a WHOLE family, never a
+    control, so no reader may count it as a control covered.
+
+    Refused, naming the manifest, when it is not `relationship: family`
+    into 800-53: the hub it is matched through is 800-53's, and a link read
+    into another catalog would reach the wrong documents in silence.
+    """
+    from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
+
+    found: dict[str, dict[str, frozenset[str]]] = {}
+    for _, framework, names in _catalog_names(config, roots):
+        block = framework.family_links
+        if not block:
+            continue
+        relationship = str(block.get("relationship") or "")
+        target = normalize_framework(str(block.get("framework") or ""))
+        if relationship != "family" or target != NIST_ANCHOR:
+            raise ValueError(
+                f"{framework.path / MANIFEST_NAME}: family_links must be "
+                f"`relationship: family` into {NIST_ANCHOR}, not {relationship!r} into "
+                f"{target!r}."
+            )
+        links = {
+            str(source_id): frozenset(str(f).strip().upper() for f in (families or ()))
+            for source_id, families in (block.get("links") or {}).items()
+        }
+        for key in {framework.key, *(normalize_framework(n) for n in names)} - {""}:
+            found.setdefault(key, links)
     return found
 
 

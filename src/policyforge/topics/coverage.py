@@ -93,6 +93,10 @@ class FrameworkCoverage:
     #: Who published that mapping, as the catalog's manifest names it
     #: (`crosswalk_source:`), for the report's wording. Empty when undeclared.
     source_name: str = ""
+    #: Its source's links to WHOLE 800-53 families (#448): {its id: the
+    #: families}. Named in the report, never counted: a family link covers no
+    #: control (80's ruling on #408). Empty for a framework with none.
+    family_links: dict[str, list[str]] = field(default_factory=dict)
 
     @property
     def total(self) -> int:
@@ -371,8 +375,16 @@ def _framework_coverage(
     owned: set[str],
     relationships: dict[tuple[str, str, str], str],
     crosswalk_sources: dict[str, str] | None = None,
+    family_links: dict[str, dict[str, frozenset[str]]] | None = None,
 ) -> list[FrameworkCoverage]:
-    """Which non-NIST requirements are reachable from an owned NIST control."""
+    """Which non-NIST requirements are reachable from an owned NIST control.
+
+    `family_links` (`declared_family_links`, #448) are named on their
+    framework and counted in nothing; they default to the manifests."""
+    if family_links is None:
+        from policyforge.frameworks.registry import config_or_defaults, declared_family_links
+
+        family_links = declared_family_links(config_or_defaults("family links were read"))
     reachable: dict[str, set[str]] = {}
     in_part: dict[str, set[str]] = {}
     # Read from the same table as `reaches_in_full`, so both callers agree.
@@ -438,6 +450,10 @@ def _framework_coverage(
                 source_name=(crosswalk_sources or {}).get(framework, "")
                 if framework in untyped
                 else "",
+                family_links={
+                    requirement_id: sorted(families)
+                    for requirement_id, families in sorted(family_links.get(framework, {}).items())
+                },
             )
         )
     return coverage
@@ -538,6 +554,18 @@ def format_report(report: CoverageReport, *, show_all: bool = False) -> str:
                     f"are not mapped by {source}, which is not the same as having no "
                     "800-53 equivalent."
                 )
+        if framework.family_links:
+            # 80's ruling on #448: named, with the source, and never counted.
+            pairs = "; ".join(
+                f"{rid} -> {', '.join(families)}"
+                for rid, families in framework.family_links.items()
+            )
+            n = sum(len(families) for families in framework.family_links.values())
+            by = f" in {framework.source_name}" if framework.source_name else ""
+            lines.append(
+                f"  {n} family-level link(s){by} ({pairs}) are shown in `satisfies` and "
+                "reach documents in `drift`, but never count as coverage."
+            )
         if framework.uncovered:
             shown = framework.uncovered if show_all else framework.uncovered[:12]
             lines.append("  Not reached:")

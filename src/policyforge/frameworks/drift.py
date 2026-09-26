@@ -81,6 +81,10 @@ class Impact:
     control_id: str
     topics: list[str] = field(default_factory=list)
     documents: list[str] = field(default_factory=list)
+    #: The subset of `documents` reached only by the shape of an 800-53 id
+    #: in a citation that did not resolve (80's ruling on #418), printed as
+    #: such so the citation gets fixed where it is written.
+    by_shape: list[str] = field(default_factory=list)
     parameters: list[str] = field(default_factory=list)
 
     @property
@@ -212,10 +216,35 @@ def _enhancement_changes(old, new) -> list[ControlChange]:
     return found
 
 
+#: How a document was reached: through a citation that resolved, or only by
+#: the shape of an 800-53 id in one that did not (80's ruling on #418).
+RESOLVED = "resolved"
+BY_SHAPE = "by id shape"
+
+
 def documents_citing(
     controls: set[str], root: Path, *, framework: str = "", catalog_ids=(), crosswalk=None
 ) -> dict[str, list[str]]:
     """Control id -> the documents whose source tags cite its family.
+
+    `documents_reached` without saying how; see it for the rule.
+    """
+    reached = documents_reached(
+        controls, root, framework=framework, catalog_ids=catalog_ids, crosswalk=crosswalk
+    )
+    return {changed: sorted(paths) for changed, paths in reached.items()}
+
+
+def documents_reached(
+    controls: set[str],
+    root: Path,
+    *,
+    framework: str = "",
+    catalog_ids=(),
+    crosswalk=None,
+    catalogs: dict[str, set[str]] | None = None,
+) -> dict[str, dict[str, str]]:
+    """Control id -> {document: how it was reached, `RESOLVED` or `BY_SHAPE`}.
 
     Walks the content tree rather than the corpus, because the question is
     which *files you maintain* need re-reading, and those are the ones under
@@ -230,39 +259,68 @@ def documents_citing(
     its subcategory and never the Core's. Missing a document is the
     dangerous direction, so this reaches wider than topic ownership does.
 
-    **Each citation is read with its tag's framework**, resolved against
-    the catalog being diffed (`catalog_ids`), so the house shorthand
-    `[NIST AC-2]` names it and `[NIST AI RMF Govern 1.3]` does not. This
-    matched 800-53-shaped ids in any tag before, so an AI RMF change reached
-    no document at all, even one citing it exactly.
+    **Across catalogs, through the 800-53 hub** (80's ruling (ii) on #377):
+    every citation stands for 800-53 families, its own if it cites 800-53,
+    otherwise those the loaded crosswalk maps it to in full, and a change
+    reaches a document whose citation shares one with it. `crosswalk` is
+    `build_crosswalk` over the catalogs actually loaded.
 
-    **Across catalogs, through the 800-53 hub** (80's ruling (ii) on #377).
-    Every citation stands for 800-53 families: its own if it cites 800-53,
-    otherwise those the loaded crosswalk maps it to in full. A change
-    reaches a document whose citation shares one with it, whichever catalog
-    each names: a FedRAMP change reaches `[NIST 800-53 AC-2]` and
-    `[ARC AC-2]`, and an 800-53 change reaches both of those and the HIPAA
-    and 800-171 citations mapped to its family. This used to hold by id
-    shape between FedRAMP, ARC-AMPE and 800-53 only; through the crosswalk
-    it holds for every catalog that carries one, and for none that does not.
-    `crosswalk` is `build_crosswalk` over the catalogs actually loaded.
+    **Each citation is resolved before it is matched** (80's ruling on
+    #418), because a citation `check` accepts is one a document really
+    writes, and 1d measured four that the first version dropped in silence:
+
+    - a framework-name variant (`[NIST SP 800-53 AC-2(3)]`, `[NIST 800-53
+      Rev 5 AC-2(3)]`): the words the tag splitter left on the id are taken
+      back into the name, longest first, while the rest still resolves;
+    - a statement part (`AC-6(1)(a)`): trailing parts come off until the
+      catalog has the id;
+    - an id a catalog does not carry, in a catalog whose crosswalk maps
+      every id to 800-53's same id (FedRAMP, ARC-AMPE, derived from the
+      data, never listed): 800-53's own, as (B) reaches them;
+    - an abbreviation naming two loaded catalogs (`NIST`): each of them
+      through which this change reaches the cited id.
+
+    **What still does not resolve is reached by 800-53 id shape, for
+    documents only, and says so.** Every 800-53-shaped id in its text
+    counts by its 800-53 family, the way every document was reached before
+    #377, and the document is marked `BY_SHAPE` so drift prints it as
+    reached by shape: partial success is allowed only when it is loud, and
+    the citation is then fixed where it is written. Topic reach never uses
+    this; ownership is not inferred from a shape.
+
+    `catalogs` is `{catalog key: every id it has}` for the catalogs loaded,
+    which is what "the catalog has the id" is asked of. Without it only the
+    diffed catalog's ids and the crosswalk's are known.
     """
     from policyforge.content.tree import load_content_tree
     from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
-    from policyforge.topics.anchoring import family_of, hubs, reverse_index
+    from policyforge.topics.anchoring import (
+        enclosing,
+        family_of,
+        hubs,
+        is_800_53_shaped,
+        reverse_index,
+        shaped_ids,
+    )
     from policyforge.topics.satisfies import parse_citations, resolve_framework
 
-    hits: dict[str, list[str]] = {}
+    found: dict[str, dict[str, str]] = {}
     key = normalize_framework(framework) if framework else ""
     if not root.exists() or not key:
-        return hits
+        return found
     reverse = reverse_index(crosswalk)
-    # The catalogs a citation may name: the diffed one, 800-53 (the hub), and
-    # every catalog the loaded crosswalk maps. Nothing else can be reached.
-    index: dict[str, set[str]] = {key: set(catalog_ids) | set(controls)}
+    # The catalogs a citation may name, and the ids each is known to have.
+    index: dict[str, set[str]] = {k: set(v) for k, v in (catalogs or {}).items()}
+    index.setdefault(key, set()).update(catalog_ids, controls)
     index.setdefault(NIST_ANCHOR, set()).update(crosswalk or {})
     for catalog, requirement_id in reverse:
         index.setdefault(catalog, set()).add(requirement_id)
+    identity = {
+        catalog
+        for catalog in {c for c, _ in reverse}
+        if catalog != NIST_ANCHOR
+        and all(ids == {rid} for (c, rid), ids in reverse.items() if c == catalog)
+    }
 
     own: dict[str, set[str]] = {}
     hub: dict[str, set[str]] = {}
@@ -271,36 +329,66 @@ def documents_citing(
         for family in hubs(changed, framework, reverse):
             hub.setdefault(family, set()).add(changed)
 
-    def reached(cited: str, requirement_id: str) -> set[str]:
-        found = set(own.get(family_of(requirement_id, cited), ())) if cited == key else set()
-        for family in hubs(requirement_id, cited, reverse):
-            found |= hub.get(family, set())
-        return found
+    def known(catalog: str, requirement_id: str) -> bool:
+        return requirement_id in index.get(catalog, ())
 
-    def catalogs_cited(written: str, requirement_id: str) -> list[str]:
-        """The loaded catalogs a citation can mean. An abbreviation naming
-        two of them (`NIST` with 800-171 and 800-53 both loaded) resolves
-        to neither in `resolve_framework`, which is right for a report and
-        wrong here: this decides what to re-read, where missing a document
-        is the dangerous direction. So it means each catalog it abbreviates
-        through which this change reaches the cited id."""
+    def reached(cited: str, requirement_id: str) -> set[str]:
+        hit = set(own.get(family_of(requirement_id, cited), ())) if cited == key else set()
+        families = hubs(requirement_id, cited, reverse)
+        if not families and cited in identity:
+            families = {family_of(requirement_id, NIST_ANCHOR)}
+        for family in families:
+            hit |= hub.get(family, set())
+        return hit
+
+    def resolutions(written: str, requirement_id: str) -> list[tuple[str, str]]:
+        """(catalog, id) readings of one citation that name a loaded catalog."""
+        tokens = requirement_id.split()
+        # Longest name first: `NIST 800-53 Rev 5 AC-2(3)` arrives as
+        # ("NIST 800-53", "Rev 5 AC-2(3)"), and "Rev" alone would leave "5".
+        for taken in range(len(tokens) - 1, -1, -1):
+            name = " ".join([written, *tokens[:taken]])
+            rest = " ".join(tokens[taken:])
+            cited = resolve_framework(name, index) or (
+                normalize_framework(name) if normalize_framework(name) in index else ""
+            )
+            candidates = (
+                [cited]
+                if cited
+                else [c for c, ids in index.items() if resolve_framework(name, {c: ids}) == c]
+            )
+            readings = [
+                (c, enclosing(rest, lambda r, c=c: known(c, r)))
+                for c in candidates
+                if known(c, enclosing(rest, lambda r, c=c: known(c, r)))
+                or (c in identity and is_800_53_shaped(rest))
+            ]
+            if readings:
+                return readings
+        # Nothing the catalogs have: the name as written, if it names one.
         cited = resolve_framework(written, index)
-        if cited:
-            return [cited]
-        return [
-            catalog
-            for catalog, ids in index.items()
-            if reached(catalog, requirement_id)
-            and resolve_framework(written, {catalog: ids}) == catalog
-        ]
+        return [(cited, requirement_id)] if cited else []
 
     documents, _ = load_content_tree(root)
     for document in documents:
         for written, requirement_id, _, _ in parse_citations(document.body, [framework], index):
-            for cited in catalogs_cited(written, requirement_id):
-                for changed in reached(cited, requirement_id):
-                    hits.setdefault(changed, []).append(document.relative_path)
-    return {changed: sorted(set(paths)) for changed, paths in hits.items()}
+            readings = resolutions(written, requirement_id)
+            hits = set()
+            for cited, rid in readings:
+                hits |= reached(cited, rid)
+            how = RESOLVED
+            if not hits and not any(known(c, r) for c, r in readings):
+                # Unresolved: 800-53 shape, documents only, marked.
+                for shaped in shaped_ids(f"{written} {requirement_id}"):
+                    hits |= hub.get(family_of(shaped, NIST_ANCHOR), set())
+                    if key == NIST_ANCHOR:
+                        hits |= own.get(family_of(shaped, NIST_ANCHOR), set())
+                how = BY_SHAPE
+            for changed in hits:
+                paths = found.setdefault(changed, {})
+                if paths.get(document.relative_path) != RESOLVED:
+                    paths[document.relative_path] = how
+    return found
 
 
 def assess_impact(
@@ -312,6 +400,7 @@ def assess_impact(
     framework: str = "",
     catalog_ids=(),
     crosswalk=None,
+    catalogs=None,
 ) -> dict[str, Impact]:
     """Work out what each changed control reaches.
 
@@ -334,15 +423,19 @@ def assess_impact(
                 impacts[control_id].topics.append(topic.name)
 
     if content_root is not None:
-        reached = documents_citing(
+        reached = documents_reached(
             changed_ids,
             Path(content_root),
             framework=framework,
             catalog_ids=catalog_ids,
             crosswalk=crosswalk,
+            catalogs=catalogs,
         )
         for control_id, paths in reached.items():
-            impacts[control_id].documents.extend(paths)
+            impacts[control_id].documents.extend(sorted(paths))
+            impacts[control_id].by_shape.extend(
+                sorted(p for p, how in paths.items() if how == BY_SHAPE)
+            )
 
     for key in decisions or {}:
         control_id = key.split("/")[0].upper()
@@ -407,7 +500,15 @@ class DriftReport:
                 if impact.topics:
                     reach.append(f"topics: {', '.join(impact.topics)}")
                 if impact.documents:
-                    reach.append(f"docs: {', '.join(impact.documents)}")
+                    reach.append(
+                        "docs: "
+                        + ", ".join(
+                            f"{d} (reached by id shape; citation did not resolve)"
+                            if d in impact.by_shape
+                            else d
+                            for d in impact.documents
+                        )
+                    )
                 if impact.parameters:
                     reach.append(f"parameters: {', '.join(impact.parameters)}")
                 lines.append(f"  {change.kind.upper():7} {change.control_id}  ({what})")
@@ -441,6 +542,15 @@ class DriftReport:
             f"  {len(self.affected_parameters)} recorded parameter decision(s): "
             + (", ".join(self.affected_parameters) or "none")
         )
+        shaped = sorted({d for c in self.substantive for d in self.impacts[c.control_id].by_shape})
+        if shaped:
+            lines += [
+                "",
+                f"{len(shaped)} of those document(s) were reached only by the shape of an "
+                "800-53 id, because a citation in them did not resolve to any loaded "
+                "catalog: " + ", ".join(shaped) + ". Fix the citation where it is "
+                "written; until then drift can only guess what it means.",
+            ]
         if self.affected_documents:
             lines += [
                 "",
@@ -499,7 +609,14 @@ def _catalog_ids(controls) -> set[str]:
 
 
 def analyze_drift(
-    old_controls, new_controls, *, topics=(), content_root=None, decisions=None, crosswalk=None
+    old_controls,
+    new_controls,
+    *,
+    topics=(),
+    content_root=None,
+    decisions=None,
+    crosswalk=None,
+    catalogs=None,
 ) -> DriftReport:
     """`crosswalk` is `build_crosswalk` over every catalog loaded (the drift
     command passes the installation's); by default, the diffed catalog's
@@ -524,5 +641,6 @@ def analyze_drift(
             else "",
             catalog_ids=_catalog_ids(old_controls or []) | _catalog_ids(new_controls or []),
             crosswalk=crosswalk,
+            catalogs=catalogs,
         ),
     )

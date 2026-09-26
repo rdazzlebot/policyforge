@@ -358,3 +358,131 @@ def test_a_fedramp_change_reaches_arc_ampe_through_the_hub_and_not_by_shape(tmp_
     # like FedRAMP's, and is not reached by its shape.
     alone = documents_citing({"AC-2"}, root, framework="FedRAMP", catalog_ids={"AC-2", "CP-9"})
     assert alone == {"AC-2": ["standards/fedramp.md"]}
+
+
+# ---- citations as documents write them (1d on #418, 80's ruling) ----
+
+
+def _loaded():
+    """Every shipped catalog, as the drift command loads them."""
+    from policyforge.ingest.schema import load_controls
+    from policyforge.mapping.crosswalk import build_crosswalk, normalize_framework
+
+    controls = [
+        c
+        for path in sorted((SRC.parent.parent / "data" / "frameworks").glob("*/controls.json"))
+        for c in load_controls(path)
+    ]
+    catalogs: dict[str, set[str]] = {}
+    for c in controls:
+        ids = catalogs.setdefault(normalize_framework(c.framework), set())
+        ids.add(c.control_id)
+        ids.update(e.enhancement_id for e in c.enhancements)
+    return build_crosswalk(controls), catalogs
+
+
+@pytest.mark.parametrize(
+    ("citation", "how"),
+    [
+        # 1d's table: reached on 74779c4, dropped by 260f92a. check accepts each.
+        ("[NIST 800-53 AC-6(1)]", "resolved"),
+        ("[FedRAMP AC-6(1)]", "resolved"),
+        ("[NIST 800-53 AC-6(1)(a)]", "resolved"),
+        ("[NIST SP 800-53 AC-6(1)]", "resolved"),
+        ("[NIST 800-53 Rev 5 AC-6(1)]", "resolved"),
+        ("[FedRAMP AC-6(3)]", "resolved"),  # in FedRAMP's baseline, not its tailoring
+        # Shorthand and its statement part.
+        ("[NIST AC-6]", "resolved"),
+        ("[NIST AC-6(1)(b)]", "resolved"),
+        # Nothing resolves it: reached by 800-53 shape, and marked so.
+        ("[NIST 800-35 AC-6]", "by id shape"),
+        ("[CIS AC-6(2)]", "by id shape"),
+    ],
+)
+def test_a_citation_as_written_is_resolved_or_reached_loudly(tmp_path, citation, how):
+    from policyforge.frameworks.drift import documents_reached
+
+    crosswalk, catalogs = _loaded()
+    root = _docs(tmp_path, doc=f"Least privilege. {citation}")
+    hits = documents_reached(
+        {"AC-6(1)"},
+        root,
+        framework="NIST 800-53",
+        catalog_ids=catalogs["nist-800-53"],
+        crosswalk=crosswalk,
+        catalogs=catalogs,
+    )
+    assert hits == {"AC-6(1)": {"standards/doc.md": how}}
+
+
+@pytest.mark.parametrize(
+    "citation",
+    ["[HIPAA Security Rule 164.308(a)(1)]", "[Substance Use Disorder Records 2.16]"],
+)
+def test_a_regulatory_child_change_does_not_reach_its_parent_yet(tmp_path, citation):
+    """The gap the docstring now names (#423): no family grammar for the
+    regulatory catalogs, so a child change does not reach a parent citation.
+    When #423 lands this goes red, and moves."""
+    from policyforge.frameworks.drift import documents_reached
+
+    crosswalk, catalogs = _loaded()
+    child, framework = (
+        ("164.308(a)(1)(ii)(A)", "HIPAA Security Rule")
+        if "HIPAA" in citation
+        else ("2.16(a)", "Substance Use Disorder Records")
+    )
+    root = _docs(tmp_path, doc=f"Parent cited. {citation}")
+    hits = documents_reached(
+        {child},
+        root,
+        framework=framework,
+        catalog_ids={child},
+        crosswalk=crosswalk,
+        catalogs=catalogs,
+    )
+    assert "standards/doc.md" not in hits.get(child, {})
+
+
+def test_drift_prints_a_document_reached_by_shape_as_such(tmp_path):
+    """Loud, not silent (80's ruling): the report says which documents were
+    reached only by shape, so the citation gets fixed where it is written."""
+    import copy
+
+    from policyforge.frameworks.drift import analyze_drift
+    from policyforge.ingest.schema import load_controls
+
+    crosswalk, catalogs = _loaded()
+    old = load_controls(
+        SRC.parent.parent / "data" / "frameworks" / "nist-800-53-r5" / "controls.json"
+    )
+    new = copy.deepcopy(old)
+    next(c for c in new if c.control_id == "AC-6").control_statement += " Reworded upstream."
+    root = _docs(
+        tmp_path, good="Least privilege. [NIST SP 800-53 AC-6]", bad="Typo. [NIST 800-35 AC-6]"
+    )
+    report = analyze_drift(old, new, content_root=root, crosswalk=crosswalk, catalogs=catalogs)
+    assert report.impacts["AC-6"].by_shape == ["standards/bad.md"]
+    text = report.format_report()
+    assert "standards/bad.md (reached by id shape; citation did not resolve)" in text
+    assert "standards/good.md (reached by id shape" not in text
+
+
+def test_a_fedramp_citation_of_a_control_it_does_not_tailor_goes_through_identity(tmp_path):
+    """1d's `[FedRAMP AC-2(3)]`: no `AC-2` anywhere in FedRAMP's tailoring
+    catalog, so neither the id nor a statement-part strip finds it there.
+    FedRAMP's crosswalk maps every id to 800-53's same id (derived from the
+    data), so it is 800-53's AC-2(3), as ruling (B) reaches it."""
+    from policyforge.frameworks.drift import documents_reached
+
+    crosswalk, catalogs = _loaded()
+    assert not {i for i in catalogs["fedramp"] if i == "AC-2" or i.startswith("AC-2(")}
+    root = _docs(tmp_path, doc="Reviewed. [FedRAMP AC-2(3)]")
+    hits = documents_reached(
+        {"AC-2(1)"},
+        root,
+        framework="NIST 800-53",
+        catalog_ids=catalogs["nist-800-53"],
+        crosswalk=crosswalk,
+        catalogs=catalogs,
+    )
+    assert hits == {"AC-2(1)": {"standards/doc.md": "resolved"}}

@@ -26,6 +26,13 @@ none.
   the HIPAA and 800-171 requirements mapped to it, and no document drift
   reached before is missed. `drift` reads the crosswalks of the catalogs
   your installation loads.
+- A citation is read the way you wrote it: `[NIST SP 800-53 AC-2(3)]`,
+  `[NIST 800-53 Rev 5 AC-2(3)]`, a statement part such as `AC-6(1)(a)`, and
+  a FedRAMP citation of a baseline control FedRAMP does not tailor all
+  reach what they name. A citation that names no loaded catalog still
+  reaches its document by the shape of any 800-53 id in it, and `drift`
+  marks that document "reached by id shape; citation did not resolve", so
+  you can fix the citation.
 
 **`programme parameters` includes 800-171's organisation-defined
 parameters** where a topic anchors the 800-53 controls NIST maps them to,

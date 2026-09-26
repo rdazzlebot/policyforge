@@ -489,7 +489,16 @@ def drift_cmd(
         for f in discover(load_config_or_empty())
         if f.has_controls and Path(f.controls_path).resolve() != diffed
     ]
-    crosswalk = build_crosswalk([*load_catalogs(others), *old_controls, *new_controls])
+    loaded = [*load_catalogs(others), *old_controls, *new_controls]
+    crosswalk = build_crosswalk(loaded)
+    # Every id each loaded catalog has: what "this citation resolves" asks.
+    from policyforge.mapping.crosswalk import normalize_framework
+
+    catalogs: dict[str, set[str]] = {}
+    for control in loaded:
+        ids = catalogs.setdefault(normalize_framework(control.framework), set())
+        ids.add(control.control_id)
+        ids.update(e.enhancement_id for e in control.enhancements)
 
     report = analyze_drift(
         old_controls,
@@ -498,6 +507,7 @@ def drift_cmd(
         content_root=root,
         decisions=decisions,
         crosswalk=crosswalk,
+        catalogs=catalogs,
     )
     click.echo(report.format_report(detail=detail))
 

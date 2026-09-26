@@ -28,11 +28,19 @@ ruling on #377):
   a topic may anchor, and only the id and the control it hangs off.
 - `family_of` is **document reach**: which documents to re-read when this
   changes. Deliberately broader, because missing a document is the
-  dangerous direction: every catalog whose ids nest, and the **whole
-  family** within the change's own framework. `AC-2(1)` reaches a document
-  citing its sibling `AC-2(3)`; `Govern 1.3` reaches one citing `Govern 1`
-  or any `Govern 1.x`; a Playbook action reaches Playbook citations of the
-  same subcategory and never the Core's.
+  dangerous direction: the **whole family** within the change's own
+  framework, for the catalogs that have a family grammar. `AC-2(1)`
+  reaches a document citing its sibling `AC-2(3)`; `Govern 1.3` reaches one
+  citing `Govern 1` or any `Govern 1.x`; a Playbook action reaches Playbook
+  citations of the same subcategory and never the Core's.
+
+  **The regulatory catalogs have no family grammar yet**: HIPAA, 42 CFR
+  Part 2, Information Blocking and ONC 170.315 nest their ids
+  (`164.308(a)(1)(ii)(A)` under `164.308(a)(1)`), but `family_of` returns
+  each id as its own family, so a change to a child reaches a document
+  citing the child and not one citing its parent. That is #423 (1d on
+  #418). It is not a regression: before #377 these catalogs reached no
+  document at all.
 
 Ingest code that builds a catalog's own hierarchy (`ingest/ai_rmf.py`)
 reads the source, not a topic registry or a document, and stays its own.
@@ -88,8 +96,10 @@ def anchor_keys(requirement_id: str, framework: str) -> frozenset[str]:
     return frozenset({requirement_id, parent} if parent else {requirement_id})
 
 
-#: The family grammar for document reach: every catalog whose ids nest, each
-#: by its own shape. 800-53's is shared by the catalogs that write 800-53 ids
+#: The family grammar for document reach, per catalog, each by its own shape.
+#: **Not every nesting catalog is here**: the regulatory ones (HIPAA, Part 2,
+#: Information Blocking, ONC) nest several levels deep and need an ancestor
+#: walk, not one family, so they are #423. 800-53's is shared by the catalogs that write 800-53 ids
 #: (FedRAMP, ARC-AMPE). The Playbook nests its actions under the subcategory
 #: they serve, and stops there: its family is never the Core's category.
 _FAMILY_RES: dict[str, re.Pattern[str]] = {
@@ -191,3 +201,33 @@ def hubs(
     if key == NIST_ANCHOR:
         return {family_of(requirement_id, NIST_ANCHOR)}
     return {family_of(nist_id, NIST_ANCHOR) for nist_id in reverse.get((key, requirement_id), ())}
+
+
+#: An 800-53-shaped id anywhere in a text. Recognition, for drift's fallback
+#: on a citation that does not resolve (80's ruling on #418); the family is
+#: still `family_of`'s.
+_SHAPE_RE = re.compile(r"\b([A-Z]{2}-\d+(?:\(\d+\))?)")
+
+#: A trailing statement part: `(a)` in `AC-6(1)(a)`, `(A)` in `164.308(a)(1)(ii)(A)`.
+_LAST_PART_RE = re.compile(r"\([^()]*\)$")
+
+
+def shaped_ids(text: str) -> list[str]:
+    """Every 800-53-shaped id in `text`, in order."""
+    return _SHAPE_RE.findall(text)
+
+
+def is_800_53_shaped(requirement_id: str) -> bool:
+    return bool(_SHAPE_RE.fullmatch(requirement_id))
+
+
+def enclosing(requirement_id: str, has) -> str:
+    """`requirement_id` with statement parts taken off, last first, until
+    `has(id)` is true; itself if no prefix is. `AC-6(1)(a)` -> `AC-6(1)`."""
+    current = requirement_id
+    while not has(current):
+        match = _LAST_PART_RE.search(current)
+        if not match:
+            return requirement_id
+        current = current[: match.start()]
+    return current

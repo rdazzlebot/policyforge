@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from policyforge.content.tree import TIER_DIRS
+from policyforge.content.tree import TIER_DIRECTORY
 from policyforge.export.publisher import (  # noqa: F401 — re-exported for callers
     REFUSED,
     UNCHANGED,
@@ -42,8 +42,10 @@ from policyforge.export.publisher import (  # noqa: F401 — re-exported for cal
 
 #: Where a pulled document lands when nothing says otherwise. Tier-first,
 #: matching what `generate` writes, so a pulled page and a generated one
-#: sit beside each other rather than in two parallel hierarchies.
-_TIER_DIR = {tier: directory for directory, tier in TIER_DIRS.items()}
+#: sit beside each other rather than in two parallel hierarchies. The same
+#: table `generate` reads since #411; before it, generate wrote Policies to
+#: `policys/` and this wrote them to `policies/`.
+_TIER_DIR = TIER_DIRECTORY
 
 
 def target_path(root: Path, *, tier: str, slug: str) -> Path:

@@ -268,3 +268,25 @@ def test_a_licensed_import_stays_off_a_public_wiki_once_someone_declares_one(wor
     wiki = GitHubWikiPublisher("o/r", workdir=workdir / "wiki", public=True, allow_public=True)
     assert wiki.location(doc) == "o/r", "the probe must reach the exporter's refusal"
     assert "licensed" in wiki.refuse(doc)
+
+
+# -- a Policy generated before #411 lives in policys/ ------------------------------
+
+
+def test_a_policy_generated_into_the_old_directory_still_hands_on_its_class(workdir):
+    """#411 moved `generate`'s Policies from `policys/` to `policies/`. A tree
+    generated earlier still has its Policy in `policys/`: the import reads
+    it there too, so a licensed class is not dropped in the move."""
+    meta = {"generated_by": {"models": ["glm-5.3-flash"], "calls": 3, "content_class": "licensed"}}
+    old = Path("output/policys/access-review.md")
+    old.parent.mkdir(parents=True)
+    old.write_text(frontmatter.dumps(frontmatter.Post("# Old draft\n", **meta)), encoding="utf-8")
+    from policyforge.cli import cli
+
+    result = CliRunner().invoke(
+        cli,
+        ["import-confluence", "--tier", "policy", "--name", "access-review", "--space", "ENG",
+         "--title", TITLE, "--host", "https://example.atlassian.net/wiki"],
+    )  # fmt: skip
+    assert result.exit_code == 0, result.output
+    assert _written("output/policies/access-review.imported.md")["content_class"] == "licensed"

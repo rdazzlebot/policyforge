@@ -862,7 +862,13 @@ def import_confluence_cmd(
         import_metadata,
         read_generated_by,
     )
-    from policyforge.content.tree import ContentError, parse_document, render_document
+    from policyforge.content.tree import (
+        LEGACY_TIER_DIRS,
+        TIER_DIRECTORY,
+        ContentError,
+        parse_document,
+        render_document,
+    )
     from policyforge.export.confluence_importer import (
         confluence_to_markdown,
         fetch_confluence_page,
@@ -876,7 +882,8 @@ def import_confluence_cmd(
     page = fetch_confluence_page(space=space, title=title, host=host)
     markdown_text = confluence_to_markdown(page.storage_body)
 
-    out_path = out or Path(f"output/{tier}s") / f"{name}.imported.md"
+    directory = TIER_DIRECTORY[tier]  # the one table, as `generate` reads it (#411)
+    out_path = out or Path("output") / directory / f"{name}.imported.md"
     slug = f"{tier}/{name}"
     previous = load_history(history_dir, slug)
 
@@ -886,7 +893,13 @@ def import_confluence_cmd(
     # import), then every recorded version.
     classes: list[str] = []
     earlier_generation: dict = {}
-    for candidate in (Path(f"output/{tier}s") / f"{name}.md", out_path):
+    # The generated file is read where `generate` writes it now, and where it
+    # wrote it before #411 (`policys/`), so a tree generated earlier still
+    # hands its content class to the import. Missing it would drop a
+    # licensed class silently, the direction #197 exists to prevent.
+    legacy = [old for old, new in LEGACY_TIER_DIRS.items() if new == directory]
+    generated = [Path("output") / d / f"{name}.md" for d in (directory, *legacy)]
+    for candidate in (*generated, out_path):
         try:
             metadata = parse_document(
                 candidate.read_text(encoding="utf-8"), path=candidate, root=candidate.parent

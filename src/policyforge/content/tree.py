@@ -37,13 +37,27 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-#: Directory name -> tier, using the names `policyforge generate` already
-#: writes into, so an existing `output/` tree loads with no renaming.
+#: Directory name -> tier. **The one table** for where a tier's documents
+#: live: `check` reads it one way and every writer (`generate`,
+#: `import-confluence`, `pull`) reads it the other, through
+#: `TIER_DIRECTORY`. Until #411 this comment said these were "the names
+#: `policyforge generate` already writes into"; generate spelled its own
+#: directory `f"{tier}s"`, so every generated Policy went to `policys/`,
+#: which nothing here reads.
 TIER_DIRS = {
     "policies": "policy",
     "standards": "standard",
     "procedures": "procedure",
 }
+
+#: Tier -> its directory, for every writer (#411).
+TIER_DIRECTORY = {tier: directory for directory, tier in TIER_DIRS.items()}
+
+#: Directories an earlier version wrote that no reader here recognises ->
+#: where their documents belong. `check` names them rather than passing
+#: them over, and `import-confluence` still reads a predecessor there, so
+#: an existing tree's content class is not lost in the move (#411).
+LEGACY_TIER_DIRS = {"policys": "policies"}
 
 #: Directories that are never documents. `synthesis/` holds requirement
 #: lists the generator consumes rather than anything anyone reads as a

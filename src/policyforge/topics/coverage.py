@@ -44,7 +44,7 @@ from policyforge.topics.anchoring import parent_of
 from policyforge.topics.registry import Topic
 
 #: Relationships under which one control covers only part of a requirement.
-PARTIAL_RELATIONSHIPS = frozenset({"superset", "intersects"})
+PARTIAL_RELATIONSHIPS = frozenset({"superset", "intersects", "source-untyped"})
 
 
 def reaches_in_full(

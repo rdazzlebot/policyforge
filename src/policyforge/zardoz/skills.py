@@ -142,7 +142,7 @@ def _controls(state):
 
 
 def _coverage(state, args: list[str]) -> str:
-    from policyforge.crosswalk.overlay import accepted_relationships, load_overlays
+    from policyforge.crosswalk.overlay import load_overlays, relationships_for
     from policyforge.mapping.crosswalk import build_crosswalk
     from policyforge.topics.coverage import (
         analyze_coverage,
@@ -211,7 +211,7 @@ def _coverage(state, args: list[str]) -> str:
         # `_controls` already applies the overlays to the controls; this is
         # the same overlays read for their relationships rather than their
         # pairs, so the shell is not reading anything the CLI does not.
-        relationships=accepted_relationships(load_overlays()),
+        relationships=relationships_for(controls, load_overlays()),
     )
     return "\n".join(
         [

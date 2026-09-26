@@ -95,6 +95,11 @@ class Framework:
     family_overrides: dict = field(default_factory=dict)
     #: Ids nested in the catalog for structure only: each is its own family.
     structure_only: tuple = ()
+    #: The relationship every pair of this catalog's PUBLISHED crosswalk
+    #: has, when its source declares it (#408): CSF 2.0's is
+    #: `source-untyped`. Empty for a catalog that declares none, whose
+    #: published pairs read as they always have.
+    crosswalk_relationship: str = ""
 
     @property
     def redistributable(self) -> bool:
@@ -139,6 +144,7 @@ def load_framework(directory: Path) -> Framework:
         family=str(data.get("family") or "").strip(),
         family_overrides={str(k): str(v) for k, v in (data.get("family_overrides") or {}).items()},
         structure_only=tuple(str(i) for i in (data.get("structure_only") or ())),
+        crosswalk_relationship=str(data.get("crosswalk_relationship") or "").strip(),
     )
 
 
@@ -387,6 +393,32 @@ def declared_family_rules(
         for key in {framework.key, *(normalize_framework(n) for n in names)} - {""}:
             rules.setdefault(key, framework)
     return rules
+
+
+def declared_crosswalk_relationships(
+    config: dict | None = None, *, roots: list[Path] | None = None
+) -> dict[str, str]:
+    """{framework key: the relationship its published crosswalk declares} (#408).
+
+    A value that is not a relationship is refused, naming the manifest: coverage
+    reads anything outside `PARTIAL_RELATIONSHIPS` as full, so a misspelled
+    `source-untyped` would count every pair as covered, the unsafe direction.
+    """
+    from policyforge.crosswalk.overlay import RELATIONSHIPS
+    from policyforge.mapping.crosswalk import normalize_framework
+
+    found: dict[str, str] = {}
+    for _, framework, names in _catalog_names(config, roots):
+        if not framework.crosswalk_relationship:
+            continue
+        if framework.crosswalk_relationship not in RELATIONSHIPS:
+            raise ValueError(
+                f"{framework.path / MANIFEST_NAME}: crosswalk_relationship "
+                f"{framework.crosswalk_relationship!r} is not one of {', '.join(RELATIONSHIPS)}."
+            )
+        for key in {framework.key, *(normalize_framework(n) for n in names)} - {""}:
+            found.setdefault(key, framework.crosswalk_relationship)
+    return found
 
 
 def declared_keys(config: dict | None = None, *, roots: list[Path] | None = None) -> dict[str, str]:

@@ -50,7 +50,15 @@ DEFAULT_OVERLAY_DIR = Path("config/crosswalks")
 #: framework's side: `subset` means the requirement is narrower and the
 #: control covers all of it. `unspecified` is what a published pair with no
 #: stated relationship becomes when seeded — honest about what is not known.
-RELATIONSHIPS = ("equal", "subset", "superset", "intersects", "unspecified")
+#:
+#: `source-untyped` is **this project's**, not IR 8278A's, and named so it
+#: cannot be read as NIST's (80's ruling on #408): the pair's own source
+#: publishes it with no relationship AND says its mapping is incomplete,
+#: as NIST does for CSF 2.0's OLIR 186 (`comprehensive: No`). A catalog's
+#: manifest declares it (`crosswalk_relationship`), `crosswalk seed` writes
+#: it, and coverage reads it as partial: a person decides whether the pair
+#: is enough. `unspecified` is unchanged, so nothing that existed moves.
+RELATIONSHIPS = ("equal", "subset", "superset", "intersects", "unspecified", "source-untyped")
 
 PROPOSED = "proposed"
 ACCEPTED = "accepted"
@@ -712,7 +720,9 @@ def published_pairs(controls, framework: str, anchor: str = NIST_ANCHOR) -> dict
     return pairs
 
 
-def seed_overlay(controls, framework: str, anchor: str = NIST_ANCHOR) -> Overlay:
+def seed_overlay(
+    controls, framework: str, anchor: str = NIST_ANCHOR, declared: dict[str, str] | None = None
+) -> Overlay:
     """An overlay holding exactly the published mapping, every pair accepted.
 
     Applying a seeded overlay changes nothing, which is the point: it is the
@@ -739,18 +749,44 @@ def seed_overlay(controls, framework: str, anchor: str = NIST_ANCHOR) -> Overlay
     if reason is None:
         # The typed name matched nothing in the table. Ask the catalogs
         # themselves whether the thing being seeded is one of these.
-        for declared in _declared_frameworks(controls):
-            declared_reason = _refusal_reason(declared)
-            if declared_reason is not None and _selects(controls, framework, declared):
-                reason, named = declared_reason, declared
+        for loaded in _declared_frameworks(controls):
+            declared_reason = _refusal_reason(loaded)
+            if declared_reason is not None and _selects(controls, framework, loaded):
+                reason, named = declared_reason, loaded
                 break
     if reason is not None:
         raise NotAnchorableError(f"{named} cannot anchor a crosswalk. {reason}")
 
     overlay = Overlay(framework=framework, anchor=anchor)
+    # The relationship the source declares for its published pairs, so that
+    # seeding changes nothing (80's ruling on #408): a CSF pair seeded as
+    # `unspecified` would read full, where the same pair unseeded reads
+    # partial. A source declaring nothing seeds `unspecified`, as before.
+    from policyforge.frameworks.registry import (
+        config_or_defaults,
+        declared_crosswalk_relationships,
+    )
+    from policyforge.mapping.crosswalk import normalize_framework
+
+    if declared is None:
+        declared = declared_crosswalk_relationships(config_or_defaults("the crosswalk was seeded"))
+    # Read from the catalogs `published_pairs` selects, the same population
+    # the rows come from, rather than by matching the typed name again.
+    wanted = _framework_key(framework)
+    selected = {
+        normalize_framework(c.framework) for c in controls if _framework_key(c.framework) == wanted
+    }
+    relationships = {declared[key] for key in selected if key in declared}
+    if len(relationships) > 1:
+        raise OverlayError(
+            f"The catalogs named {framework!r} declare different crosswalk relationships "
+            f"({', '.join(sorted(relationships))}); seed them separately."
+        )
+    relationship = relationships.pop() if relationships else "unspecified"
     for rid, ids in published_pairs(controls, framework, anchor).items():
         overlay.requirements[rid] = [
-            MappingRow(control=i, status=ACCEPTED, sources=["published"]) for i in ids
+            MappingRow(control=i, relationship=relationship, status=ACCEPTED, sources=["published"])
+            for i in ids
         ]
     if not overlay.requirements:
         # Name what IS loaded. "No requirements found" alone reads as "this
@@ -848,3 +884,37 @@ def accepted_relationships(overlays: list[Overlay]) -> dict[tuple[str, str, str]
     which pair a key names would be a hard bug to see.
     """
     return {key: row.relationship for key, row in accepted_rows(overlays).items()}
+
+
+def relationships_for(
+    controls, overlays: list[Overlay], declared: dict[str, str] | None = None
+) -> dict[tuple[str, str, str], str]:
+    """Every pair's relationship, as coverage reads it: the ONE table (#408).
+
+    A catalog whose manifest declares a `crosswalk_relationship` gives it to
+    every pair of its published crosswalk (CSF 2.0: `source-untyped`, since
+    NIST's mapping is untyped and not comprehensive). An accepted overlay row
+    then overrides it, since that is an organisation's reviewed decision.
+    A catalog that declares nothing contributes nothing, so its pairs read as
+    they always have. `declared` defaults to the manifests on disk.
+    """
+    from policyforge.mapping.crosswalk import build_crosswalk
+
+    if declared is None:
+        from policyforge.frameworks.registry import (
+            config_or_defaults,
+            declared_crosswalk_relationships,
+        )
+
+        declared = declared_crosswalk_relationships(
+            config_or_defaults("crosswalk relationships were read")
+        )
+    table: dict[tuple[str, str, str], str] = {}
+    for nist_id, mapped in build_crosswalk(controls).items():
+        for framework, requirement_ids in mapped.items():
+            relationship = declared.get(framework)
+            if relationship:
+                for requirement_id in requirement_ids:
+                    table[(framework, requirement_id, nist_id)] = relationship
+    table.update(accepted_relationships(overlays))
+    return table

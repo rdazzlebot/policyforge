@@ -191,20 +191,43 @@ def search_paths(config: dict | None = None) -> list[Path]:
     return [Path(entry) for entry in DEFAULT_SEARCH_PATHS]
 
 
-def discover(config: dict | None = None, *, roots: list[Path] | None = None) -> list[Framework]:
+def discover(
+    config: dict | None = None,
+    *,
+    roots: list[Path] | None = None,
+    assume_written: Path | None = None,
+) -> list[Framework]:
     """Every framework directory found under the search paths.
 
     A directory counts if it holds a `controls.json` or a manifest — the two
     things that make it a framework rather than somewhere a framework will
     eventually go.
+
+    `assume_written` is a file about to be written, treated as present: the
+    world as it will be once a catalog lands there (#459). The boundary asks
+    this before a licensed ETL writes, because whether a directory is a
+    framework, and which of two same-named ones wins, depends on files that
+    do not exist yet.
     """
+    pending = assume_written.resolve() if assume_written is not None else None
     found: dict[str, Framework] = {}
     for root in roots if roots is not None else search_paths(config):
-        if not root.exists():
-            continue
-        for directory in sorted(p for p in root.iterdir() if p.is_dir()):
+        directories = sorted(p for p in root.iterdir() if p.is_dir()) if root.exists() else []
+        if (
+            pending is not None
+            and pending.parent.parent == root.resolve()
+            and all(d.resolve() != pending.parent for d in directories)
+        ):
+            directories = sorted([*directories, pending.parent])
+        for directory in directories:
+            becomes_catalog = (
+                pending is not None
+                and pending.name == "controls.json"
+                and directory.resolve() == pending.parent
+            )
             if (
-                not (directory / "controls.json").exists()
+                not becomes_catalog
+                and not (directory / "controls.json").exists()
                 and not (directory / MANIFEST_NAME).exists()
             ):
                 continue

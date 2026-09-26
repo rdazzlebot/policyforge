@@ -302,7 +302,9 @@ def _under(path: Path, parent: Path) -> bool:
     return True
 
 
-def classify_path(path: Path, config: dict | None = None) -> ContentClassification:
+def classify_path(
+    path: Path, config: dict | None = None, *, assume_written: bool = False
+) -> ContentClassification:
     """What kind of content lives at `path`.
 
     Three questions, in order of how much they know. Is it inside a
@@ -311,11 +313,17 @@ def classify_path(path: Path, config: dict | None = None) -> ContentClassificati
     tells people to put licensed exports? Otherwise it is the organization's
     own material, which is the ordinary case and the one the tool exists to
     send to a model.
+
+    `assume_written` answers for a file that does not exist yet, as the
+    answer will be once it does (#459): a licensed ETL asks it about its
+    `--out` before writing, and refuses a destination this would call
+    anything but licensed.
     """
     config = config or {}
     resolved = path.resolve()
+    pending = path if assume_written else None
 
-    for framework in registry.discover(config):
+    for framework in registry.discover(config, assume_written=pending):
         if _under(resolved, framework.path):
             if framework.redistributable:
                 return ContentClassification(

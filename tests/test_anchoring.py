@@ -607,3 +607,21 @@ def test_a_fedramp_citation_of_a_control_it_does_not_tailor_goes_through_identit
         catalogs=catalogs,
     )
     assert hits == {"AC-2(1)": {"standards/doc.md": "resolved"}}
+
+
+@pytest.mark.parametrize(
+    ("key", "cited"),
+    [
+        # A cited section the catalog does not carry, whose number is a prefix
+        # of ones it does (policyforge-b5 on #429): Part 2's § 2.1 is
+        # "Statutory authority", not 2.16 or 2.19; 171.2 is not the 171.20x
+        # exceptions; 164.31 is not 164.310 or 164.312.
+        ("cfr-42-part-2-sud-records", "2.1"),
+        ("cfr-171-information-blocking", "171.2"),
+        ("hipaa", "164.31"),
+    ],
+)
+def test_a_number_prefix_is_not_an_ancestor(key, cited):
+    from policyforge.topics.anchoring import regulatory_families
+
+    assert regulatory_families(cited, _families()[key]) == set()

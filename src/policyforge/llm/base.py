@@ -108,6 +108,13 @@ class LLMResponse:
     #: Anthropic support asks for. Free on every response and impossible to
     #: reconstruct afterwards.
     request_id: str | None = None
+    #: The LAST attempt's own cost, when known: the request `request_id`
+    #: names. Equal to `cost_usd` for a call sent once. After a re-send
+    #: `cost_usd` is every attempt summed, or None if any attempt's cost is
+    #: unknown, and this is what keeps the last attempt's known figure in
+    #: that case (#382). The ledger records it only on a row whose total is
+    #: None; it is never an addend to a total that is known.
+    last_cost_usd: float | None = None
     #: Spans the API says were quoted, when the request sent its passages as
     #: document blocks. `llm/grounded.py` says what makes these different
     #: from the `[2]` markers a model writes: the text is extracted from the

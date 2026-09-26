@@ -131,6 +131,17 @@ class CascadeProvider(LLMProvider):
         # known part presented as the whole. The known parts are not lost:
         # each billed attempt is in the row's `escalations` (1d on #378). An
         # exception with no `cost_usd` at all never reached a bill we can see.
+        #
+        # The other order too (#382): a primary that billed an UNKNOWN amount
+        # (a request id and no cost) leaves the total unknown, so the
+        # stronger model's known cost is not the row's cost. It is kept as
+        # `last_cost_usd`, which the row records when its total is None.
+        # "Billed" is read as the announcement above reads it, by an id or a
+        # cost. **Residual, named:** an OpenAI-compatible endpoint that sends
+        # no `id` raises an exhaustion carrying neither, so it shows no bill:
+        # the hop is not announced and the total stays the stronger model's,
+        # although both of its attempts reached the endpoint.
+        unknown = billed is None and getattr(failed, "request_id", None) is not None
         try:
             response = call(self._escalate_to)
         except Exception as second:
@@ -139,9 +150,13 @@ class CascadeProvider(LLMProvider):
                     second.cost_usd = billed
                 elif second.cost_usd is not None:
                     second.cost_usd += billed
+            elif unknown and getattr(second, "cost_usd", None) is not None:
+                second.cost_usd = None
             raise
         if billed is not None and response.cost_usd is not None:
             response.cost_usd += billed
+        elif unknown:
+            response.cost_usd = None
         return response
 
     # ---- capabilities: a flag is true only when both halves honour it ----

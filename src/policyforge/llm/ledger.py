@@ -123,6 +123,12 @@ class CallRecord:
     #: Their `first_cost_usd` is already in the row's cost: never an addend
     #: to it, error rows included (#372, #343).
     escalations: tuple = ()
+    #: The last attempt's own known cost, kept only on a row whose
+    #: `cost_usd` is None because another attempt's cost is unknown (#382):
+    #: with `escalations`' known `first_cost_usd`, every known figure has
+    #: one place. None on a row with a known total, so it is never added to
+    #: one.
+    last_cost_usd: float | None = None
 
     def as_json(self) -> str:
         return json.dumps(dataclasses.asdict(self))
@@ -363,6 +369,8 @@ class RecordingProvider(LLMProvider):
             return getattr(billed, name, None) if billed is not None else None
 
         scope = current_scope()
+        cost = response.cost_usd if response else _billed("cost_usd")
+        last_cost = response.last_cost_usd if response else _billed("last_cost_usd")
         record = CallRecord(
             timestamp=datetime.now(timezone.utc).isoformat(),
             provider=self._provider_name,
@@ -377,7 +385,7 @@ class RecordingProvider(LLMProvider):
             content_class=scope.content_class if scope else None,
             input_tokens=response.input_tokens if response else _billed("input_tokens"),
             output_tokens=response.output_tokens if response else _billed("output_tokens"),
-            cost_usd=response.cost_usd if response else _billed("cost_usd"),
+            cost_usd=cost,
             stop_reason=response.stop_reason if response else None,
             cached_input_tokens=response.cached_input_tokens if response else None,
             hidden_output_tokens=response.hidden_output_tokens if response else None,
@@ -386,6 +394,7 @@ class RecordingProvider(LLMProvider):
             prompt_sha=prompt_digest(system, prompt),
             error=error,
             escalations=escalation.take(),
+            last_cost_usd=last_cost if cost is None else None,
         )
         append(record, self._path)
         if scope is not None:

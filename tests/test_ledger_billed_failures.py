@@ -99,6 +99,27 @@ def test_every_billed_request_is_on_the_row_and_its_cost_in_the_total(name, tmp_
     assert raised == error
     assert row["cost_usd"] == pytest.approx(billed), row
     assert _ids(row) == ids, row
+    # A known total holds every attempt: nothing beside it to add (#382).
+    assert row["last_cost_usd"] is None, row
+
+
+def _known(row):
+    """Every known cost the row keeps apart from its total (#382)."""
+    parts = [e["first_cost_usd"] for e in row["escalations"] if e["first_cost_usd"] is not None]
+    return sorted(parts + ([row["last_cost_usd"]] if row["last_cost_usd"] is not None else []))
+
+
+def _unpriced_exhausting(monkeypatch, model="local/q"):
+    """A provider that reports no cost and runs out of room twice: billed,
+    amount unknown (r1, r2)."""
+    from policyforge.llm.openai_compat_provider import OpenAICompatProvider
+
+    weak = OpenAICompatProvider(model=model, base_url="http://localhost:1/v1")
+    empty = {"choices": [{"message": {"content": ""}, "finish_reason": "length"}]}
+    usage = {"prompt_tokens": 5, "completion_tokens": 64}
+    posts = [{"id": "r1", **empty, "usage": usage}, {"id": "r2", **empty, "usage": usage}]
+    monkeypatch.setattr(weak, "_post", lambda payload: posts.pop(0))
+    return weak
 
 
 def test_the_failed_re_send_carries_its_id_and_tokens(tmp_path):
@@ -205,6 +226,24 @@ def test_one_attempt_of_unknown_cost_leaves_the_row_unknown(first_known, answers
     assert raised == (None if answers else "ReasoningBudgetExhausted")
     assert row["cost_usd"] is None, row
     assert _ids(row) == {"gen-a", "gen-b"}
+    # #382: whichever attempt's cost is known has one place on the row. The
+    # re-send's $1.30 after an unknown first attempt was recorded nowhere.
+    assert _known(row) == ([0.2] if first_known else [1.3]), row
+
+
+@pytest.mark.parametrize("answers", [True, False], ids=["answers", "exhausts"])
+def test_an_unpriced_primary_leaves_the_row_unknown(answers, tmp_path, monkeypatch):
+    """#382, the order #378's test did not pin: a primary that billed an
+    unknown amount, then a priced stronger model. The row's cost was the
+    stronger model's alone ($0.50, or $1.00), presented as the whole bill.
+    Now it is None, and the stronger model's known costs are kept."""
+    strong = _litellm("pro", ANSWER_C) if answers else _litellm("pro", EMPTY_C, EMPTY_D)
+    provider = CascadeProvider(primary=_unpriced_exhausting(monkeypatch), escalate_to=strong)
+    row, raised = _row(provider, tmp_path / "calls.jsonl")
+    assert raised == (None if answers else "ReasoningBudgetExhausted")
+    assert row["cost_usd"] is None, row
+    assert _known(row) == ([0.5] if answers else [0.4, 0.6]), row
+    assert {"r1", "r2"} <= _ids(row), row
 
 
 def test_the_exception_type_is_unchanged():

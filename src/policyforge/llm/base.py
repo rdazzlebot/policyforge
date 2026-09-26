@@ -121,7 +121,9 @@ class LLMResponse:
     #: `cost_usd` is every attempt summed, or None if any attempt's cost is
     #: unknown, and this is what keeps the last attempt's known figure in
     #: that case (#382). The ledger records it only on a row whose total is
-    #: None; it is never an addend to a total that is known.
+    #: None; it is never an addend to a total that is known. Only
+    #: LiteLLMProvider reports a cost today: a provider that starts to must
+    #: set this too, or a re-send's known cost is lost again (1d on #431).
     last_cost_usd: float | None = None
     #: Spans the API says were quoted, when the request sent its passages as
     #: document blocks. `llm/grounded.py` says what makes these different

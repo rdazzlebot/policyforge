@@ -151,6 +151,38 @@ def test_a_heading_inside_a_list_item_is_a_heading_with_its_text_clean():
         assert h.text == "Access must be reviewed", marker
 
 
+# ---- HTML and indented code are read as prose (80's ruling on #376; 1d) -------
+
+
+def test_an_obligation_inside_an_html_block_is_still_analysed():
+    """80's ruling: an HTML block is read as prose, as at 74779c4, whose
+    answers these are. Without it among the leaf blocks, the obligation
+    vanished from `check` with no warning (1d's arm on #421)."""
+    div = f"<div>\nStaff must report incidents {AU2}.\n</div>\n"
+    expected = (1, f"<div> Staff must report incidents {AU2}. </div>", "obligation", (AU2,))
+    for text in (div, div + "\nThe owner may act.\n"):
+        first = analyze(text)[0]
+        assert (first.line, first.text, first.modality, first.citations) == expected
+    (comment,) = analyze(f"<!--\nStaff must report incidents {AU2}.\n-->\n")
+    assert comment.modality == "obligation" and comment.citations == (AU2,)
+
+
+def test_an_obligation_in_indented_code_is_still_analysed():
+    """Indented code is read as prose too, as at 74779c4. Alone, or straight
+    under a heading, it is no paragraph's continuation, so without it among
+    the leaf blocks the sentence vanished."""
+    for text, line in (
+        ("    Staff must log changes.\n", 1),
+        ("## Scope\n\n    Staff must log changes.\n", 3),
+    ):
+        (statement,) = analyze(text)
+        assert (statement.line, statement.text, statement.modality) == (
+            line,
+            "Staff must log changes.",
+            "obligation",
+        )
+
+
 # ---- the structure is markdown-it's ------------------------------------------
 
 

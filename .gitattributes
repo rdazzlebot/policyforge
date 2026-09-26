@@ -31,3 +31,7 @@ tests/fixtures/olir_186_csf_2_0_to_800-53r5.xlsx -text
 # eCFR file it quotes (#409), and `etl-hipaa-privacy` on these fixtures must
 # reproduce that record on every platform.
 tests/fixtures/ecfr_164_subparts_d_e/** -text
+
+# Byte-exact: nist_rev4_rev5 refuses any copy of NIST's comparison workbook
+# whose SHA-256 is not the pinned one (#410).
+tests/fixtures/sp800-53r4-to-r5-comparison-workbook.xlsx -text

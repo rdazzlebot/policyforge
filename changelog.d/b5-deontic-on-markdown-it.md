@@ -4,7 +4,9 @@ numbered step, `1. Open the console`, was read as two sentences: `1.` and
 8,972 statements were such numbers. They changed no finding, because a
 number binds nothing, but every figure divided by the number of statements
 was diluted by them. A number glued to the end of the sentence above it
-(`... broadcasting. 1.`) is gone too.
+(`... broadcasting. 1.`) is gone too, and so is a section number opening a
+paragraph (`6.2. The organization must ...`): 426 of them in the 83
+generated Standards.
 
 **A numbered list after a colon now reads like a bulleted one.** In "The
 business associate will:" followed by numbered items, the lead-in and its
@@ -17,8 +19,9 @@ obligation in the same section.
 
 `policyforge check` now takes a document's structure (headings, lists,
 paragraphs and breaks) from a CommonMark parser, not its own patterns.
-Across those 128 documents, nothing else it reports changed. Three shapes
+Across those 128 documents, nothing else it reports changed. Four shapes
 none of them contains do change: a code block is read on its own, not
 joined to the paragraph before it; a `#` line inside a code block is no
-longer taken for a heading; and a heading inside a list item (`- ## ...`)
-is checked like any other heading.
+longer taken for a heading; a heading inside a list item (`- ## ...`)
+is checked like any other heading; and a `## ...` line indented four
+spaces is code, read as a sentence, not a heading.

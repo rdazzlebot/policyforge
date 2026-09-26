@@ -1149,6 +1149,11 @@ def _structure(text: str) -> _Structure:
     drift):
     - a setext underline of a lone `-` is not an underline (see the note on
       `_line_kinds`): its paragraph stays in sentence analysis;
+    - nor is an underline under a table row or a list item's first line
+      (ba and 9b on #421): markdown-it would make the table or the item a
+      heading and blank it. Where table rows come before a text line that
+      sits right on the underline, 74779c4 made that text line a heading;
+      it now stays prose too, which keeps its sentence in analysis;
     - the text of code, fenced and HTML blocks is still read as prose,
       although markdown-it knows they are code;
     - a colon lead-in introduces only a list that is not inside a list item.
@@ -1162,7 +1167,9 @@ def _structure(text: str) -> _Structure:
     - a `#` line inside a fence is code, not a heading or a section start.
       Before, it was both, which was a defect;
     - a heading inside a list item (`- ## x`) is a heading, as CommonMark
-      reads it. Before, it was a list line, read as a sentence.
+      reads it. Before, it was a list line, read as a sentence;
+    - `## x` indented four spaces or more is indented code, read as prose,
+      as CommonMark reads it. Before, it was a heading (9b on #421).
     """
     lines = text.split("\n")
     kinds: list[str | None] = [None] * len(lines)
@@ -1184,6 +1191,23 @@ def _structure(text: str) -> _Structure:
         if token.type == "heading_open":
             first, end = token.map
             underline = lines[end - 1].strip() if token.markup in ("=", "-") else ""
+            if underline and any(
+                _NOT_SETEXT_TEXT_RE.match(lines[i]) for i in range(first, end - 1)
+            ):
+                # Not a heading here either: a table, or a list item's first
+                # line, over `---` or `===` is a setext heading to
+                # markdown-it, and blanking it drops every obligation in it
+                # (ba and 9b on #421). It stays prose, as at 74779c4; `---`
+                # is a break, and any other underline is text.
+                under = end - 1
+                if _DASH_BREAK_RE.match(lines[under]):
+                    leaves.append(_leaf(lines, first, under - 1, stack, previous_last))
+                    kinds[under] = _BREAK
+                    boundaries.append(under)
+                else:
+                    leaves.append(_leaf(lines, first, under, stack, previous_last))
+                previous_last = under
+                continue
             if token.markup == "-" and underline == "-":
                 # Not a heading here: CommonMark says it is, and 1d measured
                 # markdown-it agreeing (#350); the line above stays prose.
@@ -1209,6 +1233,13 @@ def _structure(text: str) -> _Structure:
                 last -= 1
             leaves.append(_leaf(lines, first, last, stack, previous_last))
             previous_last = last
+            section = _SECTION_NUMBER_RE.match(lines[first])
+            if (
+                token.type == "paragraph_open"
+                and section
+                and _splits_off(lines[first][section.start(2) :], section.group(2))
+            ):
+                markers.append((first, section.start(2), section.end(2)))
 
     blocks, colon_lists = _group(lines, leaves, boundaries)
     return _Structure(kinds=kinds, blocks=blocks, colon_lists=colon_lists, markers=markers)
@@ -1216,6 +1247,17 @@ def _structure(text: str) -> _Structure:
 
 #: An ordered list item's number, after any indentation and blockquote marks.
 _ORDERED_MARKER_RE = re.compile(r"^([ \t]*(?:>[ \t]?)*[ \t]*)(\d{1,9}[.)])(?=[ \t]|$)")
+#: A section number opening a paragraph (`6.2. The owner ...`). Not a list
+#: marker to CommonMark, but the same noise to the splitter (#365; ba on
+#: #421 counted 426 of them left over the corpus).
+_SECTION_NUMBER_RE = re.compile(r"^([ \t]*(?:>[ \t]?)*[ \t]*)(\d{1,9}(?:\.\d{1,9})+\.)(?=[ \t]|$)")
+#: A line that is not setext heading text here: a table row (`_MD` has no
+#: tables, so markdown-it reads one as paragraph text) or a line opening a
+#: list item. 74779c4's `_LIST_OR_TABLE_RE`, kept (ba and 9b on #421).
+_NOT_SETEXT_TEXT_RE = re.compile(r"^[ \t]*(?:>[ \t]?)*[ \t]*(?:[-*+][ \t]|\d{1,9}[.)][ \t]|\|)")
+#: Three or more dashes and nothing else: a thematic break when not an
+#: underline.
+_DASH_BREAK_RE = re.compile(r"^[ \t]{0,3}(?:-[ \t]*){3,}$")
 
 
 def _splits_off(rest: str, marker: str) -> bool:

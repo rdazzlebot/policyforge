@@ -34,6 +34,28 @@ def test_a_list_number_the_splitter_cut_off_is_not_a_statement():
     assert _texts(text.replace("1.", "1)")) == ["1) Open the console.", "1) Close the console."]
 
 
+def test_a_dotted_section_number_is_not_a_statement():
+    """#365 named `6.2.` beside `1.`: 426 of the Standards' statements were
+    dotted section numbers (ba on #421). Not list markers to CommonMark, so
+    blanked where they open a paragraph and the splitter would cut them off."""
+    assert _texts("6.2. The organization must retain logs.\n") == [
+        "The organization must retain logs."
+    ]
+    assert _texts("4.1. Scope\n\n4.1.1. The owner shall act.\n") == [
+        "Scope",
+        "The owner shall act.",
+    ]
+    # Kept as they were: the splitter never cut these off, or it is no
+    # section number at the start of a paragraph.
+    for kept in (
+        "6.2. the organization must retain logs.",
+        "6.2 The organization must retain logs.",
+        "6.2. **Retention.** The organization must retain logs.",
+    ):
+        assert _texts(kept + "\n") == [kept], kept
+    assert _texts("See section 6.2. The owner must act.\n")[0] == "See section 6.2."
+
+
 def test_a_number_under_a_sentence_is_not_glued_to_its_end():
     """Inside a colon list the number used to end the item above
     (`... broadcasting. 1.`)."""
@@ -149,6 +171,40 @@ def test_a_heading_inside_a_list_item_is_a_heading_with_its_text_clean():
     for marker in ("* ", "+ ", "1. ", "> - "):
         (h,) = heading_statements(f"{marker}## Access must be reviewed\n")
         assert h.text == "Access must be reviewed", marker
+
+
+def test_a_table_or_list_item_over_an_underline_stays_prose():
+    """markdown-it reads a table (no tables in `commonmark`) or a list item's
+    first line over `---`/`===` as a setext heading, which is blanked: every
+    obligation in it left analysis (ba and 9b on #421). As at 74779c4, it
+    stays prose; `---` is a break."""
+    must = "The admin must review access."
+    table = f"| Role | Duty |\n|---|---|\n| Admin | {must} |\n"
+    assert _texts(f"Intro. {AC2}\n\n{table}---\n") == [
+        "Intro.",
+        f"| Role | Duty | |---|---| | Admin | {must} |",
+    ]
+    assert _texts(f"| Admin | {must} |\n===\n") == [f"| Admin | {must} | ==="]
+    assert _texts(f"- {must}\n  ---\nAfter.\n") == [f"- {must}", "After."]
+    assert _texts(f"- {must}\n  ===\n") == [f"- {must} ==="]
+    # The number goes (#365); the obligation stays.
+    assert _texts(f"1. {must}\n   ---\nAfter.\n") == [must, "After."]
+    # Where the text line sits right on the underline, 74779c4 made it a
+    # heading and dropped its sentence; it now stays prose too.
+    statements = analyze(f"| Admin | {must} |\nStaff shall log it.\n---\n")
+    assert [s.text for s in statements] == [f"| Admin | {must} | Staff shall log it."]
+    # A paragraph over `---` is still a heading.
+    assert _texts("Access must be reviewed\n---\nText.\n") == ["Text."]
+
+
+def test_an_atx_line_indented_four_spaces_is_code_not_a_heading():
+    """Changed by #376, as CommonMark reads it: indented code, so prose, not
+    a heading (9b on #421). Before, it was a heading."""
+    from policyforge.content.deontic import heading_statements
+
+    text = "Intro.\n\n    ## Access must be reviewed\n\nAfter.\n"
+    assert heading_statements(text) == []
+    assert _texts(text) == ["Intro.", "## Access must be reviewed", "After."]
 
 
 # ---- HTML and indented code are read as prose (80's ruling on #376; 1d) -------

@@ -151,3 +151,85 @@ def test_the_documented_example_key_is_the_one_the_importer_writes():
     block = text[text.index("  # scoping:") :]
     (key,) = re.findall(r"^  #   ([\w-]+):", block, flags=re.M)[:1]
     assert normalize_framework(key) == normalize_framework(FRAMEWORK)
+
+
+# ---- through the real CLI and the shell (1d on #461) --------------------------
+
+
+def _cli(tmp_path, monkeypatch, scoping: dict):
+    """`policyforge coverage` on a synthetic catalog built by the real HITRUST
+    importer, with `frameworks.scoping` from a real config file."""
+    import dataclasses
+    import json
+    from pathlib import Path
+
+    import yaml
+    from click.testing import CliRunner
+
+    from policyforge import cli as cli_mod
+    from policyforge.ingest import hitrust
+
+    base = {
+        "category": "01.0 - Synthetic Category",
+        "objective": "01.01 Synthetic Objective",
+        "objective_statement": "To do the synthetic thing.",
+        "reference": "01.a Synthetic Control",
+        "specification": "The organization shall do the synthetic thing.",
+        "factor_type": "Organizational",
+        "statement": "The synthetic thing is documented.",
+    }
+    controls = hitrust.build_controls(
+        [
+            hitrust.Record(**base, level="Level 1", mapping="NIST SP 800-53 r5 AC-2"),
+            hitrust.Record(**base, level="Level 2", mapping="NIST SP 800-53 r5 AC-3"),
+        ]
+    )
+    catalog = tmp_path / "levels.json"
+    catalog.write_text(json.dumps([dataclasses.asdict(c) for c in controls]), encoding="utf-8")
+    topics = tmp_path / "topics.yaml"
+    topics.write_text(
+        "topics:\n  - name: access\n    owner: team-a\n    nist_controls: [AC-2, AC-3]\n"
+        "    cadence: annual\n    description: d\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / "config.yaml"
+    config.write_text(yaml.safe_dump({"frameworks": {"scoping": scoping}}), encoding="utf-8")
+    monkeypatch.setenv("POLICYFORGE_CONFIG", str(config))
+    nist = Path(__file__).resolve().parent.parent / "data/frameworks/nist-800-53-r5/controls.json"
+    return CliRunner().invoke(
+        cli_mod.cli,
+        ["coverage", "--topics", str(topics), "--controls", str(nist), "--controls", str(catalog)],
+    )
+
+
+@pytest.mark.parametrize(
+    ("scoping", "message"),
+    [
+        ({"hitrust": {"maturity": 1}}, "not a loaded per-level framework"),
+        ({"hitrust-csf": {"maturity": "two"}}, "must be a level number"),
+    ],
+)
+def test_the_cli_refuses_a_scoping_it_cannot_apply_without_a_traceback(
+    tmp_path, monkeypatch, scoping, message
+):
+    result = _cli(tmp_path, monkeypatch, scoping)
+    assert result.exit_code != 0, result.output
+    assert message in result.output, result.output
+    assert "Traceback" not in result.output
+
+
+def test_the_cli_counts_the_declared_maturity_end_to_end(tmp_path, monkeypatch):
+    result = _cli(tmp_path, monkeypatch, {"hitrust-csf": {"maturity": 1}})
+    assert result.exit_code in (0, 1), result.output
+    assert "at maturity Level 1" in result.output, result.output
+    assert "No level scoping is declared" not in result.output
+
+
+def test_the_shell_shows_a_scoping_refusal_as_a_refusal():
+    """zardoz's coverage skill raises it through the shell's loop, which
+    prints a refusal as its class and message and anything else with a
+    traceback."""
+    from policyforge.topics.coverage import ScopingError
+    from policyforge.zardoz.shell import refusal_types
+
+    assert issubclass(ScopingError, refusal_types())

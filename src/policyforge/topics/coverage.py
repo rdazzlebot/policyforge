@@ -113,6 +113,14 @@ class FrameworkCoverage:
 # ---- scoping a per-level framework to the levels that apply (#283) ----------
 
 
+class ScopingError(ValueError):
+    """`frameworks.scoping` in config cannot be applied as written (#283): an
+    unknown overlay, a maturity that is not a level, or a key naming no loaded
+    per-level framework. A `ValueError`, so existing handlers still catch it;
+    its own type so the CLI and the shell can show it as a refusal, with its
+    message, and not as a traceback (1d on #461)."""
+
+
 @dataclass(frozen=True)
 class LevelScope:
     """Which levels of a per-level framework apply to this organisation, as
@@ -142,7 +150,7 @@ def level_scopes(config: dict | None = None) -> dict[str, LevelScope]:
         if maturity is not None and (
             isinstance(maturity, bool) or not isinstance(maturity, int) or maturity < 1
         ):
-            raise ValueError(
+            raise ScopingError(
                 f"frameworks.scoping.{name}.maturity must be a level number (1, 2, 3 ...), "
                 f"not {maturity!r}."
             )
@@ -189,7 +197,7 @@ def _scoped_requirements(
         if key not in overlay_labels:
             nearest = difflib.get_close_matches(key, list(overlay_labels), n=3, cutoff=0.5)
             shown = ", ".join(repr(overlay_labels[k]) for k in nearest) or "none close"
-            raise ValueError(
+            raise ScopingError(
                 f"frameworks.scoping.{framework}.overlays: {declared!r} is not a level in "
                 f"the loaded {framework} catalog (nearest: {shown})."
             )
@@ -581,7 +589,7 @@ def _framework_coverage(
     # so a declaration is simply unused.
     unmatched = sorted(set(scopes) - per_level)
     if unmatched and per_level:
-        raise ValueError(
+        raise ScopingError(
             f"frameworks.scoping names {', '.join(unmatched)}, which is not a loaded "
             f"per-level framework; the loaded ones are {', '.join(sorted(per_level))}. "
             "Use that key."

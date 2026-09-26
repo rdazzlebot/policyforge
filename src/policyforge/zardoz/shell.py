@@ -817,6 +817,7 @@ def refusal_types() -> tuple[type[BaseException], ...]:
     )
     from policyforge.llm.batch import BatchError
     from policyforge.llm.boundary import BoundaryViolation
+    from policyforge.topics.coverage import ScopingError
     from policyforge.topics.registry import TopicRegistryError
 
     return (
@@ -842,6 +843,7 @@ def refusal_types() -> tuple[type[BaseException], ...]:
         TruncatedResponse,
         BatchError,
         BoundaryViolation,
+        ScopingError,
         TopicRegistryError,
     )
 

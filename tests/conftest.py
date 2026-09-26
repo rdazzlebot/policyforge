@@ -173,7 +173,7 @@ class NetworkUsedInTest(RuntimeError):
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
-    """Refuse every DNS lookup and connection beyond loopback (#432).
+    """Refuse name lookups, connections and datagrams beyond loopback (#432).
 
     `test_etl_hipaa_fetches_and_parses` stubbed the XML fetch and not the
     date lookup before it, so it called eCFR live; one CI run at a commit
@@ -182,10 +182,26 @@ def no_network(monkeypatch):
     and re-running is what hides a real red. Refused at the socket, before
     any client library, so a new unstubbed call is found by the test that
     makes it, with the host named, whatever library it goes through.
+
+    **What is patched, exactly** (policyforge-ba on #434, who found the
+    first version claimed "every lookup" and patched one resolver):
+    `getaddrinfo`, `gethostbyname`, `gethostbyname_ex`, `gethostbyaddr`;
+    `socket.connect`, `connect_ex`, `sendto`, `sendmsg`.
+
+    **Not covered, named:** Windows' asyncio Proactor connects through
+    `ConnectEx` below Python, so an asyncio connection to a LITERAL IP there
+    passes. A hostname still needs a lookup, which is refused. No test here
+    uses asyncio networking today; if one starts to, this sentence is the
+    gap to close.
     """
     real_getaddrinfo = socket.getaddrinfo
+    real_gethostbyname = socket.gethostbyname
+    real_gethostbyname_ex = socket.gethostbyname_ex
+    real_gethostbyaddr = socket.gethostbyaddr
     real_connect = socket.socket.connect
     real_connect_ex = socket.socket.connect_ex
+    real_sendto = socket.socket.sendto
+    real_sendmsg = getattr(socket.socket, "sendmsg", None)  # absent on Windows
 
     def refuse(host):
         raise NetworkUsedInTest(
@@ -196,6 +212,25 @@ def no_network(monkeypatch):
         if not _is_loopback(host):
             refuse(host)
         return real_getaddrinfo(host, *args, **kwargs)
+
+    def by_name(real):
+        def lookup(host, *args, **kwargs):
+            if not _is_loopback(host):
+                refuse(host)
+            return real(host, *args, **kwargs)
+
+        return lookup
+
+    def sendto(self, data, *rest):
+        address = rest[-1]  # sendto(data, address) or sendto(data, flags, address)
+        if isinstance(address, tuple) and not _is_loopback(address[0]):
+            refuse(address[0])
+        return real_sendto(self, data, *rest)
+
+    def sendmsg(self, buffers, ancdata=(), flags=0, address=None):
+        if isinstance(address, tuple) and not _is_loopback(address[0]):
+            refuse(address[0])
+        return real_sendmsg(self, buffers, ancdata, flags, *((address,) if address else ()))
 
     def connect(self, address):
         if isinstance(address, tuple) and not _is_loopback(address[0]):
@@ -213,5 +248,11 @@ def no_network(monkeypatch):
     # metadata service (found by this guard, #432). botocore's own switch.
     monkeypatch.setenv("AWS_EC2_METADATA_DISABLED", "true")
     monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
+    monkeypatch.setattr(socket, "gethostbyname", by_name(real_gethostbyname))
+    monkeypatch.setattr(socket, "gethostbyname_ex", by_name(real_gethostbyname_ex))
+    monkeypatch.setattr(socket, "gethostbyaddr", by_name(real_gethostbyaddr))
+    monkeypatch.setattr(socket.socket, "sendto", sendto)
+    if real_sendmsg is not None:
+        monkeypatch.setattr(socket.socket, "sendmsg", sendmsg)
     monkeypatch.setattr(socket.socket, "connect", connect)
     monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)

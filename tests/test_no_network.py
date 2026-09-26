@@ -52,3 +52,38 @@ def test_boto3_is_told_not_to_ask_the_instance_metadata_service():
     import os
 
     assert os.environ.get("AWS_EC2_METADATA_DISABLED") == "true"
+
+
+@pytest.mark.parametrize("resolver", ["gethostbyname", "gethostbyname_ex", "gethostbyaddr"])
+def test_every_resolver_is_refused_not_only_getaddrinfo(resolver):
+    """policyforge-ba on #434: these made real resolver queries."""
+    target = "8.8.8.8" if resolver == "gethostbyaddr" else "www.ecfr.gov"
+    with pytest.raises(NetworkUsedInTest):
+        getattr(socket, resolver)(target)
+
+
+def test_a_datagram_past_this_machine_is_refused():
+    """policyforge-ba on #434: a UDP sendto went out unrefused."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        with pytest.raises(NetworkUsedInTest):
+            sock.sendto(b"x", ("8.8.8.8", 53))
+        with pytest.raises(NetworkUsedInTest):
+            sock.sendto(b"x", 0, ("8.8.8.8", 53))
+        if hasattr(sock, "sendmsg"):
+            with pytest.raises(NetworkUsedInTest):
+                sock.sendmsg([b"x"], [], 0, ("8.8.8.8", 53))
+    finally:
+        sock.close()
+
+
+def test_a_datagram_to_loopback_is_allowed():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.sendto(b"x", ("127.0.0.1", 9))  # discard port; nothing need listen
+    except NetworkUsedInTest:  # pragma: no cover - the failure being guarded
+        pytest.fail("loopback datagram was refused")
+    except OSError:
+        pass
+    finally:
+        sock.close()

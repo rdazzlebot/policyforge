@@ -82,6 +82,54 @@ _TOO_HIGH = re.compile(r"^(#{1,2})(?:\s|$)")
 _FENCE = re.compile(r"^\s*(?:```|~~~)")
 
 
+_WHERE = r"(?:above|below)"
+
+#: A pointer to another entry by where it sits (#387). Assembly orders
+#: fragments by filename, author prefix first, so "see below" is a guess
+#: about an order its writer cannot see from their own file: three were
+#: written in one hour of 1.6.1's fixes, one per author, and every one
+#: pointed the wrong way or was right by luck.
+#:
+#: **A pointer, not every "above" or "below".** Measured against the 3,691
+#: lines of `CHANGELOG.md` at 1.6.1: the bare words matched 19 times, and 12
+#: were prose that must keep passing ("would fall below the catalog", "mcp
+#: is held below 2", "the requirement above it", "the note above the rows").
+#: This matches the pointer shapes those 19 contain: "see below", a noun
+#: naming an entry beside a position ("the entry above", "the harness change
+#: below", "the ledger fix above"), and a quoted entry title followed by
+#: one. "You see below" describes rather than directs, and passes.
+_POSITIONAL = re.compile(
+    "|".join(
+        [
+            rf"(?<!\byou )(?<!\bwe )\bsee\s+(?:the\s+)?{_WHERE}\b",
+            rf"\b(?:entry|entries|fragment|fragments|change|fix|item|section)\s+{_WHERE}\b",
+            rf"\b{_WHERE}\s+(?:entry|entries|fragment|fragments)\b",
+            r"\b(?:previous|next|preceding|following)\s+(?:entry|entries|fragment|fragments)\b",
+            rf"\"[^\"]{{3,}}\"\s+{_WHERE}\b",
+        ]
+    ),
+    re.IGNORECASE,
+)
+
+#: Inline code, which quotes rather than says.
+_CODE_SPAN = re.compile(r"`[^`]*`")
+
+
+def positional_pointers(text: str) -> list[str]:
+    """Each pointer to another entry by position, outside code (#387)."""
+    prose: list[str] = []
+    fenced = False
+    for line in text.splitlines():
+        if _FENCE.match(line):
+            fenced = not fenced
+            continue
+        if not fenced:
+            prose.append(_CODE_SPAN.sub(" ", line))
+    # Joined, because a pointer wraps across a line: "the entry" then "above".
+    joined = " ".join(prose)
+    return [" ".join(m.group(0).split()) for m in _POSITIONAL.finditer(joined)]
+
+
 def strays(directory: Path | None = None) -> list[Path]:
     """Files sitting in `changelog.d/` that `fragments()` will never return.
 
@@ -106,8 +154,9 @@ def check(directory: Path | None = None) -> list[str]:
     Deliberately few, and each is a thing that produced a real defect: an
     empty fragment means someone opened the file and did not write the
     entry; a heading above `###` creates a second release section inside
-    the one being cut; a CR is the 1,768-line conversion in miniature; and
-    a non-`.md` file is an entry nobody will ever read.
+    the one being cut; a CR is the 1,768-line conversion in miniature; a
+    non-`.md` file is an entry nobody will ever read; and "see below"
+    points the wrong way as often as not (#387).
 
     **It takes the DIRECTORY rather than a list of paths, and that is a fix
     rather than a matter of taste.** The old signature was `check(paths)`,
@@ -144,6 +193,14 @@ def check(directory: Path | None = None) -> list[str]:
                     "assembly, and anything at this level splits the section being cut."
                 )
                 break
+        for pointer in positional_pointers(text):
+            problems.append(
+                f'{path.name}: "{pointer}" points at another entry by position, and '
+                "assembly orders entries by filename, which you cannot see from here. "
+                'Name it by its subject instead: "see the NIST SP 800-171 entry in '
+                'this release". If it points within this entry, name that: "the '
+                'table in this entry".'
+            )
     return problems
 
 

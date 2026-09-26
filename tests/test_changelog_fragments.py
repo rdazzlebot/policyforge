@@ -264,3 +264,55 @@ def test_check_derives_its_own_population(tmp_path: Path) -> None:
         f"check takes {parameters}; handing it a population lets a caller filter "
         "the thing it is supposed to guard"
     )
+
+
+# ---- a pointer to another entry by position (#387) ----
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        # The three written in one hour of 1.6.1's fixes, one per author.
+        "The README says so (see the 800-171 entry above).",
+        "Generated documents follow this rule (see below).",
+        "A Standard for an AI topic is also regenerated or refused (see below).",
+        # Shapes the 1.6.1 CHANGELOG itself used between entries.
+        "Each is explained in full in its own entry below.",
+        'Unaffected. "The call ledger hid four provider capabilities" below has the detail.',
+        "It is how the harness change below found it.",
+        "That is how the entry above went unmeasured.",
+        "The same run, on top of the ledger fix above.",
+        "As the previous entry says, it is refused.",
+        # A pointer wrapped across a line is still one pointer.
+        "That is how the entry\nabove went unmeasured.",
+    ],
+)
+def test_a_pointer_to_another_entry_by_position_is_a_problem(tmp_path: Path, sentence: str) -> None:
+    """Assembly orders fragments by filename, which the writer cannot see:
+    every one of the three real instances pointed the wrong way or by luck."""
+    write(tmp_path, "a.md", f"**A change.** {sentence}\n")
+    problems = frag.check(tmp_path)
+    assert len(problems) == 1 and "by position" in problems[0], problems
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        # Prose from the 1.6.1 CHANGELOG that says "above" or "below" and
+        # points at no entry. The bare words matched these; they must pass.
+        "A write is refused whenever a count would fall below the catalog being replaced.",
+        "**mcp is held below 2** (at 1.30.0).",
+        "A Procedure step carries out the Standard requirement above it.",
+        "The note above the rows no longer counts the kinds of zero.",
+        "Rewrite them to the forms above.",
+        "It is the same 814 and the same 200 you see below.",
+        # What the message tells a writer to do instead.
+        "The README says so (see the NIST SP 800-171 entry in this release).",
+        # Quoted, not said.
+        "The check refuses `see below` in a fragment.",
+        "```\nsee below\n```",
+    ],
+)
+def test_above_or_below_that_is_not_a_pointer_passes(tmp_path: Path, sentence: str) -> None:
+    write(tmp_path, "a.md", f"**A change.**\n\n{sentence}\n")
+    assert frag.check(tmp_path) == []

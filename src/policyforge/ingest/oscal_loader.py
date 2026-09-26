@@ -105,6 +105,10 @@ CATALOG_URL_800_171 = f"{_OSCAL_ROOT}{_SP800_171_REV3_JSON}/NIST_SP800-171_rev3_
 #: as literals for the same reason `test_ecfr_fetch.py` does: a change of
 #: behaviour should fail, not a change of shape.
 
+#: NIST CSF 2.0's OSCAL (#408), from the same repository and tag as 800-53.
+#: Written out, as the two above are: NIST names the directory `CSF/v2.0`.
+CATALOG_URL_CSF_2_0 = f"{_OSCAL_ROOT}/nist.gov/CSF/v2.0/json/NIST_CSF_v2.0_catalog.json"
+
 #: 800-171 rev 3 publishes **no baseline profiles**. 800-53 ships Low,
 #: Moderate and High; `nist.gov/SP800-171/rev3/json/` contains the catalog
 #: and a `-min` variant and nothing else. So `baseline` is empty on every
@@ -206,6 +210,21 @@ NIST_800_171_REV3 = OscalDialect(
     family_abbr=_sort_id,
     part_label=_strip_control_id_from_label,
     references_800_53=True,
+)
+
+#: NIST CSF 2.0 (#408). **The node's own `id` is the citation**: `GV.OC` on a
+#: category, `GV.OC-01` on a subcategory, `GV` on a function. The unclassed
+#: `label` is the 800-171 trap again (`Organizational Context (GV.OC)`), and
+#: read the 800-53 way it would be every category's `control_id` (measured
+#: on #408). Categories are this schema's controls, subcategories their
+#: enhancements, functions the families. Implementation examples are
+#: `example` parts, not the `statement`, and are not carried.
+NIST_CSF_2_0 = OscalDialect(
+    framework="NIST CSF 2.0",
+    version_label=lambda version: f"2.0 ({version})",
+    source_url=CATALOG_URL_CSF_2_0,
+    identifier=lambda item: item["id"],
+    family_abbr=lambda group: group.get("id", "").upper(),
 )
 
 #: The key a 800-171 requirement's `source_crosswalk` names 800-53 under, as
@@ -555,6 +574,49 @@ def _require_every_control(catalog: dict, controls: list[Control], withdrawn: in
             f"neither published nor deliberately excluded, which usually means "
             f"the dialect does not match the catalog being read."
         )
+
+
+#: CSF 2.0's live Core, as NIST states it in CSWP 29 and as four instruments
+#: agreed id for id (f8 on #408): 6 functions, 22 categories, 106
+#: subcategories, after the 91 withdrawn CSF 1.1 elements are excluded.
+CSF_2_0_EXTENT = (6, 22, 106)
+
+#: A CSF 2.0 id: a function `GV`, a category `GV.OC`, a subcategory `GV.OC-01`.
+_CSF_ID = re.compile(r"^[A-Z]{2}(?:\.[A-Z]{2}(?:-\d{2})?)?$")
+
+
+def require_csf_2_0_extent(controls: list[Control]) -> None:
+    """Refuse a CSF 2.0 parse that is not exactly 6 / 22 / 106, or whose ids
+    are not CSF-shaped (#408, 80's ruling: as ONC's re-land does).
+
+    **Exactly, in both directions.** Fewer loses outcomes; MORE usually
+    means withdrawn 1.1 elements got through (91 of them sit in the same
+    file with `status: withdrawn`), and a catalog carrying `ID.AM-06`
+    publishes an id CSF 2.0 no longer has. The generic
+    `_require_every_control` only refuses the short direction.
+    """
+    families = {c.family_abbr for c in controls}
+    enhancements = [e for c in controls for e in c.enhancements]
+    found = (len(families), len(controls), len(enhancements))
+    if found != CSF_2_0_EXTENT:
+        raise ValueError(
+            f"CSF 2.0 parsed as {found[0]} functions, {found[1]} categories and "
+            f"{found[2]} subcategories; the Core is {CSF_2_0_EXTENT[0]}/"
+            f"{CSF_2_0_EXTENT[1]}/{CSF_2_0_EXTENT[2]}. Refusing to write it."
+        )
+    ids = [*families, *(c.control_id for c in controls), *(e.enhancement_id for e in enhancements)]
+    malformed = [i for i in ids if not _CSF_ID.match(i)]
+    if malformed:
+        raise ValueError(f"CSF 2.0 ids not CSF-shaped (a dialect mismatch?): {malformed[:5]}")
+
+
+def fetch_csf_2_0_catalog(*, url: str = CATALOG_URL_CSF_2_0) -> dict:
+    """Fetch NIST's OSCAL edition of CSF 2.0 (#408)."""
+    import requests
+
+    response = requests.get(url, timeout=120)
+    response.raise_for_status()
+    return response.json()
 
 
 def fetch_oscal_catalog(*, url: str = CATALOG_URL) -> dict:

@@ -10,6 +10,10 @@ has: a registered prompt whose version is already recorded with a different
 fingerprint is refused, and the fix is a new version number in the code,
 not an edit here. `evals/prompt-versions.json` is read by
 `tests/test_prompt_fingerprint_file.py` and by the eval runner's report.
+
+This script cannot stop a hand edit of the ledger: rewriting a recorded
+fingerprint makes both it and the test green (1d on #422). That the ledger
+only grows is held by review of its diff.
 """
 
 from __future__ import annotations

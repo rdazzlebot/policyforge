@@ -6,11 +6,15 @@ held to its SHAPE only: it names the epoch, the PR, the pull ref and the
 commits the epoch ran at.
 
 `evals/prompt-versions.json` is the version ledger, and it is held EQUAL to
-the registry: every prompt's current version is recorded, and a version
-keeps one text for life. That is the guard for #117's shape (text changed,
+the registry: every prompt's current version is recorded with the text the
+ledger has for it. That is the guard for #117's shape (text changed,
 version kept). It sits on the ledger rather than the epoch file because the
 epoch file only catches the first unbumped edit after each epoch (1d on
 #236); the two-edit test below is the case that tells them apart.
+
+**Not held here:** that the ledger only grows. A change that edits a prompt
+and rewrites its recorded fingerprint in the ledger passes these tests
+(1d on #422). That is held by review of the ledger's diff.
 """
 
 from __future__ import annotations

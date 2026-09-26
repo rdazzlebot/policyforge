@@ -6,5 +6,7 @@ last recorded epoch". The file still held epoch 18's fingerprints
 (2026-09-16) while epochs 19 to 24 were recorded, so that phrase pointed at
 an older epoch than anyone reading it assumed. A new ledger,
 `evals/prompt-versions.json`, records every version each prompt has
-declared, and a prompt whose text changes without a new version now fails
-the test suite. Maintainer tooling; nothing a user runs changes.
+declared, and a prompt whose text no longer matches its recorded version
+now fails the test suite. The ledger is meant only to grow; an edit to one
+of its entries is caught by review, not by the tests. Maintainer tooling;
+nothing a user runs changes.

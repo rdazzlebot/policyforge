@@ -318,7 +318,10 @@ commit the fingerprints were computed at, a merged commit reachable from a
 branch, and each prompt's fingerprint and version. Separately, a prompt
 whose text changes must declare a new version, recorded in
 `evals/prompt-versions.json` by `scripts/prompt_versions.py`, and
-`tests/test_prompt_fingerprint_file.py` fails when it is not. #117 changed
+`tests/test_prompt_fingerprint_file.py` fails when it is not. The test
+compares the code with the ledger, so a change that also rewrites the
+ledger's entry passes it; that the ledger only grows is held by review of
+its diff. #117 changed
 both generation prompts at the same version, and only the fingerprint told
 the epochs either side of it apart. The ledger, not the epoch file, holds
 that guard: the epoch file lags, so it would catch only the first such edit

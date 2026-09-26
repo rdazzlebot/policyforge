@@ -183,6 +183,12 @@ def ledger_problems(ledger: dict[str, dict[str, list[dict]]]) -> list[str]:
     that stays at v7, compares v7 with the epoch's v3 and passes. The ledger
     records v7's text the moment v7 exists, so the second edit is caught.
     One line per problem; empty means every prompt's version names one text.
+
+    **What this cannot see** (1d on #422): an edit to the ledger in the same
+    change. Rewrite a recorded fingerprint to match a changed text and this
+    returns nothing. It compares the registry with the ledger, not the ledger
+    with its own history; that the ledger only grows is held by review of
+    its diff (`scripts/prompt_versions.py` never rewrites an entry).
     """
     problems = []
     for name, prompt in sorted(REGISTRY.items()):

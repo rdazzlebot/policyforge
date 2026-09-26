@@ -12,3 +12,7 @@ source_ref: '2026-09-17'
 source_url: https://www.ecfr.gov/api/versioner/v1/full/2026-09-17/title-45.xml?part=171
 content_sha256: 96209b1b38f666ba0cad5dbe1102090aa171acdf16b8756dcd4b4a76fbe2e160
 fetched_at: '2026-09-20'
+# The unit the regulation names as a requirement, for document reach (80's
+# ruling on #423): the section. Each of 171.201-171.403 is one named
+# exception and its paragraphs are that exception's conditions.
+family: section

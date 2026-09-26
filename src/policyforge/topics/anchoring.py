@@ -34,13 +34,13 @@ ruling on #377):
   citing `Govern 1` or any `Govern 1.x`; a Playbook action reaches Playbook
   citations of the same subcategory and never the Core's.
 
-  **The regulatory catalogs have no family grammar yet**: HIPAA, 42 CFR
-  Part 2, Information Blocking and ONC 170.315 nest their ids
-  (`164.308(a)(1)(ii)(A)` under `164.308(a)(1)`), but `family_of` returns
-  each id as its own family, so a change to a child reaches a document
-  citing the child and not one citing its parent. That is #423 (1d on
-  #418). It is not a regression: before #377 these catalogs reached no
-  document at all.
+  **The regulatory catalogs have no grammar here; they declare a unit**
+  (#423, 80's ruling): HIPAA, 42 CFR Part 2, Information Blocking and
+  ONC 170.315 nest their ids several levels deep, and their catalogs
+  mostly omit the parents (`164.308(a)(1)` is cited, `164.308(a)(1)(i)` is
+  the id). Each `framework.yaml` names the unit the regulation calls a
+  requirement (`family:`), and `regulatory_families` below resolves a
+  citation to it, a paragraph the catalog does not carry included.
 
 Ingest code that builds a catalog's own hierarchy (`ingest/ai_rmf.py`)
 reads the source, not a topic registry or a document, and stays its own.
@@ -97,9 +97,8 @@ def anchor_keys(requirement_id: str, framework: str) -> frozenset[str]:
 
 
 #: The family grammar for document reach, per catalog, each by its own shape.
-#: **Not every nesting catalog is here**: the regulatory ones (HIPAA, Part 2,
-#: Information Blocking, ONC) nest several levels deep and need an ancestor
-#: walk, not one family, so they are #423. 800-53's is shared by the catalogs that write 800-53 ids
+#: The regulatory catalogs are not here: they declare their unit in their
+#: manifest (`catalog_families`, #423). 800-53's is shared by the catalogs that write 800-53 ids
 #: (FedRAMP, ARC-AMPE). The Playbook nests its actions under the subcategory
 #: they serve, and stops there: its family is never the Core's category.
 _FAMILY_RES: dict[str, re.Pattern[str]] = {
@@ -231,3 +230,105 @@ def enclosing(requirement_id: str, has) -> str:
             return requirement_id
         current = current[: match.start()]
     return current
+
+
+# ---- the regulatory catalogs (80's ruling on #423) ----
+
+#: A section: the id before its first paragraph, `171.202(b)` -> `171.202`.
+_SECTION_RE = re.compile(r"^[^(]+")
+#: A criterion: a section and two paragraph levels, `170.315(b)(1)(iii)` ->
+#: `170.315(b)(1)`.
+_CRITERION_RE = re.compile(r"^[^(]+\([^()]*\)\([^()]*\)")
+#: A top-level entry the ETL titled as its standard's specifications.
+_SPEC_TITLE_RE = re.compile(r"^Implementation specifications?\b", re.IGNORECASE)
+
+
+def catalog_families(controls, rule) -> dict[str, str]:
+    """{id: the id of the family it belongs to} for one regulatory catalog.
+
+    `rule` is its manifest (`registry.Framework`), declaring `family:`:
+
+    - `section`: the section, `2.16(a)` -> `2.16`;
+    - `criterion`: the criterion, `170.315(b)(1)` -> itself;
+    - `structure`: the catalog's own nesting, which for HIPAA is the
+      regulation's: each top-level entry a standard, its enhancements the
+      standard's implementation specifications. A top-level entry titled
+      "Implementation specification(s)" belongs to the standard before it.
+
+    Then `family_overrides` (where the catalog and the regulation disagree)
+    and `structure_only` (each its own family) apply. A family id is always
+    a catalog id, so it has a crosswalk and a title.
+    """
+    families: dict[str, str] = {}
+    standard = None
+    for control in controls:
+        cid = control.control_id
+        if rule.family in ("section", "criterion"):
+            for i in (cid, *(e.enhancement_id for e in control.enhancements)):
+                families[i] = _head(rule.family, i)
+            continue
+        if _SPEC_TITLE_RE.match(control.title or "") and standard is not None:
+            families[cid] = standard
+        else:
+            standard = families[cid] = cid
+        for enhancement in control.enhancements:
+            families[enhancement.enhancement_id] = families[cid]
+    families.update({i: f for i, f in rule.family_overrides.items() if i in families})
+    families.update({i: i for i in rule.structure_only if i in families})
+    # A section head that is not itself an id (none ship today) stays a
+    # family by name; `regulatory_families` returns only what is here.
+    return families
+
+
+def _head(unit: str, requirement_id: str) -> str:
+    """`requirement_id`'s section, or its criterion (a section and two
+    paragraph levels, falling back to the section for a shorter id)."""
+    if unit == "criterion":
+        match = _CRITERION_RE.match(requirement_id)
+        if match:
+            return match.group(0)
+    return _SECTION_RE.match(requirement_id).group(0)
+
+
+def regulatory_families(requirement_id: str, families: dict[str, str]) -> set[str]:
+    """The families a citation of `requirement_id` stands for.
+
+    - an id the catalog has: its family;
+    - a statement part below one (`164.316(b)(1)(i)`): that id's family;
+    - an **ancestor** the catalog does not carry, how a standard is cited
+      (`164.308(a)(1)`, whose id is `164.308(a)(1)(i)`; `164.316(b)`): the
+      families of every id beneath it. A section cited whole stands for all
+      of its standards, so a change to any of them reaches the document.
+
+    Empty when nothing resolves, so the citation is still reported.
+    """
+    if requirement_id in families:
+        return {families[requirement_id]}
+    inner = enclosing(requirement_id, lambda i: i in families)
+    if inner in families:
+        return {families[inner]}
+    return {f for i, f in families.items() if i.startswith(requirement_id + "(")}
+
+
+def families_for(controls, rules=None) -> dict[str, dict[str, str]]:
+    """{catalog key: `catalog_families`} for each loaded catalog whose
+    manifest declares a family rule. `rules` defaults to the manifests on
+    disk (`registry.declared_family_rules`), read once."""
+    if rules is None:
+        rules = _declared_rules()
+    by_key: dict[str, list] = {}
+    for control in controls:
+        by_key.setdefault(normalize_framework(control.framework), []).append(control)
+    return {key: catalog_families(ctl, rules[key]) for key, ctl in by_key.items() if key in rules}
+
+
+_RULES: dict | None = None
+
+
+def _declared_rules() -> dict:
+    global _RULES
+    if _RULES is None:
+        from policyforge.frameworks.registry import config_or_defaults, declared_family_rules
+
+        _RULES = declared_family_rules(config_or_defaults("family rules were read"))
+    return _RULES

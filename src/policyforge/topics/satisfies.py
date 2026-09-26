@@ -48,7 +48,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
-from policyforge.topics.anchoring import anchor_keys
+from policyforge.topics.anchoring import anchor_keys, families_for, regulatory_families
 
 _HEADING_RE = re.compile(r"^#{1,6}\s+(?P<title>.+?)\s*$")
 
@@ -331,25 +331,36 @@ def document_evidence(
 
     cited: dict[tuple[str, str], Citation] = {}
     names = {c.framework for c in controls}
+    declared = families_for(controls)
     for framework, requirement_id, qualifier, section in parse_citations(
         document.body, names, index
     ):
-        key = (resolve_framework(framework, index), requirement_id)
+        catalog = resolve_framework(framework, index)
         # Checked against the framework the citation names, not against every
         # id in every catalog: `[HIPAA AC-2]` names a real NIST control under
         # the wrong framework, and an assessor following it finds nothing.
         # An unresolvable framework name gives an empty key, which no
         # catalog holds, so it lands in `unknown` with the id as written.
-        if requirement_id not in index.get(key[0], ()):
+        if requirement_id in index.get(catalog, ()):
+            standing_for = [requirement_id]
+        else:
+            # A regulatory catalog's requirement cited by a paragraph the
+            # catalog does not carry: `[HIPAA Security Rule 164.308(a)(1)]`
+            # is the standard `164.308(a)(1)(i)` (80's ruling on #423, one
+            # resolution for drift and for this report).
+            standing_for = sorted(regulatory_families(requirement_id, declared.get(catalog, {})))
+        if not standing_for:
             label = f"{framework} {requirement_id}"
             evidence.unknown_occurrences += 1
             if label not in evidence.unknown:
                 evidence.unknown.append(label)
             continue
-        citation = cited.setdefault(key, Citation(key[0], requirement_id, qualifier))
-        citation.occurrences += 1
-        if section and section not in citation.sections:
-            citation.sections.append(section)
+        for resolved in standing_for:
+            key = (catalog, resolved)
+            citation = cited.setdefault(key, Citation(catalog, resolved, qualifier))
+            citation.occurrences += 1
+            if section and section not in citation.sections:
+                citation.sections.append(section)
     evidence.cited = sorted(cited.values(), key=lambda c: (c.framework, c.requirement_id))
 
     anchor_ids = set(evidence.nist_anchors)

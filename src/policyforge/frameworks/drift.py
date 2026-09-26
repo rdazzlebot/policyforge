@@ -243,6 +243,7 @@ def documents_reached(
     catalog_ids=(),
     crosswalk=None,
     catalogs: dict[str, set[str]] | None = None,
+    families: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, dict[str, str]]:
     """Control id -> {document: how it was reached, `RESOLVED` or `BY_SHAPE`}.
 
@@ -299,6 +300,7 @@ def documents_reached(
         family_of,
         hubs,
         is_800_53_shaped,
+        regulatory_families,
         reverse_index,
         shaped_ids,
     )
@@ -322,22 +324,41 @@ def documents_reached(
         and all(ids == {rid} for (c, rid), ids in reverse.items() if c == catalog)
     }
 
+    declared = families or {}
+
+    def fam(requirement_id: str, catalog: str) -> set[str]:
+        """Its families: by the catalog's declared unit where it declares
+        one (a regulatory catalog, 80's ruling on #423), else its grammar."""
+        if catalog in declared:
+            return regulatory_families(requirement_id, declared[catalog])
+        return {family_of(requirement_id, catalog)}
+
     own: dict[str, set[str]] = {}
     hub: dict[str, set[str]] = {}
     for changed in controls:
-        own.setdefault(family_of(changed, framework), set()).add(changed)
+        for family in fam(changed, key):
+            own.setdefault(family, set()).add(changed)
         for family in hubs(changed, framework, reverse):
             hub.setdefault(family, set()).add(changed)
 
     def known(catalog: str, requirement_id: str) -> bool:
+        # A standard cited by its paragraph is not "known" here and needs not
+        # be: it falls to the name-as-written reading below, and `reached`
+        # resolves it through `fam` (an arm on #423 showed no input tells
+        # the two apart).
         return requirement_id in index.get(catalog, ())
 
     def reached(cited: str, requirement_id: str) -> set[str]:
-        hit = set(own.get(family_of(requirement_id, cited), ())) if cited == key else set()
-        families = hubs(requirement_id, cited, reverse)
-        if not families and cited in identity:
-            families = {family_of(requirement_id, NIST_ANCHOR)}
-        for family in families:
+        hit = set()
+        if cited == key:
+            for family in fam(requirement_id, cited):
+                hit |= own.get(family, set())
+        # A cited ancestor has no crosswalk of its own: its standards do.
+        stands_for = {requirement_id} | (fam(requirement_id, cited) if cited in declared else set())
+        hub_families = set().union(*(hubs(i, cited, reverse) for i in stands_for))
+        if not hub_families and cited in identity:
+            hub_families = {family_of(requirement_id, NIST_ANCHOR)}
+        for family in hub_families:
             hit |= hub.get(family, set())
         return hit
 
@@ -401,6 +422,7 @@ def assess_impact(
     catalog_ids=(),
     crosswalk=None,
     catalogs=None,
+    families=None,
 ) -> dict[str, Impact]:
     """Work out what each changed control reaches.
 
@@ -430,6 +452,7 @@ def assess_impact(
             catalog_ids=catalog_ids,
             crosswalk=crosswalk,
             catalogs=catalogs,
+            families=families,
         )
         for control_id, paths in reached.items():
             impacts[control_id].documents.extend(sorted(paths))
@@ -617,6 +640,7 @@ def analyze_drift(
     decisions=None,
     crosswalk=None,
     catalogs=None,
+    families=None,
 ) -> DriftReport:
     """`crosswalk` is `build_crosswalk` over every catalog loaded (the drift
     command passes the installation's); by default, the diffed catalog's
@@ -626,6 +650,11 @@ def analyze_drift(
 
     if crosswalk is None:
         crosswalk = build_crosswalk([*(old_controls or []), *(new_controls or [])])
+    if families is None:
+        # The diffed catalog's declared unit, if it has one (#423).
+        from policyforge.topics.anchoring import families_for
+
+        families = families_for([*(old_controls or []), *(new_controls or [])])
     changes = diff_catalogs(old_controls, new_controls)
     return DriftReport(
         old_version=(old_controls[0].framework_version if old_controls else ""),
@@ -642,5 +671,6 @@ def analyze_drift(
             catalog_ids=_catalog_ids(old_controls or []) | _catalog_ids(new_controls or []),
             crosswalk=crosswalk,
             catalogs=catalogs,
+            families=families,
         ),
     )

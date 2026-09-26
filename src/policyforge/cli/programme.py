@@ -493,6 +493,7 @@ def drift_cmd(
     crosswalk = build_crosswalk(loaded)
     # Every id each loaded catalog has: what "this citation resolves" asks.
     from policyforge.mapping.crosswalk import normalize_framework
+    from policyforge.topics.anchoring import families_for
 
     catalogs: dict[str, set[str]] = {}
     for control in loaded:
@@ -508,6 +509,8 @@ def drift_cmd(
         decisions=decisions,
         crosswalk=crosswalk,
         catalogs=catalogs,
+        # Each regulatory catalog's declared unit (#423), over what is loaded.
+        families=families_for(loaded),
     )
     click.echo(report.format_report(detail=detail))
 

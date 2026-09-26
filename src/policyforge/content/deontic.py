@@ -28,6 +28,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from markdown_it import MarkdownIt
+
 from .tags import SOURCE_TAG_RE
 
 #: A sentence binds the organization to something.
@@ -676,11 +678,13 @@ def _colon_units(
 ) -> tuple[list[Statement], set[int]]:
     """Each colon list's items as "lead-in + item" statements, and the ids of
     the statements those lists cover (#354)."""
-    lines = text.split("\n")
-    heading = [kind is not None for kind in _line_kinds(lines)]
+    structure = _structure(text)
+    # The lines `analyze` read, list numbers blanked (#365), so the lead-in is
+    # found inside its statement by the same text.
+    lines = _blanked_lines(text, structure)
     units: list[Statement] = []
     covered: set[int] = set()
-    for colon in _walk_lists(lines, heading)[1]:
+    for colon in structure.colon_lists:
         if colon.lead < 0 or not colon.items:
             continue
         lead_line, end_line = colon.lead + 1, colon.end + 1
@@ -1068,159 +1072,16 @@ def analyze(text: str) -> list[Statement]:
     return statements
 
 
-#: An ATX heading, CommonMark's shapes: up to three spaces, 1-6 `#`, then a
-#: space or the end of the line (so a bare `##` is an empty heading), inside
-#: any number of blockquote markers (`> ## heading`).
-_ATX_RE = re.compile(r"^[ \t]{0,3}(?:>[ \t]?)*[ \t]{0,3}#{1,6}(?:[ \t]|$)")
-#: A thematic break, CommonMark's shape: up to three spaces, then three or
-#: more of ONE of `-`, `*`, `_`, spaces allowed between (1d on #350: `***`,
-#: `___`, `- - -` and `* * *` did not end a block).
-_THEMATIC_BREAK_RE = re.compile(r"^[ \t]{0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$")
-#: A setext underline: any run of `=`, or two or more `-`, and nothing else.
-#: It is an underline only under a paragraph line (see `_line_kinds`).
-#: **A lone `-` is excluded by choice, not by CommonMark** (1d on #350:
-#: markdown-it reads `text\n-` as a setext h2). Excluding it keeps the line
-#: above in sentence analysis, where every gate reads it; including it would
-#: blank that line on a single stray character, the destructive direction.
-_SETEXT_UNDERLINE_RE = re.compile(r"^[ \t]{0,3}(?:=+|-{2,})[ \t]*$")
-#: A line that cannot be setext heading text: a list item or a table row.
-_LIST_OR_TABLE_RE = re.compile(r"^[ \t]*(?:[-*+][ \t]|\d+[.)][ \t]|\|)")
-
-
 #: Line kinds `_line_kinds` returns; the first two are heading TEXT.
 _ATX, _SETEXT, _UNDERLINE, _BREAK = "atx", "setext", "underline", "break"
 _HEADING_TEXT = (_ATX, _SETEXT)
 
-
-def _line_kinds(lines: list[str]) -> list[str | None]:
-    """Each line's block role, or None for ordinary text.
-
-    **The one classification of headings**, read by `analyze` (a boundary)
-    and by `playbook_tagged_headings` (a tagged heading). Two readings of
-    one document disagreeing is how an obligation underlined with `---` left
-    sentence analysis without becoming a heading anywhere (9b on #350).
-    """
-    kinds: list[str | None] = [_ATX if _ATX_RE.match(line) else None for line in lines]
-    for index, line in enumerate(lines):
-        if kinds[index] is not None:
-            continue
-        above = index - 1
-        paragraph_above = (
-            above >= 0
-            and lines[above].strip()
-            and kinds[above] is None
-            and not _LIST_OR_TABLE_RE.match(lines[above])
-            and not _THEMATIC_BREAK_RE.match(lines[above])
-        )
-        if paragraph_above and _SETEXT_UNDERLINE_RE.match(line):
-            kinds[index] = _UNDERLINE
-            # The whole paragraph above is the heading, as in CommonMark,
-            # not only its last line (1d on #350): a tag on its first line
-            # must reach the heading check too.
-            while (
-                above >= 0
-                and lines[above].strip()
-                and kinds[above] is None
-                and not _LIST_OR_TABLE_RE.match(lines[above])
-                and not _THEMATIC_BREAK_RE.match(lines[above])
-            ):
-                kinds[above] = _SETEXT
-                above -= 1
-        elif _THEMATIC_BREAK_RE.match(line):
-            kinds[index] = _BREAK
-    return kinds
-
-
-def _heading_blocks(text: str) -> tuple[str, list[tuple[int, str]]]:
-    """`text` with every heading line blanked in place (so line numbers hold),
-    and the runs of lines between headings as `(offset, block)`.
-
-    Block boundaries, in CommonMark's precedence:
-    - an ATX heading (`## x`, a bare `##`, or `> ## x`);
-    - a setext underline under a paragraph line: the underline and the
-      line above are both heading. `---` there is setext, not a break;
-    - a thematic break anywhere else: it ends the block, and the line
-      above it stays text.
-
-    **Named, not handled:** a setext heading inside a blockquote, and
-    indented code blocks, whose contents are still read as prose.
-    """
-    lines = text.split("\n")
-    heading = [kind is not None for kind in _line_kinds(lines)]
-    blanked = [" " * len(line) if heading[i] else line for i, line in enumerate(lines)]
-    text = "\n".join(blanked)
-
-    list_start = _list_starts(lines, heading)
-
-    blocks: list[tuple[int, str]] = []
-    offset, start = 0, None
-    for index, line in enumerate(blanked):
-        if heading[index]:
-            if start is not None:
-                blocks.append((start, text[start : offset - 1]))
-                start = None
-        elif start is None:
-            start = offset
-        elif list_start[index]:
-            blocks.append((start, text[start : offset - 1]))
-            start = offset
-        offset += len(line) + 1
-    if start is not None:
-        blocks.append((start, text[start:]))
-    return text, blocks
-
-
-#: A list item's opening line: `-`, `*` or `+`, or `1.` / `1)`, then a space.
-_LIST_ITEM_RE = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S")
-#: An ordered item's number, which decides whether it may interrupt a paragraph.
-_ORDERED_RE = re.compile(r"^[ \t]*(\d+)[.)][ \t]")
-
-
-def _only_citations(line: str) -> bool:
-    """Whether `line` carries nothing but citation tags: backticks, emphasis
-    and `. ; : |` around them do not make it prose (1d on #362: `[AU-6].`
-    and `` `[AU-6]` `` after a blank line were read as prose, so the first
-    was lost and the second became a statement of its own). The same
-    reading as `generate/playbook_repair._only_citations`. A blank line is
-    not a line of citations."""
-    return bool(line.strip()) and not _CITATION_RE.sub("", line).strip(" 	`*_.;:|")
-
-
-def _ends_with_colon(line: str) -> bool:
-    """Whether `line`, less its trailing citations and emphasis, ends in `:`."""
-    return _CITATION_RE.sub("", line).rstrip(" \t*_`").endswith(":")
-
-
-def _list_starts(lines: list[str], heading: list[bool]) -> list[bool]:
-    """True for each line where a list gives a new block (#351).
-
-    **A list item starts a block, as in CommonMark** (80's ruling): the
-    sentence splitter ends a sentence only before a capital, a quote, `[` or
-    `(`, so without this `The owner must review logs.` ran on into `- item
-    ... [AU-6]` and borrowed its citation, blank line or not, and so did one
-    item into the next. As in CommonMark, too, an ordered marker other than
-    `1` directly under paragraph text does NOT start a list: `no fewer than`
-    / `90) days` is one sentence wrapped across lines. The tests take their
-    expected answer for each shape from markdown-it, not from this rule.
-
-    **Except a colon lead-in's list.** `The owner must identify:` is carried
-    by its items, so the lead-in and every item of its list stay one block.
-    The lead-in is the last line before the list's first item that is not
-    blank and not only citations.
-
-    **A blank line ends a paragraph** (#358): a line of prose after one
-    starts a block of its own, in or out of a list, so a paragraph after a
-    colon's list is not read as one of its items, and a sentence that did not
-    end in a stop before a capital does not run on into the next paragraph.
-    A list ends at a heading or at such a line. An indented line, or one
-    straight after an item with no blank line (CommonMark's lazy
-    continuation), stays with the item. **A line of only citations never
-    ends a list or starts a block**, blank line or not: it is the trailing
-    citation `analyze` credits backwards, and the generated Standards put a
-    colon lead-in's citation there, under its list (a draft of this rule
-    orphaned one, measured over the 33 Standards).
-    """
-    return _walk_lists(lines, heading)[0]
+#: The block parser (#376): CommonMark, as markdown-it reads it. PolicyForge
+#: decides nothing here about where a heading, a list item or a paragraph
+#: begins or ends; it keeps only what is its own, below and in
+#: `_analyze_block`: which blocks are read together, sentence splitting,
+#: citation attachment and colon lead-ins.
+_MD = MarkdownIt("commonmark")
 
 
 @dataclass
@@ -1238,66 +1099,294 @@ class _ColonList:
         return max([self.lead, *(last for _, last in self.items), *self.trailing])
 
 
-def _walk_lists(lines: list[str], heading: list[bool]) -> tuple[list[bool], list[_ColonList]]:
-    """The ONE reading of lists: where a list gives a new block (`_list_starts`,
-    #351) and each colon lead-in's list with its items (`playbook_obligations`,
-    #354). Two walkers would disagree about where a list ends, and the gate
-    would judge items the block splitter never kept together."""
-    starts = [False] * len(lines)
-    colon_lists: list[_ColonList] = []
-    in_list = colon_list = blank_since = False
-    # Whether the block being built holds prose yet: a blank line ends a
-    # paragraph of prose, so it cannot end a block of only citations.
-    block_has_prose = False
-    lead = ""
-    lead_index = -1
-    for index, line in enumerate(lines):
-        if heading[index]:
-            in_list = colon_list = blank_since = block_has_prose = False
-            lead, lead_index = "", -1
-            continue
-        if not line.strip():
-            blank_since = True
-            continue
-        prose = not _only_citations(line)
-        ordered = _ORDERED_RE.match(line)
-        interrupts = not (
-            # CommonMark: only an ordered list starting at 1 may interrupt a
-            # paragraph, so `...no fewer than` / `90) days` is one paragraph
-            # (1d on #353, confirmed against markdown-it).
-            ordered
-            and not in_list
-            and int(ordered.group(1)) != 1
-            and index > 0
-            and lines[index - 1].strip()
-            and not heading[index - 1]
-        )
-        if _LIST_ITEM_RE.match(line) and interrupts:
-            if not in_list:
-                in_list, colon_list = True, _ends_with_colon(lead)
-                if colon_list:
-                    colon_lists.append(_ColonList(lead=lead_index))
-            starts[index] = not colon_list
-            if colon_list:
-                colon_lists[-1].items.append([index, index])
-        elif blank_since and prose and block_has_prose and not (in_list and line[:1].isspace()):
-            # A blank line ends a paragraph, so prose after one starts a block
-            # (#358): a sentence no longer runs on into the next paragraph
-            # because it did not end in a stop before a capital. Inside a list
-            # an indented line is still the item's; a citation-only line is
-            # never prose, so it stays and is credited to the sentence above.
-            in_list = colon_list = False
-            starts[index] = True
-        elif colon_list and colon_lists[-1].items:
-            if not prose and blank_since:
-                colon_lists[-1].trailing.append(index)
+@dataclass
+class _Structure:
+    """One document's block structure, read once from markdown-it's tokens."""
+
+    #: Each line's block role (`_ATX`, `_SETEXT`, `_UNDERLINE`, `_BREAK`), or None.
+    kinds: list[str | None]
+    #: The runs of lines read together by `analyze`, as [first, last] (0-based).
+    blocks: list[list[int]]
+    colon_lists: list[_ColonList]
+    #: Each ordered list item's number, as (line, start, end) columns (#365).
+    markers: list[tuple[int, int, int]] = field(default_factory=list)
+
+
+@dataclass
+class _Leaf:
+    """A block of text markdown-it found: a paragraph, or a code, fence or
+    HTML block, which `analyze` still reads as prose (unchanged by #376)."""
+
+    first: int
+    last: int
+    #: The innermost list item holding it, as its opening token's index.
+    item: int | None
+    #: The outermost list holding it, when that list is not itself inside a
+    #: list item: the only lists a colon lead-in introduces (as before #376).
+    top_list: int | None
+    only_citations: bool
+    after_blank: bool
+
+
+def _only_citation_lines(lines: list[str], first: int, last: int) -> bool:
+    return all(_only_citations(line) for line in lines[first : last + 1] if line.strip())
+
+
+def _prose_tail(lines: list[str], first: int, last: int) -> int:
+    """The last line of a block that is not only citations, or -1."""
+    for index in range(last, first - 1, -1):
+        if lines[index].strip() and not _only_citations(lines[index]):
+            return index
+    return -1
+
+
+def _structure(text: str) -> _Structure:
+    """Headings, breaks, blocks and colon lists, from markdown-it's tokens.
+
+    **Where this still differs from CommonMark, on purpose, as before #376:**
+    - a setext underline of a lone `-` is not an underline (see the note on
+      `_line_kinds`): its paragraph stays in sentence analysis;
+    - code, fenced and HTML blocks are read as prose, as they always were.
+      Whether to stop reading them is a product ruling, not this change's;
+    - a colon lead-in introduces only a list that is not inside a list item.
+    """
+    lines = text.split("\n")
+    kinds: list[str | None] = [None] * len(lines)
+    tokens = _MD.parse(text)
+    leaves: list[_Leaf] = []
+    boundaries: list[int] = []
+    stack: list[tuple[str, int]] = []
+    markers: list[tuple[int, int, int]] = []
+    previous_last = -1
+    for index, token in enumerate(tokens):
+        if token.nesting == 1:
+            stack.append((token.type, index))
+        elif token.nesting == -1:
+            stack.pop()
+        if token.type == "list_item_open" and stack[-2][0] == "ordered_list_open":
+            marker = _ORDERED_MARKER_RE.match(lines[token.map[0]])
+            if marker and _splits_off(lines[token.map[0]][marker.start(2) :], marker.group(2)):
+                markers.append((token.map[0], marker.start(2), marker.end(2)))
+        if token.type == "heading_open":
+            first, end = token.map
+            underline = lines[end - 1].strip() if token.markup in ("=", "-") else ""
+            if token.markup == "-" and underline == "-":
+                # Not a heading here: CommonMark says it is, and 1d measured
+                # markdown-it agreeing (#350); the line above stays prose.
+                leaves.append(_leaf(lines, first, end - 1, stack, previous_last))
+                previous_last = end - 1
+                continue
+            if token.markup.startswith("#"):
+                kinds[first] = _ATX
             else:
-                colon_lists[-1].items[-1][1] = index  # the item's continuation
-        if prose:
-            block_has_prose = True
-            lead, lead_index = line, index
-            blank_since = False
-    return starts, colon_lists
+                for line in range(first, end - 1):
+                    kinds[line] = _SETEXT
+                kinds[end - 1] = _UNDERLINE
+            boundaries.append(first)
+            previous_last = end - 1
+        elif token.type == "hr":
+            kinds[token.map[0]] = _BREAK
+            boundaries.append(token.map[0])
+            previous_last = token.map[0]
+        elif token.type in ("paragraph_open", "code_block", "fence", "html_block") and token.map:
+            first, end = token.map
+            last = end - 1
+            while last > first and not lines[last].strip():
+                last -= 1
+            leaves.append(_leaf(lines, first, last, stack, previous_last))
+            previous_last = last
+
+    blocks, colon_lists = _group(lines, leaves, boundaries)
+    return _Structure(kinds=kinds, blocks=blocks, colon_lists=colon_lists, markers=markers)
+
+
+#: An ordered list item's number, after any indentation and blockquote marks.
+_ORDERED_MARKER_RE = re.compile(r"^([ \t]*(?:>[ \t]?)*[ \t]*)(\d{1,9}[.)])(?=[ \t]|$)")
+
+
+def _splits_off(rest: str, marker: str) -> bool:
+    """Whether the sentence splitter would cut `marker` off `rest` as a
+    sentence of its own: `1. Open the console` does, `1. item two` and
+    `1. **Scope**` do not, and are left exactly as they were."""
+    pieces = _sentences(rest)
+    return bool(pieces) and pieces[0][1].strip() == marker
+
+
+def _blanked_lines(text: str, structure: _Structure) -> list[str]:
+    """`text`'s lines with headings and ordered list numbers blanked in place.
+
+    **A list number is not a sentence (#365).** The splitter ends a sentence
+    at `. ` before a capital, so `1. Open the console` read as `1.` and
+    `Open the console`, and a number under a sentence could be glued to its
+    end (`... broadcasting. 1.`). Over the 45 Procedures, 4,133 statements
+    were bare numbers, each `none`, diluting every per-statement figure.
+    Only a number the splitter would cut off is blanked (`_splits_off`), so
+    one it never split keeps its text. Blanked, not deleted, so columns and
+    line numbers still point at the document a reader has open.
+    """
+    lines = text.split("\n")
+    lines = [" " * len(line) if structure.kinds[i] else line for i, line in enumerate(lines)]
+    for line, start, end in structure.markers:
+        lines[line] = lines[line][:start] + " " * (end - start) + lines[line][end:]
+    return lines
+
+
+def _leaf(lines, first, last, stack, previous_last) -> _Leaf:
+    item = next((index for kind, index in reversed(stack) if kind == "list_item_open"), None)
+    top = next(
+        (
+            index
+            for position, (kind, index) in enumerate(stack)
+            if kind in ("bullet_list_open", "ordered_list_open")
+            and not any(k == "list_item_open" for k, _ in stack[:position])
+        ),
+        None,
+    )
+    after_blank = any(not lines[i].strip() for i in range(previous_last + 1, first))
+    return _Leaf(first, last, item, top, _only_citation_lines(lines, first, last), after_blank)
+
+
+def _group(lines, leaves, boundaries) -> tuple[list[list[int]], list[_ColonList]]:
+    """Which leaves `analyze` reads together, and each colon list, in order.
+
+    - Each paragraph is its own block: a blank line ends one (#358).
+    - Each list item starts a block (#351), and its later paragraphs stay in it.
+    - A leaf of only citations never starts a block. It's credited to the
+      block above it, blank line or not (#362). With nothing above it since
+      the last heading, it goes to the paragraph below, or, when the next
+      block is a list item or there's none before the next heading, it's a
+      block of its own, as before #376.
+    - A colon lead-in and the list after it are one block (#354), with the
+      citation-only lines under the list, after a blank line, as the list's
+      own. Lists that follow one another with no prose between belong to the
+      same lead-in, as they did before #376.
+    """
+    boundary_lines = sorted(boundaries)
+    next_boundary = 0
+    blocks: list[list[int]] = []
+    colon_lists: list[_ColonList] = []
+    current: list[int] | None = None
+    current_item: int | None = None
+    colon: _ColonList | None = None
+    item_of_colon: int | None = None
+    pending: list[int] | None = None
+    last_prose: _Leaf | None = None
+
+    def flush() -> None:
+        if pending is not None:
+            blocks.append(list(pending))
+
+    for leaf in leaves:
+        # A heading or break between the last leaf and this one ends everything.
+        crossed = False
+        while next_boundary < len(boundary_lines) and boundary_lines[next_boundary] < leaf.first:
+            crossed = True
+            next_boundary += 1
+        if crossed:
+            flush()
+            current = current_item = colon = item_of_colon = pending = last_prose = None
+
+        if leaf.top_list is not None and colon is None and last_prose is not None:
+            tail = _prose_tail(lines, last_prose.first, last_prose.last)
+            if tail >= 0 and _ends_with_colon(lines[tail]):
+                colon = _ColonList(lead=tail)
+                colon_lists.append(colon)
+
+        if colon is not None and leaf.top_list is not None:
+            if leaf.only_citations and leaf.after_blank:
+                colon.trailing.extend(
+                    i for i in range(leaf.first, leaf.last + 1) if lines[i].strip()
+                )
+            elif leaf.item is not None and leaf.item != item_of_colon:
+                colon.items.append([leaf.first, leaf.last])
+                item_of_colon = leaf.item
+            elif colon.items:
+                colon.items[-1][1] = leaf.last
+            current[1] = leaf.last
+            continue
+        if colon is not None and leaf.only_citations and leaf.after_blank:
+            # Under the list, after a blank line: still the list's own (#354).
+            colon.trailing.extend(i for i in range(leaf.first, leaf.last + 1) if lines[i].strip())
+            current[1] = leaf.last
+            continue
+        colon = item_of_colon = None
+
+        if leaf.only_citations:
+            if current is not None:
+                current[1] = leaf.last
+            elif pending is None:
+                pending = [leaf.first, leaf.last]
+            else:
+                pending[1] = leaf.last
+            continue
+        if leaf.item is not None and leaf.item == current_item and current is not None:
+            current[1] = leaf.last
+        else:
+            if pending is not None and leaf.item is not None:
+                flush()
+                pending = None
+            current = [pending[0] if pending is not None else leaf.first, leaf.last]
+            blocks.append(current)
+            pending = None
+            current_item = leaf.item
+        # The lead-in is the last prose before a list, with no list between.
+        last_prose = leaf if leaf.top_list is None else None
+    flush()
+    return blocks, colon_lists
+
+
+def _line_kinds(lines: list[str]) -> list[str | None]:
+    """Each line's block role, or None for ordinary text.
+
+    **The one classification of headings**, read by `analyze` (a boundary),
+    by `playbook_tagged_headings` and `heading_statements`, and by
+    `grounding`'s sections. Since #376 it is markdown-it's, not a regex's.
+    **A lone `-` under text is not an underline, by choice, not by
+    CommonMark** (1d on #350: markdown-it reads `text\n-` as a setext h2).
+    Excluding it keeps the line above in sentence analysis, where every gate
+    reads it; including it would blank that line on a single stray
+    character, the destructive direction.
+    """
+    return _structure("\n".join(lines)).kinds
+
+
+def _heading_blocks(text: str) -> tuple[str, list[tuple[int, str]]]:
+    """`text` with every heading line blanked in place (so line numbers hold),
+    and the blocks `analyze` reads together as `(offset, block)`: see
+    `_group` for which leaves those are."""
+    lines = text.split("\n")
+    structure = _structure(text)
+    blanked = _blanked_lines(text, structure)
+    text = "\n".join(blanked)
+    starts = [0]
+    for line in blanked:
+        starts.append(starts[-1] + len(line) + 1)
+    # A block runs on to the line before the next block or heading, blank
+    # lines included, as it did before #376.
+    stops = sorted(
+        [first for first, _ in structure.blocks[1:]]
+        + [index for index, kind in enumerate(structure.kinds) if kind]
+    )
+    blocks = []
+    for first, last in structure.blocks:
+        end = next((stop for stop in stops if stop > last), len(lines))
+        blocks.append((starts[first], text[starts[first] : starts[end] - 1]))
+    return text, blocks
+
+
+def _only_citations(line: str) -> bool:
+    """Whether `line` carries nothing but citation tags: backticks, emphasis
+    and `. ; : |` around them do not make it prose (1d on #362: `[AU-6].`
+    and `` `[AU-6]` `` after a blank line were read as prose, so the first
+    was lost and the second became a statement of its own). The same
+    reading as `generate/playbook_repair._only_citations`. A blank line is
+    not a line of citations."""
+    return bool(line.strip()) and not _CITATION_RE.sub("", line).strip(" 	`*_.;:|")
+
+
+def _ends_with_colon(line: str) -> bool:
+    """Whether `line`, less its trailing citations and emphasis, ends in `:`."""
+    return _CITATION_RE.sub("", line).rstrip(" \t*_`").endswith(":")
 
 
 def _analyze_block(text: str, block_offset: int, block: str, statements: list[Statement]) -> None:

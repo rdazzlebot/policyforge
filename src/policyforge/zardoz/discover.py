@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 
 from policyforge.llm.prompts import Prompt, register
 
-from .retrieve import extract_control_ids
+from .retrieve import _NIST_ID_RE
 
 #: Written into every proposed topic. Deliberately conspicuous: it has to
 #: survive a skim of the file and stop anyone publishing from it unedited.
@@ -63,7 +63,6 @@ _NOISE_WORDS = """
     """
 _NOISE = frozenset(_NOISE_WORDS.split())
 
-_CONTROL_FAMILY_RE = re.compile(r"^([A-Z]{2})-(\d+)")
 _WORD_RE = re.compile(r"[A-Za-z0-9&/']+")
 
 
@@ -154,20 +153,38 @@ def split_title(title: str) -> tuple[str, str]:
 
 
 def _anchor_controls(bodies: list[str]) -> list[str]:
-    """The control IDs a group of pages cites, reduced to base controls.
+    """The controls a group of pages cites, as the ids a topic would anchor.
 
-    Enhancements collapse into their parent because the registry anchors
-    controls and inherits enhancements — the same rule `coverage.py` uses —
-    so proposing AC-2(1) alongside AC-2 would be noise. Ordered by how often
-    they appear, so the anchors a reviewer sees first are the ones the pages
-    are actually about.
+    Each citation becomes the control it hangs off, by the one rule topics
+    use (`topics.anchoring`, #377): `AC-2(1)` proposes `AC-2`, `Govern 1.1`
+    proposes `Govern 1`, and a Playbook action proposes nothing, because a
+    topic owns nothing in the Playbook. Ordered by how often they appear, so
+    the anchors a reviewer sees first are the ones the pages are about.
+
+    **Two readings, because the rule reads the framework.** An 800-53 id is
+    recognisable by its shape anywhere on a page: in `[NIST 800-53 AC-2]`,
+    in the house shorthand `[NIST AC-2]`, and in a sentence naming `AC-2`
+    with no tag. So 800-53 is read from the whole text, as it always was.
+    Every other catalog's ids are recognisable only by the tag that names
+    the catalog (`Govern 1.1` is the AI RMF Core or the Playbook depending
+    on it), so those are read from tags. Reading only 800-53 shapes is why
+    an AI governance page proposed no anchor at all (#345).
     """
+    from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
+    from policyforge.topics.anchoring import anchor_keys, parent_of
+    from policyforge.topics.satisfies import parse_citations
+
     counts: Counter = Counter()
     for body in bodies:
-        for identifier in extract_control_ids(body):
-            match = _CONTROL_FAMILY_RE.match(identifier)
-            if match:
-                counts[f"{match.group(1)}-{match.group(2)}"] += 1
+        cited = [("NIST 800-53", m.group(1).upper()) for m in _NIST_ID_RE.finditer(body)]
+        cited += [
+            (framework, requirement_id)
+            for framework, requirement_id, _, _ in parse_citations(body)
+            if normalize_framework(framework) != NIST_ANCHOR
+        ]
+        for framework, requirement_id in cited:
+            if anchor_keys(requirement_id, framework):
+                counts[parent_of(requirement_id, framework) or requirement_id] += 1
     return [control for control, _ in counts.most_common()]
 
 

@@ -145,10 +145,18 @@ def _tree(tmp_path: Path, **documents) -> Path:
     return tmp_path / "docs"
 
 
+def _citing(controls, root):
+    """Document reach in 800-53, the catalog these documents cite (#377:
+    reach is within the change's own framework)."""
+    return documents_citing(
+        controls, root, framework="NIST 800-53", catalog_ids={"AC-2", "AC-2(3)", "CP-9"}
+    )
+
+
 def test_a_document_citing_the_control_is_found(tmp_path):
     root = _tree(tmp_path, access="# A\n\nRecertified. [NIST AC-2 | HIPAA 164.308(a)(4)]\n")
 
-    hits = documents_citing({"AC-2"}, root)
+    hits = _citing({"AC-2"}, root)
 
     assert hits["AC-2"] == ["standards/access.md"]
 
@@ -157,7 +165,7 @@ def test_a_document_citing_the_parent_is_reached_by_an_enhancement_change(tmp_pa
     """A reader who has to re-check AC-2(3) has to re-check AC-2."""
     root = _tree(tmp_path, access="# A\n\nText. [NIST AC-2]\n")
 
-    hits = documents_citing({"AC-2(3)"}, root)
+    hits = _citing({"AC-2(3)"}, root)
 
     assert hits["AC-2(3)"] == ["standards/access.md"]
 
@@ -165,11 +173,11 @@ def test_a_document_citing_the_parent_is_reached_by_an_enhancement_change(tmp_pa
 def test_a_document_citing_something_else_is_left_alone(tmp_path):
     root = _tree(tmp_path, backup="# B\n\nText. [NIST CP-9]\n")
 
-    assert documents_citing({"AC-2"}, root) == {}
+    assert _citing({"AC-2"}, root) == {}
 
 
 def test_a_missing_content_tree_is_not_an_error(tmp_path):
-    assert documents_citing({"AC-2"}, tmp_path / "nope") == {}
+    assert _citing({"AC-2"}, tmp_path / "nope") == {}
 
 
 def test_a_change_reaches_the_topic_that_anchors_the_control(tmp_path):

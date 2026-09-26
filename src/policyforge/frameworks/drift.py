@@ -34,12 +34,9 @@ from __future__ import annotations
 
 import difflib
 import json
-import re
 import subprocess  # nosec B404
 from dataclasses import dataclass, field
 from pathlib import Path
-
-from policyforge.content.tags import SOURCE_TAG_RE
 
 ADDED = "added"
 REMOVED = "removed"
@@ -50,21 +47,10 @@ CHANGED = "changed"
 #: `description` is an enhancement's requirement text (#369).
 SUBSTANTIVE_FIELDS = ("control_statement", "description", "baseline", "enhancements", "parameters")
 
-#: Inline source tags in a generated document — `[NIST AC-2 | HIPAA 164.x]`.
-#: How a document says which control it answers for, and therefore how this
-#: works out which documents a control change reaches. The shape is decided
-#: in `content/tags.py`, once, for every reader.
-_SOURCE_TAG_RE = SOURCE_TAG_RE
-_CONTROL_ID_RE = re.compile(r"\b([A-Z]{2}-\d+(?:\(\d+\))?)")
-
 
 def _normalize(text: str) -> str:
     """Collapse whitespace so a reflow does not read as a rewrite."""
     return " ".join((text or "").split())
-
-
-def _base_control(control_id: str) -> str:
-    return control_id.split("(")[0].strip().upper()
 
 
 @dataclass
@@ -95,6 +81,10 @@ class Impact:
     control_id: str
     topics: list[str] = field(default_factory=list)
     documents: list[str] = field(default_factory=list)
+    #: The subset of `documents` reached only by the shape of an 800-53 id
+    #: in a citation that did not resolve (80's ruling on #418), printed as
+    #: such so the citation gets fixed where it is written.
+    by_shape: list[str] = field(default_factory=list)
     parameters: list[str] = field(default_factory=list)
 
     @property
@@ -226,94 +216,226 @@ def _enhancement_changes(old, new) -> list[ControlChange]:
     return found
 
 
-def documents_citing(controls: set[str], root: Path) -> dict[str, list[str]]:
-    """Control id -> the documents whose source tags cite it.
+#: How a document was reached: through a citation that resolved, or only by
+#: the shape of an 800-53 id in one that did not (80's ruling on #418).
+RESOLVED = "resolved"
+BY_SHAPE = "by id shape"
+
+
+def documents_citing(
+    controls: set[str], root: Path, *, framework: str = "", catalog_ids=(), crosswalk=None
+) -> dict[str, list[str]]:
+    """Control id -> the documents whose source tags cite its family.
+
+    `documents_reached` without saying how; see it for the rule.
+    """
+    reached = documents_reached(
+        controls, root, framework=framework, catalog_ids=catalog_ids, crosswalk=crosswalk
+    )
+    return {changed: sorted(paths) for changed, paths in reached.items()}
+
+
+def documents_reached(
+    controls: set[str],
+    root: Path,
+    *,
+    framework: str = "",
+    catalog_ids=(),
+    crosswalk=None,
+    catalogs: dict[str, set[str]] | None = None,
+) -> dict[str, dict[str, str]]:
+    """Control id -> {document: how it was reached, `RESOLVED` or `BY_SHAPE`}.
 
     Walks the content tree rather than the corpus, because the question is
     which *files you maintain* need re-reading, and those are the ones under
     review in a pull request.
+
+    **Document reach, the broader of the two breadths** (`topics.anchoring`,
+    80's ruling on #377): a change reaches every document citing the same
+    family **in the change's own framework**. A document citing AC-2(3) is
+    reached by a change to AC-2(1), because a reader re-checking one part
+    of AC-2 has to re-check the control; `Govern 1.3` reaches `Govern 1`
+    and every `Govern 1.x`; a Playbook action reaches Playbook citations of
+    its subcategory and never the Core's. Missing a document is the
+    dangerous direction, so this reaches wider than topic ownership does.
+
+    **Across catalogs, through the 800-53 hub** (80's ruling (ii) on #377):
+    every citation stands for 800-53 families, its own if it cites 800-53,
+    otherwise those the loaded crosswalk maps it to in full, and a change
+    reaches a document whose citation shares one with it. `crosswalk` is
+    `build_crosswalk` over the catalogs actually loaded.
+
+    **Each citation is resolved before it is matched** (80's ruling on
+    #418), because a citation `check` accepts is one a document really
+    writes, and 1d measured four that the first version dropped in silence:
+
+    - a framework-name variant (`[NIST SP 800-53 AC-2(3)]`, `[NIST 800-53
+      Rev 5 AC-2(3)]`): the words the tag splitter left on the id are taken
+      back into the name, longest first, while the rest still resolves;
+    - a statement part (`AC-6(1)(a)`): trailing parts come off until the
+      catalog has the id;
+    - an id a catalog does not carry, in a catalog whose crosswalk maps
+      every id to 800-53's same id (FedRAMP, ARC-AMPE, derived from the
+      data, never listed): 800-53's own, as (B) reaches them;
+    - an abbreviation naming two loaded catalogs (`NIST`): each of them
+      through which this change reaches the cited id.
+
+    **What still does not resolve is reached by 800-53 id shape, for
+    documents only, and says so.** Every 800-53-shaped id in its text
+    counts by its 800-53 family, the way every document was reached before
+    #377, and the document is marked `BY_SHAPE` so drift prints it as
+    reached by shape: partial success is allowed only when it is loud, and
+    the citation is then fixed where it is written. Topic reach never uses
+    this; ownership is not inferred from a shape.
+
+    `catalogs` is `{catalog key: every id it has}` for the catalogs loaded,
+    which is what "the catalog has the id" is asked of. Without it only the
+    diffed catalog's ids and the crosswalk's are known.
     """
     from policyforge.content.tree import load_content_tree
+    from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
+    from policyforge.topics.anchoring import (
+        enclosing,
+        family_of,
+        hubs,
+        is_800_53_shaped,
+        reverse_index,
+        shaped_ids,
+    )
+    from policyforge.topics.satisfies import parse_citations, resolve_framework
 
-    hits: dict[str, list[str]] = {}
-    if not root.exists():
-        return hits
+    found: dict[str, dict[str, str]] = {}
+    key = normalize_framework(framework) if framework else ""
+    if not root.exists() or not key:
+        return found
+    reverse = reverse_index(crosswalk)
+    # The catalogs a citation may name, and the ids each is known to have.
+    index: dict[str, set[str]] = {k: set(v) for k, v in (catalogs or {}).items()}
+    index.setdefault(key, set()).update(catalog_ids, controls)
+    index.setdefault(NIST_ANCHOR, set()).update(crosswalk or {})
+    for catalog, requirement_id in reverse:
+        index.setdefault(catalog, set()).add(requirement_id)
+    identity = {
+        catalog
+        for catalog in {c for c, _ in reverse}
+        if catalog != NIST_ANCHOR
+        and all(ids == {rid} for (c, rid), ids in reverse.items() if c == catalog)
+    }
+
+    own: dict[str, set[str]] = {}
+    hub: dict[str, set[str]] = {}
+    for changed in controls:
+        own.setdefault(family_of(changed, framework), set()).add(changed)
+        for family in hubs(changed, framework, reverse):
+            hub.setdefault(family, set()).add(changed)
+
+    def known(catalog: str, requirement_id: str) -> bool:
+        return requirement_id in index.get(catalog, ())
+
+    def reached(cited: str, requirement_id: str) -> set[str]:
+        hit = set(own.get(family_of(requirement_id, cited), ())) if cited == key else set()
+        families = hubs(requirement_id, cited, reverse)
+        if not families and cited in identity:
+            families = {family_of(requirement_id, NIST_ANCHOR)}
+        for family in families:
+            hit |= hub.get(family, set())
+        return hit
+
+    def resolutions(written: str, requirement_id: str) -> list[tuple[str, str]]:
+        """(catalog, id) readings of one citation that name a loaded catalog."""
+        tokens = requirement_id.split()
+        # Longest name first: `NIST 800-53 Rev 5 AC-2(3)` arrives as
+        # ("NIST 800-53", "Rev 5 AC-2(3)"), and "Rev" alone would leave "5".
+        for taken in range(len(tokens) - 1, -1, -1):
+            name = " ".join([written, *tokens[:taken]])
+            rest = " ".join(tokens[taken:])
+            cited = resolve_framework(name, index) or (
+                normalize_framework(name) if normalize_framework(name) in index else ""
+            )
+            candidates = (
+                [cited]
+                if cited
+                else [c for c, ids in index.items() if resolve_framework(name, {c: ids}) == c]
+            )
+            readings = [
+                (c, enclosing(rest, lambda r, c=c: known(c, r)))
+                for c in candidates
+                if known(c, enclosing(rest, lambda r, c=c: known(c, r)))
+                or (c in identity and is_800_53_shaped(rest))
+            ]
+            if readings:
+                return readings
+        # Nothing the catalogs have: the name as written, if it names one.
+        cited = resolve_framework(written, index)
+        return [(cited, requirement_id)] if cited else []
 
     documents, _ = load_content_tree(root)
     for document in documents:
-        cited: set[str] = set()
-        for tag in _SOURCE_TAG_RE.findall(document.body):
-            cited.update(_CONTROL_ID_RE.findall(tag))
-        for control_id in cited:
-            # A document citing AC-2 is reached by a change to AC-2(1) too:
-            # the enhancement is part of the control it enhances, and a
-            # reader who has to re-check one has to re-check the other.
-            for changed in controls:
-                if changed == control_id or _base_control(changed) == _base_control(control_id):
-                    hits.setdefault(changed, []).append(document.relative_path)
-    return {key: sorted(set(value)) for key, value in hits.items()}
-
-
-#: Catalogs whose ids read like an anchored catalog's but that no topic
-#: anchors: a Playbook change keyed `Govern 1.1` is NIST's suggestion under
-#: that subcategory, not the subcategory ("never anchored", ANCHOR_DECISIONS).
-_REACHES_NO_TOPIC = frozenset({"nist-ai-rmf-playbook"})
-
-
-def _topic_keys(control_id: str, framework: str) -> set[str] | None:
-    """The ids a topic may anchor to claim `control_id`, from `framework`'s
-    rule, or None if a change in `framework` reaches no topic (#339).
-
-    **For a catalog topics anchor (800-53, the AI RMF Core), coverage's own
-    rule, `topics.coverage.parent_of`**: the control, or the one it hangs
-    off, so `AC-2(3)` reaches the topic anchoring `AC-2` and `Govern 1.1`
-    the topic anchoring `Govern 1`. This used `_base_control` for every
-    catalog while its comment claimed coverage's rule, and `_base_control`
-    knows only the 800-53 grammar: an AI RMF subcategory change reached no
-    topic (9b, on #336).
-
-    **The Playbook reaches none**, whatever its ids look like. `parent_of`
-    reads no framework, which is why it is only applied to the anchored
-    catalogs here (it claimed 72 Playbook rows in `programme.py`, #318).
-
-    Any other catalog, or none named, keeps the rule it had: the id, or its
-    800-53-style base (FedRAMP and ARC-AMPE ids are 800-53's). That is not
-    this change's question.
-    """
-    from policyforge.mapping.crosswalk import anchors_a_topic, normalize_framework
-    from policyforge.topics.coverage import parent_of
-
-    key = normalize_framework(framework) if framework else ""
-    if key in _REACHES_NO_TOPIC:
-        return None
-    upper = control_id.upper()
-    if framework and anchors_a_topic(framework):
-        parent = parent_of(control_id)
-        return {upper} | ({parent.upper()} if parent else set())
-    return {upper, _base_control(control_id)}
+        for written, requirement_id, _, _ in parse_citations(document.body, [framework], index):
+            readings = resolutions(written, requirement_id)
+            hits = set()
+            for cited, rid in readings:
+                hits |= reached(cited, rid)
+            how = RESOLVED
+            if not hits and not any(known(c, r) for c, r in readings):
+                # Unresolved: 800-53 shape, documents only, marked.
+                for shaped in shaped_ids(f"{written} {requirement_id}"):
+                    hits |= hub.get(family_of(shaped, NIST_ANCHOR), set())
+                    if key == NIST_ANCHOR:
+                        hits |= own.get(family_of(shaped, NIST_ANCHOR), set())
+                how = BY_SHAPE
+            for changed in hits:
+                paths = found.setdefault(changed, {})
+                if paths.get(document.relative_path) != RESOLVED:
+                    paths[document.relative_path] = how
+    return found
 
 
 def assess_impact(
-    changes, *, topics=(), content_root=None, decisions=None, framework: str = ""
+    changes,
+    *,
+    topics=(),
+    content_root=None,
+    decisions=None,
+    framework: str = "",
+    catalog_ids=(),
+    crosswalk=None,
+    catalogs=None,
 ) -> dict[str, Impact]:
     """Work out what each changed control reaches.
 
-    `framework` is the catalog the changes are in; it decides which ids a
-    topic may anchor to be reached (`_topic_keys`).
+    `framework` is the catalog the changes are in. Topic reach is the one
+    rule, `topics.anchoring.topic_keys` (#377): the change's own catalog's
+    parent for one topics anchor, and through `crosswalk` for any other, so
+    a Playbook change reaches no topic and an 800-171 change reaches the
+    topics owning the 800-53 controls NIST maps it to.
     """
+    from policyforge.topics.anchoring import topic_keys
+
     changed_ids = {c.control_id for c in changes}
     impacts = {control_id: Impact(control_id=control_id) for control_id in changed_ids}
 
     for topic in topics or ():
         anchors = {a.upper() for a in getattr(topic, "nist_controls", [])}
         for control_id in changed_ids:
-            keys = _topic_keys(control_id, framework)
-            if keys and keys & anchors:
+            keys = {k.upper() for k in topic_keys(control_id, framework, crosswalk)}
+            if keys & anchors:
                 impacts[control_id].topics.append(topic.name)
 
     if content_root is not None:
-        for control_id, paths in documents_citing(changed_ids, Path(content_root)).items():
-            impacts[control_id].documents.extend(paths)
+        reached = documents_reached(
+            changed_ids,
+            Path(content_root),
+            framework=framework,
+            catalog_ids=catalog_ids,
+            crosswalk=crosswalk,
+            catalogs=catalogs,
+        )
+        for control_id, paths in reached.items():
+            impacts[control_id].documents.extend(sorted(paths))
+            impacts[control_id].by_shape.extend(
+                sorted(p for p, how in paths.items() if how == BY_SHAPE)
+            )
 
     for key in decisions or {}:
         control_id = key.split("/")[0].upper()
@@ -378,7 +500,15 @@ class DriftReport:
                 if impact.topics:
                     reach.append(f"topics: {', '.join(impact.topics)}")
                 if impact.documents:
-                    reach.append(f"docs: {', '.join(impact.documents)}")
+                    reach.append(
+                        "docs: "
+                        + ", ".join(
+                            f"{d} (reached by id shape; citation did not resolve)"
+                            if d in impact.by_shape
+                            else d
+                            for d in impact.documents
+                        )
+                    )
                 if impact.parameters:
                     reach.append(f"parameters: {', '.join(impact.parameters)}")
                 lines.append(f"  {change.kind.upper():7} {change.control_id}  ({what})")
@@ -412,6 +542,15 @@ class DriftReport:
             f"  {len(self.affected_parameters)} recorded parameter decision(s): "
             + (", ".join(self.affected_parameters) or "none")
         )
+        shaped = sorted({d for c in self.substantive for d in self.impacts[c.control_id].by_shape})
+        if shaped:
+            lines += [
+                "",
+                f"{len(shaped)} of those document(s) were reached only by the shape of an "
+                "800-53 id, because a citation in them did not resolve to any loaded "
+                "catalog: " + ", ".join(shaped) + ". Fix the citation where it is "
+                "written; until then drift can only guess what it means.",
+            ]
         if self.affected_documents:
             lines += [
                 "",
@@ -462,9 +601,31 @@ def load_previous(path: Path, *, revision: str = "HEAD"):
     return _controls_from_json(text) if text else None
 
 
+def _catalog_ids(controls) -> set[str]:
+    """Every control and enhancement id in a catalog."""
+    return {c.control_id for c in controls} | {
+        e.enhancement_id for c in controls for e in c.enhancements
+    }
+
+
 def analyze_drift(
-    old_controls, new_controls, *, topics=(), content_root=None, decisions=None
+    old_controls,
+    new_controls,
+    *,
+    topics=(),
+    content_root=None,
+    decisions=None,
+    crosswalk=None,
+    catalogs=None,
 ) -> DriftReport:
+    """`crosswalk` is `build_crosswalk` over every catalog loaded (the drift
+    command passes the installation's); by default, the diffed catalog's
+    own two versions, so a call with nothing else loaded reaches only
+    through the mapping that catalog carries."""
+    from policyforge.mapping.crosswalk import build_crosswalk
+
+    if crosswalk is None:
+        crosswalk = build_crosswalk([*(old_controls or []), *(new_controls or [])])
     changes = diff_catalogs(old_controls, new_controls)
     return DriftReport(
         old_version=(old_controls[0].framework_version if old_controls else ""),
@@ -478,5 +639,8 @@ def analyze_drift(
             framework=(new_controls or old_controls or [None])[0].framework
             if (new_controls or old_controls)
             else "",
+            catalog_ids=_catalog_ids(old_controls or []) | _catalog_ids(new_controls or []),
+            crosswalk=crosswalk,
+            catalogs=catalogs,
         ),
     )

@@ -340,6 +340,13 @@ def _check_requirement_strength(documents: list[ContentDocument]) -> list[Findin
     document, not a breach of a rule, and blocking a publish over it would
     be the wrong trade. See `content/deontic.py` for why only *cited*
     sentences are reported.
+
+    **In a Procedure, a cited step with no modality is not reported** (80's
+    ruling on #412, after #363): "Security Operations distributes the plan"
+    carries out an obligation the Standard above it states, which is how a
+    step is meant to read. **A step that says "should" or "may" still is**,
+    in a Procedure as in a Standard: it weakens a mandated requirement. The
+    same sentence with no modality in a Standard is still reported too.
     """
     findings: list[Finding] = []
     for doc in documents:

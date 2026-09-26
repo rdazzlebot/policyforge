@@ -36,6 +36,8 @@ BUNDLED_CATALOGS = (
     "cfr-171-information-blocking",
     "cfr-42-part-2-sud-records",
     "fedramp",
+    "hipaa-breach-notification-rule",
+    "hipaa-privacy-rule",
     "hipaa-security-rule",
     "nist-800-171-r3",
     "nist-800-53-r5",

@@ -158,3 +158,25 @@ jobs:
           policyforge drift \
             --controls data/frameworks/nist-csf-2-0/controls.json \
             --detail --fail-on-change
+
+      # Reads eCFR's CURRENT date, not the pin. It refuses, and goes red,
+      # when the shape changes or the text Purl v. HHS vacated is not what
+      # was pinned: eCFR finally removing it is this job working, and the
+      # catalog then needs a deliberate re-pin and a README update.
+      - name: Fetch the current HIPAA Privacy and Breach Notification Rules
+        if: always()
+        run: policyforge etl-hipaa-privacy --date latest
+
+      - name: What changed in the HIPAA Privacy Rule
+        if: always()
+        run: |
+          policyforge drift \
+            --controls data/frameworks/hipaa-privacy-rule/controls.json \
+            --detail --fail-on-change
+
+      - name: What changed in the HIPAA Breach Notification Rule
+        if: always()
+        run: |
+          policyforge drift \
+            --controls data/frameworks/hipaa-breach-notification-rule/controls.json \
+            --detail --fail-on-change

@@ -476,6 +476,59 @@ def _check_unanchored(documents: list[ContentDocument]) -> list[Finding]:
     return findings
 
 
+def _check_vacated_citations(documents: list[ContentDocument], vacated=None) -> list[Finding]:
+    """A citation to text a court vacated that the catalog's source still
+    prints (80's ruling on #409), named with the judgment.
+
+    **Warns on text that exists only because of the vacated rule** (80, on
+    #409): the `vacated` kind, and a `vacated-revision` id the pre-rule text
+    does not have at all (`164.502(g)(5)(i)(A)(1)`), which is pointed at its
+    root's pre-rule wording. Any other `vacated-revision` citation is VALID
+    and is not flagged: the paragraph binds, in its pre-rule wording, which
+    the catalog quotes and generation uses.
+
+    A warning, not an error: this is the project's reading of the judgment,
+    not legal advice, and a document may cite vacated text on purpose, to say
+    it no longer applies.
+    """
+    from policyforge.topics.satisfies import parse_citations
+
+    if vacated is None:
+        from policyforge.frameworks.registry import config_or_defaults
+        from policyforge.frameworks.vacated import declared_vacated
+
+        vacated = declared_vacated(config_or_defaults("vacated paragraphs were read"))
+    if not vacated:
+        return []
+    from policyforge.frameworks.vacated import VACATED
+    from policyforge.mapping.crosswalk import normalize_framework
+
+    findings: list[Finding] = []
+    for doc in documents:
+        for framework, requirement_id, _, section in parse_citations(doc.body):
+            status = vacated.get(normalize_framework(framework))
+            if status is None:
+                continue
+            where = f" (in {section!r})" if section else ""
+            if status.status(requirement_id) == VACATED:
+                message = (
+                    f"cites {framework} {requirement_id}{where}, text vacated by "
+                    f"{status.judgment}. eCFR still prints it, but it binds nobody; see the "
+                    "catalog's README."
+                )
+            elif requirement_id in status.added_under_revision:
+                root = status.added_under_revision[requirement_id]
+                message = (
+                    f"cites {framework} {requirement_id}{where}, text added by the vacated 2024 "
+                    f"rule ({status.judgment}); the binding text is {root}'s pre-rule wording, "
+                    "quoted in the catalog's framework.yaml."
+                )
+            else:
+                continue
+            findings.append(Finding(doc.relative_path, message, WARNING))
+    return findings
+
+
 def check_tree(
     root: Path, *, synthesis_dir: Path | None = None, org_actors: tuple[str, ...] = ()
 ) -> CheckReport:
@@ -498,6 +551,7 @@ def check_tree(
     report.findings.extend(_check_unanchored(documents))
     report.findings.extend(_check_requirement_strength(documents))
     report.findings.extend(_check_playbook_obligations(documents, org_actors))
+    report.findings.extend(_check_vacated_citations(documents))
     if synthesis_dir is not None:
         report.findings.extend(_check_citations(documents, synthesis_dir))
 

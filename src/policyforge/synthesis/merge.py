@@ -302,6 +302,7 @@ def build_synthesis_topic(
     nist_control_ids: list[str],
     controls: list[Control],
     crosswalk: dict[str, dict[str, list[str]]],
+    vacated: dict | None = None,
 ) -> SynthesisTopic:
     """Assemble a SynthesisTopic by pulling the given NIST controls plus,
     via `crosswalk` (see mapping/crosswalk.py's `build_crosswalk`), every
@@ -316,7 +317,18 @@ def build_synthesis_topic(
     parent Standard). An enhancement ID resolves to the control that carries
     it, so those mappings pull their surrounding requirement into the topic
     instead of silently matching nothing.
+
+    **Text a court vacated is never a source** (80's ruling on #409). A
+    catalog whose manifest marks paragraphs `vacated:` is read through
+    `frameworks.vacated.for_generation`: vacated paragraphs are dropped, and
+    a revised one is replaced by the pre-rule wording that binds again.
+    `vacated` defaults to the manifests on disk.
     """
+    if vacated is None:
+        from policyforge.frameworks.registry import config_or_defaults
+        from policyforge.frameworks.vacated import declared_vacated
+
+        vacated = declared_vacated(config_or_defaults("vacated paragraphs were read"))
     by_framework_id = {(normalize_framework(c.framework), c.control_id): c for c in controls}
     for control in controls:
         framework = normalize_framework(control.framework)
@@ -329,7 +341,13 @@ def build_synthesis_topic(
     def _add(control: Control | None) -> None:
         if control is not None and id(control) not in seen:
             seen.add(id(control))
-            topic_controls.append(control)
+            status = vacated.get(normalize_framework(control.framework))
+            if status is not None:
+                from policyforge.frameworks.vacated import for_generation
+
+                control = for_generation(control, status)
+            if control is not None:
+                topic_controls.append(control)
 
     for nist_id in nist_control_ids:
         # **Both meanings of "anchor" meet on these two lines, and they are

@@ -114,6 +114,10 @@ def test_no_bundled_catalog_changed_key():
         "nist-ai-rmf-playbook": "nist-ai-rmf-playbook",
         # "NIST CSF 2.0" keys by the `nist csf` needle, never HITRUST's (#408).
         "nist-csf-2-0": "nist-csf",
+        # Keyed apart from the Security Rule's `hipaa` by the reserved
+        # `hipaa privacy rule` and `hipaa breach` needles (#409).
+        "hipaa-privacy-rule": "hipaa-privacy",
+        "hipaa-breach-notification-rule": "hipaa-breach",
         # Re-landed by #179; its own declared name is pinned, its siblings not.
         "cfr-170-315-onc-certification": "cfr-170-315-onc-certification",
     }

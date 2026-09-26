@@ -1,8 +1,17 @@
 {
-  "note": "Every version each registered prompt has declared, and the text it had, as a fingerprint. A version keeps one text for life: a change to the text is a new version, added by scripts/prompt_versions.py, and tests/test_prompt_fingerprint_file.py fails when the registry holds a version this file does not, or a version whose text differs from the one recorded here. It cannot see an edit to this file in the same change: rewriting a recorded fingerprint to match a changed text passes it. That this file only grows is held by review of its diff. Walked from 2dcdfcf (the registry's first commit) along first-parent main and the release/1.6.1 train. first_seen is the first commit on that walk to show the entry.",
+  "note": "Every version each registered prompt declared on first-parent main and the release/1.6.1 train since the registry's first commit (2dcdfcf), and the text it had, as a fingerprint. A version missing from that walk is listed in unrecorded_versions with the reason. A version that existed only on a pull request's own commits and left no gap in the numbers would not show. A version keeps one text for life: a change to the text is a new version, added by scripts/prompt_versions.py, and tests/test_prompt_fingerprint_file.py fails when the registry holds a version this file does not, or a version whose text differs from the one recorded here. It cannot see an edit to this file in the same change: rewriting a recorded fingerprint to match a changed text passes it. That this file only grows is held by review of its diff. Walked from 2dcdfcf (the registry's first commit) along first-parent main and the release/1.6.1 train. first_seen is the first commit on that walk to show the entry.",
   "reused_versions": {
     "generate.standard 3": "#117 (a193de0) changed the text and kept version 3: two texts under one number.",
     "generate.procedure 2": "#117 (a193de0) changed the text and kept version 2: two texts under one number."
+  },
+  "unrecorded_versions": {
+    "generate.standard 5": "Declared only on PR 359's own commits (refs/pull/359/head), with two texts: 23ad39e (f65b2d3aea9f) and ea2f886 (1eccb6748fb4). #359 squash-merged at v6, so the walk never saw v5 (9b on #422).",
+    "edit.plan 1": "Declared before the registry existed: its first commit, 2dcdfcf, registered edit.plan at v2.",
+    "zardoz.answer 1": "Declared before the registry existed: its first commit, 2dcdfcf, registered zardoz.answer at v6.",
+    "zardoz.answer 2": "Declared before the registry existed: its first commit, 2dcdfcf, registered zardoz.answer at v6.",
+    "zardoz.answer 3": "Declared before the registry existed: its first commit, 2dcdfcf, registered zardoz.answer at v6.",
+    "zardoz.answer 4": "Declared before the registry existed: its first commit, 2dcdfcf, registered zardoz.answer at v6.",
+    "zardoz.answer 5": "Declared before the registry existed: its first commit, 2dcdfcf, registered zardoz.answer at v6."
   },
   "prompts": {
     "crosswalk.propose": {

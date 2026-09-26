@@ -110,6 +110,22 @@ def test_the_only_reused_versions_are_117s_and_they_are_named():
     )
 
 
+def test_every_gap_in_a_prompts_versions_is_explained():
+    """The ledger is walked along main and the train, so a version declared
+    only on a pull request's own commits (generate.standard v5, on #359) or
+    before the registry existed (edit.plan v1, zardoz.answer v1-5) is not in
+    it. Each such gap is named with its reason (9b on #422), and a version
+    skipped from now on fails here until someone says why."""
+    record = _ledger()
+    gaps = {
+        f"{name} {missing}"
+        for name, versions in record["prompts"].items()
+        for missing in range(1, max(int(v) for v in versions) + 1)
+        if str(missing) not in versions
+    }
+    assert gaps == set(record["unrecorded_versions"])
+
+
 def _edit(monkeypatch, name: str, text: str, version: int) -> None:
     monkeypatch.setitem(
         prompts.REGISTRY, name, replace(prompts.REGISTRY[name], text=text, version=version)

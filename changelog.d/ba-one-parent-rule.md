@@ -11,9 +11,9 @@ proposes `Govern 1`. A page citing only Playbook actions still proposes
 none.
 
 **`drift` reaches more of what a change affects.**
+
 - An AI RMF change now reaches the documents citing its category or any
-  subcategory in it (`Govern 1.3` reaches `Govern 1` and every `Govern
-  1.x`). Before, no AI RMF change reached any document. A Playbook change
+  subcategory in it (`Govern 1.3` reaches `Govern 1` and every `Govern 1.x`). Before, no AI RMF change reached any document. A Playbook change
   reaches documents citing Playbook actions for the same subcategory.
 - A change in a catalog topics do not anchor now reaches topics through
   that catalog's crosswalk to 800-53, not by the shape of its ids. HIPAA and

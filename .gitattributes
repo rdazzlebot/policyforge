@@ -16,3 +16,8 @@
 # Windows checkout (core.autocrlf=true) would make the fixture fail its own
 # pin -- on Windows only, where nothing about it looks wrong.
 tests/fixtures/airc_ai_rmf_playbook.json -text
+
+# Byte-exact too: the deontic corpus (#376) is named by SHA-256 set-hashes
+# over these bytes, in its README, and a checkout that rewrote their line
+# endings would name a different corpus.
+tests/fixtures/deontic_corpus/documents/** -text

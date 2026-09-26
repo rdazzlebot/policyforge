@@ -166,6 +166,41 @@ def renames(recorded: dict[str, str]) -> list[tuple[str, str]]:
     return pairs
 
 
+def ledger_problems(ledger: dict[str, dict[str, list[dict]]]) -> list[str]:
+    """Where the registry disagrees with the version ledger.
+
+    `ledger` is `{name: {version: [{"fingerprint": ...}, ...]}}`, as
+    `evals/prompt-versions.json` holds it. **A version keeps one text for
+    life.** Every registered prompt's current version must be in the ledger,
+    holding exactly its current fingerprint. A declared version is the only
+    part of a prompt's identity a person writes by hand, so it is the part
+    that gets forgotten: #117 changed the text of `generate.standard` and
+    `generate.procedure` and kept both at their version (#236).
+
+    **Against the ledger, not the epoch file** (1d on #236). The epoch file
+    lags until the next epoch on purpose, so a guard against it catches only
+    the first unbumped edit after each epoch: v6 -> v7, then a second edit
+    that stays at v7, compares v7 with the epoch's v3 and passes. The ledger
+    records v7's text the moment v7 exists, so the second edit is caught.
+    One line per problem; empty means every prompt's version names one text.
+    """
+    problems = []
+    for name, prompt in sorted(REGISTRY.items()):
+        entries = ledger.get(name, {}).get(str(prompt.version))
+        if not entries:
+            problems.append(
+                f"{name} v{prompt.version} ({prompt.fingerprint}) is not in the ledger: "
+                "record it with scripts/prompt_versions.py"
+            )
+        elif [e["fingerprint"] for e in entries] != [prompt.fingerprint]:
+            recorded = ", ".join(e["fingerprint"] for e in entries)
+            problems.append(
+                f"{name} v{prompt.version}: text changed ({recorded} -> {prompt.fingerprint}) "
+                "without a new version"
+            )
+    return problems
+
+
 def compare(recorded: dict[str, str]) -> list[str]:
     """What changed between `recorded` fingerprints and the current ones.
 

@@ -1342,14 +1342,37 @@ def run_case(
 FINGERPRINT_FILE = Path(__file__).with_name("prompt-fingerprints.json")
 
 
-def recorded_fingerprints() -> dict[str, str]:
-    """The fingerprints the newest MEASUREMENTS.md epoch was produced by."""
+def recorded_epoch() -> dict:
+    """The newest MEASUREMENTS.md epoch's record: which epoch it is, the PR
+    and commits it ran at, and each prompt's fingerprint and version (#236).
+    Empty when there is no file."""
     import json
 
     try:
         return json.loads(FINGERPRINT_FILE.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {}
+
+
+#: Every version each prompt has declared, and its one text (#236).
+VERSION_FILE = Path(__file__).with_name("prompt-versions.json")
+
+
+def recorded_versions() -> dict:
+    """`{name: {version: [{"fingerprint": ...}]}}` from the version ledger."""
+    import json
+
+    try:
+        return json.loads(VERSION_FILE.read_text(encoding="utf-8"))["prompts"]
+    except FileNotFoundError:
+        return {}
+
+
+def recorded_fingerprints() -> dict[str, str]:
+    """The fingerprints the newest MEASUREMENTS.md epoch was produced by."""
+    return {
+        name: entry["fingerprint"] for name, entry in recorded_epoch().get("prompts", {}).items()
+    }
 
 
 def code_provenance() -> list[str]:
@@ -1453,16 +1476,26 @@ def prompt_epoch_report() -> list[str]:
         f"  {old} is now {new}: renamed, text unchanged ({current[new]})"
         for old, new in prompts.renames(recorded)
     ]
+    # Named, so a difference reads as "since epoch 24" rather than as a list
+    # nobody can date (#236: a report that was always non-empty became
+    # background).
+    epoch = recorded_epoch()
+    which = f"epoch {epoch.get('epoch', '?')} (PR #{epoch.get('pr', '?')}, " + (
+        f"{str(epoch.get('computed_at', '?'))[:7]})"
+    )
+    versions = prompts.ledger_problems(recorded_versions())
+    if versions:
+        lines += ["", "  The version ledger disagrees, so a version cannot be trusted:"]
+        lines += [f"    {line}" for line in versions]
     differences = prompts.compare(recorded)
     if not differences:
-        lines += ["", "  Unchanged since the last recorded epoch — comparable with it."]
+        lines += ["", f"  Unchanged since {which} — comparable with it."]
         return lines
 
     lines += [
         "",
-        f"  {len(differences)} prompt(s) differ from the last recorded epoch. These "
-        "numbers are NOT comparable with the epoch above them in MEASUREMENTS.md; "
-        "open a new one.",
+        f"  {len(differences)} prompt(s) differ from {which}. These numbers are NOT "
+        "comparable with it in MEASUREMENTS.md; open a new epoch.",
     ]
     lines += [f"    {line}" for line in differences]
     return lines

@@ -1,17 +1,79 @@
 {
-  "crosswalk.propose": "dc1342fdc46a",
-  "edit.apply": "1bc54ff2e02b",
-  "edit.plan": "49afd7cad918",
-  "entail.judge": "619d6f0d6cec",
-  "generate.policy": "a10e9d1d4f4d",
-  "generate.procedure": "b1ff8fad8db1",
-  "generate.standard": "e1b15e2b94b0",
-  "zardoz.answer": "8052fd27359b",
-  "zardoz.cluster.json": "c06e89bdf1b8",
-  "zardoz.cluster.lines": "3f58d07e4945",
-  "zardoz.expand": "98054e760a61",
-  "zardoz.resolve": "6fe729b4c6f6",
-  "zardoz.route": "78f4d56ba1aa",
-  "zardoz.route.also": "7ddf2e6787a9",
-  "zardoz.route.arguments": "b76112165eeb"
+  "epoch": "24",
+  "computed_at": "6244fb1ee10b70905464db734b8f62a52401996c",
+  "pull_ref": "refs/pull/234/head",
+  "pr": 234,
+  "merge_commit": "e735b51cd7abca4a1d533d159df83744958b8cd5",
+  "merge_commit_on": "release/1.6.1",
+  "recorded_in": {
+    "pr": 238,
+    "merge_commit": "58d643d33e1ebaceb27b399650bedf80214bd99f"
+  },
+  "note": "Epoch 24 ran at computed_at, the head of PR 234, which survives on GitHub as pull_ref. The fingerprints were computed there, and are identical at merge_commit, PR 234's squash on release/1.6.1. The epoch was written into MEASUREMENTS.md by PR 238.",
+  "prompts": {
+    "crosswalk.propose": {
+      "fingerprint": "dc1342fdc46a",
+      "version": 1
+    },
+    "edit.apply": {
+      "fingerprint": "1bc54ff2e02b",
+      "version": 1
+    },
+    "edit.plan": {
+      "fingerprint": "49afd7cad918",
+      "version": 2
+    },
+    "entail.judge": {
+      "fingerprint": "619d6f0d6cec",
+      "version": 1
+    },
+    "generate.policy": {
+      "fingerprint": "a10e9d1d4f4d",
+      "version": 1
+    },
+    "generate.procedure": {
+      "fingerprint": "e767e7d15e84",
+      "version": 2
+    },
+    "generate.standard": {
+      "fingerprint": "984bff1c3bf0",
+      "version": 3
+    },
+    "synthesis.merge": {
+      "fingerprint": "21158dc4300b",
+      "version": 1
+    },
+    "zardoz.answer": {
+      "fingerprint": "8052fd27359b",
+      "version": 6
+    },
+    "zardoz.cluster.json": {
+      "fingerprint": "c06e89bdf1b8",
+      "version": 1
+    },
+    "zardoz.cluster.lines": {
+      "fingerprint": "3f58d07e4945",
+      "version": 1
+    },
+    "zardoz.expand": {
+      "fingerprint": "98054e760a61",
+      "version": 1
+    },
+    "zardoz.resolve": {
+      "fingerprint": "6fe729b4c6f6",
+      "version": 1
+    },
+    "zardoz.route": {
+      "fingerprint": "78f4d56ba1aa",
+      "version": 1
+    },
+    "zardoz.route.also": {
+      "fingerprint": "7ddf2e6787a9",
+      "version": 1
+    },
+    "zardoz.route.arguments": {
+      "fingerprint": "b76112165eeb",
+      "version": 1
+    }
+  }
 }

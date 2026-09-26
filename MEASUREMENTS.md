@@ -308,6 +308,22 @@ tempted to read it as a verdict. On this corpus it costs cents (see epoch
 23's cost correction), so **declining it on cost is declining it on a
 figure that was never measured.**
 
+**4. Record the prompts it ran on, in `evals/prompt-fingerprints.json`.**
+That file is the newest epoch's fingerprints, and every run's report
+compares against it by name ("differ from epoch 24"). Epochs 19 to 24 never
+wrote it, so it held epoch 18's fingerprints while the reports said "the
+last recorded epoch" (#236). An epoch that generates or grades with a registered
+prompt writes the file: the epoch, the PR and pull ref it ran at, the
+commit the fingerprints were computed at, a merged commit reachable from a
+branch, and each prompt's fingerprint and version. Separately, a prompt
+whose text changes must declare a new version, recorded in
+`evals/prompt-versions.json` by `scripts/prompt_versions.py`, and
+`tests/test_prompt_fingerprint_file.py` fails when it is not. #117 changed
+both generation prompts at the same version, and only the fingerprint told
+the epochs either side of it apart. The ledger, not the epoch file, holds
+that guard: the epoch file lags, so it would catch only the first such edit
+after each epoch.
+
 A registration that follows all three states, for each criterion:
 
 ```

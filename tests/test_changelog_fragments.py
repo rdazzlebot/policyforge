@@ -342,9 +342,9 @@ def test_above_or_below_that_is_not_a_pointer_passes(tmp_path: Path, sentence: s
     strict=True,
     reason=(
         "known miss, named in _POSITIONAL's comment: a pointer whose subject is "
-        "any other noun. This is 1.5.0's CHANGELOG pointing 79 lines back at "
-        "another entry (1d on #420). Strict, so it goes red the day it is caught "
-        "and this marker has to come off."
+        "any other noun: the first is 1.5.0's CHANGELOG pointing 79 lines back at "
+        "another entry, the second one of 1d's domain sentences (both on #420). "
+        "Strict, so either goes red the day it is caught and has to move."
     ),
 )
 @pytest.mark.parametrize(

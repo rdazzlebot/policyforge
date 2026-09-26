@@ -32,6 +32,7 @@ from copy import deepcopy
 
 from policyforge.config import load_config
 from policyforge.llm.base import get_provider
+from policyforge.llm.boundary import LOCAL, classify_provider
 from policyforge.llm.ledger import ledger_path
 
 #: The file name eval runs record to, beside whatever the production ledger
@@ -97,9 +98,17 @@ class Metered:
     thing driving the run can see the whole of one.
     """
 
-    def __init__(self, inner):
+    def __init__(self, inner, provider_class: str | None = None):
         self._inner = inner
+        #: The boundary class of the configured provider, so a local model's
+        #: unpriced reply counts as free (#446, the rule of #379's ruling).
+        #: None when unknown, which never counts a reply as free. Given by
+        #: `build_provider`; otherwise read off the ledger wrapper when there
+        #: is one (the entailment judge in `eval_zardoz` is built that way).
+        self._provider_class = provider_class or getattr(inner, "_provider_class", None)
         self.calls = 0
+        #: The known part of the run's cost: every priced reply, and the known
+        #: last attempt of a reply whose own total is unknown (#382).
         self.cost = 0.0
         #: True once any call priced itself. Distinguishes "this run was
         #: free" from "nobody reported a price", which a bare 0.0 cannot.
@@ -107,6 +116,16 @@ class Metered:
         #: Calls that raised. They reached the vendor and were billed, but
         #: no response came back to read a price off.
         self.unpriced = 0
+        #: Calls that RETURNED with no price (#446). Until #446 these were
+        #: counted in `calls` and nowhere else, so the known part stood as
+        #: the total and the per-call figure was divided by them as though
+        #: they were free: one priced $0.10 reply and one unpriced read
+        #: "$0.1000 total, $0.05000 each" (ba's repro, from #450).
+        self.returned_unpriced = 0
+        #: Replies whose whole cost is known, and what they cost: the only
+        #: honest base for a per-call figure.
+        self.priced_calls = 0
+        self.priced_cost = 0.0
         #: Every reply, in order: (stop_reason, output_tokens, model). The
         #: runner slices this per run so a report can say whether a failed
         #: run's reply was cut off — b5's re-measure had one `length` stop
@@ -134,6 +153,18 @@ class Metered:
         if response.cost_usd is not None:
             self.cost += response.cost_usd
             self.priced = True
+            self.priced_calls += 1
+            self.priced_cost += response.cost_usd
+        elif self._provider_class == LOCAL:
+            # A local model is free although its endpoint reports no price.
+            self.priced = True
+            self.priced_calls += 1
+        else:
+            self.returned_unpriced += 1
+            last = getattr(response, "last_cost_usd", None)
+            if last is not None:
+                self.cost += last
+                self.priced = True
         self.replies.append(
             (
                 getattr(response, "stop_reason", None),
@@ -182,8 +213,17 @@ class Metered:
     def summary(self) -> str:
         if not self.priced:
             return f"{self.calls} model call(s); this provider does not report cost"
-        each = self.cost / self.calls if self.calls else 0.0
-        line = f"{self.calls} model call(s), ${self.cost:.4f} total, ${each:.5f} each"
+        unknown = self.unpriced + self.returned_unpriced
+        if not unknown:
+            each = self.cost / self.calls if self.calls else 0.0
+            line = f"{self.calls} model call(s), ${self.cost:.4f} total, ${each:.5f} each"
+        else:
+            # #446, #379's rule: never the known part as the total, and a
+            # per-call figure only over the calls whose cost is known.
+            line = f"{self.calls} model call(s), ${self.cost:.4f} known + {unknown} of unknown cost"
+            if self.priced_calls:
+                each = self.priced_cost / self.priced_calls
+                line += f", ${each:.5f} each over {self.priced_calls} priced"
         # A cascade's whole economic case is how rarely the cheap model
         # needed help. The counter existed and nothing printed it, which
         # made a working cascade indistinguishable from a dead one.
@@ -192,11 +232,13 @@ class Metered:
             primary = getattr(self._inner, "primary_calls", 0)
             share = f"{escalations / primary:.0%}" if primary else "n/a"
             line += f"; {escalations}/{primary} escalated to the stronger model ({share})"
-        if self.unpriced:
-            # Said out loud rather than folded in: the total is a floor, and
-            # a reader comparing two models needs to know which way it is
-            # wrong.
-            line += f" (+{self.unpriced} call(s) that raised, billed but unpriced)"
+        if unknown:
+            # Said out loud rather than folded in: which kind of unknown, so a
+            # reader comparing two models knows which way the figure is wrong.
+            line += (
+                f" ({self.unpriced} raised, billed but unpriced; "
+                f"{self.returned_unpriced} returned no price)"
+            )
         return line
 
 
@@ -207,4 +249,7 @@ def build_provider(config: dict) -> Metered:
     provider, ledger wrapper included, so what the harness measures is what
     a user runs.
     """
-    return Metered(get_provider(config))
+    # The class comes from config, not from the provider: with the ledger
+    # off, the provider is unwrapped and carries none (#446).
+    klass = classify_provider(config.get("llm") or {}).klass
+    return Metered(get_provider(config), provider_class=klass)

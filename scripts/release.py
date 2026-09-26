@@ -386,6 +386,128 @@ def _bump(ctx: Context) -> None:
         )
 
 
+# --- the install pins (#413) --------------------------------------------------
+#
+# README tells a user without Homebrew to run
+# `pipx install git+https://github.com/<owner>/policyforge@vX.Y.Z`. The 1.6.1
+# cut moved nothing there, so the released README installed 1.6.0 (5b; 80's
+# ruling on #413: the pins stay, and the cut moves them). The population is
+# DERIVED, every pin in every tracked text file, and CLASSIFIED rather than
+# filtered, so a pin in a new file is rewritten or refused, never skipped:
+#
+#     instruction   anywhere else     rewritten to this release
+#     history       CHANGELOG.md      what a past release said; never touched
+#     test          under tests/      fixtures; never touched
+
+#: A pin of `<owner>/policyforge` at a release, as an install command writes
+#: it. The owner is captured so a pin naming the redirect's old owner is
+#: refused rather than moved (CLAUDE.md: a redirect is not a reference).
+_PIN_RE = re.compile(r"([A-Za-z0-9_.-]+)/policyforge(?:\.git)?@v(\d+\.\d+\.\d+)\b")
+#: The same shape for `git grep -E`, which finds the lines `_PIN_RE` reads.
+_PIN_ERE = r"[A-Za-z0-9_.-]+/policyforge(\.git)?@v[0-9]+\.[0-9]+\.[0-9]+"
+
+
+@dataclass(frozen=True)
+class Pin:
+    path: str
+    line: int
+    owner: str
+    version: str
+
+    @property
+    def kind(self) -> str:
+        if self.path == "CHANGELOG.md":
+            return "history"
+        if self.path.startswith("tests/"):
+            return "test"
+        return "instruction"
+
+    @property
+    def canonical(self) -> bool:
+        return f"{self.owner}/policyforge" == release_check.REPOSITORY
+
+    def __str__(self) -> str:
+        return f"{self.path}:{self.line} {self.owner}/policyforge@v{self.version}"
+
+
+def _pins(ctx: Context, at: str = "") -> list[Pin] | None:
+    """Every pin in every tracked text file, in the working tree or at `at`
+    (a commit). None when `git grep` fails: no answer is not zero pins."""
+    argv = ["git", "-C", str(ctx.root), "grep", "-n", "-I", "-E", _PIN_ERE]
+    if at:
+        argv.append(at)
+    out = ctx.run(argv)
+    if out.returncode not in (0, 1):  # 1 is "no match"; anything else, no answer
+        return None
+    found = []
+    for row in (out.stdout or "").splitlines():
+        if at:
+            row = row[len(at) + 1 :]  # `HEAD:path:line:text`
+        path, number, text = row.split(":", 2)
+        for match in _PIN_RE.finditer(text):
+            found.append(Pin(path, int(number), match.group(1), match.group(2)))
+    return found
+
+
+def _pin_lines(pins: list[Pin]) -> list[str]:
+    by_kind = {
+        kind: [p for p in pins if p.kind == kind] for kind in ("instruction", "history", "test")
+    }
+    return [f"install pins: {', '.join(f'{k} {len(v)}' for k, v in by_kind.items())}"]
+
+
+def _pins_ready(ctx: Context) -> Check:
+    pins = _pins(ctx)
+    if pins is None:
+        return Check(False, ["git grep failed, so the pins are unknown (not zero)"])
+    instructions = [p for p in pins if p.kind == "instruction"]
+    foreign = [p for p in instructions if not p.canonical]
+    ctx.notes["pins"] = str(len(instructions))
+    return Check(
+        not foreign,
+        [
+            *_pin_lines(pins),
+            *(f"names another owner, rewrite it by hand first: {p}" for p in foreign),
+        ],
+    )
+
+
+def _pins_current(ctx: Context) -> Check:
+    pins = _pins(ctx)
+    if pins is None:
+        return Check(False, ["git grep failed, so the pins are unknown (not current)"])
+    instructions = [p for p in pins if p.kind == "instruction"]
+    stale = [p for p in instructions if p.version != ctx.version or not p.canonical]
+    # Conservation: the step moves pins, it never loses one. Known only after
+    # the gate has counted them in this run.
+    before = ctx.notes.get("pins")
+    kept = before is None or int(before) == len(instructions)
+    return Check(
+        not stale and kept,
+        [
+            *_pin_lines(pins),
+            *(f"not at v{ctx.version}: {p}" for p in stale),
+            *([] if kept else [f"instruction pins {before} before, {len(instructions)} after"]),
+        ],
+    )
+
+
+def _repin(ctx: Context) -> None:
+    pins = _pins(ctx) or []
+    for path in sorted({p.path for p in pins if p.kind == "instruction" and p.canonical}):
+        file = ctx.root / path
+        text = file.read_text(encoding="utf-8")
+        text = _PIN_RE.sub(
+            lambda m: (
+                m.group(0).replace(f"@v{m.group(2)}", f"@v{ctx.version}")
+                if f"{m.group(1)}/policyforge" == release_check.REPOSITORY
+                else m.group(0)
+            ),
+            text,
+        )
+        file.write_text(text, encoding="utf-8", newline="\n")
+
+
 def _release_pr(ctx: Context) -> dict:
     out = ctx.run(
         [
@@ -445,6 +567,12 @@ def _cut_at_head(ctx: Context) -> list[tuple[bool, str]]:
         if name.endswith(".md") and Path(name).name not in changelog_fragments.NOT_A_FRAGMENT
     ]
     dirty = _dirty_paths(ctx)
+    pins = _pins(ctx, "HEAD")
+    stale = (
+        None
+        if pins is None
+        else [p for p in pins if p.kind == "instruction" and p.version != ctx.version]
+    )
     return [
         (
             a == b == ctx.version,
@@ -452,6 +580,11 @@ def _cut_at_head(ctx: Context) -> list[tuple[bool, str]]:
         ),
         (section, f"at HEAD: `## {ctx.version}` in CHANGELOG.md: {section}"),
         (not left, f"at HEAD: fragments left: {len(left)} (must be 0)"),
+        (
+            stale == [],
+            f"at HEAD: install pins not at v{ctx.version}: "
+            + ("unknown, git grep failed" if stale is None else str(len(stale))),
+        ),
         (not dirty, f"uncommitted changes: {len(dirty)} (must be 0: the cut is committed)"),
     ]
 
@@ -1176,6 +1309,16 @@ def steps() -> list[Step]:
             _bumped,
             _bump,
             would="set both version strings",
+            commits_to="release-pr",
+        ),
+        Step(
+            "install-pins",
+            "point every install pin at this release (#413)",
+            ACT,
+            _pins_ready,
+            _pins_current,
+            _repin,
+            would="rewrite each `<owner>/policyforge@vX.Y.Z` in the docs to this release",
             commits_to="release-pr",
         ),
         Step(

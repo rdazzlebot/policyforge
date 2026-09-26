@@ -785,3 +785,100 @@ def test_the_docstring_lists_every_state_the_code_can_return():
     doc = review_lines.__doc__ or ""
     missing = [state for state in returned if state not in doc]
     assert not missing, f"states the code returns and the module docstring does not list: {missing}"
+
+
+# --- #425: a declared stake --------------------------------------------------
+
+_SHA = "c" * 40
+_AT_HEAD = review_lines.Location(resolves=True, at_head=True, ancestor_of_head=False)
+
+
+def _declared(
+    verdict: str = "approved", reviewer: str = "policyforge-9b", tail: str = "counted=no"
+):
+    return {
+        "body": f"Read it.\n\nReviewed-SHA: {_SHA} verdict={verdict} reviewer={reviewer} {tail}"
+    }
+
+
+def _line(fields: dict) -> review_lines.Line:
+    return review_lines.Line(
+        sha=fields["sha"],
+        verdict=fields["verdict"],
+        reviewer=fields["reviewer"],
+        shape=review_lines.shape_of(
+            fields["sha"], fields["verdict"], fields["reviewer"], fields["tokens"]
+        ),
+        location=_AT_HEAD,
+        counted=fields["counted"],
+    )
+
+
+def test_a_declared_stake_is_read_not_dropped():
+    """Before #425 the pattern ended at `reviewer=`, so this line did not
+    parse and the verdict vanished from every report, objection included."""
+    (found,) = review_lines.verdict_lines([_declared()])
+    assert (found["reviewer"], found["verdict"], found["counted"]) == (
+        "policyforge-9b",
+        "approved",
+        False,
+    )
+    assert found["tokens"] == ("counted=no",)
+
+
+def test_a_declared_stake_never_counts_and_the_same_line_without_it_does():
+    (declared,) = review_lines.verdict_lines([_declared()])
+    (plain,) = review_lines.verdict_lines([_declared(tail="")])
+    (explicit,) = review_lines.verdict_lines([_declared(tail="counted=yes")])
+    assert not _line(declared).counts
+    assert _line(plain).counts
+    assert _line(explicit).counts and not _line(explicit).shape.faults
+
+
+def test_an_unknown_token_is_reported_and_does_not_count():
+    """An unknown word on a verdict line is reported, as an unknown verdict
+    is, and a line whose meaning this reader cannot tell does not count."""
+    for tail in ("lgtm", "counted=maybe"):
+        (found,) = review_lines.verdict_lines([_declared(tail=tail)])
+        line = _line(found)
+        assert any("UNKNOWN TOKEN" in fault for fault in line.shape.faults), tail
+        assert not line.counts, tail
+
+
+def test_a_declared_stake_still_objects_and_can_retire_its_own_objection():
+    """A stake changes whose approval is counted, not whose finding stands."""
+    objection = _line(review_lines.verdict_lines([_declared("changes-requested")])[0])
+    withdrawal = _line(review_lines.verdict_lines([_declared("approved")])[0])
+    ((_, alone, _),) = review_lines.objection_states([objection])
+    ((_, answered, by),) = review_lines.objection_states([objection, withdrawal])
+    assert alone == "OPEN"
+    assert answered == "RETIRED AT HEAD" and by is withdrawal
+
+
+def test_the_report_names_counted_and_declared_readers_apart(monkeypatch, capsys):
+    comments = [
+        _declared("approved", "policyforge-9b"),
+        _declared("approved", "policyforge-1d", tail=""),
+    ]
+    monkeypatch.setattr(review_lines, "fetch", lambda number, repo: (_SHA, comments, len(comments)))
+    monkeypatch.setattr(review_lines, "location_of", lambda sha, head: _AT_HEAD)
+    assert review_lines.report(421, "o/r") == 0
+    out = capsys.readouterr().out
+    assert "approvals at head from counted readers: policyforge-1d" in out
+    assert "declared a stake: policyforge-9b" in out
+    assert "UNCOUNTED (declared stake)" in out
+
+
+def test_an_approval_with_an_unknown_token_does_not_retire_an_objection():
+    """policyforge-ba on #428: "(retracted)" is reported as a fault on the same
+    screen; it must not also quietly withdraw the objection."""
+    objection = _line(review_lines.verdict_lines([_declared("changes-requested", tail="")])[0])
+    for tail in ("(retracted)", "counted=no.", "COUNTED=NO"):
+        approval = _line(review_lines.verdict_lines([_declared("approved", tail=tail)])[0])
+        ((_, state, _),) = review_lines.objection_states([objection, approval])
+        assert state == "OPEN", tail
+
+
+def test_both_count_tokens_on_one_line_never_count():
+    (both,) = review_lines.verdict_lines([_declared(tail="counted=no counted=yes")])
+    assert not _line(both).counts

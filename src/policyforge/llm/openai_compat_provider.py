@@ -232,6 +232,10 @@ class OpenAICompatProvider(LLMProvider):
                 "reasoning_tokens"
             ),
             stripped_reasoning_chars=stripped,
+            # The server's id, where it sends one: kept on the exhaustion
+            # path since #343, and dropped here until #426, so every local
+            # row we measured had none.
+            request_id=data.get("id"),
         )
 
     def supports_schema(self) -> bool:
@@ -294,6 +298,7 @@ class OpenAICompatProvider(LLMProvider):
                 f"{self.model} was asked for JSON matching a schema and returned "
                 f"something else: {response.text[:160]!r}",
                 text=response.text,
+                response=response,
             ) from exc
         return response
 

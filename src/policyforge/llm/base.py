@@ -27,9 +27,17 @@ class SchemaReplyError(RuntimeError):
     retries on it only doubles the wait.
     """
 
-    def __init__(self, message: str, text: str):
+    def __init__(self, message: str, text: str, response: LLMResponse | None = None):
         super().__init__(message)
         self.text = text
+        # The reply was billed (#426). Its id, cost and tokens travel on the
+        # exception, as a re-send's do (#343), since this call reaches the
+        # ledger with no response: 22 real rows had lost both id and cost.
+        self.cost_usd = response.cost_usd if response else None
+        self.last_cost_usd = response.last_cost_usd if response else None
+        self.request_id = response.request_id if response else None
+        self.input_tokens = response.input_tokens if response else None
+        self.output_tokens = response.output_tokens if response else None
 
 
 @dataclass
@@ -108,6 +116,13 @@ class LLMResponse:
     #: Anthropic support asks for. Free on every response and impossible to
     #: reconstruct afterwards.
     request_id: str | None = None
+    #: The LAST attempt's own cost, when known: the request `request_id`
+    #: names. Equal to `cost_usd` for a call sent once. After a re-send
+    #: `cost_usd` is every attempt summed, or None if any attempt's cost is
+    #: unknown, and this is what keeps the last attempt's known figure in
+    #: that case (#382). The ledger records it only on a row whose total is
+    #: None; it is never an addend to a total that is known.
+    last_cost_usd: float | None = None
     #: Spans the API says were quoted, when the request sent its passages as
     #: document blocks. `llm/grounded.py` says what makes these different
     #: from the `[2]` markers a model writes: the text is extracted from the

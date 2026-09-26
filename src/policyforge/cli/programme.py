@@ -573,17 +573,22 @@ def parameters_cmd(
             for topic in load_topics(topics_path)
             for control_id in topic.nist_controls
         }
-        # An anchor claims its enhancements by id prefix, so AC-2 in the
-        # registry brings AC-2(1)'s parameters with it. **Deliberately NOT
-        # coverage's `parent_of`** (#318): that rule reads no framework and
-        # is only ever given the anchorable catalogs, while this filters
-        # every loaded catalog. Swapped in here, it claimed 72 NIST AI RMF
-        # Playbook rows (`Govern 1.1` under an anchored `Govern 1`), and a
-        # topic owns nothing in the Playbook.
+        # The one rule for what a topic reaches (#377), over the catalogs
+        # loaded here: an anchor claims its own catalog's children (AC-2 brings
+        # AC-2(1)), and a catalog topics do not anchor is reached through its
+        # crosswalk to 800-53 (80's ruling (B) on #377). This used a bare
+        # `split("(")`, which reached FedRAMP by id shape and 800-171 not at
+        # all; and coverage's old `parent_of`, which read no framework, claimed
+        # 72 Playbook rows when swapped in (#318). A topic owns nothing in the
+        # Playbook, and `topic_keys` reads the framework, so it claims none.
+        from policyforge.mapping.crosswalk import build_crosswalk
+        from policyforge.topics.anchoring import topic_keys
+
+        crosswalk = build_crosswalk(controls)
         controls = [
             c
             for c in controls
-            if c.control_id.upper() in anchored or c.control_id.upper().split("(")[0] in anchored
+            if {k.upper() for k in topic_keys(c.control_id, c.framework, crosswalk)} & anchored
         ]
 
     if not controls:

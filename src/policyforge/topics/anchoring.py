@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import re
 
-from policyforge.mapping.crosswalk import TOPIC_ANCHORS, normalize_framework
+from policyforge.mapping.crosswalk import NIST_ANCHOR, TOPIC_ANCHORS, normalize_framework
 
 #: How a child id names its parent, per catalog a topic may anchor. Keyed by
 #: normalized framework, and **held equal to `TOPIC_ANCHORS`** by
@@ -108,3 +108,54 @@ def family_of(requirement_id: str, framework: str) -> str:
     rule = _FAMILY_RES.get(normalize_framework(framework))
     match = rule.match(requirement_id) if rule else None
     return match.group(1) if match else requirement_id
+
+
+def topic_keys(
+    requirement_id: str,
+    framework: str,
+    crosswalk: dict[str, dict[str, list[str]]] | None = None,
+    relationships: dict[tuple[str, str, str], str] | None = None,
+) -> frozenset[str]:
+    """The ids a topic may anchor to be reached by `requirement_id`, from ANY
+    catalog: topic reach, whole (80's ruling (B) on #377).
+
+    For a catalog topics anchor, `anchor_keys`. For any other, **through the
+    crosswalk**, as `ANCHOR_DECISIONS` says those catalogs are reached: the
+    anchor keys of every 800-53 control the crosswalk maps the requirement
+    to, in full by `coverage.reaches_in_full` (the one reading of "partial",
+    #185). `crosswalk` is `build_crosswalk` over the catalogs actually
+    loaded, keyed NIST-first, so a catalog nobody loaded reaches nothing.
+
+    A FedRAMP or ARC-AMPE id reaches what it did when this matched by id
+    shape, because their crosswalks map each id to itself. HIPAA and
+    800-171 reach topics for the first time, through NIST's and HHS's own
+    mappings. A catalog with no crosswalk (the Playbook, Part 2, ONC,
+    Information Blocking) reaches none.
+    """
+    if normalize_framework(framework) in TOPIC_ANCHORS:
+        return anchor_keys(requirement_id, framework)
+    keys: set[str] = set()
+    for nist_id in crosswalked(requirement_id, framework, crosswalk, relationships):
+        keys |= anchor_keys(nist_id, NIST_ANCHOR)
+    return frozenset(keys)
+
+
+def crosswalked(
+    requirement_id: str,
+    framework: str,
+    crosswalk: dict[str, dict[str, list[str]]] | None,
+    relationships: dict[tuple[str, str, str], str] | None = None,
+) -> set[str]:
+    """The 800-53 ids the loaded crosswalk maps `requirement_id` to in full.
+
+    Empty for 800-53 itself and for any catalog with no mapping loaded.
+    """
+    from policyforge.topics.coverage import reaches_in_full
+
+    key = normalize_framework(framework)
+    return {
+        nist_id
+        for nist_id, mapped in (crosswalk or {}).items()
+        if requirement_id in mapped.get(key, ())
+        and reaches_in_full(key, requirement_id, nist_id, relationships or {})
+    }

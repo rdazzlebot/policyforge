@@ -47,6 +47,24 @@ from policyforge.topics.registry import Topic
 PARTIAL_RELATIONSHIPS = frozenset({"superset", "intersects"})
 
 
+def reaches_in_full(
+    framework: str,
+    requirement_id: str,
+    nist_id: str,
+    relationships: dict[tuple[str, str, str], str],
+) -> bool:
+    """Whether owning `nist_id` accounts for all of `requirement_id`.
+
+    **The one reading of "partial"** (#185; 80's condition on #377). A pair
+    with no recorded relationship reaches in full, which is what every pair
+    did before relationships were recorded; one recorded as `superset` or
+    `intersects` reaches only in part, and whether that is enough is a
+    person's call. `/coverage` and every reach through the crosswalk ask
+    this, so none of them reads the relationship table a second way.
+    """
+    return relationships.get((framework, requirement_id, nist_id)) not in PARTIAL_RELATIONSHIPS
+
+
 @dataclass
 class FrameworkCoverage:
     """How much of one non-NIST framework the topics reach, via the crosswalk."""
@@ -339,11 +357,10 @@ def _framework_coverage(
     for nist_id in owned:
         for framework, equivalent_ids in crosswalk.get(nist_id, {}).items():
             for requirement_id in equivalent_ids:
-                relationship = relationships.get((framework, requirement_id, nist_id))
-                if relationship in PARTIAL_RELATIONSHIPS:
-                    in_part.setdefault(framework, set()).add(requirement_id)
-                else:
+                if reaches_in_full(framework, requirement_id, nist_id, relationships):
                     reachable.setdefault(framework, set()).add(requirement_id)
+                else:
+                    in_part.setdefault(framework, set()).add(requirement_id)
 
     # **Counted in the unit the crosswalk records.** A control carrying level
     # requirements (HITRUST) is counted per requirement, every level the

@@ -223,3 +223,38 @@ def test_an_800_53_change_reaches_its_siblings_and_the_shorthand(tmp_path):
         {"AC-2(1)"}, root, framework="NIST 800-53", catalog_ids={"AC-2", "AC-2(1)", "AC-2(3)"}
     )
     assert hits == {"AC-2(1)": ["standards/full.md", "standards/sibling.md"]}
+
+
+def test_a_crosswalked_change_reaches_800_53_documents_through_its_mapping(tmp_path):
+    """80's ruling on #377: FedRAMP reaches FedRAMP-cited documents, and NIST
+    ones only through the crosswalk. An 800-171 change reaches 800-53
+    documents in the families NIST maps it to, in full and in shorthand."""
+    from policyforge.frameworks.drift import documents_citing
+
+    root = _docs(
+        tmp_path,
+        own="Managed. [NIST 800-171 03.01.01]",
+        mapped="Reviewed. [NIST 800-53 AC-2(5)]",
+        shorthand="Reviewed. [NIST AC-2]",
+        unmapped="Backed up. [NIST 800-53 CP-9]",
+    )
+    crosswalk = {"AC-2": {"nist-800-171": ["03.01.01"]}}
+    hits = documents_citing(
+        {"03.01.01"}, root, framework="NIST 800-171", catalog_ids={"03.01.01"}, crosswalk=crosswalk
+    )
+    assert hits == {
+        "03.01.01": ["standards/mapped.md", "standards/own.md", "standards/shorthand.md"]
+    }
+
+
+def test_topic_keys_reach_a_crosswalked_catalog_only_through_the_loaded_crosswalk():
+    from policyforge.topics.anchoring import topic_keys
+
+    crosswalk = {"AC-2(3)": {"nist-800-171": ["03.01.01"]}, "RA-1": {"hipaa": ["164.308(a)(1)(i)"]}}
+    assert topic_keys("03.01.01", "NIST 800-171", crosswalk) == {"AC-2(3)", "AC-2"}
+    assert topic_keys("164.308(a)(1)(i)", "HIPAA Security Rule", crosswalk) == {"RA-1"}
+    # Only what is loaded (80's condition): no crosswalk, no reach.
+    assert topic_keys("03.01.01", "NIST 800-171") == set()
+    # A partial relationship does not reach, by coverage's one reading (#185).
+    partial = {("nist-800-171", "03.01.01", "AC-2(3)"): "superset"}
+    assert topic_keys("03.01.01", "NIST 800-171", crosswalk, partial) == set()

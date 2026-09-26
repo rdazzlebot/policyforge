@@ -53,10 +53,6 @@ def _normalize(text: str) -> str:
     return " ".join((text or "").split())
 
 
-def _base_control(control_id: str) -> str:
-    return control_id.split("(")[0].strip().upper()
-
-
 @dataclass
 class ControlChange:
     """One control that arrived, left, or is not what it was."""
@@ -217,7 +213,7 @@ def _enhancement_changes(old, new) -> list[ControlChange]:
 
 
 def documents_citing(
-    controls: set[str], root: Path, *, framework: str = "", catalog_ids=()
+    controls: set[str], root: Path, *, framework: str = "", catalog_ids=(), crosswalk=None
 ) -> dict[str, list[str]]:
     """Control id -> the documents whose source tags cite its family.
 
@@ -239,90 +235,97 @@ def documents_citing(
     `[NIST AC-2]` names it and `[NIST AI RMF Govern 1.3]` does not. This
     matched 800-53-shaped ids in any tag before, so an AI RMF change reached
     no document at all, even one citing it exactly.
+
+    **A catalog reached through the crosswalk also reaches 800-53 documents,
+    and only through it** (80's ruling on #377): a FedRAMP change reaches
+    documents citing FedRAMP's family of it, and documents citing the
+    800-53 family of each control the loaded crosswalk maps it to in full.
     """
     from policyforge.content.tree import load_content_tree
-    from policyforge.mapping.crosswalk import normalize_framework
-    from policyforge.topics.anchoring import family_of
+    from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
+    from policyforge.topics.anchoring import crosswalked, family_of
     from policyforge.topics.satisfies import parse_citations, resolve_framework
 
     hits: dict[str, list[str]] = {}
     key = normalize_framework(framework) if framework else ""
     if not root.exists() or not key:
         return hits
-    index = {key: set(catalog_ids) | set(controls)}
-    wanted: dict[str, list[str]] = {}
+    # {(catalog key, family): the changed ids that reach it}
+    wanted: dict[tuple[str, str], list[str]] = {}
+    index: dict[str, set[str]] = {key: set(catalog_ids) | set(controls)}
     for changed in controls:
-        wanted.setdefault(family_of(changed, framework), []).append(changed)
+        wanted.setdefault((key, family_of(changed, framework)), []).append(changed)
+        if key != NIST_ANCHOR:
+            for nist_id in crosswalked(changed, framework, crosswalk):
+                index.setdefault(NIST_ANCHOR, set()).add(nist_id)
+                wanted.setdefault((NIST_ANCHOR, family_of(nist_id, NIST_ANCHOR)), []).append(
+                    changed
+                )
+    names = [framework, *(["NIST 800-53"] if NIST_ANCHOR in index and key != NIST_ANCHOR else [])]
+
+    def catalogs_cited(written: str, requirement_id: str) -> list[str]:
+        """The loaded catalogs a citation can mean. An abbreviation naming
+        two of them (`NIST` with 800-171 and 800-53 both loaded) resolves
+        to neither in `resolve_framework`, which is right for a report and
+        wrong here: this decides what to re-read, where missing a document
+        is the dangerous direction. So it means each catalog it abbreviates
+        in which the cited id belongs to a family this change reaches."""
+        cited = resolve_framework(written, index)
+        if cited:
+            return [cited]
+        return [
+            key
+            for key, ids in index.items()
+            if (key, family_of(requirement_id, key)) in wanted
+            and resolve_framework(written, {key: ids}) == key
+        ]
 
     documents, _ = load_content_tree(root)
     for document in documents:
-        for written, requirement_id, _, _ in parse_citations(document.body, [framework], index):
-            if resolve_framework(written, index) != key:
-                continue
-            for changed in wanted.get(family_of(requirement_id, framework), []):
-                hits.setdefault(changed, []).append(document.relative_path)
+        for written, requirement_id, _, _ in parse_citations(document.body, names, index):
+            for cited in catalogs_cited(written, requirement_id):
+                for changed in wanted.get((cited, family_of(requirement_id, cited)), []):
+                    hits.setdefault(changed, []).append(document.relative_path)
     return {changed: sorted(set(paths)) for changed, paths in hits.items()}
 
 
-#: Catalogs whose ids read like an anchored catalog's but that no topic
-#: anchors: a Playbook change keyed `Govern 1.1` is NIST's suggestion under
-#: that subcategory, not the subcategory ("never anchored", ANCHOR_DECISIONS).
-_REACHES_NO_TOPIC = frozenset({"nist-ai-rmf-playbook"})
-
-
-def _topic_keys(control_id: str, framework: str) -> set[str] | None:
-    """The ids a topic may anchor to claim `control_id`, from `framework`'s
-    rule, or None if a change in `framework` reaches no topic (#339).
-
-    **For a catalog topics anchor (800-53, the AI RMF Core), the one rule,
-    `topics.anchoring.anchor_keys`** (#377): the control, or the one it hangs
-    off, so `AC-2(3)` reaches the topic anchoring `AC-2` and `Govern 1.1`
-    the topic anchoring `Govern 1`. This used `_base_control` for every
-    catalog while its comment claimed coverage's rule, and `_base_control`
-    knows only the 800-53 grammar: an AI RMF subcategory change reached no
-    topic (9b, on #336).
-
-    **The Playbook reaches none**, whatever its ids look like. The rule
-    reads the framework, so its `Govern 1.1` is not the Core's; the old
-    `parent_of` read none, and claimed 72 Playbook rows in `programme.py`
-    (#318).
-
-    Any other catalog, or none named, keeps the rule it had: the id, or its
-    800-53-style base (FedRAMP and ARC-AMPE ids are 800-53's). That is not
-    this change's question.
-    """
-    from policyforge.mapping.crosswalk import anchors_a_topic, normalize_framework
-    from policyforge.topics.anchoring import anchor_keys
-
-    key = normalize_framework(framework) if framework else ""
-    if key in _REACHES_NO_TOPIC:
-        return None
-    if framework and anchors_a_topic(framework):
-        return {k.upper() for k in anchor_keys(control_id, framework)}
-    return {control_id.upper(), _base_control(control_id)}
-
-
 def assess_impact(
-    changes, *, topics=(), content_root=None, decisions=None, framework: str = "", catalog_ids=()
+    changes,
+    *,
+    topics=(),
+    content_root=None,
+    decisions=None,
+    framework: str = "",
+    catalog_ids=(),
+    crosswalk=None,
 ) -> dict[str, Impact]:
     """Work out what each changed control reaches.
 
-    `framework` is the catalog the changes are in; it decides which ids a
-    topic may anchor to be reached (`_topic_keys`).
+    `framework` is the catalog the changes are in. Topic reach is the one
+    rule, `topics.anchoring.topic_keys` (#377): the change's own catalog's
+    parent for one topics anchor, and through `crosswalk` for any other, so
+    a Playbook change reaches no topic and an 800-171 change reaches the
+    topics owning the 800-53 controls NIST maps it to.
     """
+    from policyforge.topics.anchoring import topic_keys
+
     changed_ids = {c.control_id for c in changes}
     impacts = {control_id: Impact(control_id=control_id) for control_id in changed_ids}
 
     for topic in topics or ():
         anchors = {a.upper() for a in getattr(topic, "nist_controls", [])}
         for control_id in changed_ids:
-            keys = _topic_keys(control_id, framework)
-            if keys and keys & anchors:
+            keys = {k.upper() for k in topic_keys(control_id, framework, crosswalk)}
+            if keys & anchors:
                 impacts[control_id].topics.append(topic.name)
 
     if content_root is not None:
         reached = documents_citing(
-            changed_ids, Path(content_root), framework=framework, catalog_ids=catalog_ids
+            changed_ids,
+            Path(content_root),
+            framework=framework,
+            catalog_ids=catalog_ids,
+            crosswalk=crosswalk,
         )
         for control_id, paths in reached.items():
             impacts[control_id].documents.extend(paths)
@@ -484,6 +487,8 @@ def _catalog_ids(controls) -> set[str]:
 def analyze_drift(
     old_controls, new_controls, *, topics=(), content_root=None, decisions=None
 ) -> DriftReport:
+    from policyforge.mapping.crosswalk import build_crosswalk
+
     changes = diff_catalogs(old_controls, new_controls)
     return DriftReport(
         old_version=(old_controls[0].framework_version if old_controls else ""),
@@ -498,5 +503,8 @@ def analyze_drift(
             if (new_controls or old_controls)
             else "",
             catalog_ids=_catalog_ids(old_controls or []) | _catalog_ids(new_controls or []),
+            # The diffed catalog's own mapping to 800-53: only what is loaded
+            # (80's condition on #377), and the one each version carries.
+            crosswalk=build_crosswalk([*(old_controls or []), *(new_controls or [])]),
         ),
     )

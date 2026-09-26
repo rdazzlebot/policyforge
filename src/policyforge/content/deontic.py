@@ -1143,11 +1143,13 @@ def _prose_tail(lines: list[str], first: int, last: int) -> int:
 def _structure(text: str) -> _Structure:
     """Headings, breaks, blocks and colon lists, from markdown-it's tokens.
 
-    **Where this still differs from CommonMark, on purpose, as before #376:**
+    **Deliberately unchanged, where this differs from CommonMark** (80's
+    ruling on #376: each is a decision, so changing it is one too, not a
+    drift):
     - a setext underline of a lone `-` is not an underline (see the note on
       `_line_kinds`): its paragraph stays in sentence analysis;
-    - code, fenced and HTML blocks are read as prose, as they always were.
-      Whether to stop reading them is a product ruling, not this change's;
+    - code, fenced and HTML blocks are read as prose, as they always were,
+      although markdown-it knows they are code;
     - a colon lead-in introduces only a list that is not inside a list item.
     """
     lines = text.split("\n")

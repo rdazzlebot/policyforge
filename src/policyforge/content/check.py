@@ -24,7 +24,7 @@ switched off.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from .deontic import (
     NONE,
@@ -34,7 +34,7 @@ from .deontic import (
     weakened_citations,
 )
 from .tags import source_tags
-from .tree import ContentDocument, load_content_tree
+from .tree import LEGACY_TIER_DIRS, ContentDocument, load_content_tree
 
 ERROR = "error"
 WARNING = "warning"
@@ -209,10 +209,23 @@ def _check_publishable(documents: list[ContentDocument]) -> list[Finding]:
                 )
             )
         if not doc.tier:
+            legacy = next(
+                (
+                    part
+                    for part in PurePosixPath(doc.relative_path).parts[:-1]
+                    if part.lower() in LEGACY_TIER_DIRS
+                ),
+                None,
+            )
             findings.append(
                 Finding(
                     doc.relative_path,
-                    "has no tier — put it under policies/, standards/ or procedures/, "
+                    # A directory an earlier `generate` wrote (#411): say where
+                    # it belongs, not only that it is unrecognised.
+                    f"is under {legacy}/, where `generate` wrote Policies before #411 — "
+                    f"move it to {LEGACY_TIER_DIRS[legacy.lower()]}/"
+                    if legacy
+                    else "has no tier — put it under policies/, standards/ or procedures/, "
                     "or set `tier:` in its frontmatter",
                     WARNING,
                 )
@@ -244,6 +257,12 @@ def _check_citations(documents: list[ContentDocument], synthesis_dir: Path) -> l
 
     findings: list[Finding] = []
     for doc in documents:
+        # A Policy drops framework/control citations by design: "that
+        # traceability lives in the Standard" (README; `policy_writer`). Once
+        # `check` could read a generated Policy as one (#411), this rule was
+        # still warning on the citations it deliberately leaves out.
+        if doc.tier == "policy":
+            continue
         source = synthesis_dir / f"{doc.slug}.md"
         if not source.exists():
             continue

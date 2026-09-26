@@ -635,13 +635,16 @@ def generate_cmd(
 
     provider = get_provider(config)
 
+    from policyforge.content.tree import TIER_DIRECTORY
     from policyforge.llm import ledger
 
     # Every call the drafting makes is attributed to this document, so the
     # version-history stamp below names the model that actually wrote it
     # rather than the one config happened to hold. Those differ whenever a
     # cascade escalates, which is exactly when the difference matters.
-    out_path = out or Path(f"output/{tier}s") / synthesis_path.name
+    # The directory is the one `check` reads this tier from (#411):
+    # `f"{tier}s"` wrote every Policy to `policys/`, which no reader knows.
+    out_path = out or Path("output") / TIER_DIRECTORY[tier] / synthesis_path.name
     slug = f"{tier}/{out_path.stem}"
 
     # The class goes on the scope as well as through the check above, so each

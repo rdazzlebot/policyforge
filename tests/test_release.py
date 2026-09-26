@@ -1006,3 +1006,61 @@ def test_a_stale_pin_is_refused_before_the_install_and_says_what_to_do(tmp_path,
     check = step.gate(_ctx(root=tmp_path))
     assert not check.ok
     assert any("regenerate the formula's resource stanzas" in line for line in check.measured)
+
+
+def _lock(tmp_path, pin):
+    lock = tmp_path / release.release_check.LOCK
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    # The lock's real shape: a pin, a line continuation, then its hash.
+    lock.write_text(f"click=={pin} \\\n    --hash=sha256:x\n", encoding="utf-8")
+
+
+def _resource_formula(pin):
+    return f'  resource "click" do\n    url "https://files/click-{pin}.tar.gz"\n'
+
+
+def test_a_lock_change_without_a_regenerated_formula_names_the_flag(tmp_path, monkeypatch):
+    """The lock moved (1.7: anthropic, wcwidth); the published formula has the
+    old pins; the gate refuses and says how through: --formula."""
+    _lock(tmp_path, "8.2.0")
+    monkeypatch.setattr(
+        release.release_check, "fetch_formula", lambda url=None: _resource_formula("8.1.7")
+    )
+    check = next(s for s in release.steps() if s.key == "resources").gate(_ctx(root=tmp_path))
+    assert not check.ok
+    assert any("the published formula" in line for line in check.measured)
+    assert any("--formula PATH" in line for line in check.measured)
+
+
+def test_a_reconciled_formula_passes_and_is_what_the_cut_edits(tmp_path, monkeypatch):
+    """--formula is read by the gate AND is the base _formula edits, so the
+    pins checked are the pins installed."""
+    _lock(tmp_path, "8.2.0")
+    monkeypatch.setattr(
+        release.release_check, "fetch_formula", lambda url=None: _resource_formula("8.1.7")
+    )
+    reconciled = tmp_path / "policyforge.rb"
+    reconciled.write_text(
+        '  url "x"\n  sha256 "' + "0" * 64 + '"\n' + _resource_formula("8.2.0"), encoding="utf-8"
+    )
+    ctx = _ctx(root=tmp_path, formula_path=reconciled)
+    check = next(s for s in release.steps() if s.key == "resources").gate(ctx)
+    assert check.ok, check.measured
+    assert any(f"--formula {reconciled}" in line for line in check.measured)
+    built = release._formula(ctx, release._tag_archive(ctx), "1" * 64)
+    assert "click-8.2.0" in built and "click-8.1.7" not in built
+
+
+def test_an_unreconciled_formula_is_refused(tmp_path, monkeypatch):
+    """`update-python-resources` proposes PyPI's latest; the lock decides. A
+    --formula with a pin off the lock is refused, not trusted for being given."""
+
+    def no_network(url=None):
+        raise AssertionError("--formula was given, so the published formula must not be read")
+
+    monkeypatch.setattr(release.release_check, "fetch_formula", no_network)
+    _lock(tmp_path, "8.2.0")
+    proposed = tmp_path / "policyforge.rb"
+    proposed.write_text(_resource_formula("8.3.0"), encoding="utf-8")
+    ctx = _ctx(root=tmp_path, formula_path=proposed)
+    assert not next(s for s in release.steps() if s.key == "resources").gate(ctx).ok

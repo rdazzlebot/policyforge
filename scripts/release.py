@@ -132,6 +132,11 @@ class Context:
     confirm: Callable[[str], str] = input
     #: The release's tracking issue, where the two artefact gates read their records.
     tracking: int | None = None
+    #: The operator's regenerated and reconciled formula (`--formula`), the
+    #: base every formula this script writes is edited from (#389). None
+    #: means the published formula, which is right only while the lock is
+    #: unchanged since the last release.
+    formula_path: Path | None = None
     #: Values steps hand to later steps (main's merge SHA, the candidate formula).
     notes: dict[str, str] = field(default_factory=dict)
 
@@ -560,6 +565,18 @@ def _no_tag(ctx: Context) -> Check:
     )
 
 
+def _base_formula(ctx: Context) -> str:
+    """The formula this cut edits: `--formula` if given, else the published one.
+
+    CONTRIBUTING's release step regenerates the resource stanzas with
+    `brew update-python-resources` and reconciles each to the lock. This is
+    how that file reaches the script, instead of being published to the
+    tap before the release to get read (#389)."""
+    if ctx.formula_path is not None:
+        return ctx.formula_path.read_text(encoding="utf-8")
+    return release_check.fetch_formula()
+
+
 def _formula(ctx: Context, url: str, sha: str) -> str:
     """The published formula with its source `url`, `sha256` and `homepage` set.
 
@@ -569,7 +586,7 @@ def _formula(ctx: Context, url: str, sha: str) -> str:
     # LF once, here: every pattern below anchors on "\n", and on a CRLF
     # formula the version line would silently not be added, failing step 8
     # exactly as #391 did (policyforge-b5 on #392; the live formula is LF).
-    text = release_check.fetch_formula().replace("\r\n", "\n")
+    text = _base_formula(ctx).replace("\r\n", "\n")
     text = re.sub(
         r'^(\s*homepage ")[^"]+(")',
         rf"\g<1>{release_check.CANONICAL_HOMEPAGE}\g<2>",
@@ -816,7 +833,12 @@ def _resources_match_lock(ctx: Context) -> Check:
     step 8 against the previous release's pins, approved, and tagged before
     anything said so. Before any install, the published formula is what is
     read; the candidate formula carries the same pins."""
-    formula = ctx.notes.get("candidate_formula") or release_check.fetch_formula()
+    formula = ctx.notes.get("candidate_formula") or _base_formula(ctx)
+    source = (
+        "the candidate formula"
+        if ctx.notes.get("candidate_formula")
+        else (f"--formula {ctx.formula_path}" if ctx.formula_path else "the published formula")
+    )
     have = release_check.formula_resources(formula)
     pins = release_check.lock_pins((ctx.root / release_check.LOCK).read_text(encoding="utf-8"))
     mismatched = sorted(n for n in set(have) & set(pins) if have[n] != pins[n])
@@ -825,6 +847,7 @@ def _resources_match_lock(ctx: Context) -> Check:
         bool(have) and not mismatched and not unlocked,
         [
             f"formula resources {len(have)} (must be > 0), lock pins {len(pins)}",
+            f"read from {source}",
             f"version mismatches with {release_check.LOCK}: {mismatched or 'none'}",
             f"in the formula and in no lock: {unlocked or 'none'}",
             *(
@@ -832,7 +855,9 @@ def _resources_match_lock(ctx: Context) -> Check:
                 if not (mismatched or unlocked)
                 else [
                     "regenerate the formula's resource stanzas from the lock before cutting: "
-                    "the install would otherwise test pins nobody is releasing (#389)"
+                    "the install would otherwise test pins nobody is releasing (#389). "
+                    "Run `brew update-python-resources`, reconcile every resource to the "
+                    "lock (CONTRIBUTING), and pass that file with --formula PATH"
                 ]
             ),
         ],
@@ -1262,6 +1287,11 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         help="the issue holding the post-zero reviews and the notes re-measure",
     )
+    parser.add_argument(
+        "--formula",
+        type=Path,
+        help="the regenerated, lock-reconciled formula to cut from (default: the published one)",
+    )
     args = parser.parse_args(argv)
     if not re.fullmatch(r"\d+\.\d+\.\d+", args.version):
         print(f"release: {args.version!r} is not X.Y.Z")
@@ -1273,6 +1303,7 @@ def main(argv: list[str] | None = None) -> int:
         hash_url=release_check.hash_of,
         install=_real_install,
         tracking=args.tracking_issue,
+        formula_path=args.formula,
     )
     print(f"release {ctx.tag}: {'EXECUTE' if args.execute else 'DRY RUN (nothing will change)'}")
     plan = steps()

@@ -128,3 +128,23 @@ text-equivalent against the eCFR data in
 revision fails the test suite instead of silently mis-mapping a
 requirement. Nothing is mapped by inference: `tests` also assert that every
 stored control ID traces back to an actual published CPRT row.
+
+## Which requirements are read together
+
+`framework.yaml` declares `family: structure`: a **standard** and its
+implementation specifications are one requirement for `drift`'s document
+reach, and a citation of a standard by its paragraph
+(`[HIPAA Security Rule 164.308(a)(1)]`, where the catalog's id is
+`164.308(a)(1)(i)`) resolves to that standard in `drift` and `/satisfies`
+alike (#423). The standards are the catalog's top-level entries, as the
+regulation's own structure makes them, with two exceptions the manifest
+declares:
+
+- **`164.314(a)(2)(i)`, `(ii)` and `(iii)`** are top-level entries here, but
+  the regulation makes § 164.314(a)(2) the *implementation specifications*
+  of the standard § 164.314(a)(1), so they belong to its family.
+- **`164.306(d)`** is nested under `164.306(c)` for structure only: the two
+  paragraphs define "standards" and "implementation specifications", so
+  `(d)` is its own family.
+
+A test fails if either list names an id this catalog no longer has.

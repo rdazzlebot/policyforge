@@ -15,3 +15,7 @@ source_ref: '2026-09-17'
 source_url: https://www.ecfr.gov/api/versioner/v1/full/2026-09-17/title-42.xml?part=2
 content_sha256: 203411ee34190d5b2288e5d4d9b5965844f7cd6d37ec03b933a69e10104f6f9d
 fetched_at: '2026-09-19'
+# The unit the regulation names as a requirement, for document reach (80's
+# ruling on #423): the section. 2.16 "Security for records ..." with its
+# paragraphs, so a change to 2.16(a) reaches a document citing 2.16(b).
+family: section

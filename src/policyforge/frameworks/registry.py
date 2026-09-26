@@ -86,6 +86,15 @@ class Framework:
     #: but the directory's location, so the framework is reported as
     #: undeclared rather than assumed safe.
     declared: bool = False
+    #: The unit the regulation names as a requirement, for document reach
+    #: (80's ruling on #423): `section`, `criterion` or `structure`. Empty for
+    #: a catalog whose ids have a grammar in `topics.anchoring` or no nesting.
+    family: str = ""
+    #: {id: the id whose family it belongs to}, where the catalog's structure
+    #: and the regulation disagree, each with its reason in the manifest.
+    family_overrides: dict = field(default_factory=dict)
+    #: Ids nested in the catalog for structure only: each is its own family.
+    structure_only: tuple = ()
 
     @property
     def redistributable(self) -> bool:
@@ -127,6 +136,9 @@ def load_framework(directory: Path) -> Framework:
         notes=str(data.get("notes") or ""),
         key=str(data.get("framework_id") or "").strip(),
         declared=bool(data),
+        family=str(data.get("family") or "").strip(),
+        family_overrides={str(k): str(v) for k, v in (data.get("family_overrides") or {}).items()},
+        structure_only=tuple(str(i) for i in (data.get("structure_only") or ())),
     )
 
 
@@ -358,6 +370,23 @@ def _declarations(
             if prose != framework.key:
                 differing.append((name, framework.key, directory, prose))
     return found, differing
+
+
+def declared_family_rules(
+    config: dict | None = None, *, roots: list[Path] | None = None
+) -> dict[str, Framework]:
+    """{framework key: its manifest} for every catalog declaring a `family:`
+    (80's ruling on #423). The same walk as `declared_keys`, so a catalog a
+    user brings declares its unit exactly as a shipped one does."""
+    from policyforge.mapping.crosswalk import normalize_framework
+
+    rules: dict[str, Framework] = {}
+    for _, framework, names in _catalog_names(config, roots):
+        if not framework.family:
+            continue
+        for key in {framework.key, *(normalize_framework(n) for n in names)} - {""}:
+            rules.setdefault(key, framework)
+    return rules
 
 
 def declared_keys(config: dict | None = None, *, roots: list[Path] | None = None) -> dict[str, str]:

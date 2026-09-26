@@ -13,3 +13,7 @@ source_ref: '2026-09-22'
 source_url: https://www.ecfr.gov/api/versioner/v1/full/2026-09-22/title-45.xml?part=170
 content_sha256: 3739c5269938d12134b1f740dd93dc34e8d2b4c607e6cbde7eab27a9a62de712
 fetched_at: '2026-09-24'
+# The unit the regulation names as a requirement, for document reach (80's
+# ruling on #423): the certification criterion, 170.315(x)(n). A citation of
+# a paragraph inside one (170.315(b)(1)(iii)) reaches it.
+family: criterion

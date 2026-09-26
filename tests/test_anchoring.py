@@ -415,23 +415,99 @@ def test_a_citation_as_written_is_resolved_or_reached_loudly(tmp_path, citation,
     assert hits == {"AC-6(1)": {"standards/doc.md": how}}
 
 
+# ---- the regulatory catalogs' declared unit (#423, 80's rulings) ----
+
+
+def _families():
+    from policyforge.frameworks.registry import declared_family_rules
+    from policyforge.ingest.schema import load_controls
+    from policyforge.topics.anchoring import families_for
+
+    root = SRC.parent.parent / "data" / "frameworks"
+    controls = [c for p in sorted(root.glob("*/controls.json")) for c in load_controls(p)]
+    return families_for(controls, declared_family_rules(roots=[root]))
+
+
 @pytest.mark.parametrize(
-    "citation",
-    ["[HIPAA Security Rule 164.308(a)(1)]", "[Substance Use Disorder Records 2.16]"],
+    ("cited", "family"),
+    [
+        # Written from the regulation, not read off the catalog.
+        ("164.308(a)(1)(ii)(A)", "164.308(a)(1)(i)"),  # a spec, to its standard
+        ("164.308(a)(1)", "164.308(a)(1)(i)"),  # the standard, cited by paragraph
+        ("164.310(a)(2)(iii)", "164.310(a)(1)"),  # facility access controls
+        ("164.316(b)", "164.316(b)(1)"),  # documentation, cited by paragraph
+        ("164.316(b)(1)(i)", "164.316(b)(1)"),  # a statement part below an id
+        ("164.314(a)(2)(ii)", "164.314(a)(1)"),  # the declared override
+        ("164.306(d)", "164.306(d)"),  # structure only: its own family
+    ],
 )
-def test_a_regulatory_child_change_does_not_reach_its_parent_yet(tmp_path, citation):
-    """The gap the docstring now names (#423): no family grammar for the
-    regulatory catalogs, so a child change does not reach a parent citation.
-    When #423 lands this goes red, and moves."""
+def test_a_hipaa_citation_stands_for_its_standard(cited, family):
+    from policyforge.topics.anchoring import regulatory_families
+
+    assert regulatory_families(cited, _families()["hipaa"]) == {family}
+
+
+def test_a_section_cited_whole_stands_for_every_standard_in_it():
+    from policyforge.topics.anchoring import regulatory_families
+
+    standards = regulatory_families("164.308(a)", _families()["hipaa"])
+    assert "164.308(a)(1)(i)" in standards and "164.308(a)(8)" in standards
+    assert len(standards) == 8
+
+
+@pytest.mark.parametrize(
+    ("key", "cited", "family"),
+    [
+        ("cfr-42-part-2-sud-records", "2.16(b)", "2.16"),
+        ("cfr-171-information-blocking", "171.202(d)", "171.202"),
+        ("cfr-170-315-onc-certification", "170.315(b)(1)(iii)", "170.315(b)(1)"),
+    ],
+)
+def test_the_other_regulatory_catalogs_use_their_declared_unit(key, cited, family):
+    from policyforge.topics.anchoring import regulatory_families
+
+    assert regulatory_families(cited, _families()[key]) == {family}
+
+
+def test_every_id_a_manifest_names_for_its_family_exists():
+    """80's condition: an override or structure-only entry naming an id the
+    catalog no longer has would silently stop applying. A rename fails here."""
+    import json
+
+    from policyforge.frameworks.registry import declared_family_rules
+
+    root = SRC.parent.parent / "data" / "frameworks"
+    rules = declared_family_rules(roots=[root])
+    assert {r.family for r in rules.values()} == {"section", "criterion", "structure"}
+    for rule in {r.id: r for r in rules.values()}.values():
+        rows = json.loads((rule.path / "controls.json").read_text(encoding="utf-8"))
+        ids = {r["control_id"] for r in rows} | {
+            e["enhancement_id"] for r in rows for e in r.get("enhancements") or []
+        }
+        named = {*rule.family_overrides, *rule.family_overrides.values(), *rule.structure_only}
+        assert named <= ids, (rule.id, named - ids)
+
+
+@pytest.mark.parametrize(
+    ("child", "framework", "citation"),
+    [
+        # Before #423 none of these reached: a child change, a parent citation.
+        ("164.308(a)(1)(ii)(A)", "HIPAA Security Rule", "[HIPAA Security Rule 164.308(a)(1)]"),
+        (
+            "164.308(a)(1)(ii)(A)",
+            "HIPAA Security Rule",
+            "[HIPAA Security Rule 164.308(a)(1)(ii)(B)]",
+        ),
+        ("164.310(a)(2)(i)", "HIPAA Security Rule", "[HIPAA Security Rule 164.310(a)(1)]"),
+        ("2.16(a)", "Substance Use Disorder Records", "[Substance Use Disorder Records 2.16]"),
+        ("171.202(b)", "Information Blocking", "[Information Blocking 171.202(d)]"),
+    ],
+)
+def test_a_regulatory_child_change_reaches_its_family(tmp_path, child, framework, citation):
     from policyforge.frameworks.drift import documents_reached
 
     crosswalk, catalogs = _loaded()
-    child, framework = (
-        ("164.308(a)(1)(ii)(A)", "HIPAA Security Rule")
-        if "HIPAA" in citation
-        else ("2.16(a)", "Substance Use Disorder Records")
-    )
-    root = _docs(tmp_path, doc=f"Parent cited. {citation}")
+    root = _docs(tmp_path, doc=f"Family cited. {citation}")
     hits = documents_reached(
         {child},
         root,
@@ -439,8 +515,53 @@ def test_a_regulatory_child_change_does_not_reach_its_parent_yet(tmp_path, citat
         catalog_ids={child},
         crosswalk=crosswalk,
         catalogs=catalogs,
+        families=_families(),
     )
-    assert "standards/doc.md" not in hits.get(child, {})
+    assert hits == {child: {"standards/doc.md": "resolved"}}
+
+
+def test_a_change_does_not_reach_another_standard_in_its_section(tmp_path):
+    """The family is the standard, not the section: a change inside
+    164.308(a)(1) does not reach a document citing 164.308(a)(3)."""
+    from policyforge.frameworks.drift import documents_reached
+
+    crosswalk, catalogs = _loaded()
+    root = _docs(tmp_path, doc="Other standard. [HIPAA Security Rule 164.308(a)(3)(ii)(A)]")
+    hits = documents_reached(
+        {"164.308(a)(1)(ii)(A)"},
+        root,
+        framework="HIPAA Security Rule",
+        catalog_ids={"164.308(a)(1)(ii)(A)"},
+        crosswalk=crosswalk,
+        catalogs=catalogs,
+        families=_families(),
+    )
+    assert "standards/doc.md" not in hits.get("164.308(a)(1)(ii)(A)", {})
+
+
+def test_satisfies_counts_a_standard_cited_by_paragraph_as_the_standard():
+    """80's ruling: `check` resolves it the same way drift does. Before #423,
+    `/satisfies` listed `164.308(a)(1)` as a citation nobody can follow."""
+    from types import SimpleNamespace
+
+    from policyforge.ingest.schema import load_controls
+    from policyforge.topics.satisfies import document_evidence
+
+    controls = load_controls(
+        SRC.parent.parent / "data" / "frameworks" / "hipaa-security-rule" / "controls.json"
+    )
+    doc = SimpleNamespace(
+        relative_path="s.md",
+        title="S",
+        tier="standard",
+        topic="t",
+        body="Risk is managed. [HIPAA Security Rule 164.308(a)(1)]",
+    )
+    evidence = document_evidence(doc, controls=controls, crosswalk={})
+    assert evidence.unknown == []
+    assert [(c.framework, c.requirement_id) for c in evidence.cited] == [
+        ("hipaa", "164.308(a)(1)(i)")
+    ]
 
 
 def test_drift_prints_a_document_reached_by_shape_as_such(tmp_path):

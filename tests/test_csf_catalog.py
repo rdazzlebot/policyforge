@@ -276,7 +276,10 @@ def test_etl_on_the_pinned_files_writes_the_shipped_catalog(tmp_path):
         ["etl-csf", "--oscal", str(OSCAL_FIXTURE), "--olir", str(OLIR_FIXTURE), "--out", str(out)],
     )
     assert result.exit_code == 0, result.output
-    assert out.read_bytes() == (CATALOG / "controls.json").read_bytes()
+    # CRLF folded first, as the Playbook's test does: a Windows checkout with
+    # core.autocrlf=true hands the shipped file over as CRLF; the ETL writes LF.
+    shipped_bytes = (CATALOG / "controls.json").read_bytes().replace(b"\r\n", b"\n")
+    assert out.read_bytes() == shipped_bytes
     written = yaml.safe_load((out.parent / "framework.yaml").read_text(encoding="utf-8"))
     shipped = yaml.safe_load((CATALOG / "framework.yaml").read_text(encoding="utf-8"))
     assert written["family_links"] == shipped["family_links"]

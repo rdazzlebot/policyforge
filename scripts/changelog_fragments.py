@@ -82,6 +82,92 @@ _TOO_HIGH = re.compile(r"^(#{1,2})(?:\s|$)")
 _FENCE = re.compile(r"^\s*(?:```|~~~)")
 
 
+_WHERE = r"(?:above|below)"
+
+#: A pointer to another entry by where it sits (#387). Assembly orders
+#: fragments by filename, author prefix first, so "see below" is a guess
+#: about an order its writer cannot see from their own file: three were
+#: written in one hour of 1.6.1's fixes, one per author, and every one
+#: pointed the wrong way or was right by luck.
+#:
+#: **A pointer, not every "above" or "below".** Measured against the 3,691
+#: lines of `CHANGELOG.md` at 1.6.1: the bare words matched 19 times. Ten
+#: were pointers to other entries and nine were prose that must keep
+#: passing ("would fall below the catalog", "mcp is held below 2", "the
+#: requirement above it", "the note above the rows");
+#: `tests/test_changelog_fragments.py` holds all nine, so a later widening
+#: that reintroduces one fails.
+#:
+#: **Of the ten pointers, eight are matched here, one is skipped on
+#: purpose, and one is missed** (1d and policyforge-b5 on #420).
+#:
+#: - Matched: "see below" (with an adverb: "see further below"), a noun
+#:   naming an entry beside a position ("the entry above", "the harness
+#:   change below", "the ledger fix above"), a quoted entry title followed
+#:   by one, "the above" standing alone, and "everything else below".
+#: - Skipped: `<- see below` inside a fenced table (1.6.0). A fence is an
+#:   example, not prose, by the same rule as the heading check.
+#: - **Missed: a pointer whose subject is any other noun**: "the Part 2
+#:   catalog above" (1.5.0), "the ledger bug above". That vocabulary is
+#:   open, and a noun list would never finish, so for that shape review is
+#:   still the instrument. The test file holds the real one as a strict
+#:   expected miss, red the day this starts to catch it.
+#:
+#: **Also unmatched, deliberately: time words.** "see earlier in these
+#: notes", "the preceding fix", "the following change", "a later fix".
+#: Only "previous/next/preceding/following entry" is refused. In
+#: `CHANGELOG.md` the family occurs twice and both are prose ("a later fix
+#: would need", "the first fix still let"), so refusing it would cry wolf
+#: at the measured rate.
+#:
+#: **A comparison is not a pointer.** A noun then a position then a
+#: complement ("a change below 5%", "a fix below 1.0", "below the
+#: catalog") compares; a pointer usually has nothing after the position.
+#: **Usually, and that is the price** (policyforge-b5 on #420): a pointer
+#: followed by `it`, `the`, `a` or a number reads as a comparison and
+#: passes ("The fix above it also covers HIPAA."). The test file holds it
+#: as a strict expected miss. Refusing it would refuse "a change below
+#: 5%" with it, and comparisons are the commoner shape in this project's
+#: notes. "You see
+#: below" describes rather than directs, and passes. `section` is not in the
+#: noun list: a fragment may use `###`, so "the section below" is within it.
+_ADVERB = r"(?:(?:the|further|just|also|directly|immediately)\s+)?"
+_COMPLEMENT = r"(?!\s+(?:\d|the\b|a\b|an\b|it\b))"
+_POSITIONAL = re.compile(
+    "|".join(
+        [
+            rf"(?<!\byou )(?<!\bwe )\bsee\s+{_ADVERB}{_WHERE}\b",
+            rf"\b(?:entry|entries|fragment|fragments|change|fix|item)\s+{_WHERE}\b{_COMPLEMENT}",
+            rf"\b{_WHERE}\s+(?:entry|entries|fragment|fragments)\b",
+            r"\b(?:previous|next|preceding|following)\s+(?:entry|entries|fragment|fragments)\b",
+            rf"\"[^\"]{{3,}}\"\s+{_WHERE}\b",
+            # "the above" as a noun: followed by punctuation or the end.
+            rf"\bthe\s+{_WHERE}(?=\s*(?:[,.;:)]|$))",
+            rf"\b(?:everything|all|the\s+rest)(?:\s+else)?\s+{_WHERE}\b{_COMPLEMENT}",
+        ]
+    ),
+    re.IGNORECASE,
+)
+
+#: Inline code, which quotes rather than says.
+_CODE_SPAN = re.compile(r"`[^`]*`")
+
+
+def positional_pointers(text: str) -> list[str]:
+    """Each pointer to another entry by position, outside code (#387)."""
+    prose: list[str] = []
+    fenced = False
+    for line in text.splitlines():
+        if _FENCE.match(line):
+            fenced = not fenced
+            continue
+        if not fenced:
+            prose.append(_CODE_SPAN.sub(" ", line))
+    # Joined, because a pointer wraps across a line: "the entry" then "above".
+    joined = " ".join(prose)
+    return [" ".join(m.group(0).split()) for m in _POSITIONAL.finditer(joined)]
+
+
 def strays(directory: Path | None = None) -> list[Path]:
     """Files sitting in `changelog.d/` that `fragments()` will never return.
 
@@ -106,8 +192,9 @@ def check(directory: Path | None = None) -> list[str]:
     Deliberately few, and each is a thing that produced a real defect: an
     empty fragment means someone opened the file and did not write the
     entry; a heading above `###` creates a second release section inside
-    the one being cut; a CR is the 1,768-line conversion in miniature; and
-    a non-`.md` file is an entry nobody will ever read.
+    the one being cut; a CR is the 1,768-line conversion in miniature; a
+    non-`.md` file is an entry nobody will ever read; and "see below"
+    points the wrong way as often as not (#387).
 
     **It takes the DIRECTORY rather than a list of paths, and that is a fix
     rather than a matter of taste.** The old signature was `check(paths)`,
@@ -144,6 +231,14 @@ def check(directory: Path | None = None) -> list[str]:
                     "assembly, and anything at this level splits the section being cut."
                 )
                 break
+        for pointer in positional_pointers(text):
+            problems.append(
+                f'{path.name}: "{pointer}" points at another entry by position, and '
+                "assembly orders entries by filename, which you cannot see from here. "
+                'Name it by its subject instead: "see the NIST SP 800-171 entry in '
+                'this release". If it points within this entry, name that: "the '
+                'table in this entry".'
+            )
     return problems
 
 

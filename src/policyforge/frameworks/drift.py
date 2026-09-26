@@ -236,32 +236,46 @@ def documents_citing(
     matched 800-53-shaped ids in any tag before, so an AI RMF change reached
     no document at all, even one citing it exactly.
 
-    **A catalog reached through the crosswalk also reaches 800-53 documents,
-    and only through it** (80's ruling on #377): a FedRAMP change reaches
-    documents citing FedRAMP's family of it, and documents citing the
-    800-53 family of each control the loaded crosswalk maps it to in full.
+    **Across catalogs, through the 800-53 hub** (80's ruling (ii) on #377).
+    Every citation stands for 800-53 families: its own if it cites 800-53,
+    otherwise those the loaded crosswalk maps it to in full. A change
+    reaches a document whose citation shares one with it, whichever catalog
+    each names: a FedRAMP change reaches `[NIST 800-53 AC-2]` and
+    `[ARC AC-2]`, and an 800-53 change reaches both of those and the HIPAA
+    and 800-171 citations mapped to its family. This used to hold by id
+    shape between FedRAMP, ARC-AMPE and 800-53 only; through the crosswalk
+    it holds for every catalog that carries one, and for none that does not.
+    `crosswalk` is `build_crosswalk` over the catalogs actually loaded.
     """
     from policyforge.content.tree import load_content_tree
     from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
-    from policyforge.topics.anchoring import crosswalked, family_of
+    from policyforge.topics.anchoring import family_of, hubs, reverse_index
     from policyforge.topics.satisfies import parse_citations, resolve_framework
 
     hits: dict[str, list[str]] = {}
     key = normalize_framework(framework) if framework else ""
     if not root.exists() or not key:
         return hits
-    # {(catalog key, family): the changed ids that reach it}
-    wanted: dict[tuple[str, str], list[str]] = {}
+    reverse = reverse_index(crosswalk)
+    # The catalogs a citation may name: the diffed one, 800-53 (the hub), and
+    # every catalog the loaded crosswalk maps. Nothing else can be reached.
     index: dict[str, set[str]] = {key: set(catalog_ids) | set(controls)}
+    index.setdefault(NIST_ANCHOR, set()).update(crosswalk or {})
+    for catalog, requirement_id in reverse:
+        index.setdefault(catalog, set()).add(requirement_id)
+
+    own: dict[str, set[str]] = {}
+    hub: dict[str, set[str]] = {}
     for changed in controls:
-        wanted.setdefault((key, family_of(changed, framework)), []).append(changed)
-        if key != NIST_ANCHOR:
-            for nist_id in crosswalked(changed, framework, crosswalk):
-                index.setdefault(NIST_ANCHOR, set()).add(nist_id)
-                wanted.setdefault((NIST_ANCHOR, family_of(nist_id, NIST_ANCHOR)), []).append(
-                    changed
-                )
-    names = [framework, *(["NIST 800-53"] if NIST_ANCHOR in index and key != NIST_ANCHOR else [])]
+        own.setdefault(family_of(changed, framework), set()).add(changed)
+        for family in hubs(changed, framework, reverse):
+            hub.setdefault(family, set()).add(changed)
+
+    def reached(cited: str, requirement_id: str) -> set[str]:
+        found = set(own.get(family_of(requirement_id, cited), ())) if cited == key else set()
+        for family in hubs(requirement_id, cited, reverse):
+            found |= hub.get(family, set())
+        return found
 
     def catalogs_cited(written: str, requirement_id: str) -> list[str]:
         """The loaded catalogs a citation can mean. An abbreviation naming
@@ -269,22 +283,22 @@ def documents_citing(
         to neither in `resolve_framework`, which is right for a report and
         wrong here: this decides what to re-read, where missing a document
         is the dangerous direction. So it means each catalog it abbreviates
-        in which the cited id belongs to a family this change reaches."""
+        through which this change reaches the cited id."""
         cited = resolve_framework(written, index)
         if cited:
             return [cited]
         return [
-            key
-            for key, ids in index.items()
-            if (key, family_of(requirement_id, key)) in wanted
-            and resolve_framework(written, {key: ids}) == key
+            catalog
+            for catalog, ids in index.items()
+            if reached(catalog, requirement_id)
+            and resolve_framework(written, {catalog: ids}) == catalog
         ]
 
     documents, _ = load_content_tree(root)
     for document in documents:
-        for written, requirement_id, _, _ in parse_citations(document.body, names, index):
+        for written, requirement_id, _, _ in parse_citations(document.body, [framework], index):
             for cited in catalogs_cited(written, requirement_id):
-                for changed in wanted.get((cited, family_of(requirement_id, cited)), []):
+                for changed in reached(cited, requirement_id):
                     hits.setdefault(changed, []).append(document.relative_path)
     return {changed: sorted(set(paths)) for changed, paths in hits.items()}
 
@@ -485,10 +499,16 @@ def _catalog_ids(controls) -> set[str]:
 
 
 def analyze_drift(
-    old_controls, new_controls, *, topics=(), content_root=None, decisions=None
+    old_controls, new_controls, *, topics=(), content_root=None, decisions=None, crosswalk=None
 ) -> DriftReport:
+    """`crosswalk` is `build_crosswalk` over every catalog loaded (the drift
+    command passes the installation's); by default, the diffed catalog's
+    own two versions, so a call with nothing else loaded reaches only
+    through the mapping that catalog carries."""
     from policyforge.mapping.crosswalk import build_crosswalk
 
+    if crosswalk is None:
+        crosswalk = build_crosswalk([*(old_controls or []), *(new_controls or [])])
     changes = diff_catalogs(old_controls, new_controls)
     return DriftReport(
         old_version=(old_controls[0].framework_version if old_controls else ""),
@@ -503,8 +523,6 @@ def analyze_drift(
             if (new_controls or old_controls)
             else "",
             catalog_ids=_catalog_ids(old_controls or []) | _catalog_ids(new_controls or []),
-            # The diffed catalog's own mapping to 800-53: only what is loaded
-            # (80's condition on #377), and the one each version carries.
-            crosswalk=build_crosswalk([*(old_controls or []), *(new_controls or [])]),
+            crosswalk=crosswalk,
         ),
     )

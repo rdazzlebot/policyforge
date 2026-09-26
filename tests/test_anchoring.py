@@ -258,3 +258,103 @@ def test_topic_keys_reach_a_crosswalked_catalog_only_through_the_loaded_crosswal
     # A partial relationship does not reach, by coverage's one reading (#185).
     partial = {("nist-800-171", "03.01.01", "AC-2(3)"): "superset"}
     assert topic_keys("03.01.01", "NIST 800-171", crosswalk, partial) == set()
+
+
+def test_the_programme_parameter_scope_reads_the_one_rule(tmp_path):
+    """80's ruling (B), through the real command: a topic anchoring `AC-2`
+    brings 800-171's parameters for the requirements NIST maps to AC-2.
+
+    Not asserted here: that no Playbook row is claimed (#336). Neither AI
+    catalog carries a single parameter, so a ledger could not show one
+    either way, and an assertion on it would pass by construction. That
+    case is held where it can fail, in `test_the_ids_a_topic_may_anchor`.
+    """
+    from click.testing import CliRunner
+
+    import policyforge.cli as cli_mod
+
+    catalogs = SRC.parent.parent / "data" / "frameworks"
+    topics = tmp_path / "topics.yaml"
+    topics.write_text(
+        "topics:\n  - name: T\n    owner: O\n    nist_controls: [AC-2]\n",
+        encoding="utf-8",
+    )
+    ledger = tmp_path / "parameters.yaml"
+    args = ["parameters", "--topics", str(topics), "--ledger", str(ledger), "--init"]
+    for directory in ("nist-800-53-r5", "nist-ai-rmf", "nist-ai-rmf-playbook", "nist-800-171-r3"):
+        args += ["--controls", str(catalogs / directory / "controls.json")]
+
+    result = CliRunner().invoke(cli_mod.cli, args)
+
+    assert result.exit_code == 0, result.output
+    keys = [
+        line.strip().rstrip(":")
+        for line in ledger.read_text(encoding="utf-8").splitlines()
+        if line.startswith("  ") and not line.startswith("   ") and line.strip().endswith(":")
+    ]
+    assert any(k.startswith("AC-2/") for k in keys), keys
+    assert any(k.startswith("03.01.01/") for k in keys), keys
+    # Each says it came from 800-171 (80's ruling): its id does not.
+    text = ledger.read_text(encoding="utf-8")
+    assert "  # 03.01.01 (from NIST 800-171): " in text
+    assert "  # AC-2: " in text
+
+
+HUB = {
+    "AC-2": {"fedramp": ["AC-2"], "arc-ampe": ["AC-2"], "hipaa": ["164.308(a)(3)(ii)(A)"]},
+    "CP-9": {"fedramp": ["CP-9"]},
+}
+
+
+def _hub_docs(tmp_path):
+    return _docs(
+        tmp_path,
+        nist="Reviewed. [NIST 800-53 AC-2(3)]",
+        fedramp="Reviewed. [FedRAMP AC-2]",
+        arc="Reviewed. [ARC AC-2]",
+        hipaa="Authorised. [HIPAA Security Rule 164.308(a)(3)(ii)(A)]",
+        backup="Backed up. [FedRAMP CP-9]",
+    )
+
+
+def test_an_800_53_change_reaches_every_catalog_mapped_to_its_family(tmp_path):
+    """80's hub rule (ii) on #377. Main reached FedRAMP and ARC-AMPE citations
+    by id shape and HIPAA's not at all; through the crosswalk, all three."""
+    from policyforge.frameworks.drift import documents_citing
+
+    hits = documents_citing(
+        {"AC-2(1)"},
+        _hub_docs(tmp_path),
+        framework="NIST 800-53",
+        catalog_ids={"AC-2", "AC-2(1)", "AC-2(3)", "CP-9"},
+        crosswalk=HUB,
+    )
+    assert hits == {
+        "AC-2(1)": [
+            "standards/arc.md",
+            "standards/fedramp.md",
+            "standards/hipaa.md",
+            "standards/nist.md",
+        ]
+    }
+
+
+def test_a_fedramp_change_reaches_arc_ampe_through_the_hub_and_not_by_shape(tmp_path):
+    from policyforge.frameworks.drift import documents_citing
+
+    root = _hub_docs(tmp_path)
+    hits = documents_citing(
+        {"AC-2"}, root, framework="FedRAMP", catalog_ids={"AC-2", "CP-9"}, crosswalk=HUB
+    )
+    assert hits == {
+        "AC-2": [
+            "standards/arc.md",
+            "standards/fedramp.md",
+            "standards/hipaa.md",
+            "standards/nist.md",
+        ]
+    }
+    # With no crosswalk loaded, only FedRAMP's own family: ARC's `AC-2` reads
+    # like FedRAMP's, and is not reached by its shape.
+    alone = documents_citing({"AC-2"}, root, framework="FedRAMP", catalog_ids={"AC-2", "CP-9"})
+    assert alone == {"AC-2": ["standards/fedramp.md"]}

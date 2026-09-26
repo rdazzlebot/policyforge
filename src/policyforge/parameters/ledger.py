@@ -86,6 +86,8 @@ class Parameter:
     occurrences: int = 1
     #: Enough surrounding words to see what is being decided.
     context: str = ""
+    #: The catalog the parameter is from, as it declares itself.
+    framework: str = ""
 
     @property
     def is_selection(self) -> bool:
@@ -178,6 +180,7 @@ def extract_parameters(controls) -> list[Parameter]:
                 choices=_choices_of(body) if kind == SELECTION else [],
                 marker=match.group(0),
                 context=" ".join(snippet.split()),
+                framework=getattr(control, "framework", "") or "",
             )
 
     return list(found.values())
@@ -225,6 +228,21 @@ def load_ledger(path: Path = DEFAULT_LEDGER_PATH) -> dict[str, Decision]:
     return decisions
 
 
+def _from(parameter: Parameter) -> str:
+    """` (from NIST 800-171)` for a parameter from any catalog but 800-53.
+
+    A topic reaches a catalog it does not anchor through the crosswalk, so
+    the ledger can hold rows from 800-171 beside 800-53's (80's ruling on
+    #377). They look alike, and their ids do not say which catalog asked:
+    `03.01.01` could be any NIST catalog's. So each says where it came from.
+    """
+    from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
+
+    if not parameter.framework or normalize_framework(parameter.framework) == NIST_ANCHOR:
+        return ""
+    return f" (from {parameter.framework})"
+
+
 def render_ledger(parameters: list[Parameter], decisions: dict[str, Decision]) -> str:
     """Write a ledger, keeping decisions already made and adding the rest."""
 
@@ -252,7 +270,7 @@ def render_ledger(parameters: list[Parameter], decisions: dict[str, Decision]) -
     for parameter in sorted(parameters, key=lambda p: (p.control_id, p.key)):
         decision = decisions.get(parameter.key, Decision())
         lines.append("")
-        lines.append(f"  # {parameter.control_id}: {parameter.label}")
+        lines.append(f"  # {parameter.control_id}{_from(parameter)}: {parameter.label}")
         if parameter.choices:
             lines.append(f"  #   one of: {'; '.join(parameter.choices)}")
         if parameter.context:

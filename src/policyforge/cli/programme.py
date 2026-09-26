@@ -475,12 +475,29 @@ def drift_cmd(
         default_root = _content_dir(None)
         root = default_root if default_root.exists() else None
 
+    # The hub's crosswalk (80's ruling on #377): every catalog this
+    # installation loads, so a change reaches documents citing another
+    # catalog through that catalog's mapping to 800-53. Only what is loaded:
+    # a catalog nobody configured reaches nothing. The diffed catalog comes
+    # from its two versions, not from disk twice.
+    from policyforge.frameworks.registry import discover
+    from policyforge.mapping.crosswalk import build_crosswalk
+
+    diffed = Path(controls_path).resolve()
+    others = [
+        f.controls_path
+        for f in discover(load_config_or_empty())
+        if f.has_controls and Path(f.controls_path).resolve() != diffed
+    ]
+    crosswalk = build_crosswalk([*load_catalogs(others), *old_controls, *new_controls])
+
     report = analyze_drift(
         old_controls,
         new_controls,
         topics=topics,
         content_root=root,
         decisions=decisions,
+        crosswalk=crosswalk,
     )
     click.echo(report.format_report(detail=detail))
 

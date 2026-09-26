@@ -150,12 +150,44 @@ def crosswalked(
 
     Empty for 800-53 itself and for any catalog with no mapping loaded.
     """
+    return set(
+        reverse_index(crosswalk, relationships).get(
+            (normalize_framework(framework), requirement_id), ()
+        )
+    )
+
+
+def reverse_index(
+    crosswalk: dict[str, dict[str, list[str]]] | None,
+    relationships: dict[tuple[str, str, str], str] | None = None,
+) -> dict[tuple[str, str], frozenset[str]]:
+    """`{(catalog key, requirement id): the 800-53 ids it maps to in full}`.
+
+    The crosswalk is keyed NIST-first; every reach from another catalog asks
+    it the other way round, so this is built once per crosswalk rather than
+    scanned once per id.
+    """
     from policyforge.topics.coverage import reaches_in_full
 
+    index: dict[tuple[str, str], set[str]] = {}
+    for nist_id, mapped in (crosswalk or {}).items():
+        for key, requirement_ids in mapped.items():
+            for requirement_id in requirement_ids:
+                if reaches_in_full(key, requirement_id, nist_id, relationships or {}):
+                    index.setdefault((key, requirement_id), set()).add(nist_id)
+    return {pair: frozenset(ids) for pair, ids in index.items()}
+
+
+def hubs(
+    requirement_id: str,
+    framework: str,
+    reverse: dict[tuple[str, str], frozenset[str]],
+) -> set[str]:
+    """The 800-53 families a requirement stands for (80's hub rule on #377):
+    its own family if it is 800-53, otherwise the families of what the
+    loaded crosswalk maps it to in full. Two citations with a hub in common
+    are about the same control, whichever catalog each names."""
     key = normalize_framework(framework)
-    return {
-        nist_id
-        for nist_id, mapped in (crosswalk or {}).items()
-        if requirement_id in mapped.get(key, ())
-        and reaches_in_full(key, requirement_id, nist_id, relationships or {})
-    }
+    if key == NIST_ANCHOR:
+        return {family_of(requirement_id, NIST_ANCHOR)}
+    return {family_of(nist_id, NIST_ANCHOR) for nist_id in reverse.get((key, requirement_id), ())}

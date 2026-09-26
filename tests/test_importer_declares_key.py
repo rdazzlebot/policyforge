@@ -31,6 +31,15 @@ def _permitted(monkeypatch):
     crosswalk.reset_declared_keys()
 
 
+@pytest.fixture(autouse=True)
+def _in_a_project(tmp_path, monkeypatch):
+    """Every write here lands under local_content/, the one place the model
+    boundary reads a licensed catalog as licensed wherever it sits; so each
+    test runs from the project the default search paths are relative to
+    (#459: the write guard now refuses any other destination)."""
+    monkeypatch.chdir(tmp_path)
+
+
 def _govramp(tmp_path, out):
     import policyforge.cli as cli_mod
     from tests.test_govramp import build_workbook
@@ -50,7 +59,7 @@ def _declared(root):
 def test_etl_govramp_declares_the_key_the_name_already_had(tmp_path):
     from policyforge.ingest.govramp import FRAMEWORK
 
-    out = tmp_path / "catalogs" / "govramp" / "controls.json"
+    out = tmp_path / "local_content" / "govramp" / "controls.json"
     result = _govramp(tmp_path, out)
 
     assert result.exit_code == 0, result.output
@@ -58,14 +67,14 @@ def test_etl_govramp_declares_the_key_the_name_already_had(tmp_path):
     assert manifest["framework_id"] == prose_framework_key(FRAMEWORK) == "govramp"
     assert manifest["name"] == FRAMEWORK and manifest["licence"] == "licensed"
     # Read back through the same path keying uses, silently: nothing moved.
-    assert _declared(tmp_path / "catalogs")[" ".join(FRAMEWORK.lower().split())] == "govramp"
+    assert _declared(tmp_path / "local_content")[" ".join(FRAMEWORK.lower().split())] == "govramp"
     assert "framework_id govramp" in result.output
 
 
 def test_etl_hitrust_declares_the_key_the_name_already_had(tmp_path, monkeypatch):
     from policyforge.ingest.hitrust import FRAMEWORK
 
-    out = tmp_path / "catalogs" / "hitrust" / "controls.json"
+    out = tmp_path / "local_content" / "hitrust" / "controls.json"
     result = _hitrust(monkeypatch, tmp_path, "--out", str(out), "--force")
 
     assert result.exit_code == 0, result.output
@@ -74,7 +83,7 @@ def test_etl_hitrust_declares_the_key_the_name_already_had(tmp_path, monkeypatch
 
 
 def test_a_manifest_without_a_key_gains_one_line_and_keeps_the_rest(tmp_path):
-    out = tmp_path / "catalogs" / "govramp" / "controls.json"
+    out = tmp_path / "local_content" / "govramp" / "controls.json"
     out.parent.mkdir(parents=True)
     written = "# my notes\nname: GovRAMP\nlicence: licensed\n"
     (out.parent / "framework.yaml").write_text(written, encoding="utf-8")
@@ -87,7 +96,7 @@ def test_a_manifest_without_a_key_gains_one_line_and_keeps_the_rest(tmp_path):
 
 
 def test_a_manifest_that_declares_a_different_key_is_kept_and_named(tmp_path):
-    out = tmp_path / "catalogs" / "govramp" / "controls.json"
+    out = tmp_path / "local_content" / "govramp" / "controls.json"
     out.parent.mkdir(parents=True)
     written = "name: GovRAMP\nframework_id: govramp-moderate\n"
     (out.parent / "framework.yaml").write_text(written, encoding="utf-8")
@@ -104,7 +113,7 @@ def test_a_manifest_that_declares_a_different_key_is_kept_and_named(tmp_path):
 
 
 def test_a_declaration_equal_to_todays_key_states_no_collision(tmp_path):
-    out = tmp_path / "catalogs" / "govramp" / "controls.json"
+    out = tmp_path / "local_content" / "govramp" / "controls.json"
     result = _govramp(tmp_path, out)
     assert result.exit_code == 0, result.output
     assert "Note:" not in result.output
@@ -137,7 +146,7 @@ def test_nothing_is_declared_when_nothing_is_written(tmp_path):
     ids=["document-end-marker", "unparseable", "list-topped", "empty-key"],
 )
 def test_a_manifest_that_cannot_take_the_line_is_left_byte_identical(tmp_path, written, said):
-    out = tmp_path / "catalogs" / "govramp" / "controls.json"
+    out = tmp_path / "local_content" / "govramp" / "controls.json"
     out.parent.mkdir(parents=True)
     manifest = out.parent / "framework.yaml"
     manifest.write_bytes(written.encode("utf-8"))

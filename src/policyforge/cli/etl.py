@@ -1035,6 +1035,10 @@ def _declare_catalog(out: Path, *, framework: str, source: str) -> str:
     return "\n".join([done, *(f"Note: {fact}" for fact in facts)])
 
 
+def _suggested_dir(product: str) -> str:
+    return "-".join(product.lower().split()[:1]) or "licensed"
+
+
 def _guard_licensed_write(out: Path, *, force: bool, product: str, licence: str, noun: str):
     """Refuse to write a licensed catalog anywhere it could be redistributed.
 
@@ -1043,10 +1047,21 @@ def _guard_licensed_write(out: Path, *, force: bool, product: str, licence: str,
     to keep licensed content out of a public repository is two places for it
     to be weakened, and one of them would be the one nobody checks.
 
-    Two rules, in order. The bundled `data/frameworks/` directory never takes
+    Three rules, in order. The bundled `data/frameworks/` directory never takes
     a licensed catalog, whatever the flags — it is this project's public,
     redistributable half, and a file written there gets committed and pushed.
-    Anywhere else, a gitignored destination needs no permission, because a
+
+    **The destination must be one the model boundary will classify as
+    licensed, whatever the flags** (#459, 80's ruling (a)). The boundary
+    (`llm/boundary.classify_path`) knows a licensed catalog by where it sits:
+    under `local_content/`, or in a framework directory with no manifest. This
+    guard used to ask only whether git would stage the file, so `--out
+    output/...` passed it and the catalog then classified as
+    organization-internal, which a hosted model may read. `--force` does not
+    bypass this: it grants a repository permission to carry licensed content,
+    which is a different question from which models may read it.
+
+    Anywhere licensed, a gitignored destination needs no permission, because a
     file git will never stage cannot be redistributed by accident; a tracked
     one needs the repository to have declared it may hold licensed content,
     or an explicit --force.
@@ -1069,10 +1084,24 @@ def _guard_licensed_write(out: Path, *, force: bool, product: str, licence: str,
             "local_content/ or your own repository's frameworks/ directory."
         )
 
+    config = load_config()
+    from policyforge.llm.boundary import LICENSED, classify_path
+
+    # Asked about the world as it will be once the file is written: whether a
+    # directory is a framework, and which of two same-named ones wins, depends
+    # on the file this command is about to create.
+    landing = classify_path(out, config, assume_written=True)
+    if landing.klass != LICENSED:
+        raise click.ClickException(
+            f"{out} would be read as {landing.klass} ({landing.reason}), and "
+            f"content of that class may be sent to a hosted model. A {product} is "
+            f"licensed and must stay on local models. Write it under local_content/, "
+            f"e.g. --out local_content/{_suggested_dir(product)}/controls.json."
+        )
+
     # Gitignored destinations need no permission: a file git will never
     # stage cannot be redistributed by accident. Everywhere else, the
     # repository has to have said it may hold licensed content.
-    config = load_config()
     ignored = is_ignored(out)
     permitted = bool(frameworks_config(config).get("allow_licensed_in_repo"))
     if not ignored and not permitted and not force:

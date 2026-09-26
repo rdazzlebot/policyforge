@@ -577,8 +577,10 @@ policyforge etl-hitrust --export local_content/hitrust/CSFLibraryReport.csv
 That parses the export and prints what it found — control references,
 requirement statements, levels, and which authoritative sources its mappings
 reach. **Nothing is written** unless you pass `--out`, and `--out` refuses
-any path under `data/frameworks/` outright, plus any path git would not
-ignore unless your config declares `frameworks.allow_licensed_in_repo`.
+any path under `data/frameworks/` outright, and any path the model boundary
+would not treat as licensed, whatever the flags: write under
+`local_content/` (#459). It also refuses any path git would not ignore
+unless your config declares `frameworks.allow_licensed_in_repo`.
 
 What the loader understands about the framework lives in
 `ingest/hitrust.py`; how it finds those things in a file lives in
@@ -686,9 +688,10 @@ GovRAMP Rev 5 (V1.06) Moderate
 ```
 
 **Nothing is written** unless you pass `--out`, and `--out` refuses any path
-under `data/frameworks/` outright, plus any path git would not ignore unless
-your config declares `frameworks.allow_licensed_in_repo`. Same gate as
-`etl-hitrust`.
+under `data/frameworks/` outright, and any path the model boundary would not
+treat as licensed, whatever the flags: write under `local_content/` (#459).
+It also refuses any path git would not ignore unless your config declares
+`frameworks.allow_licensed_in_repo`. Same gate as `etl-hitrust`.
 
 Pass the workbook as GovRAMP publishes it, not an extract of it. What
 arrives is a working SSP template — fourteen sheets, of which one holds the

@@ -151,7 +151,8 @@ def test_etl_govramp_writes_a_catalog_to_a_permitted_path(tmp_path, monkeypatch)
     monkeypatch.setattr(cli_mod, "load_config", lambda: {})
 
     matrix = build_workbook(tmp_path / "GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx")
-    out_path = tmp_path / "controls.json"
+    out_path = tmp_path / "local_content" / "govramp" / "controls.json"
+    monkeypatch.chdir(tmp_path)
 
     result = CliRunner().invoke(
         cli,
@@ -237,7 +238,9 @@ def test_etl_hitrust_refuses_a_tracked_destination_without_permission(tmp_path, 
 
     monkeypatch.setattr(cli_mod, "load_config", lambda: {})
     monkeypatch.setattr("policyforge.frameworks.registry.is_ignored", lambda path: False)
-    out = tmp_path / "controls.json"
+    # Licensed to the boundary (#459), so what refuses is the tracked-file rule.
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "local_content" / "export" / "controls.json"
 
     result = _hitrust(monkeypatch, tmp_path, "--out", str(out))
 
@@ -254,7 +257,9 @@ def test_etl_govramp_refuses_a_tracked_destination_without_permission(tmp_path, 
     monkeypatch.setattr(cli_mod, "load_config", lambda: {})
     monkeypatch.setattr("policyforge.frameworks.registry.is_ignored", lambda path: False)
     matrix = build_workbook(tmp_path / "GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx")
-    out = tmp_path / "controls.json"
+    # Licensed to the boundary (#459), so what refuses is the tracked-file rule.
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "local_content" / "govramp" / "controls.json"
 
     result = CliRunner().invoke(
         cli_mod.cli, ["etl-govramp", "--export", str(matrix), "--out", str(out)]
@@ -377,7 +382,11 @@ def test_a_directory_that_only_resembles_the_bundled_one_is_not_refused(
     import policyforge.cli as cli_mod
     from tests.test_govramp import build_workbook
 
-    monkeypatch.setattr(cli_mod, "load_config", lambda: {})
+    # The lookalike is declared a search path, so the model boundary reads a
+    # catalog there as licensed (#459) and only the bundled-name rule is on
+    # trial: it must not mistake `metadata/frameworks` for `data/frameworks`.
+    root = "/".join(out_parts)
+    monkeypatch.setattr(cli_mod, "load_config", lambda: {"frameworks": {"search_paths": [root]}})
     matrix = build_workbook(tmp_path / "GovRAMP-Controls-Matrix_Mod_Rev5_V1.06.xlsx")
     destination = tmp_path.joinpath(*out_parts, "govramp", "controls.json")
 
@@ -414,8 +423,22 @@ def test_the_bundled_directory_rule_does_not_refuse_a_write_beside_it(
         ["etl-govramp", "--export", str(matrix), "--out", str(destination), "--force"],
     )
 
-    assert result.exit_code == 0, result.output
-    assert destination.exists()
+    # The bundled-directory rule never fires on a write beside it, from any
+    # working directory.
+    assert "must never be written there" not in result.output
+    if not cwd_part:
+        assert result.exit_code == 0, result.output
+        assert destination.exists()
+    else:
+        # **The model boundary reads search paths relative to the working
+        # directory** (measured on #459). From data/ or local_content/, the
+        # default `local_content` search path is not this one, so the file
+        # would be read as organization-internal by a command run from here.
+        # The write guard matches what the boundary will say, and refuses:
+        # the safe direction. #459 (b) makes the catalog carry its own licence.
+        assert result.exit_code != 0, result.output
+        assert "would be read as organization-internal" in result.output
+        assert not destination.exists()
 
 
 def test_map_builds_crosswalk_from_controls_json(tmp_path):

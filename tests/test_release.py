@@ -1199,3 +1199,16 @@ def test_publish_needs_an_identity_and_passes_it_to_the_commit_only(tmp_path, mo
     assert (tmp_path / "tap" / release.TAP_FORMULA_PATH).read_text() == "class Candidate; end\n"
     assert ctx.notes["tap_sha"] == _PUSHED
     assert any("push" in c for c in calls)
+
+
+def test_a_failed_push_is_refused_even_while_the_tap_already_matches(tmp_path, monkeypatch):
+    """#407, policyforge-b5 on #419: with only clone and commit parametrised, a
+    `_publish` that ignored the push's status survived. The input that tells
+    them apart is a push that fails while the tap already serves a match."""
+    monkeypatch.setattr(release.tempfile, "mkdtemp", lambda: str(tmp_path / "tap"))
+    ctx = _ctx(run=_tap_run([], fail="push", served="class Candidate; end\n"))
+    ctx.notes["candidate_formula"] = "class Candidate; end\n"
+    release._publish(ctx)
+    assert "push" in ctx.notes["publish"] and "exited 128" in ctx.notes["publish"]
+    check = release._published(ctx)
+    assert not check.ok, check.measured

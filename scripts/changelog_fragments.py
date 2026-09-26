@@ -91,27 +91,42 @@ _WHERE = r"(?:above|below)"
 #: pointed the wrong way or was right by luck.
 #:
 #: **A pointer, not every "above" or "below".** Measured against the 3,691
-#: lines of `CHANGELOG.md` at 1.6.1: the bare words matched 19 times. Nine
-#: were pointers to other entries, and every shape among them is matched
-#: here: "see below", a noun naming an entry beside a position ("the entry
-#: above", "the harness change below", "the ledger fix above"), a quoted
-#: entry title followed by one, "the above" standing alone, and "everything
-#: else below". Ten were prose that must keep passing ("would fall below the
-#: catalog", "mcp is held below 2", "the requirement above it", "the note
-#: above the rows"); `tests/test_changelog_fragments.py` holds all ten, so a
-#: later widening that reintroduces one fails. "You see below" describes
-#: rather than directs, and passes.
+#: lines of `CHANGELOG.md` at 1.6.1: the bare words matched 19 times. Ten
+#: were pointers to other entries and nine were prose that must keep
+#: passing ("would fall below the catalog", "mcp is held below 2", "the
+#: requirement above it", "the note above the rows");
+#: `tests/test_changelog_fragments.py` holds all nine, so a later widening
+#: that reintroduces one fails.
+#:
+#: **Nine of the ten pointers are matched, and the tenth is not** (1d on
+#: #420). Matched: "see below" (with an adverb: "see further below"), a noun
+#: naming an entry beside a position ("the entry above", "the harness change
+#: below", "the ledger fix above"), a quoted entry title followed by one,
+#: "the above" standing alone, and "everything else below". **Not matched:
+#: a pointer whose subject is any other noun** -- "the Part 2 catalog above"
+#: (1.5.0), "the ledger bug above". That vocabulary is open, and a noun list
+#: would never finish, so for that shape review is still the instrument. The
+#: test file holds the real one as a strict expected miss, red the day this
+#: starts to catch it.
+#:
+#: **A comparison is not a pointer.** A noun then a position then a
+#: complement ("a change below 5%", "a fix below 1.0", "below the
+#: catalog") compares; a pointer has nothing after the position. "You see
+#: below" describes rather than directs, and passes. `section` is not in the
+#: noun list: a fragment may use `###`, so "the section below" is within it.
+_ADVERB = r"(?:(?:the|further|just|also|directly|immediately)\s+)?"
+_COMPLEMENT = r"(?!\s+(?:\d|the\b|a\b|an\b|it\b))"
 _POSITIONAL = re.compile(
     "|".join(
         [
-            rf"(?<!\byou )(?<!\bwe )\bsee\s+(?:the\s+)?{_WHERE}\b",
-            rf"\b(?:entry|entries|fragment|fragments|change|fix|item|section)\s+{_WHERE}\b",
+            rf"(?<!\byou )(?<!\bwe )\bsee\s+{_ADVERB}{_WHERE}\b",
+            rf"\b(?:entry|entries|fragment|fragments|change|fix|item)\s+{_WHERE}\b{_COMPLEMENT}",
             rf"\b{_WHERE}\s+(?:entry|entries|fragment|fragments)\b",
             r"\b(?:previous|next|preceding|following)\s+(?:entry|entries|fragment|fragments)\b",
             rf"\"[^\"]{{3,}}\"\s+{_WHERE}\b",
             # "the above" as a noun: followed by punctuation or the end.
             rf"\bthe\s+{_WHERE}(?=\s*(?:[,.;:)]|$))",
-            rf"\b(?:everything|all|the\s+rest)(?:\s+else)?\s+{_WHERE}\b",
+            rf"\b(?:everything|all|the\s+rest)(?:\s+else)?\s+{_WHERE}\b{_COMPLEMENT}",
         ]
     ),
     re.IGNORECASE,

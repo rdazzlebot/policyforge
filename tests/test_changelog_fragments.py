@@ -285,6 +285,10 @@ def test_check_derives_its_own_population(tmp_path: Path) -> None:
         "As the previous entry says, it is refused.",
         "It installs with brew, and everything else below had accumulated on main.",
         "Documentation accuracy fixes found while writing the above, each overclaimed.",
+        # "see" with an adverb, from 1d's domain sentences on #420.
+        "See further below for the migration.",
+        "The flag is gone (see just above).",
+        "The rest is unchanged; see also below.",
         # A pointer wrapped across a line is still one pointer.
         "That is how the entry\nabove went unmeasured.",
     ],
@@ -300,10 +304,12 @@ def test_a_pointer_to_another_entry_by_position_is_a_problem(tmp_path: Path, sen
 @pytest.mark.parametrize(
     "sentence",
     [
-        # ALL TEN sentences in the 1.6.1 CHANGELOG where "above" or "below"
+        # ALL NINE sentences in the 1.6.1 CHANGELOG where "above" or "below"
         # points at no other entry. The issue's first pattern refused every
         # one (80's request on #387: pinned, so a widening cannot bring
-        # them back). Derived by running that pattern over CHANGELOG.md.
+        # them back). Derived by running that pattern over CHANGELOG.md and
+        # reading each in context (1d on #420 found a tenth that was not
+        # prose; it is the expected miss below).
         "A Procedure step carries out the Standard requirement above it, and that requirement "
         "holds the citation.",
         "The note above the rows no longer counts the kinds of zero; each row names its own.",
@@ -313,9 +319,13 @@ def test_a_pointer_to_another_entry_by_position_is_a_problem(tmp_path: Path, sen
         "It reconciles, and is the same 814 and the same 200 you see below.",
         "Rewrite them to the forms above, and rewrite every tag in a document at once.",
         "All are equally invisible to the tag reader, and the pattern above catches any bracket.",
-        "Seven entries do exactly that, including `2.16` and `2.19` in the Part 2 catalog above.",
         "Two paragraphs above, the same page states that it cannot attest to any third party.",
         "**mcp is held below 2** (at 1.30.0), in the extra and in Dependabot's ignores.",
+        # A comparison, not a pointer: the position has a complement (1d).
+        "Any change below 5% is noise.",
+        "A fix below 1.0 was never shipped.",
+        # Within the fragment, which may use `###` (1d: `section` dropped).
+        "The section below lists each flag.",
         # What the message tells a writer to do instead.
         "The README says so (see the NIST SP 800-171 entry in this release).",
         # Quoted, not said.
@@ -326,3 +336,26 @@ def test_a_pointer_to_another_entry_by_position_is_a_problem(tmp_path: Path, sen
 def test_above_or_below_that_is_not_a_pointer_passes(tmp_path: Path, sentence: str) -> None:
     write(tmp_path, "a.md", f"**A change.**\n\n{sentence}\n")
     assert frag.check(tmp_path) == []
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "known miss, named in _POSITIONAL's comment: a pointer whose subject is "
+        "any other noun. This is 1.5.0's CHANGELOG pointing 79 lines back at "
+        "another entry (1d on #420). Strict, so it goes red the day it is caught "
+        "and this marker has to come off."
+    ),
+)
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Seven entries do exactly that, including `2.16` and `2.19` in the Part 2 catalog above.",
+        "As noted in the ledger bug above, the figure was wrong.",
+    ],
+)
+def test_a_pointer_whose_subject_is_any_other_noun_is_not_yet_caught(
+    tmp_path: Path, sentence: str
+) -> None:
+    write(tmp_path, "a.md", f"**A change.** {sentence}\n")
+    assert frag.check(tmp_path), "caught: remove the xfail and move it to the refused tests"

@@ -16,6 +16,4 @@ settings.** Previously, one saved outside `local_content/` was treated as your
 own content and could reach a hosted model even if your boundary kept
 licensed content local. If you wrote a HITRUST or GovRAMP catalog outside
 `local_content/` with an earlier version, re-run the ETL into
-`local_content/` so your settings apply to it. If your organisation has a
-data agreement covering a hosted provider, declare that provider inside your
-boundary as before, and licensed content may go to it.
+`local_content/` so your settings apply to it.

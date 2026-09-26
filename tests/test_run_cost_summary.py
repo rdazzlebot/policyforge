@@ -1,6 +1,6 @@
 """A run ends with what it cost, said once (#379), by one rule (80's ruling).
 
-The rule, for this summary, the provenance stamp and `policyforge ledger`'s
+The rule, for this summary, the provenance stamp and `policyforge model-log`'s
 totals: a total is a total only when every call is priced; otherwise the
 known part and the count of calls of unknown cost are both said, and never
 merged. A local model's call is priced at 0.0 by its boundary class.

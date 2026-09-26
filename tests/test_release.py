@@ -130,6 +130,7 @@ def test_the_order_is_the_procedure():
     keys = _keys()
     order = [
         "train-final",
+        "resources",
         "changelog",
         "version",
         "release-pr",
@@ -970,3 +971,244 @@ def test_a_version_the_published_formula_already_has_is_replaced_not_doubled(mon
     assert [line for line in commit if line.startswith("  version ")] == ['  version "9.9.9"']
     tag = release._formula(_ctx(), release._tag_archive(_ctx()), "1" * 64)
     assert "version " not in tag, tag
+
+
+def test_a_crlf_published_formula_still_gets_its_version(monkeypatch):
+    """b5 on #392: the patterns anchor on "\n", so a CRLF formula silently
+    got no version line and would fail step 8 like #391. Normalised first."""
+    crlf = _PUBLISHED.replace("\n", "\r\n")
+    monkeypatch.setattr(release.release_check, "fetch_formula", lambda url=None: crlf)
+    ctx = _ctx(run=_fake_run({"rev-parse HEAD": (0, CUT)}))
+    formula = release._formula(ctx, release._head_archive(ctx), "1" * 64)
+    assert '  version "9.9.9"' in formula.splitlines(), formula
+    assert "\r" not in formula
+
+
+# --- #389: the formula's pins are checked before anything installs with them ---
+
+
+def test_the_pins_are_checked_before_the_head_install_and_the_tag():
+    """#389: `_formula` keeps the published formula's resource pins, so they
+    are checked before step 8 installs with them, not after the tag."""
+    keys = _keys()
+    assert keys.index("resources") < keys.index("head-install") < keys.index("tag")
+
+
+def test_the_pins_are_checked_before_the_cut_is_written():
+    """policyforge-ba on #419: after `release-pr`, a mismatch was found with
+    the cut PR already open. Nothing outward, and nothing written, comes
+    before the check."""
+    steps = release.steps()
+    first_writer = next(i for i, s in enumerate(steps) if s.kind == ACT)
+    assert [s.key for s in steps].index("resources") < first_writer
+
+
+def test_a_missing_formula_file_is_a_usage_error_not_a_traceback(tmp_path, capsys):
+    with pytest.raises(SystemExit) as stop:
+        release.main(["9.9.9", "--formula", str(tmp_path / "absent.rb")])
+    assert stop.value.code == 2
+    assert "no such file" in capsys.readouterr().err
+
+
+def test_a_stale_pin_is_refused_before_the_install_and_says_what_to_do(tmp_path, monkeypatch):
+    """Before any candidate exists, the published formula is what is read,
+    and a mismatch says to regenerate the resource stanzas."""
+    lock = tmp_path / release.release_check.LOCK
+    lock.parent.mkdir(parents=True)
+    lock.write_text("click==8.2.0 \\\n    --hash=sha256:x\n", encoding="utf-8")
+    published = '  resource "click" do\n    url "https://files/click-8.1.7.tar.gz"\n'
+    monkeypatch.setattr(release.release_check, "fetch_formula", lambda url=None: published)
+    step = next(s for s in release.steps() if s.key == "resources")
+    check = step.gate(_ctx(root=tmp_path))
+    assert not check.ok
+    assert any("regenerate the formula's resource stanzas" in line for line in check.measured)
+
+
+def _lock(tmp_path, pin):
+    lock = tmp_path / release.release_check.LOCK
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    # The lock's real shape: a pin, a line continuation, then its hash.
+    lock.write_text(f"click=={pin} \\\n    --hash=sha256:x\n", encoding="utf-8")
+
+
+def _resource_formula(pin):
+    return f'  resource "click" do\n    url "https://files/click-{pin}.tar.gz"\n'
+
+
+def test_a_lock_change_without_a_regenerated_formula_names_the_flag(tmp_path, monkeypatch):
+    """The lock moved (1.7: anthropic, wcwidth); the published formula has the
+    old pins; the gate refuses and says how through: --formula."""
+    _lock(tmp_path, "8.2.0")
+    monkeypatch.setattr(
+        release.release_check, "fetch_formula", lambda url=None: _resource_formula("8.1.7")
+    )
+    check = next(s for s in release.steps() if s.key == "resources").gate(_ctx(root=tmp_path))
+    assert not check.ok
+    assert any("the published formula" in line for line in check.measured)
+    assert any("--formula PATH" in line for line in check.measured)
+
+
+def test_a_reconciled_formula_passes_and_is_what_the_cut_edits(tmp_path, monkeypatch):
+    """--formula is read by the gate AND is the base _formula edits, so the
+    pins checked are the pins installed."""
+    _lock(tmp_path, "8.2.0")
+    monkeypatch.setattr(
+        release.release_check, "fetch_formula", lambda url=None: _resource_formula("8.1.7")
+    )
+    reconciled = tmp_path / "policyforge.rb"
+    reconciled.write_text(
+        '  url "x"\n  sha256 "' + "0" * 64 + '"\n' + _resource_formula("8.2.0"), encoding="utf-8"
+    )
+    ctx = _ctx(root=tmp_path, formula_path=reconciled)
+    check = next(s for s in release.steps() if s.key == "resources").gate(ctx)
+    assert check.ok, check.measured
+    assert any(f"--formula {reconciled}" in line for line in check.measured)
+    built = release._formula(ctx, release._tag_archive(ctx), "1" * 64)
+    assert "click-8.2.0" in built and "click-8.1.7" not in built
+
+
+def test_an_unreconciled_formula_is_refused(tmp_path, monkeypatch):
+    """`update-python-resources` proposes PyPI's latest; the lock decides. A
+    --formula with a pin off the lock is refused, not trusted for being given."""
+
+    def no_network(url=None):
+        raise AssertionError("--formula was given, so the published formula must not be read")
+
+    monkeypatch.setattr(release.release_check, "fetch_formula", no_network)
+    _lock(tmp_path, "8.2.0")
+    proposed = tmp_path / "policyforge.rb"
+    proposed.write_text(_resource_formula("8.3.0"), encoding="utf-8")
+    ctx = _ctx(root=tmp_path, formula_path=proposed)
+    assert not next(s for s in release.steps() if s.key == "resources").gate(ctx).ok
+
+
+# --- steps 13 and 14 as the 1.6.1 cut ran them (#415, #416, #407) -------------
+
+
+def test_step_14_argv_parses_with_release_checks_own_parser():
+    """#415: the 1.6.1 cut passed the version positionally and argparse exited
+    2, so the final check never ran. The argv step 14 builds is parsed here by
+    release_check's real parser, not by a description of it."""
+    seen: list[list[str]] = []
+    ctx = _ctx(run=lambda argv: seen.append(argv) or subprocess.CompletedProcess(argv, 0, "", ""))
+    step = next(s for s in release.steps() if s.key == "release-check")
+    assert step.gate(ctx).ok
+    (argv,) = seen
+    assert Path(argv[1]) == release.REPO_ROOT / "scripts" / "release_check.py"
+    assert Path(argv[1]).is_file()
+    args = release.release_check.parser().parse_args(argv[2:])
+    assert args.version == ctx.version
+    assert args.allow_skip == [], "step 14 must not excuse any check"
+
+
+_TIP = "a" * 40
+_PUSHED = "b" * 40
+
+
+def _tap_run(calls, *, tip=_TIP, served="", fail="", identity=("Rel Ease", "rel@example.invalid")):
+    """git and gh as the publish steps meet them. `fail` names the git
+    subcommand that exits 128, as `commit` did on the 1.6.1 release machine."""
+
+    def run(argv):
+        calls.append(argv)
+        if "config" in argv:
+            value = identity[0] if argv[-1] == "user.name" else identity[1]
+            return subprocess.CompletedProcess(argv, 0 if value else 1, value + "\n", "")
+        if "ls-remote" in argv:
+            return subprocess.CompletedProcess(
+                argv, 0, f"{tip}\trefs/heads/main\n" if tip else "", ""
+            )
+        if argv[:2] == ["gh", "api"]:
+            return subprocess.CompletedProcess(argv, 0, served, "")
+        if fail and fail in argv:
+            return subprocess.CompletedProcess(
+                argv, 128, "", "fatal: unable to auto-detect email address"
+            )
+        if "clone" in argv:
+            (Path(argv[-1]) / "Formula").mkdir(parents=True)
+        if "rev-parse" in argv:
+            return subprocess.CompletedProcess(argv, 0, _PUSHED + "\n", "")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    return run
+
+
+def _stale_raw(monkeypatch):
+    monkeypatch.setattr(
+        release.release_check, "fetch_formula", lambda url=None: "class Stale; end\n"
+    )
+
+
+def test_publish_postcondition_reads_the_api_at_the_servers_tip_not_raw(monkeypatch):
+    """#416: raw.githubusercontent.com served 1.6.0 for ~300 s after a correct
+    push. The postcondition asks the contents API at the tip ls-remote names."""
+    _stale_raw(monkeypatch)
+    calls: list[list[str]] = []
+    ctx = _ctx(run=_tap_run(calls, served="class Candidate; end\n"))
+    ctx.notes["candidate_formula"] = "class Candidate; end\n"
+    check = release._published(ctx)
+    assert check.ok, check.measured
+    (api,) = [c for c in calls if c[:2] == ["gh", "api"]]
+    assert api[-1].endswith(f"contents/{release.TAP_FORMULA_PATH}?ref={_TIP}")
+    assert "Accept: application/vnd.github.raw" in api
+
+
+def test_publish_postcondition_fails_on_the_old_formula_and_on_no_tip(monkeypatch):
+    _stale_raw(monkeypatch)
+    ctx = _ctx(run=_tap_run([], served="class Old; end\n"))
+    ctx.notes["candidate_formula"] = "class Candidate; end\n"
+    assert not release._published(ctx).ok
+    ctx = _ctx(run=_tap_run([], tip="", served="class Candidate; end\n"))
+    ctx.notes["candidate_formula"] = "class Candidate; end\n"
+    assert not release._published(ctx).ok
+
+
+@pytest.mark.parametrize("failing", ["clone", "commit"])
+def test_publish_stops_at_the_first_failure_and_never_pushes(failing, tmp_path, monkeypatch):
+    """#407: commit exited 128, push then exited 0 on nothing, and no status was
+    read. Now the first failure stops the step, is named, and the
+    postcondition fails on it even while the tap still serves a match."""
+    monkeypatch.setattr(release.tempfile, "mkdtemp", lambda: str(tmp_path / "tap"))
+    calls: list[list[str]] = []
+    ctx = _ctx(run=_tap_run(calls, fail=failing, served="class Candidate; end\n"))
+    ctx.notes["candidate_formula"] = "class Candidate; end\n"
+    release._publish(ctx)
+    assert not any("push" in c for c in calls), calls
+    assert failing in ctx.notes["publish"] and "exited 128" in ctx.notes["publish"]
+    check = release._published(ctx)
+    assert not check.ok
+    assert any(line.startswith("publish: refused") for line in check.measured)
+
+
+def test_publish_needs_an_identity_and_passes_it_to_the_commit_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(release.tempfile, "mkdtemp", lambda: str(tmp_path / "tap"))
+    calls: list[list[str]] = []
+    ctx = _ctx(run=_tap_run(calls, identity=("", "")))
+    ctx.notes["candidate_formula"] = "class Candidate; end\n"
+    release._publish(ctx)
+    assert "refused" in ctx.notes["publish"]
+    assert not any("clone" in c or "push" in c for c in calls)
+
+    calls.clear()
+    ctx = _ctx(run=_tap_run(calls))
+    ctx.notes["candidate_formula"] = "class Candidate; end\n"
+    release._publish(ctx)
+    assert "publish" not in ctx.notes, ctx.notes
+    (commit,) = [c for c in calls if "commit" in c]
+    assert "user.name=Rel Ease" in commit and "user.email=rel@example.invalid" in commit
+    assert (tmp_path / "tap" / release.TAP_FORMULA_PATH).read_text() == "class Candidate; end\n"
+    assert ctx.notes["tap_sha"] == _PUSHED
+    assert any("push" in c for c in calls)
+
+
+def test_a_failed_push_is_refused_even_while_the_tap_already_matches(tmp_path, monkeypatch):
+    """#407, policyforge-b5 on #419: with only clone and commit parametrised, a
+    `_publish` that ignored the push's status survived. The input that tells
+    them apart is a push that fails while the tap already serves a match."""
+    monkeypatch.setattr(release.tempfile, "mkdtemp", lambda: str(tmp_path / "tap"))
+    ctx = _ctx(run=_tap_run([], fail="push", served="class Candidate; end\n"))
+    ctx.notes["candidate_formula"] = "class Candidate; end\n"
+    release._publish(ctx)
+    assert "push" in ctx.notes["publish"] and "exited 128" in ctx.notes["publish"]
+    check = release._published(ctx)
+    assert not check.ok, check.measured

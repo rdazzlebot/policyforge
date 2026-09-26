@@ -13,6 +13,7 @@ notes: A US government work, so freely redistributable. The CSF 2.0 Core - 6 fun
 crosswalk_relationship: source-untyped
 crosswalk_relationship_reason: NIST's OLIR 186 record for this mapping says "comprehensive
   No", and the workbook states no relationship for any link.
+crosswalk_source: NIST OLIR 186
 crosswalk_source_url: https://csrc.nist.gov/csrc/media/projects/olir/documents/submissions/Cybersecurity_Framework_v2-0_Concept_Crosswalk_800-53_5_2_0_draft.xlsx
 crosswalk_source_sha256: 5521fa73ace64d8a3014a7b1e971f0f20d32df5ff5e174632723bda09e7e908f
 source_sha256: 4836943f21d393f2821df85ada4e6f3c0617243b4ddf44263fe68205400210b4

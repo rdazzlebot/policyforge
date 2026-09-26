@@ -100,6 +100,9 @@ class Framework:
     #: `source-untyped`. Empty for a catalog that declares none, whose
     #: published pairs read as they always have.
     crosswalk_relationship: str = ""
+    #: Who published that crosswalk, for a report's wording (#449): CSF 2.0's
+    #: is `NIST OLIR 186`. Empty when undeclared.
+    crosswalk_source: str = ""
 
     @property
     def redistributable(self) -> bool:
@@ -145,6 +148,7 @@ def load_framework(directory: Path) -> Framework:
         family_overrides={str(k): str(v) for k, v in (data.get("family_overrides") or {}).items()},
         structure_only=tuple(str(i) for i in (data.get("structure_only") or ())),
         crosswalk_relationship=str(data.get("crosswalk_relationship") or "").strip(),
+        crosswalk_source=str(data.get("crosswalk_source") or "").strip(),
     )
 
 
@@ -418,6 +422,21 @@ def declared_crosswalk_relationships(
             )
         for key in {framework.key, *(normalize_framework(n) for n in names)} - {""}:
             found.setdefault(key, framework.crosswalk_relationship)
+    return found
+
+
+def declared_crosswalk_sources(
+    config: dict | None = None, *, roots: list[Path] | None = None
+) -> dict[str, str]:
+    """{framework key: who published its crosswalk}, as its manifest says (#449)."""
+    from policyforge.mapping.crosswalk import normalize_framework
+
+    found: dict[str, str] = {}
+    for _, framework, names in _catalog_names(config, roots):
+        if not framework.crosswalk_source:
+            continue
+        for key in {framework.key, *(normalize_framework(n) for n in names)} - {""}:
+            found.setdefault(key, framework.crosswalk_source)
     return found
 
 

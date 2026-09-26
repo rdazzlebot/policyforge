@@ -101,9 +101,25 @@ def test_the_withdrawn_target_is_refused_not_carried(rows):
 
 def test_the_manifest_declares_the_mapping_untyped_and_pins_both_files(manifest):
     assert manifest["crosswalk_relationship"] == "source-untyped"
+    assert manifest["crosswalk_source"] == "NIST OLIR 186"
     assert manifest["licence"] == "public-domain"
     assert manifest["crosswalk_source_sha256"] == csf.OLIR_186_SHA256
     assert manifest["source_sha256"] == csf.CATALOG_SHA256
+
+
+def test_the_manifests_family_links_are_the_pinned_workbooks(manifest, ids_800_53):
+    """Re-derived from the pinned workbook, not compared with themselves:
+    `content_sha256` covers `controls.json` only, so nothing else would notice
+    a hand edit to `family_links:` (80, on #449)."""
+    _, families, _ = csf.parse_olir_186(OLIR_FIXTURE.read_bytes(), ids_800_53)
+    assert manifest["family_links"]["links"] == families
+
+
+def test_only_csf_declares_a_crosswalk_source():
+    from policyforge.frameworks.registry import declared_crosswalk_sources
+
+    sources = declared_crosswalk_sources(roots=[ROOT / "data" / "frameworks"])
+    assert sources == {"nist-csf": "NIST OLIR 186"}
 
 
 def test_only_csf_declares_a_crosswalk_relationship():

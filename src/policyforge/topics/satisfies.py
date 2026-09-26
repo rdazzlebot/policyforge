@@ -21,9 +21,12 @@ pair sitting in an overlay that nobody has looked at yet are three different
 strengths of evidence, and an assessor is entitled to tell them apart. The
 unreviewed ones are listed and marked rather than hidden: a report that
 quietly dropped them would look better than the evidence behind it, which is
-the failure this project exists to avoid. Where a reviewed pair records a
-relationship of `superset` or `intersects` — the control covers part of the
-requirement — it is reported as *in part*, never as satisfied.
+the failure this project exists to avoid. Where a pair's relationship is in
+`coverage.PARTIAL_RELATIONSHIPS` — `superset` or `intersects` recorded by a
+reviewer, or `source-untyped` declared by the catalog's own manifest for a
+mapping its source publishes untyped and incomplete (#408) — the control
+covers part of the requirement, and it is reported as *in part*, never as
+satisfied.
 
 **What counts as a citation here.** The population is
 `content/tags.SOURCE_TAG_RE`, shared with `content/check`,

@@ -72,7 +72,8 @@ seeding changes nothing until someone edits the file.
 **2. NIST marks the mapping not comprehensive.** OLIR's record for it
 says `comprehensive: No`. A CSF id with no link is **not mapped by NIST**,
 which is not the same as having no 800-53 equivalent. `/coverage` says so
-beside the CSF figures. With the pinned file, every subcategory has at
+beside the CSF figures, naming the source from `crosswalk_source:` in
+`framework.yaml`. With the pinned file, every subcategory has at
 least one link and 20 of the 22 categories have none.
 
 **3. Three links name a whole 800-53 family, not a control:** `GV.OC-03`
@@ -113,6 +114,11 @@ different encoding or a different algorithm. So this catalog is pinned to
 | Licence  | Public domain (a US government work)                                                                            |
 | Revision | **CSF 2.0**, CSWP 29, February 26, 2024: <https://doi.org/10.6028/NIST.CSWP.29>                                 |
 | Command  | `policyforge etl-csf`                                                                                           |
+
+**`source_ref` is `1.2.0`, and that is not the tag.** It is the catalog's
+own `metadata.version`, which NIST versions separately from the
+`oscal-content` repository tag (`v1.5.0`) that `source_url` names. Both are
+recorded; neither stands for the other.
 
 **The OSCAL file cites the draft.** Its back-matter points at
 `NIST.CSWP.29.ipd`, the initial public draft. Its content matches the

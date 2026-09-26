@@ -1799,6 +1799,9 @@ def etl_csf(out: Path, oscal_path: Path | None, olir_path: Path | None):
 
     out.parent.mkdir(parents=True, exist_ok=True)
     write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
+    # `source_ref` is the catalog's OWN `metadata.version` (1.2.0 when pinned),
+    # which NIST versions separately from the repository tag the URL names
+    # (v1.5.0); both are recorded, the tag in `source_url` (80, on #449).
     version = catalog["catalog"]["metadata"]["version"]
     csf.record_family_links(out.parent / "framework.yaml", family_links)
     stamp = record_source_provenance(

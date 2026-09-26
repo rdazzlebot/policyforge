@@ -158,9 +158,18 @@ def test_an_organisations_reviewed_row_overrides_the_declaration(declared):
     assert _covered(controls, table).get("nist-csf") == 1
 
 
-def test_coverage_names_what_the_source_left_unmapped(declared):
-    """80 on #408: an unmapped CSF id is "not mapped by NIST", never "no
-    800-53 equivalent". Only a `source-untyped` framework gets the note."""
+@pytest.mark.parametrize(
+    ("sources", "named"),
+    [
+        ({"nist-csf": "NIST OLIR 186"}, "NIST OLIR 186 (the source of this crosswalk)"),
+        ({}, "the source of this crosswalk"),
+    ],
+    ids=["source-declared", "source-undeclared"],
+)
+def test_coverage_names_what_the_source_left_unmapped(declared, sources, named):
+    """80 on #408 and #449: an unmapped CSF id is "not mapped by" its source,
+    named from the manifest, never "no 800-53 equivalent". Only a
+    `source-untyped` framework gets the note."""
     from policyforge.topics.coverage import format_report
 
     controls = [
@@ -174,13 +183,14 @@ def test_coverage_names_what_the_source_left_unmapped(declared):
         other_controls=[c for c in controls if c.framework != "NIST 800-53"],
         crosswalk=build_crosswalk(controls),
         relationships=relationships_for(controls, [], declared=declared),
+        crosswalk_sources=sources,
     )
     by_name = {f.framework: f for f in report.framework_coverage}
     assert by_name["nist-csf"].unmapped_by_source == ["GV.OC"]
     assert by_name["hipaa"].unmapped_by_source is None
     text = format_report(report)
-    assert text.count("not mapped by the source") == 1
-    assert "declares it incomplete" in text
+    assert text.count(f"are not mapped by {named}, which is not the same") == 1
+    assert f"{named[0].upper()}{named[1:]} publishes this mapping untyped" in text
 
 
 class _Document:

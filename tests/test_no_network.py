@@ -110,8 +110,12 @@ def test_bytes_loopback_and_the_local_host_are_allowed():
 
 def test_a_connection_to_a_bytes_host_is_refused():
     """policyforge-b5 on #434: `connect((b"host", port))` resolves the name
-    itself, below Python's resolver functions, so only the decode in
-    `_is_loopback` stops it (#436)."""
+    itself, below Python's resolver functions, so the guard's `connect` must
+    check a bytes host, not only a str one (#436). What refuses it is
+    `_is_loopback` treating a host it cannot read as NOT loopback; the bytes
+    decode is what lets `b"localhost"` through, and
+    `test_bytes_loopback_and_the_local_host_are_allowed` pins that half
+    (policyforge-ba on #437, who measured the first wording wrong)."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         with pytest.raises(NetworkUsedInTest, match="ecfr"):

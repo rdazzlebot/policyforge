@@ -831,13 +831,17 @@ def _tag(ctx: Context) -> None:
 def _resources_match_lock(ctx: Context) -> Check:
     """The lock decides (CONTRIBUTING): every formula resource pinned as the lock pins it.
 
-    **Checked before `head-install`, not after the tag** (#389). `_formula`
-    rewrites only `url`, `sha256`, `homepage` and `version`, so every install
-    this script runs uses the published formula's resource pins. Checked
-    after the tag, a runtime-dependency change would have been installed at
-    step 8 against the previous release's pins, approved, and tagged before
-    anything said so. Before any install, the published formula is what is
-    read; the candidate formula carries the same pins."""
+    **Checked before the cut is written, not after the tag** (#389).
+    `_formula` rewrites only `url`, `sha256`, `homepage` and `version`, so
+    every install this script runs uses the base formula's resource pins.
+    Checked after the tag, a runtime-dependency change would have been
+    installed against the previous release's pins, approved, and tagged
+    before anything said so. It sits before `changelog`, so a mismatch
+    refuses before the release PR exists (policyforge-ba on #419).
+
+    What is read is the base formula, `--formula` if given, else the
+    published one (`_base_formula`), or the candidate once one exists,
+    which carries the same pins. The output names which."""
     formula = ctx.notes.get("candidate_formula") or _base_formula(ctx)
     source = (
         "the candidate formula"
@@ -1148,6 +1152,13 @@ def steps() -> list[Step]:
             _notes_measured,
         ),
         Step(
+            "resources",
+            "the formula's resources are the lock's, before anything installs with them",
+            CHECK,
+            _resources_match_lock,
+            _resources_match_lock,
+        ),
+        Step(
             "changelog",
             "assemble changelog.d/ into `## X.Y.Z`",
             ACT,
@@ -1176,13 +1187,6 @@ def steps() -> list[Step]:
             _open_pr,
             outward=True,
             would="commit, push the cut branch and open a PR against main",
-        ),
-        Step(
-            "resources",
-            "the formula's resources are the lock's, before anything installs with them",
-            CHECK,
-            _resources_match_lock,
-            _resources_match_lock,
         ),
         Step(
             "head-install",
@@ -1373,6 +1377,8 @@ def main(argv: list[str] | None = None) -> int:
         help="the regenerated, lock-reconciled formula to cut from (default: the published one)",
     )
     args = parser.parse_args(argv)
+    if args.formula is not None and not args.formula.is_file():
+        parser.error(f"--formula {args.formula}: no such file")
     if not re.fullmatch(r"\d+\.\d+\.\d+", args.version):
         print(f"release: {args.version!r} is not X.Y.Z")
         return 2

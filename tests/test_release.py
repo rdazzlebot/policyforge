@@ -130,10 +130,10 @@ def test_the_order_is_the_procedure():
     keys = _keys()
     order = [
         "train-final",
+        "resources",
         "changelog",
         "version",
         "release-pr",
-        "resources",
         "head-install",
         "main",
         "tag",
@@ -992,6 +992,22 @@ def test_the_pins_are_checked_before_the_head_install_and_the_tag():
     are checked before step 8 installs with them, not after the tag."""
     keys = _keys()
     assert keys.index("resources") < keys.index("head-install") < keys.index("tag")
+
+
+def test_the_pins_are_checked_before_the_cut_is_written():
+    """policyforge-ba on #419: after `release-pr`, a mismatch was found with
+    the cut PR already open. Nothing outward, and nothing written, comes
+    before the check."""
+    steps = release.steps()
+    first_writer = next(i for i, s in enumerate(steps) if s.kind == ACT)
+    assert [s.key for s in steps].index("resources") < first_writer
+
+
+def test_a_missing_formula_file_is_a_usage_error_not_a_traceback(tmp_path, capsys):
+    with pytest.raises(SystemExit) as stop:
+        release.main(["9.9.9", "--formula", str(tmp_path / "absent.rb")])
+    assert stop.value.code == 2
+    assert "no such file" in capsys.readouterr().err
 
 
 def test_a_stale_pin_is_refused_before_the_install_and_says_what_to_do(tmp_path, monkeypatch):

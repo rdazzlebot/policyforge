@@ -1064,3 +1064,122 @@ def test_an_unreconciled_formula_is_refused(tmp_path, monkeypatch):
     proposed.write_text(_resource_formula("8.3.0"), encoding="utf-8")
     ctx = _ctx(root=tmp_path, formula_path=proposed)
     assert not next(s for s in release.steps() if s.key == "resources").gate(ctx).ok
+
+
+# --- steps 13 and 14 as the 1.6.1 cut ran them (#415, #416, #407) -------------
+
+
+def test_step_14_argv_parses_with_release_checks_own_parser():
+    """#415: the 1.6.1 cut passed the version positionally and argparse exited
+    2, so the final check never ran. The argv step 14 builds is parsed here by
+    release_check's real parser, not by a description of it."""
+    seen: list[list[str]] = []
+    ctx = _ctx(run=lambda argv: seen.append(argv) or subprocess.CompletedProcess(argv, 0, "", ""))
+    step = next(s for s in release.steps() if s.key == "release-check")
+    assert step.gate(ctx).ok
+    (argv,) = seen
+    assert Path(argv[1]) == release.REPO_ROOT / "scripts" / "release_check.py"
+    assert Path(argv[1]).is_file()
+    args = release.release_check.parser().parse_args(argv[2:])
+    assert args.version == ctx.version
+    assert args.allow_skip == [], "step 14 must not excuse any check"
+
+
+_TIP = "a" * 40
+_PUSHED = "b" * 40
+
+
+def _tap_run(calls, *, tip=_TIP, served="", fail="", identity=("Rel Ease", "rel@example.invalid")):
+    """git and gh as the publish steps meet them. `fail` names the git
+    subcommand that exits 128, as `commit` did on the 1.6.1 release machine."""
+
+    def run(argv):
+        calls.append(argv)
+        if "config" in argv:
+            value = identity[0] if argv[-1] == "user.name" else identity[1]
+            return subprocess.CompletedProcess(argv, 0 if value else 1, value + "\n", "")
+        if "ls-remote" in argv:
+            return subprocess.CompletedProcess(
+                argv, 0, f"{tip}\trefs/heads/main\n" if tip else "", ""
+            )
+        if argv[:2] == ["gh", "api"]:
+            return subprocess.CompletedProcess(argv, 0, served, "")
+        if fail and fail in argv:
+            return subprocess.CompletedProcess(
+                argv, 128, "", "fatal: unable to auto-detect email address"
+            )
+        if "clone" in argv:
+            (Path(argv[-1]) / "Formula").mkdir(parents=True)
+        if "rev-parse" in argv:
+            return subprocess.CompletedProcess(argv, 0, _PUSHED + "\n", "")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    return run
+
+
+def _stale_raw(monkeypatch):
+    monkeypatch.setattr(
+        release.release_check, "fetch_formula", lambda url=None: "class Stale; end\n"
+    )
+
+
+def test_publish_postcondition_reads_the_api_at_the_servers_tip_not_raw(monkeypatch):
+    """#416: raw.githubusercontent.com served 1.6.0 for ~300 s after a correct
+    push. The postcondition asks the contents API at the tip ls-remote names."""
+    _stale_raw(monkeypatch)
+    calls: list[list[str]] = []
+    ctx = _ctx(run=_tap_run(calls, served="class Candidate; end\n"))
+    ctx.notes["candidate_formula"] = "class Candidate; end\n"
+    check = release._published(ctx)
+    assert check.ok, check.measured
+    (api,) = [c for c in calls if c[:2] == ["gh", "api"]]
+    assert api[-1].endswith(f"contents/{release.TAP_FORMULA_PATH}?ref={_TIP}")
+    assert "Accept: application/vnd.github.raw" in api
+
+
+def test_publish_postcondition_fails_on_the_old_formula_and_on_no_tip(monkeypatch):
+    _stale_raw(monkeypatch)
+    ctx = _ctx(run=_tap_run([], served="class Old; end\n"))
+    ctx.notes["candidate_formula"] = "class Candidate; end\n"
+    assert not release._published(ctx).ok
+    ctx = _ctx(run=_tap_run([], tip="", served="class Candidate; end\n"))
+    ctx.notes["candidate_formula"] = "class Candidate; end\n"
+    assert not release._published(ctx).ok
+
+
+@pytest.mark.parametrize("failing", ["clone", "commit"])
+def test_publish_stops_at_the_first_failure_and_never_pushes(failing, tmp_path, monkeypatch):
+    """#407: commit exited 128, push then exited 0 on nothing, and no status was
+    read. Now the first failure stops the step, is named, and the
+    postcondition fails on it even while the tap still serves a match."""
+    monkeypatch.setattr(release.tempfile, "mkdtemp", lambda: str(tmp_path / "tap"))
+    calls: list[list[str]] = []
+    ctx = _ctx(run=_tap_run(calls, fail=failing, served="class Candidate; end\n"))
+    ctx.notes["candidate_formula"] = "class Candidate; end\n"
+    release._publish(ctx)
+    assert not any("push" in c for c in calls), calls
+    assert failing in ctx.notes["publish"] and "exited 128" in ctx.notes["publish"]
+    check = release._published(ctx)
+    assert not check.ok
+    assert any(line.startswith("publish: refused") for line in check.measured)
+
+
+def test_publish_needs_an_identity_and_passes_it_to_the_commit_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(release.tempfile, "mkdtemp", lambda: str(tmp_path / "tap"))
+    calls: list[list[str]] = []
+    ctx = _ctx(run=_tap_run(calls, identity=("", "")))
+    ctx.notes["candidate_formula"] = "class Candidate; end\n"
+    release._publish(ctx)
+    assert "refused" in ctx.notes["publish"]
+    assert not any("clone" in c or "push" in c for c in calls)
+
+    calls.clear()
+    ctx = _ctx(run=_tap_run(calls))
+    ctx.notes["candidate_formula"] = "class Candidate; end\n"
+    release._publish(ctx)
+    assert "publish" not in ctx.notes, ctx.notes
+    (commit,) = [c for c in calls if "commit" in c]
+    assert "user.name=Rel Ease" in commit and "user.email=rel@example.invalid" in commit
+    assert (tmp_path / "tap" / release.TAP_FORMULA_PATH).read_text() == "class Candidate; end\n"
+    assert ctx.notes["tap_sha"] == _PUSHED
+    assert any("push" in c for c in calls)

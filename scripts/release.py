@@ -281,7 +281,12 @@ def _server_tip(ctx: Context, branch: str) -> str:
     exactly the stale measurement it exists to refuse. `ls-remote` asks the
     server every time. No answer is "", which fails every gate that reads it.
     """
-    out = ctx.run(["git", "-C", str(ctx.root), "ls-remote", "origin", f"refs/heads/{branch}"])
+    return _remote_tip(ctx, "origin", branch)
+
+
+def _remote_tip(ctx: Context, remote: str, branch: str) -> str:
+    """`branch`'s tip as `remote` reports it now; "" when it does not answer."""
+    out = ctx.run(["git", "-C", str(ctx.root), "ls-remote", remote, f"refs/heads/{branch}"])
     for line in (out.stdout or "").splitlines():
         sha, _, ref = line.partition("\t")
         if ref.strip() == f"refs/heads/{branch}" and re.fullmatch(r"[0-9a-f]{40}", sha):
@@ -864,29 +869,104 @@ def _resources_match_lock(ctx: Context) -> Check:
     )
 
 
+TAP_URL = f"https://github.com/{TAP_REPOSITORY}.git"
+
+
 def _published(ctx: Context) -> Check:
+    """Did the push land: the tap's main, asked of the server, holds the candidate.
+
+    Read through the contents API at the tip `ls-remote` names, never
+    raw.githubusercontent.com: in the 1.6.1 cut raw served the 1.6.0 file
+    for about 300 seconds after a correct push, and this postcondition
+    failed on it (#416). Raw is the route a user's `brew` takes, so it
+    belongs to step 14, which asks that question."""
     formula = ctx.notes.get("candidate_formula", "")
     if not formula:
         return Check(False, ["no candidate formula has passed its install in this run"])
-    live = release_check.fetch_formula()
+    lines = []
+    refused = ctx.notes.get("publish", "")
+    if refused:
+        lines.append(f"publish: {refused}")
+    tip = _remote_tip(ctx, TAP_URL, "main")
+    if not tip:
+        return Check(False, [*lines, f"{TAP_REPOSITORY} main: no answer from ls-remote"])
+    lines.append(f"{TAP_REPOSITORY} main is {tip[:12]} (ls-remote)")
+    pushed = ctx.notes.get("tap_sha", "")
+    if pushed:
+        lines.append(f"that is the commit this run pushed ({pushed[:12]}): {tip == pushed}")
+    read = ctx.run(
+        [
+            "gh",
+            "api",
+            "-H",
+            "Accept: application/vnd.github.raw",
+            f"repos/{TAP_REPOSITORY}/contents/{TAP_FORMULA_PATH}?ref={tip}",
+        ]
+    )
+    if read.returncode != 0:
+        return Check(False, [*lines, f"contents API at {tip[:12]}: exit {read.returncode}"])
+    live = read.stdout or ""
     same = hashlib.sha256(live.encode()).hexdigest() == hashlib.sha256(formula.encode()).hexdigest()
-    return Check(same, [f"published formula == the candidate that passed its install: {same}"])
+    lines.append(f"formula at {tip[:12]} == the candidate that passed its install: {same}")
+    return Check(same and not refused, lines)
 
 
 def _publish(ctx: Context) -> None:
+    """Clone the tap, commit the candidate, push; stop at the first failure.
+
+    In the 1.6.1 cut `git commit` exited 128 (no identity on the machine),
+    `git push` then said "Everything up-to-date" and exited 0, and nothing
+    here read either status (#407). Every exit code is now read, the
+    refusal is left in `notes` for the postcondition to print, and the
+    commit takes its identity from this repository's git config, passed to
+    that one process, rather than from whatever the machine has."""
     formula = ctx.notes["candidate_formula"]
+    ctx.notes.pop("publish", None)
+    name, email = ctx.git("config", "user.name"), ctx.git("config", "user.email")
+    if not (name and email):
+        ctx.notes["publish"] = (
+            f"refused: no user.name/user.email in {ctx.root}'s git config to commit "
+            "the tap as; nothing was cloned or pushed"
+        )
+        return
     work = Path(tempfile.mkdtemp())
-    ctx.run(["git", "clone", "-q", f"https://github.com/{TAP_REPOSITORY}.git", str(work)])
+
+    def ran(argv: list[str]) -> bool:
+        done = ctx.run(argv)
+        if done.returncode == 0:
+            return True
+        said = ((done.stderr or "").strip().splitlines() or ["(no stderr)"])[-1]
+        ctx.notes["publish"] = (
+            f"refused: `{' '.join(argv)}` exited {done.returncode} ({said}); nothing after it ran"
+        )
+        return False
+
+    if not ran(["git", "clone", "-q", TAP_URL, str(work)]):
+        return
     (work / TAP_FORMULA_PATH).write_text(formula, encoding="utf-8", newline="\n")
-    ctx.run(["git", "-C", str(work), "commit", "-qam", f"policyforge {ctx.version}"])
-    ctx.run(["git", "-C", str(work), "push", "-q", "origin", "HEAD:main"])
+    identity = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
+    if not ran(["git", "-C", str(work), *identity, "commit", "-qam", f"policyforge {ctx.version}"]):
+        return
+    head = ctx.run(["git", "-C", str(work), "rev-parse", "HEAD"])
+    ctx.notes["tap_sha"] = (head.stdout or "").strip() if head.returncode == 0 else ""
+    ran(["git", "-C", str(work), "push", "-q", "origin", "HEAD:main"])
 
 
 def _release_check_passes(ctx: Context) -> Check:
-    code = ctx.run(
-        [sys.executable, str(ctx.root / "scripts" / "release_check.py"), ctx.version]
-    ).returncode
-    return Check(code == 0, [f"release_check.py {ctx.version}: exit {code} (must be 0)"])
+    code = ctx.run(_release_check_argv(ctx)).returncode
+    return Check(code == 0, [f"release_check.py --version {ctx.version}: exit {code} (must be 0)"])
+
+
+def _release_check_argv(ctx: Context) -> list[str]:
+    # `--version`, not a positional: the 1.6.1 cut passed it positionally,
+    # argparse exited 2 on the usage error, and the final check never ran
+    # (#415). The test parses this argv with release_check's own parser.
+    return [
+        sys.executable,
+        str(ctx.root / "scripts" / "release_check.py"),
+        "--version",
+        ctx.version,
+    ]
 
 
 # --- the two artefact gates (80's ruling on #348) ------------------------------

@@ -372,8 +372,10 @@ def _safe_stdout(stream=None) -> None:
         stream.reconfigure(errors="replace")
 
 
-def main(argv: list[str] | None = None) -> int:
-    _safe_stdout()
+def parser() -> argparse.ArgumentParser:
+    """The command line, apart from running it: release.py's step 14 test
+    parses the argv that step builds with this exact parser, so the two
+    cannot drift apart again (#415)."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--version", required=True, help="the version just cut, e.g. 1.4.0")
     parser.add_argument(
@@ -387,7 +389,12 @@ def main(argv: list[str] | None = None) -> int:
         help="acknowledge that a check did not run. Without this, a check that "
         "did not run fails -- the same contract scripts/check.py uses.",
     )
-    args = parser.parse_args(argv or [])
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    _safe_stdout()
+    args = parser().parse_args(argv or [])
 
     expected_tag = args.version if args.version.startswith("v") else f"v{args.version}"
     failures: list[str] = []

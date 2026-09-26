@@ -106,8 +106,11 @@ def test_the_readme_claims_only_what_the_search_found(readme):
     Part 2" -- the same shape of sentence #260 found false for 800-171,
     where NIST publishes the mapping in the file the catalog is built from.
     A search of 2026-09-24 (policyforge-f8, handle 5b) found none for Part 2,
-    but could not enumerate NIST OLIR, where one would be registered. So the
-    README may say "not found" and must say what was not searched.
+    but could not enumerate NIST OLIR, where one would be registered. On
+    2026-09-26 (#279) OLIR and CPRT were enumerated in full and still found
+    none, so the README says so. It must still say what the search did
+    NOT cover (catalog metadata, not every dataset element), so "not found"
+    cannot read as "does not exist".
 
     **Whole sentences, after collapsing whitespace and emphasis**, because
     a fragment check passed two mutants (policyforge-78, handle 1d): the
@@ -121,9 +124,16 @@ def test_the_readme_claims_only_what_the_search_found(readme):
         "stronger than the search (#264)"
     )
     assert "No equivalent mapping for Part 2 was found." in text, "the claim the search supports"
-    assert "the NIST OLIR and CPRT catalogs could not be listed" in text, (
-        "the limit that stops 'not found' reading as 'does not exist'"
+    assert "the NIST OLIR and CPRT catalogs could not be listed" not in text, (
+        "superseded: both were enumerated in full on 2026-09-26 (#279)"
     )
+    assert "NIST OLIR, listed in full: all 102 informative references" in text, (
+        "what the 2026-09-26 search covered (#279)"
+    )
+    assert (
+        "what was searched is each catalog's metadata, not every dataset's individual elements"
+        in text
+    ), "the limit that stops 'not found' reading as 'does not exist'"
     assert (
         "§ 2.16 cites three HIPAA provisions: 45 CFR 164.514(b) (de-identification), "
         "and 45 CFR part 160 with part 164 Subpart D" in text

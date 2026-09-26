@@ -259,6 +259,8 @@ def test_provenance_is_small_and_names_what_wrote_the_document(tmp_path):
     assert stamp["calls"] == 1
     assert stamp["provider"] == "anthropic"
     assert stamp["cost_usd"] == pytest.approx(0.02)
+    # Both parts, always (80's ruling on #379): here every call is priced.
+    assert (stamp["cost_known_usd"], stamp["calls_unpriced"]) == (pytest.approx(0.02), 0)
     assert len(stamp["prompt_shas"]) == 1
     # It goes into every version-history entry, so it stays a stamp rather
     # than a copy of the ledger.
@@ -269,6 +271,8 @@ def test_provenance_is_small_and_names_what_wrote_the_document(tmp_path):
         "provider",
         "provider_class",
         "cost_usd",
+        "cost_known_usd",
+        "calls_unpriced",
         "content_class",
     }
 
@@ -340,13 +344,27 @@ def test_an_unknown_field_from_a_future_version_is_ignored(tmp_path):
 
 
 def test_totals_distinguish_unpriced_from_free():
+    """A hosted call with no price is unknown. A local model's call is free,
+    by its boundary class, even where its endpoint reports no price (80's
+    ruling on #379; this test used a local call as its unknown case before)."""
     unpriced = Totals()
-    unpriced.add(CallRecord("t", "p", "local", "m", None, None))
-    assert unpriced.cost == "unpriced"
+    unpriced.add(CallRecord("t", "p", "cloud", "m", None, None))
+    assert (unpriced.cost, unpriced.cost_usd) == ("unpriced (1)", None)
 
     free = Totals()
     free.add(CallRecord("t", "p", "local", "m", None, None, cost_usd=0.0))
-    assert free.cost == "$0.0000"
+    free.add(CallRecord("t", "p", "local", "m", None, None))
+    assert (free.cost, free.calls_unpriced) == ("$0.0000", 0)
+
+
+def test_one_unpriced_call_does_not_leave_the_rest_standing_as_the_whole():
+    """#379: the sum of the priced calls was the group's cost whenever any
+    was priced. 7 of 27 real ledgers mixed the two."""
+    mixed = Totals()
+    mixed.add(CallRecord("t", "p", "cloud", "m", None, None, cost_usd=0.25))
+    mixed.add(CallRecord("t", "p", "cloud", "m", None, None))
+    assert mixed.cost_usd is None
+    assert mixed.cost == "$0.2500 + 1 unpriced"
 
 
 def test_summaries_group_by_any_field():

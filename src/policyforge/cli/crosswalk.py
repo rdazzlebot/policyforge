@@ -276,10 +276,13 @@ def crosswalk_propose(framework: str, controls_paths, overlay: Path | None, only
     index = WordIndex(entries)
     total = MergeReport()
 
-    with ledger.about(
-        f"crosswalk/{_framework_slug(framework)}",
-        site="crosswalk-propose",
-        content_class=_most_restrictive(classified),
+    with (
+        ledger.run(report=click.echo),
+        ledger.about(  # #379
+            f"crosswalk/{_framework_slug(framework)}",
+            site="crosswalk-propose",
+            content_class=_most_restrictive(classified),
+        ),
     ):
         for number, requirement in enumerate(requirements, start=1):
             proposal = propose_for(

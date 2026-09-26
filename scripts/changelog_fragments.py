@@ -98,16 +98,27 @@ _WHERE = r"(?:above|below)"
 #: `tests/test_changelog_fragments.py` holds all nine, so a later widening
 #: that reintroduces one fails.
 #:
-#: **Nine of the ten pointers are matched, and the tenth is not** (1d on
-#: #420). Matched: "see below" (with an adverb: "see further below"), a noun
-#: naming an entry beside a position ("the entry above", "the harness change
-#: below", "the ledger fix above"), a quoted entry title followed by one,
-#: "the above" standing alone, and "everything else below". **Not matched:
-#: a pointer whose subject is any other noun** -- "the Part 2 catalog above"
-#: (1.5.0), "the ledger bug above". That vocabulary is open, and a noun list
-#: would never finish, so for that shape review is still the instrument. The
-#: test file holds the real one as a strict expected miss, red the day this
-#: starts to catch it.
+#: **Of the ten pointers, eight are matched here, one is skipped on
+#: purpose, and one is missed** (1d and policyforge-b5 on #420).
+#:
+#: - Matched: "see below" (with an adverb: "see further below"), a noun
+#:   naming an entry beside a position ("the entry above", "the harness
+#:   change below", "the ledger fix above"), a quoted entry title followed
+#:   by one, "the above" standing alone, and "everything else below".
+#: - Skipped: `<- see below` inside a fenced table (1.6.0). A fence is an
+#:   example, not prose, by the same rule as the heading check.
+#: - **Missed: a pointer whose subject is any other noun**: "the Part 2
+#:   catalog above" (1.5.0), "the ledger bug above". That vocabulary is
+#:   open, and a noun list would never finish, so for that shape review is
+#:   still the instrument. The test file holds the real one as a strict
+#:   expected miss, red the day this starts to catch it.
+#:
+#: **Also unmatched, deliberately: time words.** "see earlier in these
+#: notes", "the preceding fix", "the following change", "a later fix".
+#: Only "previous/next/preceding/following entry" is refused. In
+#: `CHANGELOG.md` the family occurs twice and both are prose ("a later fix
+#: would need", "the first fix still let"), so refusing it would cry wolf
+#: at the measured rate.
 #:
 #: **A comparison is not a pointer.** A noun then a position then a
 #: complement ("a change below 5%", "a fix below 1.0", "below the

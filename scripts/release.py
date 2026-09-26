@@ -402,7 +402,12 @@ def _bump(ctx: Context) -> None:
 #: A pin of `<owner>/policyforge` at a release, as an install command writes
 #: it. The owner is captured so a pin naming the redirect's old owner is
 #: refused rather than moved (CLAUDE.md: a redirect is not a reference).
-_PIN_RE = re.compile(r"([A-Za-z0-9_.-]+)/policyforge(?:\.git)?@v(\d+\.\d+\.\d+)\b")
+#:
+#: **Case-insensitive** (policyforge-ba on #430): GitHub resolves
+#: `rdazzleman/PolicyForge` as this repository, so a case-sensitive match
+#: skipped a pin that installs. The `v` is captured apart, because a tag
+#: IS case-sensitive: `@V1.6.0` names no tag, and is refused, not moved.
+_PIN_RE = re.compile(r"([A-Za-z0-9_.-]+)/policyforge(?:\.git)?@(v)(\d+\.\d+\.\d+)\b", re.IGNORECASE)
 #: The same shape for `git grep -E`, which finds the lines `_PIN_RE` reads.
 _PIN_ERE = r"[A-Za-z0-9_.-]+/policyforge(\.git)?@v[0-9]+\.[0-9]+\.[0-9]+"
 
@@ -413,6 +418,8 @@ class Pin:
     line: int
     owner: str
     version: str
+    #: The tag's `v` as written; `V` names no tag (git tags are case-sensitive).
+    marker: str = "v"
 
     @property
     def kind(self) -> str:
@@ -424,7 +431,7 @@ class Pin:
 
     @property
     def canonical(self) -> bool:
-        return f"{self.owner}/policyforge" == release_check.REPOSITORY
+        return f"{self.owner}/policyforge".lower() == release_check.REPOSITORY.lower()
 
     def __str__(self) -> str:
         return f"{self.path}:{self.line} {self.owner}/policyforge@v{self.version}"
@@ -433,7 +440,7 @@ class Pin:
 def _pins(ctx: Context, at: str = "") -> list[Pin] | None:
     """Every pin in every tracked text file, in the working tree or at `at`
     (a commit). None when `git grep` fails: no answer is not zero pins."""
-    argv = ["git", "-C", str(ctx.root), "grep", "-n", "-I", "-E", _PIN_ERE]
+    argv = ["git", "-C", str(ctx.root), "grep", "-n", "-I", "-i", "-E", _PIN_ERE]
     if at:
         argv.append(at)
     out = ctx.run(argv)
@@ -445,7 +452,7 @@ def _pins(ctx: Context, at: str = "") -> list[Pin] | None:
             row = row[len(at) + 1 :]  # `HEAD:path:line:text`
         path, number, text = row.split(":", 2)
         for match in _PIN_RE.finditer(text):
-            found.append(Pin(path, int(number), match.group(1), match.group(2)))
+            found.append(Pin(path, int(number), match.group(1), match.group(3), match.group(2)))
     return found
 
 
@@ -462,12 +469,17 @@ def _pins_ready(ctx: Context) -> Check:
         return Check(False, ["git grep failed, so the pins are unknown (not zero)"])
     instructions = [p for p in pins if p.kind == "instruction"]
     foreign = [p for p in instructions if not p.canonical]
+    untagged = [p for p in instructions if p.marker != "v"]
     ctx.notes["pins"] = str(len(instructions))
     return Check(
-        not foreign,
+        not foreign and not untagged,
         [
             *_pin_lines(pins),
             *(f"names another owner, rewrite it by hand first: {p}" for p in foreign),
+            *(
+                f"`@V` names no tag (tags are case-sensitive), fix it by hand: {p}"
+                for p in untagged
+            ),
         ],
     )
 
@@ -499,8 +511,11 @@ def _repin(ctx: Context) -> None:
         text = file.read_text(encoding="utf-8")
         text = _PIN_RE.sub(
             lambda m: (
-                m.group(0).replace(f"@v{m.group(2)}", f"@v{ctx.version}")
-                if f"{m.group(1)}/policyforge" == release_check.REPOSITORY
+                m.group(0)[: m.start(3) - m.start(0)]
+                + ctx.version
+                + m.group(0)[m.end(3) - m.start(0) :]
+                if f"{m.group(1)}/policyforge".lower() == release_check.REPOSITORY.lower()
+                and m.group(2) == "v"
                 else m.group(0)
             ),
             text,

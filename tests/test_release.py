@@ -1329,3 +1329,24 @@ def test_this_repositorys_install_pins_all_name_the_canonical_owner():
     instructions = [p for p in pins if p.kind == "instruction"]
     assert instructions and all(p.canonical for p in instructions)
     assert any(p.path == "README.md" for p in instructions)
+
+
+def test_a_pin_in_another_case_is_moved_and_keeps_its_spelling(tmp_path):
+    """policyforge-ba on #430: GitHub installs `rdazzleman/PolicyForge@v1.6.0`,
+    and a case-sensitive match skipped it."""
+    owner = _OWNER.split("/")[0]
+    spelled = f"{owner.upper()}/PolicyForge.GIT@v1.6.0"
+    root = _git_repo(tmp_path, {"README.md": f"pipx install git+https://github.com/{spelled}\n"})
+    ctx = _pin_ctx(root)
+    assert release._pins_ready(ctx).ok
+    release._repin(ctx)
+    assert release._pins_current(ctx).ok
+    assert (root / "README.md").read_text() == (
+        f"pipx install git+https://github.com/{owner.upper()}/PolicyForge.GIT@v9.9.9\n"
+    )
+
+
+def test_a_capital_v_names_no_tag_and_is_refused(tmp_path):
+    root = _git_repo(tmp_path, {"README.md": f"{_OWNER}@V1.6.0\n"})
+    gate = release._pins_ready(_pin_ctx(root))
+    assert not gate.ok and any("names no tag" in line for line in gate.measured)

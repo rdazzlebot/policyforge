@@ -21,3 +21,9 @@ before citing it.
 
 Nothing moves for any other catalog: every shipped mapping reads exactly as
 it did.
+
+**If you script on `coverage --json`:** each entry in `framework_coverage`
+now carries two more keys. `source_name` is who published the crosswalk, and
+`unmapped_by_source` lists the ids that source left unmapped. For every
+catalog other than CSF 2.0 they are `""` and `null`, and no existing key
+changed.

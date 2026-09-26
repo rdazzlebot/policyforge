@@ -133,6 +133,7 @@ def test_the_order_is_the_procedure():
         "changelog",
         "version",
         "release-pr",
+        "resources",
         "head-install",
         "main",
         "tag",
@@ -981,3 +982,27 @@ def test_a_crlf_published_formula_still_gets_its_version(monkeypatch):
     formula = release._formula(ctx, release._head_archive(ctx), "1" * 64)
     assert '  version "9.9.9"' in formula.splitlines(), formula
     assert "\r" not in formula
+
+
+# --- #389: the formula's pins are checked before anything installs with them ---
+
+
+def test_the_pins_are_checked_before_the_head_install_and_the_tag():
+    """#389: `_formula` keeps the published formula's resource pins, so they
+    are checked before step 8 installs with them, not after the tag."""
+    keys = _keys()
+    assert keys.index("resources") < keys.index("head-install") < keys.index("tag")
+
+
+def test_a_stale_pin_is_refused_before_the_install_and_says_what_to_do(tmp_path, monkeypatch):
+    """Before any candidate exists, the published formula is what is read,
+    and a mismatch says to regenerate the resource stanzas."""
+    lock = tmp_path / release.release_check.LOCK
+    lock.parent.mkdir(parents=True)
+    lock.write_text("click==8.2.0 \\\n    --hash=sha256:x\n", encoding="utf-8")
+    published = '  resource "click" do\n    url "https://files/click-8.1.7.tar.gz"\n'
+    monkeypatch.setattr(release.release_check, "fetch_formula", lambda url=None: published)
+    step = next(s for s in release.steps() if s.key == "resources")
+    check = step.gate(_ctx(root=tmp_path))
+    assert not check.ok
+    assert any("regenerate the formula's resource stanzas" in line for line in check.measured)

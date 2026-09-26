@@ -247,7 +247,10 @@ def synthesize_cmd(
     }
     ai_anchored = [i for i in nist_ids if i in core_ids]
 
-    with ledger.about(f"synthesis/{slug}", site="synthesize", content_class=content_class):
+    with (
+        ledger.run(report=click.echo),  # #379: what the run cost, said once
+        ledger.about(f"synthesis/{slug}", site="synthesize", content_class=content_class),
+    ):
         result = synthesize_topic(synthesis_topic, provider)
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -452,8 +455,11 @@ def ssp_cmd(
             # The scope names the run; each narrative inside it is recorded
             # against its own control id by the ledger's batch path, so the
             # per-control attribution survives the submission.
-            with ledger.about(
-                f"ssp/{system.name or 'system'}", site="ssp", content_class=content_class
+            with (
+                ledger.run(report=click.echo),  # #379
+                ledger.about(
+                    f"ssp/{system.name or 'system'}", site="ssp", content_class=content_class
+                ),
             ):
                 try:
                     drafted = draft_narratives(scoped, org, system, provider, batch=True)
@@ -650,7 +656,10 @@ def generate_cmd(
     # The class goes on the scope as well as through the check above, so each
     # call's ledger record says what it carried and the provenance stamped
     # into the version history says what the document was drawn from.
-    with ledger.about(slug, site="generate", content_class=content_class) as scope:
+    with (
+        ledger.run(report=click.echo),  # #379: what the run cost, said once
+        ledger.about(slug, site="generate", content_class=content_class) as scope,
+    ):
         if tier in ("policy", "procedure"):
             if standard_path is None:
                 raise click.UsageError(

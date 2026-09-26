@@ -55,7 +55,7 @@ from pathlib import Path
 
 from . import escalation
 from .base import LLMProvider, LLMResponse
-from .boundary import classify_provider
+from .boundary import LOCAL, classify_provider
 
 #: Under `output/`, which is gitignored, because this names every document
 #: an organization has drafted and how much each cost.
@@ -174,14 +174,23 @@ class Scope:
 
     @property
     def cost_usd(self) -> float | None:
-        """Total spend, or None when no call reported a price.
+        """Total spend, or None unless every call is priced (#379, 80's ruling).
 
         None and 0.0 are different answers: a local model is genuinely free,
-        and a provider that does not price its calls is unknown. Collapsing
-        them would let an unpriced run read as a free one.
+        and a provider that does not price its calls is unknown. Until #379
+        this summed the priced calls whenever any was priced, so one call of
+        unknown cost left the rest standing as the whole bill.
         """
-        priced = [r.cost_usd for r in self.records if r.cost_usd is not None]
-        return sum(priced) if priced else None
+        known, unpriced = cost_parts(self.records)
+        return known if self.records and not unpriced else None
+
+    @property
+    def cost_known_usd(self) -> float:
+        return cost_parts(self.records)[0]
+
+    @property
+    def calls_unpriced(self) -> int:
+        return cost_parts(self.records)[1]
 
     def provenance(self) -> dict:
         """The stamp to record alongside a generated document.
@@ -199,9 +208,16 @@ class Scope:
         if self.records:
             stamp["provider"] = self.records[0].provider
             stamp["provider_class"] = self.records[0].provider_class
-        cost = self.cost_usd
-        if cost is not None:
-            stamp["cost_usd"] = round(cost, 6)
+        # 80's ruling on #379: `cost_usd` only when every call is priced;
+        # the known part and the count of unpriced calls always, so a stamp
+        # never presents the known part as the whole. A stamp written before
+        # #379 has neither key: a missing `calls_unpriced` is "not recorded".
+        if self.records:
+            known, unpriced = cost_parts(self.records)
+            if not unpriced:
+                stamp["cost_usd"] = round(known, 6)
+            stamp["cost_known_usd"] = round(known, 6)
+            stamp["calls_unpriced"] = unpriced
         if self.content_class:
             stamp["content_class"] = self.content_class
         return stamp
@@ -236,6 +252,109 @@ def about(subject: str, *, site: str | None = None, content_class: str | None = 
 
 def current_scope() -> Scope | None:
     return _scope.get(None)
+
+
+# ---- what a set of calls cost (#379) ----------------------------------------
+
+
+def cost_parts(records) -> tuple[float, int]:
+    """(the known cost in USD, how many billed requests' cost is unknown).
+
+    **The one rule** for the provenance stamp, `Totals` and `run_summary`
+    (80's ruling on #379): a total is a total only when the second part is
+    0. A local model's call counts as priced at 0.0 by its boundary class,
+    since it is free although its endpoint reports no price. Never add the
+    known part up as the whole: that was #378's defect one level above the
+    row: 6 of 27 session ledgers on 2026-09-26 mixed them, counting a local
+    call as free (b5 on #379; 9b corrected a first count of 7).
+
+    **A row whose total is unknown still has known parts** (#382): its last
+    attempt's `last_cost_usd`, and each escalation's `first_cost_usd`. Both
+    count here, and each unknown one counts as one request of unknown cost.
+    An escalation whose billed first attempt is a row of its own in
+    `records` (`effort`'s 2x path) is counted there and not again, so this
+    reads the whole set at once, never one row at a time.
+    """
+    row_ids = {r.request_id for r in records if r.request_id}
+    known, unpriced = 0.0, 0
+    for record in records:
+        if record.cost_usd is not None:
+            known += record.cost_usd  # every attempt's cost is inside it (#343)
+            continue
+        if record.provider_class == LOCAL:
+            continue
+        if record.last_cost_usd is not None:
+            known += record.last_cost_usd
+        else:
+            unpriced += 1
+        for step in record.escalations:
+            if step.get("first_request_id") in row_ids:
+                continue
+            if step.get("first_cost_usd") is None:
+                unpriced += 1
+            else:
+                known += step["first_cost_usd"]
+    return known, unpriced
+
+
+# ---- a run's summary (#379) ------------------------------------------------
+
+#: Every row recorded while a `run()` block is open, whatever scope it was
+#: in: `ssp` nests one scope per control, so no single scope sees a run.
+_run: contextvars.ContextVar[list[CallRecord] | None] = contextvars.ContextVar(
+    "policyforge_run", default=None
+)
+
+
+@contextmanager
+def run(report=None):
+    """Collect every row a command records, and pass `run_summary` of them
+    to `report` at the end, **whether the run succeeded or not**: a run that
+    failed after re-sending is the one whose bill most needs saying."""
+    records: list[CallRecord] = []
+    token = _run.set(records)
+    try:
+        yield records
+    finally:
+        _run.reset(token)
+        if report is not None:
+            report(run_summary(records))
+
+
+def run_summary(records: list[CallRecord]) -> str:
+    """One line a user reads once, at the end of a run, whether or not they
+    watched stderr (#379): requests, cost, and re-sends.
+
+    - **A total is a total only when every row is priced.** Otherwise the
+      known part and the count of rows of unknown cost are both said and
+      never merged, since the sum of the known part alone reads as the whole
+      bill (#378's rule, at the level of a run).
+    - **Requests** are the rows plus each re-send's billed first attempt that
+      is not already a row of its own (`effort` records its first attempt as
+      a row and as an escalation; a provider's own re-send does not).
+    - **Re-sends are always named, "0 re-sends" included.** What they cost is
+      the attempts they replaced, part of the total and never added to it.
+    """
+    row_ids = {r.request_id for r in records if r.request_id}
+    escalations = [e for r in records for e in r.escalations]
+    extra = [e for e in escalations if e.get("first_request_id") not in row_ids]
+    requests = len(records) + len(extra)
+    known, unknown = cost_parts(records)
+    if not records:
+        # Not "no model calls": with the ledger off (`wrap`), calls are made
+        # and none is recorded, and this line would be a false zero.
+        cost = "no calls recorded in the ledger"
+    elif not unknown:
+        cost = f"${known:.4f}"
+    else:
+        cost = f"${known:.4f} known + {unknown} request(s) of unknown cost"
+    resends = f"{len(escalations)} re-send(s)"
+    if escalations:
+        replaced = [e["first_cost_usd"] for e in escalations if e.get("first_cost_usd") is not None]
+        unpriced = len(escalations) - len(replaced)
+        spent = f"${sum(replaced):.4f}" + (f" + {unpriced} unknown" if unpriced else "")
+        resends += f", whose replaced attempts billed {spent} of that"
+    return f"Run: {requests} request(s), {cost}; {resends}."
 
 
 # ---- writing --------------------------------------------------------------
@@ -399,6 +518,9 @@ class RecordingProvider(LLMProvider):
         append(record, self._path)
         if scope is not None:
             scope.records.append(record)
+        collecting = _run.get()
+        if collecting is not None:
+            collecting.append(record)
 
     def generate(
         self,
@@ -569,11 +691,13 @@ class Totals:
     #: means "unknown", not "none".
     hidden_output_tokens: int = 0
     hidden_reported: bool = False
-    cost_usd: float = 0.0
-    #: False when no call in the group reported a price, so a zero total can
-    #: be read as "free" or "unknown" and not silently as the former.
-    priced: bool = False
     errors: int = 0
+    #: The group's rows, so its cost is `cost_parts` over the whole group:
+    #: an escalation repeating another row's attempt (`effort`) is only seen
+    #: as a repeat with that row in view. Until #379 the cost was one sum
+    #: over whichever calls were priced, so one unpriced call left the rest
+    #: standing as the group's whole cost.
+    records: list = field(default_factory=list, repr=False)
 
     def add(self, record: CallRecord) -> None:
         self.calls += 1
@@ -582,15 +706,31 @@ class Totals:
         if record.hidden_output_tokens is not None:
             self.hidden_output_tokens += record.hidden_output_tokens
             self.hidden_reported = True
-        if record.cost_usd is not None:
-            self.cost_usd += record.cost_usd
-            self.priced = True
+        self.records.append(record)
         if record.error:
             self.errors += 1
 
     @property
+    def cost_known_usd(self) -> float:
+        return cost_parts(self.records)[0]
+
+    @property
+    def calls_unpriced(self) -> int:
+        """Billed requests in the group whose cost is unknown (`cost_parts`)."""
+        return cost_parts(self.records)[1]
+
+    @property
+    def cost_usd(self) -> float | None:
+        """The group's cost, only when every call's is known."""
+        return self.cost_known_usd if self.calls and not self.calls_unpriced else None
+
+    @property
     def cost(self) -> str:
-        return f"${self.cost_usd:.4f}" if self.priced else "unpriced"
+        if self.cost_usd is not None:
+            return f"${self.cost_usd:.4f}"
+        if not self.cost_known_usd:
+            return f"unpriced ({self.calls_unpriced})"
+        return f"${self.cost_known_usd:.4f} + {self.calls_unpriced} unpriced"
 
 
 def summarize(records: list[CallRecord], by: str) -> dict[str, Totals]:

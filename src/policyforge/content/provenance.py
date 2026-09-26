@@ -159,6 +159,11 @@ class Attribution:
     models: tuple[str, ...] = ()
     provider_class: str = ""
     cost_usd: float | None = None
+    #: Written since #379 (80's ruling): the known part of the cost, and how
+    #: many calls had none. None on a stamp written before, which means "not
+    #: recorded", never 0.
+    cost_known_usd: float | None = None
+    calls_unpriced: int | None = None
     #: Pulled back from Confluence by `import-confluence`, which records
     #: where the text came from rather than which model wrote it.
     imported: bool = False
@@ -176,11 +181,17 @@ def attribution(document) -> Attribution:
     if isinstance(models, str):
         models = [models]
     cost = block.get("cost_usd")
+    known = block.get("cost_known_usd")
+    unpriced = block.get("calls_unpriced")
     return Attribution(
         path=getattr(document, "relative_path", ""),
         models=tuple(str(m) for m in models),
         provider_class=str(block.get("provider_class") or ""),
         cost_usd=float(cost) if isinstance(cost, (int, float)) else None,
+        cost_known_usd=float(known) if isinstance(known, (int, float)) else None,
+        calls_unpriced=unpriced
+        if isinstance(unpriced, int) and not isinstance(unpriced, bool)
+        else None,
         imported=isinstance(metadata.get(IMPORTED_FROM), dict),
     )
 

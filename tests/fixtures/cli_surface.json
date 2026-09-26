@@ -2216,6 +2216,132 @@
         }
       ]
     },
+    "etl-soc2-tsc": {
+      "help": "Parse YOUR OWN copy of the AICPA Trust Services Criteria (SOC 2), and\noptionally your own copy of the AICPA's mapping to NIST SP 800-53, into a\nlocal, licensed catalog.\n\nNOTHING IS FETCHED FROM THE AICPA, and nothing licensed ships with this\nproject. The AICPA's terms govern your copy; the catalog README quotes\nthem, and whether they permit this use is your decision.\n\nBuilt and tested only against synthetic input, since no copy of the\ncriteria is in this project: your run is the first real one. It refuses\nwhole, writing nothing, if your file is shaped differently.\n\nMapping links are read as partial (`source-untyped`), because the AICPA's\nmapping states no relationship and predates Rev 5. Each 800-53 id NIST\nmarks as changed substantively since Rev 4 is flagged; one withdrawn in\nRev 5, or not a Rev 5 id at all, is refused by name.",
+      "name": "etl-soc2-tsc",
+      "params": [
+        {
+          "default": "<UNSET>",
+          "help": "A plain-text export you made from YOUR OWN copy of the AICPA Trust Services Criteria. Keep it in local_content/.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "criteria_path",
+          "nargs": 1,
+          "opts": [
+            "--criteria"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": false,
+            "exists": true,
+            "file_okay": true,
+            "name": "file"
+          }
+        },
+        {
+          "default": null,
+          "help": "Your own copy of the AICPA's TSC to NIST SP 800-53 mapping workbook (.xlsx).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "mapping_path",
+          "nargs": 1,
+          "opts": [
+            "--mapping"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": false,
+            "exists": true,
+            "file_okay": true,
+            "name": "file"
+          }
+        },
+        {
+          "default": "",
+          "help": "The criteria edition, e.g. \"2017 (points of focus revised 2022)\".",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "version",
+          "nargs": 1,
+          "opts": [
+            "--version"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "help": "A saved copy of NIST's SP 800-53 Rev 4 to Rev 5 comparison workbook, instead of fetching it from NIST. It must be the pinned file, byte for byte.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "comparison_path",
+          "nargs": 1,
+          "opts": [
+            "--nist-comparison"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": false,
+            "exists": true,
+            "file_okay": true,
+            "name": "file"
+          }
+        },
+        {
+          "default": "<UNSET>",
+          "help": "Where to write controls.json, under local_content/, e.g. local_content/soc2-tsc/controls.json.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": false,
+          "help": "Write --out even though this repository has not declared `frameworks.allow_licensed_in_repo`.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "force",
+          "nargs": 1,
+          "opts": [
+            "--force"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ]
+    },
     "etl-vault": {
       "help": "Parse NIST 800-53 control notes from an existing vault into this\nproject's data schema. Public-domain content only - see\ningest/nist_vault_loader.py for what crosswalk columns are stripped\nby default and why.",
       "name": "etl-vault",

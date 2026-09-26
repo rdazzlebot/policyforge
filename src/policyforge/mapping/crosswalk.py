@@ -225,6 +225,9 @@ FRAMEWORK_ALIASES: tuple[tuple[str, str], ...] = (
     # "AI Taxonomy" keeps the bare `ai` orphan; keying it is #295's job.
     ("ai 100-2", "nist-ai-100-2"),
     ("hitrust ai", "hitrust-ai"),
+    # SOC 2's criteria (#410). Narrow on purpose: a bare "soc" or "aicpa" is
+    # a first word other names share, as "csf" is HITRUST's as well as NIST's.
+    ("trust services criteria", "aicpa-tsc"),
     ("800-172", "nist-800-172"),
     ("800-137", "nist-800-137"),
     ("cybersecurity framework", "nist-csf"),
@@ -384,6 +387,11 @@ ANCHOR_DECISIONS: dict[str, str] = {
     "hitrust-ai": (
         "bring-your-own: no ids ship, so there is nothing to anchor until a user "
         "supplies the catalog"
+    ),
+    "soc2-tsc": (
+        "bring-your-own: no ids ship, so there is nothing to anchor until a user "
+        "supplies the catalog; its AICPA mapping, if supplied, is read as "
+        "source-untyped (80, on #410)"
     ),
     "hitrust-csf": (
         "bring-your-own: no ids ship, so there is nothing to anchor until a user "

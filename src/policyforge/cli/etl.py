@@ -1985,3 +1985,168 @@ def etl_hipaa_privacy(date: str | None, frameworks_dir: Path, saved_dir: Path | 
                 f"  Marked {len(status['added'])} vacated and {revised} revised-and-vacated "
                 f"unit(s) of the 2024 rule ({hp.JUDGMENT})."
             )
+
+
+@cli.command("etl-soc2-tsc")
+@click.option(
+    "--criteria",
+    "criteria_path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="A plain-text export you made from YOUR OWN copy of the AICPA Trust Services "
+    "Criteria. Keep it in local_content/.",
+)
+@click.option(
+    "--mapping",
+    "mapping_path",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Your own copy of the AICPA's TSC to NIST SP 800-53 mapping workbook (.xlsx).",
+)
+@click.option(
+    "--version",
+    "version",
+    default="",
+    help='The criteria edition, e.g. "2017 (points of focus revised 2022)".',
+)
+@click.option(
+    "--nist-comparison",
+    "comparison_path",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="A saved copy of NIST's SP 800-53 Rev 4 to Rev 5 comparison workbook, instead "
+    "of fetching it from NIST. It must be the pinned file, byte for byte.",
+)
+@click.option(
+    "--out",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Where to write controls.json, under local_content/, "
+    "e.g. local_content/soc2-tsc/controls.json.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Write --out even though this repository has not declared "
+    "`frameworks.allow_licensed_in_repo`.",
+)
+def etl_soc2_tsc(
+    criteria_path: Path,
+    mapping_path: Path | None,
+    version: str,
+    comparison_path: Path | None,
+    out: Path,
+    force: bool,
+):
+    """Parse YOUR OWN copy of the AICPA Trust Services Criteria (SOC 2), and
+    optionally your own copy of the AICPA's mapping to NIST SP 800-53, into a
+    local, licensed catalog.
+
+    NOTHING IS FETCHED FROM THE AICPA, and nothing licensed ships with this
+    project. The AICPA's terms govern your copy; the catalog README quotes
+    them, and whether they permit this use is your decision.
+
+    Built and tested only against synthetic input, since no copy of the
+    criteria is in this project: your run is the first real one. It refuses
+    whole, writing nothing, if your file is shaped differently.
+
+    Mapping links are read as partial (`source-untyped`), because the AICPA's
+    mapping states no relationship and predates Rev 5. Each 800-53 id NIST
+    marks as changed substantively since Rev 4 is flagged; one withdrawn in
+    Rev 5, or not a Rev 5 id at all, is refused by name.
+    """
+    import dataclasses
+    import json
+
+    import yaml
+
+    from policyforge.ingest import nist_rev4_rev5, soc2_tsc
+    from policyforge.scaffold import bundled_root
+
+    _guard_licensed_write(out, force=force, product="TSC export", licence="AICPA", noun="criteria")
+    try:
+        parsed = soc2_tsc.parse_criteria(
+            criteria_path.read_text(encoding="utf-8"), version=version or "unstated"
+        )
+        mapping = None
+        if mapping_path is not None:
+            rows = json.loads(
+                bundled_root()
+                .joinpath("frameworks", "nist-800-53-r5", "controls.json")
+                .read_text(encoding="utf-8")
+            )
+            rev5 = {r["control_id"] for r in rows} | {
+                e["enhancement_id"] for r in rows for e in r.get("enhancements") or []
+            }
+            raw = (
+                comparison_path.read_bytes()
+                if comparison_path is not None
+                else nist_rev4_rev5.fetch()
+            )
+            mapping = soc2_tsc.parse_mapping(
+                mapping_path.read_bytes(),
+                criteria={c.control_id for c in parsed.controls},
+                rev5_ids=rev5,
+                changed=nist_rev4_rev5.parse(raw),
+            )
+            soc2_tsc.attach(parsed.controls, mapping)
+    except (soc2_tsc.TscError, nist_rev4_rev5.Rev4Rev5Error) as exc:
+        raise click.ClickException(f"{exc}\nNothing was written.") from exc
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in parsed.controls], indent=2))
+    manifest_path = out.parent / "framework.yaml"
+    manifest = {}
+    if manifest_path.exists():
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+    manifest.update(
+        {
+            "name": soc2_tsc.FRAMEWORK,
+            "framework_id": "aicpa-tsc",
+            "licence": "licensed",
+            "source": (
+                "your own copy of the AICPA Trust Services Criteria, via policyforge etl-soc2-tsc"
+            ),
+        }
+    )
+    if mapping is not None:
+        manifest.update(
+            {
+                "crosswalk_relationship": "source-untyped",
+                "crosswalk_source": soc2_tsc.CROSSWALK_SOURCE,
+                "crosswalk_changed_since_rev4": dict(sorted(mapping.flagged.items())),
+                "crosswalk_refused": [
+                    {"criterion": c, "target": t, "reason": r} for c, t, r in mapping.refused
+                ],
+            }
+        )
+    write_text_lf(
+        manifest_path, yaml.safe_dump(manifest, sort_keys=False, allow_unicode=True, width=88)
+    )
+
+    click.echo(
+        f"Parsed {len(parsed.controls)} criteria -> {out} "
+        f"({', '.join(f'{s} {n}' for s, n in sorted(parsed.series.items()))}; "
+        f"{parsed.preamble_lines} line(s) before the first criterion were not read as criteria)."
+    )
+    click.echo(
+        "  Counts are what your file yields; this project holds no copy to check them against."
+    )
+    if mapping is not None:
+        links = sum(len(v) for v in mapping.links.values())
+        unmapped = [c.control_id for c in parsed.controls if c.control_id not in mapping.links]
+        click.echo(
+            f"  Mapping: {links} link(s) to 800-53 on {len(mapping.links)} criteria, read as "
+            f"source-untyped (partial). {len(mapping.flagged)} linked id(s) "
+            f"{nist_rev4_rev5.CHANGED}."
+        )
+        if unmapped:
+            click.echo(
+                f"  {len(unmapped)} criteria are not mapped by the source: {', '.join(unmapped)}"
+            )
+        for criterion, target, reason in mapping.refused:
+            click.echo(f"  Refused {criterion} -> {target}: {reason}.")
+    click.echo(
+        f"  Wrote {manifest_path} (licence: licensed). Content classed licensed reaches only "
+        "local models under the default boundary."
+    )

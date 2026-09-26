@@ -82,7 +82,7 @@ def test_a_needle_does_not_swallow_a_catalog_identifier(identifier: str):
 #: above, which needs no catalog because the pin lives in
 #: `FRAMEWORK_ALIASES`. That is the stronger place for it: the pin is what
 #: a user's own parsed catalog keys through, wherever they keep it.
-BYOC_ONLY = {"govramp", "hitrust-ai", "hitrust-csf"}
+BYOC_ONLY = {"govramp", "hitrust-ai", "hitrust-csf", "soc2-tsc"}
 
 
 def test_no_bundled_catalog_changed_key():

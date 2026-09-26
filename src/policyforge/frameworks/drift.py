@@ -34,12 +34,9 @@ from __future__ import annotations
 
 import difflib
 import json
-import re
 import subprocess  # nosec B404
 from dataclasses import dataclass, field
 from pathlib import Path
-
-from policyforge.content.tags import SOURCE_TAG_RE
 
 ADDED = "added"
 REMOVED = "removed"
@@ -49,13 +46,6 @@ CHANGED = "changed"
 #: else is editorial: worth recording, not worth re-opening a document over.
 #: `description` is an enhancement's requirement text (#369).
 SUBSTANTIVE_FIELDS = ("control_statement", "description", "baseline", "enhancements", "parameters")
-
-#: Inline source tags in a generated document — `[NIST AC-2 | HIPAA 164.x]`.
-#: How a document says which control it answers for, and therefore how this
-#: works out which documents a control change reaches. The shape is decided
-#: in `content/tags.py`, once, for every reader.
-_SOURCE_TAG_RE = SOURCE_TAG_RE
-_CONTROL_ID_RE = re.compile(r"\b([A-Z]{2}-\d+(?:\(\d+\))?)")
 
 
 def _normalize(text: str) -> str:
@@ -226,32 +216,52 @@ def _enhancement_changes(old, new) -> list[ControlChange]:
     return found
 
 
-def documents_citing(controls: set[str], root: Path) -> dict[str, list[str]]:
-    """Control id -> the documents whose source tags cite it.
+def documents_citing(
+    controls: set[str], root: Path, *, framework: str = "", catalog_ids=()
+) -> dict[str, list[str]]:
+    """Control id -> the documents whose source tags cite its family.
 
     Walks the content tree rather than the corpus, because the question is
     which *files you maintain* need re-reading, and those are the ones under
     review in a pull request.
+
+    **Document reach, the broader of the two breadths** (`topics.anchoring`,
+    80's ruling on #377): a change reaches every document citing the same
+    family **in the change's own framework**. A document citing AC-2(3) is
+    reached by a change to AC-2(1), because a reader re-checking one part
+    of AC-2 has to re-check the control; `Govern 1.3` reaches `Govern 1`
+    and every `Govern 1.x`; a Playbook action reaches Playbook citations of
+    its subcategory and never the Core's. Missing a document is the
+    dangerous direction, so this reaches wider than topic ownership does.
+
+    **Each citation is read with its tag's framework**, resolved against
+    the catalog being diffed (`catalog_ids`), so the house shorthand
+    `[NIST AC-2]` names it and `[NIST AI RMF Govern 1.3]` does not. This
+    matched 800-53-shaped ids in any tag before, so an AI RMF change reached
+    no document at all, even one citing it exactly.
     """
     from policyforge.content.tree import load_content_tree
+    from policyforge.mapping.crosswalk import normalize_framework
+    from policyforge.topics.anchoring import family_of
+    from policyforge.topics.satisfies import parse_citations, resolve_framework
 
     hits: dict[str, list[str]] = {}
-    if not root.exists():
+    key = normalize_framework(framework) if framework else ""
+    if not root.exists() or not key:
         return hits
+    index = {key: set(catalog_ids) | set(controls)}
+    wanted: dict[str, list[str]] = {}
+    for changed in controls:
+        wanted.setdefault(family_of(changed, framework), []).append(changed)
 
     documents, _ = load_content_tree(root)
     for document in documents:
-        cited: set[str] = set()
-        for tag in _SOURCE_TAG_RE.findall(document.body):
-            cited.update(_CONTROL_ID_RE.findall(tag))
-        for control_id in cited:
-            # A document citing AC-2 is reached by a change to AC-2(1) too:
-            # the enhancement is part of the control it enhances, and a
-            # reader who has to re-check one has to re-check the other.
-            for changed in controls:
-                if changed == control_id or _base_control(changed) == _base_control(control_id):
-                    hits.setdefault(changed, []).append(document.relative_path)
-    return {key: sorted(set(value)) for key, value in hits.items()}
+        for written, requirement_id, _, _ in parse_citations(document.body, [framework], index):
+            if resolve_framework(written, index) != key:
+                continue
+            for changed in wanted.get(family_of(requirement_id, framework), []):
+                hits.setdefault(changed, []).append(document.relative_path)
+    return {changed: sorted(set(paths)) for changed, paths in hits.items()}
 
 
 #: Catalogs whose ids read like an anchored catalog's but that no topic
@@ -264,37 +274,36 @@ def _topic_keys(control_id: str, framework: str) -> set[str] | None:
     """The ids a topic may anchor to claim `control_id`, from `framework`'s
     rule, or None if a change in `framework` reaches no topic (#339).
 
-    **For a catalog topics anchor (800-53, the AI RMF Core), coverage's own
-    rule, `topics.coverage.parent_of`**: the control, or the one it hangs
+    **For a catalog topics anchor (800-53, the AI RMF Core), the one rule,
+    `topics.anchoring.anchor_keys`** (#377): the control, or the one it hangs
     off, so `AC-2(3)` reaches the topic anchoring `AC-2` and `Govern 1.1`
     the topic anchoring `Govern 1`. This used `_base_control` for every
     catalog while its comment claimed coverage's rule, and `_base_control`
     knows only the 800-53 grammar: an AI RMF subcategory change reached no
     topic (9b, on #336).
 
-    **The Playbook reaches none**, whatever its ids look like. `parent_of`
-    reads no framework, which is why it is only applied to the anchored
-    catalogs here (it claimed 72 Playbook rows in `programme.py`, #318).
+    **The Playbook reaches none**, whatever its ids look like. The rule
+    reads the framework, so its `Govern 1.1` is not the Core's; the old
+    `parent_of` read none, and claimed 72 Playbook rows in `programme.py`
+    (#318).
 
     Any other catalog, or none named, keeps the rule it had: the id, or its
     800-53-style base (FedRAMP and ARC-AMPE ids are 800-53's). That is not
     this change's question.
     """
     from policyforge.mapping.crosswalk import anchors_a_topic, normalize_framework
-    from policyforge.topics.coverage import parent_of
+    from policyforge.topics.anchoring import anchor_keys
 
     key = normalize_framework(framework) if framework else ""
     if key in _REACHES_NO_TOPIC:
         return None
-    upper = control_id.upper()
     if framework and anchors_a_topic(framework):
-        parent = parent_of(control_id)
-        return {upper} | ({parent.upper()} if parent else set())
-    return {upper, _base_control(control_id)}
+        return {k.upper() for k in anchor_keys(control_id, framework)}
+    return {control_id.upper(), _base_control(control_id)}
 
 
 def assess_impact(
-    changes, *, topics=(), content_root=None, decisions=None, framework: str = ""
+    changes, *, topics=(), content_root=None, decisions=None, framework: str = "", catalog_ids=()
 ) -> dict[str, Impact]:
     """Work out what each changed control reaches.
 
@@ -312,7 +321,10 @@ def assess_impact(
                 impacts[control_id].topics.append(topic.name)
 
     if content_root is not None:
-        for control_id, paths in documents_citing(changed_ids, Path(content_root)).items():
+        reached = documents_citing(
+            changed_ids, Path(content_root), framework=framework, catalog_ids=catalog_ids
+        )
+        for control_id, paths in reached.items():
             impacts[control_id].documents.extend(paths)
 
     for key in decisions or {}:
@@ -462,6 +474,13 @@ def load_previous(path: Path, *, revision: str = "HEAD"):
     return _controls_from_json(text) if text else None
 
 
+def _catalog_ids(controls) -> set[str]:
+    """Every control and enhancement id in a catalog."""
+    return {c.control_id for c in controls} | {
+        e.enhancement_id for c in controls for e in c.enhancements
+    }
+
+
 def analyze_drift(
     old_controls, new_controls, *, topics=(), content_root=None, decisions=None
 ) -> DriftReport:
@@ -478,5 +497,6 @@ def analyze_drift(
             framework=(new_controls or old_controls or [None])[0].framework
             if (new_controls or old_controls)
             else "",
+            catalog_ids=_catalog_ids(old_controls or []) | _catalog_ids(new_controls or []),
         ),
     )

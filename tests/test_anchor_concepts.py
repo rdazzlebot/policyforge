@@ -248,18 +248,21 @@ def test_a_category_claims_its_subcategories():
     **The workaround looks like diligence**, which is what makes the
     silence expensive.
     """
-    from policyforge.topics.coverage import parent_of
+    from policyforge.topics.anchoring import parent_of
 
-    assert parent_of("Govern 1.1") == "Govern 1"
-    assert parent_of("Manage 4.3") == "Manage 4"
-    assert parent_of("AC-2(1)") == "AC-2"
+    assert parent_of("Govern 1.1", "NIST AI RMF") == "Govern 1"
+    assert parent_of("Manage 4.3", "NIST AI RMF") == "Manage 4"
+    assert parent_of("AC-2(1)", "NIST 800-53") == "AC-2"
     # A top-level identifier has no parent, in either grammar.
-    assert parent_of("Govern 1") is None
-    assert parent_of("AC-2") is None
-    # Catalogs no topic can anchor keep returning None: a grammar listed
-    # for a framework nothing anchors would be untestable.
-    assert parent_of("03.01.01") is None
-    assert parent_of("164.308(a)(1)") is None
+    assert parent_of("Govern 1", "NIST AI RMF") is None
+    assert parent_of("AC-2", "NIST 800-53") is None
+    # Catalogs no topic can anchor have no parent a topic could own, even
+    # where the id reads like an anchored one's (#377): the Playbook's
+    # `Govern 1.1` is NIST's suggestions, not the Core subcategory.
+    assert parent_of("Govern 1.1", "NIST AI RMF Playbook") is None
+    assert parent_of("AC-2(1)", "FedRAMP") is None
+    assert parent_of("03.01.01", "NIST 800-171") is None
+    assert parent_of("164.308(a)(1)", "HIPAA Security Rule") is None
 
 
 def test_the_two_concepts_are_different_kinds_of_thing():

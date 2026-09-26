@@ -27,9 +27,17 @@ class SchemaReplyError(RuntimeError):
     retries on it only doubles the wait.
     """
 
-    def __init__(self, message: str, text: str):
+    def __init__(self, message: str, text: str, response: LLMResponse | None = None):
         super().__init__(message)
         self.text = text
+        # The reply was billed (#426). Its id, cost and tokens travel on the
+        # exception, as a re-send's do (#343), since this call reaches the
+        # ledger with no response: 22 real rows had lost both id and cost.
+        self.cost_usd = response.cost_usd if response else None
+        self.last_cost_usd = response.last_cost_usd if response else None
+        self.request_id = response.request_id if response else None
+        self.input_tokens = response.input_tokens if response else None
+        self.output_tokens = response.output_tokens if response else None
 
 
 @dataclass

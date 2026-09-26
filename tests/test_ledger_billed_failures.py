@@ -24,6 +24,7 @@ import pytest
 
 from policyforge.llm import escalation, ledger
 from policyforge.llm._inline_thinking import ReasoningBudgetExhausted
+from policyforge.llm.base import SchemaReplyError
 from policyforge.llm.cascade_provider import CascadeProvider
 from policyforge.llm.litellm_provider import LiteLLMProvider
 from tests.test_escalation import PRICE, _Completion, _reply
@@ -248,3 +249,52 @@ def test_an_unpriced_primary_leaves_the_row_unknown(answers, tmp_path, monkeypat
 
 def test_the_exception_type_is_unchanged():
     assert issubclass(ReasoningBudgetExhausted, RuntimeError)
+
+
+# ---- #426: a reply that is not JSON was billed too -----------------------------
+
+
+def _json_row(provider, path):
+    wrapped = ledger.RecordingProvider(
+        provider, provider_name="t", provider_class="cloud", path=path
+    )
+    with pytest.raises(SchemaReplyError), ledger.about("crosswalk/x", site="crosswalk-propose"):
+        wrapped.generate_json(system="s", prompt="p", schema={"type": "object"}, max_tokens=100)
+    (row,) = [json.loads(line) for line in path.read_text().splitlines()]
+    assert row["error"] == "SchemaReplyError"
+    return row
+
+
+def test_a_reply_that_is_not_json_keeps_its_id_cost_and_tokens(tmp_path):
+    """80's ruling on #426: 22 real rows had cost None and no request id for
+    a reply that was priced and billed. The exception carries them now."""
+    prose = _reply(
+        "Here is the mapping you asked for.", "stop", cost=0.3, completion=40, rid="gen-p"
+    )
+    row = _json_row(_litellm("m", prose), tmp_path / "calls.jsonl")
+    assert (row["request_id"], row["cost_usd"], row["output_tokens"]) == ("gen-p", 0.3, 40)
+
+
+def test_a_re_send_then_a_reply_that_is_not_json_keeps_both(tmp_path):
+    """The conservation check, on this path: both billed requests are on the
+    row and the total is both costs."""
+    prose = _reply("Not JSON.", "stop", cost=0.3, completion=40, rid="gen-b")
+    row = _json_row(_litellm("m", EMPTY_A, prose), tmp_path / "calls.jsonl")
+    assert row["cost_usd"] == pytest.approx(0.5), row
+    assert _ids(row) == {"gen-a", "gen-b"}
+    assert row["last_cost_usd"] is None
+
+
+def test_an_unpriced_reply_that_is_not_json_keeps_its_id(tmp_path, monkeypatch):
+    """That API reports no cost, so none is invented; the id and tokens are kept."""
+    from policyforge.llm.openai_compat_provider import OpenAICompatProvider
+
+    provider = OpenAICompatProvider(model="local/q", base_url="http://localhost:1/v1")
+    post = {
+        "id": "r1",
+        "choices": [{"message": {"content": "prose"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 5, "completion_tokens": 7},
+    }
+    monkeypatch.setattr(provider, "_post", lambda payload: post)
+    row = _json_row(provider, tmp_path / "calls.jsonl")
+    assert (row["request_id"], row["output_tokens"], row["cost_usd"]) == ("r1", 7, None)

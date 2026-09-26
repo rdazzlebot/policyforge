@@ -12,3 +12,9 @@ rows we checked, but only 16 of them were written by a version that
 records re-sends, and none of those 16 had one. LiteLLM prices both
 attempts of one model the same way, so this mainly affects a local or
 OpenAI-compatible first model escalating to a priced one.
+
+**A reply that should have been JSON and was not is now recorded with its
+request id, cost and tokens.** It was billed, but its ledger row had no
+cost and no request id: 22 rows in the ledgers we checked, from glm and
+deepseek runs. And a local or OpenAI-compatible server's request id is now
+kept on every call: each of the 5 local rows we checked had none.

@@ -405,6 +405,7 @@ class LiteLLMProvider(LLMProvider):
                 f"{self.model} was asked for JSON matching a schema and returned "
                 f"something else: {response.text[:160]!r}",
                 text=response.text,
+                response=response,
             ) from exc
         return response
 

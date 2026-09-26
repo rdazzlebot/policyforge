@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from policyforge.ingest.schema import Control
+from policyforge.ingest.schema import MATURITY, Control
 from policyforge.mapping.crosswalk import normalize_framework
 from policyforge.topics.anchoring import parent_of
 from policyforge.topics.registry import Topic
@@ -97,10 +97,148 @@ class FrameworkCoverage:
     #: families}. Named in the report, never counted: a family link covers no
     #: control (80's ruling on #408). Empty for a framework with none.
     family_links: dict[str, list[str]] = field(default_factory=dict)
+    #: For a per-level framework: the level scoping it was counted under, as
+    #: the report prints it (#283), or "" when none is declared and every
+    #: level is counted.
+    scoping: str = ""
+    #: {requirement counted: why}, where a reference had no statement at the
+    #: declared maturity level and a lower one stood in (80's ruling on #283).
+    stood_in: dict[str, str] = field(default_factory=dict)
 
     @property
     def total(self) -> int:
         return len(self.covered) + len(self.partial) + len(self.uncovered)
+
+
+# ---- scoping a per-level framework to the levels that apply (#283) ----------
+
+
+class ScopingError(ValueError):
+    """`frameworks.scoping` in config cannot be applied as written (#283): an
+    unknown overlay, a maturity that is not a level, or a key naming no loaded
+    per-level framework. A `ValueError`, so existing handlers still catch it;
+    its own type so the CLI and the shell can show it as a refusal, with its
+    message, and not as a traceback (1d on #461)."""
+
+
+@dataclass(frozen=True)
+class LevelScope:
+    """Which levels of a per-level framework apply to this organisation, as
+    its config declares them (80's ruling on #283). Organisation-wide: the
+    levels follow from its own scoping answers, not from a topic.
+
+    `maturity` is the level it is assessed at: per reference, the highest
+    maturity statement AT OR BELOW it is counted, since the maturity levels
+    are alternatives. `overlays` are switched on by name and are additive.
+    `maturity` None means undeclared, so every maturity level is counted."""
+
+    maturity: int | None = None
+    overlays: tuple[str, ...] = ()
+
+
+def level_scopes(config: dict | None = None) -> dict[str, LevelScope]:
+    """`frameworks.scoping` in config: {framework key: its LevelScope}.
+
+    For example, `frameworks: {scoping: {hitrust: {maturity: 2, overlays: [...]}}}`.
+    A maturity that is not a positive integer is refused, naming it."""
+    from policyforge.frameworks.registry import frameworks_config
+
+    scopes: dict[str, LevelScope] = {}
+    for name, block in (frameworks_config(config).get("scoping") or {}).items():
+        block = block or {}
+        maturity = block.get("maturity")
+        if maturity is not None and (
+            isinstance(maturity, bool) or not isinstance(maturity, int) or maturity < 1
+        ):
+            raise ScopingError(
+                f"frameworks.scoping.{name}.maturity must be a level number (1, 2, 3 ...), "
+                f"not {maturity!r}."
+            )
+        overlays = tuple(str(o) for o in (block.get("overlays") or ()))
+        scopes[normalize_framework(str(name))] = LevelScope(maturity, overlays)
+    return scopes
+
+
+def _label_key(label: str) -> str:
+    """A level label as matching reads it (80's ruling on #283): whitespace
+    normalised, case folded, and a leading "Level" dropped, so a declared
+    `hipaa` matches the export's `Level  HIPAA`."""
+    words = label.split()
+    if words and words[0].casefold() == "level":
+        words = words[1:]
+    return " ".join(words).casefold()
+
+
+def _maturity_number(label: str) -> int | None:
+    key = _label_key(label)
+    return int(key) if key.isdigit() else None
+
+
+def _scoped_requirements(
+    controls: list[Control], framework: str, scope: LevelScope
+) -> tuple[list[str], dict[str, str]]:
+    """The requirement ids of `controls` that `scope` counts, and the ones
+    counted at a lower maturity level than declared, with why.
+
+    Overlays are matched against the catalog's OWN label set; one that
+    matches none is refused, naming the nearest labels it has, because a
+    misspelt overlay would otherwise count nothing, silently."""
+    import difflib
+
+    overlay_labels = {
+        _label_key(r.level): r.level
+        for c in controls
+        for r in c.requirements
+        if r.level_kind != MATURITY
+    }
+    wanted: set[str] = set()
+    for declared in scope.overlays:
+        key = _label_key(declared)
+        if key not in overlay_labels:
+            nearest = difflib.get_close_matches(key, list(overlay_labels), n=3, cutoff=0.5)
+            shown = ", ".join(repr(overlay_labels[k]) for k in nearest) or "none close"
+            raise ScopingError(
+                f"frameworks.scoping.{framework}.overlays: {declared!r} is not a level in "
+                f"the loaded {framework} catalog (nearest: {shown})."
+            )
+        wanted.add(key)
+
+    counted: list[str] = []
+    stood_in: dict[str, str] = {}
+    for control in controls:
+        maturity = [
+            (n, r)
+            for r in control.requirements
+            if r.level_kind == MATURITY and (n := _maturity_number(r.level)) is not None
+        ]
+        if scope.maturity is None:
+            counted.extend(r.requirement_id for _, r in maturity)
+        else:
+            eligible = [(n, r) for n, r in maturity if n <= scope.maturity]
+            if eligible:
+                level, chosen = max(eligible, key=lambda pair: pair[0])
+                counted.append(chosen.requirement_id)
+                if level < scope.maturity:
+                    stood_in[chosen.requirement_id] = (
+                        f"{chosen.level}: no Level {scope.maturity} statement for "
+                        f"{control.control_id}"
+                    )
+        counted.extend(
+            r.requirement_id
+            for r in control.requirements
+            if r.level_kind != MATURITY and _label_key(r.level) in wanted
+        )
+    return counted, stood_in
+
+
+def _describe(scope: LevelScope) -> str:
+    maturity = (
+        f"maturity Level {scope.maturity} (the highest statement at or below it, per reference)"
+        if scope.maturity is not None
+        else "every maturity level (none declared)"
+    )
+    overlays = f"overlays {', '.join(scope.overlays)}" if scope.overlays else "no overlays"
+    return f"{maturity}; {overlays}"
 
 
 @dataclass
@@ -291,6 +429,7 @@ def analyze_coverage(
     crosswalk: dict[str, dict[str, list[str]]] | None = None,
     relationships: dict[tuple[str, str, str], str] | None = None,
     crosswalk_sources: dict[str, str] | None = None,
+    scopes: dict[str, LevelScope] | None = None,
 ) -> CoverageReport:
     """Compute ownership coverage of `nist_controls` by `topics`.
 
@@ -363,6 +502,7 @@ def analyze_coverage(
             owned=set(report.covered) | set(report.contested),
             relationships=relationships or {},
             crosswalk_sources=crosswalk_sources,
+            scopes=scopes,
         )
 
     return report
@@ -376,6 +516,7 @@ def _framework_coverage(
     relationships: dict[tuple[str, str, str], str],
     crosswalk_sources: dict[str, str] | None = None,
     family_links: dict[str, dict[str, frozenset[str]]] | None = None,
+    scopes: dict[str, LevelScope] | None = None,
 ) -> list[FrameworkCoverage]:
     """Which non-NIST requirements are reachable from an owned NIST control.
 
@@ -419,17 +560,44 @@ def _framework_coverage(
     # levels that never had one -- `_requirement_sources`' own reasoning, and
     # the ruling that the project does not assert what its sources withheld
     # (80, on #282). Which levels APPLY to an organisation is scoping (#283).
+    if scopes is None:
+        from policyforge.frameworks.registry import config_or_defaults
+
+        scopes = level_scopes(config_or_defaults("level scoping was read"))
     by_framework: dict[str, list[str]] = {}
     per_level: set[str] = set()
+    # A declared scope (#283) picks which level requirements count; with
+    # none, every level is counted, as #282 ruled, and the report says so.
+    scoped: dict[str, list[Control]] = {}
     for control in other_controls:
         framework = normalize_framework(control.framework)
         ids = by_framework.setdefault(framework, [])
         if control.requirements:
-            ids.extend(r.requirement_id for r in control.requirements)
             per_level.add(framework)
+            if framework in scopes:
+                scoped.setdefault(framework, []).append(control)
+            else:
+                ids.extend(r.requirement_id for r in control.requirements)
         else:
             ids.append(control.control_id)
             ids.extend(e.enhancement_id for e in control.enhancements)
+    # A declared key that names no loaded per-level framework is refused (1d
+    # on #461): `hitrust` normalises to `hitrust`, but the importer writes
+    # `HITRUST-CSF`, so the scope was skipped in silence and the report then
+    # told the user who declared it that nothing was declared. With no
+    # per-level framework loaded at all there is no level line to mislead,
+    # so a declaration is simply unused.
+    unmatched = sorted(set(scopes) - per_level)
+    if unmatched and per_level:
+        raise ScopingError(
+            f"frameworks.scoping names {', '.join(unmatched)}, which is not a loaded "
+            f"per-level framework; the loaded ones are {', '.join(sorted(per_level))}. "
+            "Use that key."
+        )
+    stood_in: dict[str, dict[str, str]] = {}
+    for framework, controls in scoped.items():
+        counted, stood_in[framework] = _scoped_requirements(controls, framework, scopes[framework])
+        by_framework[framework].extend(counted)
 
     coverage: list[FrameworkCoverage] = []
     for framework, requirement_ids in sorted(by_framework.items()):
@@ -454,6 +622,8 @@ def _framework_coverage(
                     requirement_id: sorted(families)
                     for requirement_id, families in sorted(family_links.get(framework, {}).items())
                 },
+                scoping=_describe(scopes[framework]) if framework in scoped else "",
+                stood_in=stood_in.get(framework, {}),
             )
         )
     return coverage
@@ -522,10 +692,34 @@ def format_report(report: CoverageReport, *, show_all: bool = False) -> str:
             f"  {len(framework.covered)} of {framework.total} requirements map to an "
             "owned NIST control"
         )
-        if framework.per_level:
+        if framework.per_level and framework.scoping:
+            # 80's ruling on #283: say what was counted, and which lower
+            # level stood in where a reference had none at the declared one.
+            lines.append(
+                f"  counted per level requirement at {framework.scoping} "
+                "(frameworks.scoping in config)"
+            )
+            if framework.stood_in:
+                lines.append(
+                    f"  {len(framework.stood_in)} reference(s) have no statement at the "
+                    "declared maturity level, so a lower one is counted:"
+                )
+                shown = sorted(framework.stood_in.items())
+                shown = shown if show_all else shown[:12]
+                for requirement_id, why in shown:
+                    lines.append(f"    {requirement_id}  ({why})")
+                if len(shown) < len(framework.stood_in):
+                    lines.append(
+                        f"    ... and {len(framework.stood_in) - len(shown)} more (--show-all)"
+                    )
+        elif framework.per_level:
             lines.append(
                 "  counted per level requirement (all levels in the catalog), the unit "
                 "HITRUST publishes its mappings in"
+            )
+            lines.append(
+                "  No level scoping is declared, so every level counts, including levels "
+                "that may not apply to you. Declare yours under frameworks.scoping in config."
             )
         if framework.partial:
             lines.append(

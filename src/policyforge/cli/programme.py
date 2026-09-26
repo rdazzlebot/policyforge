@@ -263,18 +263,24 @@ def coverage_cmd(
             )
 
     from policyforge.crosswalk.overlay import load_overlays, relationships_for
+    from policyforge.topics.coverage import ScopingError
 
-    report = analyze_coverage(
-        topics,
-        scoped,
-        catalog=nist_controls,
-        scope=scope,
-        other_controls=other_controls,
-        crosswalk=build_crosswalk(all_controls) if other_controls else None,
-        # Already read by load_catalogs above, which refuses an unreadable one.
-        # Declared relationships (#408) first, then the overlays' accepted rows.
-        relationships=relationships_for(all_controls, load_overlays()),
-    )
+    try:
+        report = analyze_coverage(
+            topics,
+            scoped,
+            catalog=nist_controls,
+            scope=scope,
+            other_controls=other_controls,
+            crosswalk=build_crosswalk(all_controls) if other_controls else None,
+            # Already read by load_catalogs above, which refuses an unreadable one.
+            # Declared relationships (#408) first, then the overlays' accepted rows.
+            relationships=relationships_for(all_controls, load_overlays()),
+        )
+    except ScopingError as exc:
+        # The user's own config, refused with its reason, not a traceback
+        # (1d on #461).
+        raise click.UsageError(str(exc)) from exc
 
     if as_json:
         click.echo(json_mod.dumps(dataclasses.asdict(report), indent=2))

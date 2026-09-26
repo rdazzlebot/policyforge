@@ -28,6 +28,11 @@ alarm, and a check that cries wolf gets ignored. In CI the checkout is
 the pull request's merge commit, whose merge-base with the base IS the
 tip, so CI's answer does not change.
 
+**What this does not hold** (policyforge-9b on #435): an ADDITION passes by
+design, including an invented one, a version that never existed recorded
+as though it had. Nothing here can tell a real new version from a made-up
+historical one; additions are held by review of the ledger's diff.
+
 CI checks out the pull request with full history (`fetch-depth: 0`), so
 `origin/<base>` exists; run locally, fetch first.
 """

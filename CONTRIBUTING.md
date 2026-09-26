@@ -297,15 +297,21 @@ their fixtures. Run the suite from a clone. Don't add `tests/` back to it.
 
 ## Cutting a release
 
+**Run `python scripts/release.py X.Y.Z`** (a dry run) and then with
+`--execute`. It walks the steps below in order, and each step checks that the
+one before it happened, so none can be skipped. It never merges to `main`:
+that is the user's approval, and the script waits for it and resumes when
+re-run. The list below says what each step does and why.
+
 1. Move the `## Unreleased` changelog entries under the new version. Bump
    `version` in `pyproject.toml` and `__version__` in
    `src/policyforge/__init__.py` together; a test compares them.
 1. Merge that to `main`, then tag the merge commit `vX.Y.Z` and publish a
    GitHub Release from the tag.
 1. Update `Formula/policyforge.rb` in
-   [rdazzlebot/homebrew-tap](https://github.com/rdazzlebot/homebrew-tap):
+   [rdazzleman/homebrew-tap](https://github.com/rdazzleman/homebrew-tap):
    point `url` at
-   `https://github.com/rdazzlebot/policyforge/archive/refs/tags/vX.Y.Z.tar.gz`
+   `https://github.com/rdazzleman/policyforge/archive/refs/tags/vX.Y.Z.tar.gz`
    and set `sha256` to that tarball's hash. Compute it from the URL **the
    formula names**, not from a tarball you already have: a hash that matches
    the wrong archive fails nothing and is wrong in the direction nobody sees.

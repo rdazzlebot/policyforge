@@ -837,7 +837,7 @@ comfortable.
    confirmed by that run.
 
    **Observed, 2026-09-18 (run
-   [35374922282](https://github.com/rdazzlebot/policyforge/actions/runs/35374922282),
+   [35374922282](https://github.com/rdazzleman/policyforge/actions/runs/35374922282),
    commit `e948154`):** the prediction held. The content workflow ran on that
    push and listed **three** jobs — `check the content tree` succeeded,
    `publish to Confluence` skipped, `publish to a GitHub wiki` **skipped**.

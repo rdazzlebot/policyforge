@@ -131,7 +131,39 @@ NOT_CROSSWALK_ANCHORABLE: dict[str, str] = {
         "fully traceable and still commit nobody to anything. See "
         "data/frameworks/nist-ai-rmf/README.md."
     ),
+    # Added with the Playbook catalog (#177), for the reason the Core's entry
+    # gives and one more: its entries are NIST's VOLUNTARY suggestions toward
+    # an outcome, so mapping one to an 800-53 control would assert an
+    # equivalence NIST has not published, between a suggestion and an
+    # obligation. `/coverage` otherwise printed "seed one" for it.
+    "NIST AI RMF Playbook": (
+        "The NIST AI RMF Playbook lists NIST's voluntary suggested actions toward "
+        "each AI RMF outcome -- suggestions, not obligations, and NIST says so. A "
+        "crosswalk entry from a suggested action to an 800-53 control would assert "
+        "an equivalence NIST has not published, between a suggestion and a "
+        "requirement. Cite it instead -- `[NIST AI RMF Playbook Govern 1.1 Action "
+        "1]` -- as something NIST suggests, never requires. See "
+        "data/frameworks/nist-ai-rmf-playbook/README.md."
+    ),
 }
+
+#: The catalogs that state OUTCOMES or SUGGESTIONS, not obligations, by
+#: normalized framework key (#341, 80's ruling). Their reasons are the two AI
+#: RMF entries in the table above: the Core states outcomes ("the risks are
+#: understood"), the Playbook NIST's voluntary actions toward them.
+#:
+#: **Read by the Playbook gate** (`content/deontic.py`). A sentence citing the
+#: Playbook is exempt from the gate only if it also cites a source that
+#: states obligations, because that source's strength rule then governs it.
+#: A Core citation is not one: before this, a "NIST suggests" sentence
+#: tagged `[... Playbook Map 1.6 Action 1 | NIST AI RMF Map 2.1]` escaped the
+#: gate as if the Core were binding (glm wrote three in #301's run).
+#:
+#: **Not every refusal above is here.** Information Blocking is refused as a
+#: crosswalk anchor for being conditions of an exception, a different reason;
+#: the ruling named exactly these two. A test holds this set inside the table,
+#: so a catalog cannot be non-binding without a written reason.
+NON_BINDING_FRAMEWORKS: frozenset[str] = frozenset({"nist-ai-rmf", "nist-ai-rmf-playbook"})
 
 
 class NotAnchorableError(OverlayError):
@@ -157,6 +189,96 @@ def _refusal_reason(framework: str) -> str | None:
     for name, reason in NOT_CROSSWALK_ANCHORABLE.items():
         if _canonical(name) == wanted:
             return reason
+    return None
+
+
+#: Frameworks whose SOURCE publishes a mapping to 800-53 that this release
+#: does not ingest. A third reason a coverage row can read zero, and the one
+#: the report used to call "no published crosswalk yet" — which was false.
+#:
+#: **This is NOT a refusal, and must never be merged into
+#: `NOT_CROSSWALK_ANCHORABLE`.** That table makes `seed_overlay` refuse and
+#: makes `/coverage` print "not mapped by design". Both would be false here:
+#: these frameworks SHOULD be mapped, and their publisher already did it.
+#: Seeding one by hand stays ALLOWED — the tool does not refuse it — but the
+#: report advises against it: a hand-made mapping competes with the source's,
+#: and the source's is the one to use. (Product ruling, 80, on #260.)
+#:
+#: **Enumerated, because it cannot be derived.** Whether a source publishes a
+#: crosswalk is a fact about the source that only reading it establishes;
+#: nothing in the produced catalog records it until an ingest keeps the
+#: links. Each entry therefore names what was measured, so the claim can be
+#: re-checked rather than trusted.
+#:
+#: Keyed by declared framework name through `_canonical`, the same matching as
+#: the refusal table, which has already been re-opened once by a catalog
+#: rename. `test_every_upstream_crosswalk_names_a_shipped_catalog` fails if a
+#: key stops matching, so a rename cannot silently restore the false message.
+PUBLISHED_UPSTREAM: dict[str, str] = {
+    # EMPTY since #259, and that is a measurement, not an omission. Its one
+    # entry was "NIST 800-171": NIST's rev 3 OSCAL links all 97 requirements
+    # to 800-53 (157 links, as `rel="reference"` to back-matter), and this
+    # release did not read them. `oscal_loader` now does, so 800-171 carries
+    # NIST's mapping as its `source_crosswalk` and its row is a
+    # crosswalk-carrying one. The table stays for the next catalog whose
+    # source publishes a mapping PolicyForge does not yet read.
+}
+
+
+def _upstream_reason(framework: str) -> str | None:
+    """Why `framework` reads zero when its source publishes the mapping, or None.
+
+    Checked AFTER `_refusal_reason`: a framework that cannot anchor a
+    crosswalk is refused whatever its source says.
+    """
+    wanted = _canonical(framework)
+    for name, reason in PUBLISHED_UPSTREAM.items():
+        if _canonical(name) == wanted:
+            return reason
+    return None
+
+
+#: Frameworks someone SEARCHED for a published 800-53 mapping and found none.
+#: The fourth kind of zero: seeding by hand is the right advice, and the report
+#: may say "found" because a search was actually made. (Product ruling, 80, on
+#: #264, corrected there after `ba` measured that the generic branch prints for
+#: every catalog in no table -- including BYOC ones nobody searched for.)
+#:
+#: **The value is the search record, and it is never printed.** A date and a
+#: list of sources in CLI output rot; here they sit beside the claim so it can
+#: be re-checked rather than trusted. A negative search result is only as good
+#: as its denominator, so each record says what was NOT searched too.
+#:
+#: Same matching and the same rename guard as `PUBLISHED_UPSTREAM`
+#: (`test_every_searched_framework_names_a_shipped_catalog`): if a key stops
+#: matching, the row falls to the generic branch, which claims no search.
+SEARCHED_NONE_FOUND: dict[str, str] = {
+    "Substance Use Disorder Records": (
+        # 42 CFR Part 2. Searched by `policyforge-f8` (5b) from about 02:30 UTC
+        # on 2026-09-24; the full record, with its contamination notes, is on
+        # #264. Searched: 42 CFR 2.16 text (eCFR, point-in-time 2026-09-17);
+        # the 2024 final rule 89 FR 12472 and the 2020 rules; the HITRUST CSF
+        # v11.7.0 authoritative-sources list; NIST SP 800-66r2; site searches
+        # of nist.gov, csrc.nist.gov, hhs.gov, samhsa.gov, healthit.gov and
+        # 405d.hhs.gov. NOT enumerated: NIST OLIR/CPRT, which is where a
+        # formal mapping would be registered. The published HIPAA crosswalks
+        # map the Security Rule, which 2.16 does not incorporate, so they do
+        # not reach Part 2 transitively.
+        "searched 2026-09-24 UTC by policyforge-f8; NIST OLIR/CPRT not enumerated; record on #264"
+    ),
+}
+
+
+def _searched_none_found(framework: str) -> str | None:
+    """The search record for `framework` if one found no mapping, or None.
+
+    Checked AFTER `_refusal_reason` and `_upstream_reason`: a refusal or a
+    publisher's own mapping outranks a search that came back empty.
+    """
+    wanted = _canonical(framework)
+    for name, record in SEARCHED_NONE_FOUND.items():
+        if _canonical(name) == wanted:
+            return record
     return None
 
 
@@ -388,16 +510,33 @@ def overlay_files(directory: Path = DEFAULT_OVERLAY_DIR) -> list[Path]:
 
 
 def overlay_digests(directory: Path = DEFAULT_OVERLAY_DIR) -> dict[str, str]:
-    """{file name: sha256 of its bytes} for every overlay in `directory`.
+    """{file name: digest} for every overlay in `directory`.
 
     What `map` records beside the crosswalk it builds, and what `synthesize`
     compares against, so a crosswalk built before an overlay was added,
     edited or deleted is recognised as stale. Content, not modification time:
     a timestamp can tie, and a deleted file has none.
-    """
-    import hashlib
 
-    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in overlay_files(directory)}
+    **Line endings are normalised first, and this hashed raw bytes until
+    2026-09-21.** `ingest/provenance.content_digest` exists because raw
+    hashing made every stamp recorded on Windows a mismatch in CI — the
+    same file, byte for byte apart from `\\r\\n`. This site bypassed it.
+
+    `.gitattributes` pins only `*.md` to LF, so a `config/crosswalks/*.yaml`
+    gets whatever `core.autocrlf` decides. A team that commits its overlays
+    **and** the provenance file beside the crosswalk therefore records one
+    digest on Windows and computes another on Linux — measured, not
+    inferred: the same overlay gives `edba2eba…` with LF and `154707dc…`
+    with CRLF, while `content_digest` gives `edba2eba…` for both.
+
+    **The consequence is a hard failure, not a warning.** `synthesize`
+    raises `"<path> was not built from the crosswalk overlays now in
+    config/crosswalks/"` and tells the operator to rebuild — blaming the
+    overlays for a checkout difference, on a crosswalk that is correct.
+    """
+    from policyforge.ingest.provenance import content_digest
+
+    return {p.name: content_digest(p.read_bytes()) for p in overlay_files(directory)}
 
 
 def provenance_path(crosswalk_path: Path) -> Path:

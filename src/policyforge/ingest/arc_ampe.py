@@ -46,7 +46,7 @@ Two details of the text are load-bearing:
   parameter table — so unlike a profile there is nothing to put in
   `parameter_values`, and folding the statements into anything else would
   lose the decided values.
-* **95 of the 402 guidance cells are a placeholder**, reading "There are no
+* **96 of the 402 guidance cells are a placeholder**, reading "There are no
   supplemental control requirements and guidance for this control". That is
   the template saying nothing, not CMS saying something, so it is dropped to
   an empty `discussion` rather than carried into a generated document as if
@@ -124,6 +124,21 @@ COLUMN_CAPTIONS = {
 
 #: The three captions without which a sheet is not the controls sheet.
 REQUIRED_FIELDS = ("control_id", "title", "statement")
+
+#: Every recognized field a sheet may lack and still qualify — derived from
+#: the caption table rather than listed, so a caption added to
+#: `COLUMN_CAPTIONS` later is covered without anyone remembering this line.
+#:
+#: **An optional column whose caption fails to match does not fail; it reads
+#: as empty on every row** (#265). `cell()` returns `""` both for a genuinely
+#: blank cell and for a column that was never found, so from that point on
+#: the two are indistinguishable. The caption is matched exactly after
+#: lowercasing, so `&` -> `and` or `Related Controls` -> `Related Control(s)`
+#: in a later revision drops the whole column in silence while the sheet
+#: still qualifies on its three required captions. The loader cannot tell a
+#: drifted caption from a column CMS removed, so it reports the absence loudly
+#: and leaves the decision to whoever is re-pinning.
+OPTIONAL_FIELDS = tuple(f for f in COLUMN_CAPTIONS.values() if f not in REQUIRED_FIELDS)
 
 #: `AC-01`, `AC-02(01)`, tolerant of the stray space a hand-edited template
 #: acquires.
@@ -371,6 +386,11 @@ class Summary:
         self.controls = 0
         self.enhancements = 0
         self.with_guidance = 0
+        self.with_related = 0
+        #: Optional fields whose caption was not found in the header. Every
+        #: row reads empty for these, so they are reported by name rather
+        #: than left to surface as a count of zero.
+        self.missing_optional: list[str] = []
         self.rows_skipped = 0
         self.unparsed: list[str] = []
         self.crosswalked = 0
@@ -382,6 +402,17 @@ class Summary:
             f"({self.controls + self.enhancements} baseline items) "
             f"from sheet '{self.sheet}'.",
             f"{self.with_guidance} carry supplemental requirements and guidance.",
+            f"{self.with_related} controls list related controls.",
+        ]
+        # First and loud, because the lines above read as facts about the
+        # source and are not: with the column missing, "0 carry" measures the
+        # parse rather than CMS, and the related count used to print nothing
+        # at all.
+        lines[:0] = [
+            f"WARNING: no '{field}' column was found in the header, so every row "
+            f"reads it as empty. A caption that no longer matches exactly drops "
+            f"the whole column without failing the parse."
+            for field in self.missing_optional
         ]
         if self.crosswalked:
             lines.append(f"Crosswalked {self.crosswalked} onto their 800-53 equivalents.")
@@ -423,6 +454,7 @@ def parse_arc_ampe(
 
     summary = Summary()
     summary.sheet = sheet_title
+    summary.missing_optional = [f for f in OPTIONAL_FIELDS if f not in columns]
     assembled: dict[str, Control] = {}
     order: list[str] = []
 
@@ -432,8 +464,23 @@ def parse_arc_ampe(
             return ""
         return _clean(row[index])
 
+    # Counted in a pass of its own, deliberately. The first version of this
+    # incremented alongside the parse loop below, which made the comparison
+    # a tautology: a loop that stopped early decremented both sides and the
+    # identity still held. Truncating the scan dropped the catalog from 215
+    # controls to 103 in silence. An independent pass is what makes the
+    # check capable of failing.
+    rows_with_content = sum(
+        1
+        for row in sheet.iter_rows(min_row=data_start, values_only=True)
+        if any(_clean(value) for value in row)
+    )
+
+    rows_consumed = 0
     for row in sheet.iter_rows(min_row=data_start, values_only=True):
         raw_id = cell(row, "control_id")
+        if raw_id:
+            rows_consumed += 1
         if not raw_id:
             # Only rows carrying something are worth reporting. The sheet is
             # padded with blanks and broken up by section bands, and counting
@@ -482,6 +529,8 @@ def parse_arc_ampe(
             parent.control_statement = statement
             parent.discussion = guidance
             parent.related_controls = related
+            if related:
+                summary.with_related += 1
             parent.source_crosswalk = crosswalk
             summary.controls += 1
             continue
@@ -498,7 +547,50 @@ def parse_arc_ampe(
         )
         summary.enhancements += 1
 
-    return [assembled[key] for key in order], summary
+    controls = [assembled[key] for key in order]
+    _require_every_row(summary, consumed=rows_consumed, with_content=rows_with_content)
+    return controls, summary
+
+
+def _require_every_row(summary: Summary, *, consumed: int, with_content: int) -> None:
+    """Refuse a parse that lost a row the sheet contains.
+
+    **Rows read plus rows skipped must equal rows carrying content.**
+    Every row in the baseline is either consumed or reported as skipped;
+    silently absent is the outcome this makes impossible.
+
+    **Counted in rows, not in emitted items**, and the difference is not
+    cosmetic. A control stated only as an enhancement gets a parent
+    synthesised for it, and that parent has no row — so emitted items can
+    legitimately exceed rows read. The first version of this check
+    compared against emitted items; it reconciled exactly against CMS's
+    published workbook, where every parent happens to have its own row,
+    and broke six tests built on sheets where one does not. A
+    relationship that holds on the shipped data and not in general is
+    the kind of thing a real corpus cannot tell you is wrong.
+
+    **The failure it guards is the one this loader has already had.** A
+    caption-matched header can select the wrong sheet — the
+    `Instructional Guidance` decoy matches every caption and matches
+    *earlier* in the workbook — and the result is a plausible
+    three-control catalog rather than an error. That case is caught by
+    name today; this catches the general form, including a row scan that
+    stops early or a column that moves.
+
+    Counted against the **sheet**, not a constant. `rows_with_content` is
+    gathered without consulting the control-id column, so both sides come
+    from the workbook being read and CMS may publish a longer baseline
+    without anyone editing a number here. The same argument
+    `part2_loader._require_sections` makes for eCFR.
+    """
+    if consumed + summary.rows_skipped != with_content:
+        raise ValueError(
+            f"the sheet has {with_content} row(s) carrying content; {consumed} "
+            f"were read and {summary.rows_skipped} reported skipped, leaving "
+            f"{with_content - consumed - summary.rows_skipped} unaccounted for. "
+            f"A row was neither read nor reported, which usually means the header "
+            f"matched the wrong sheet or a column moved."
+        )
 
 
 def load_workbook_from_bytes(content: bytes):

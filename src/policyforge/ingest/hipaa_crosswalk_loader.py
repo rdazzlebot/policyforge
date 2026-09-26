@@ -271,4 +271,120 @@ def apply_crosswalk(controls: list[Control], mapping: dict[str, list[str]]) -> C
     report.unmatched_citations.sort()
     report.unparsed_nist_ids.sort()
     report.unmapped_requirements = sorted(set(targets) - set(resolved))
+    _require_nothing_dropped(mapping, targets, resolved, report)
     return report
+
+
+def _require_nothing_dropped(
+    mapping: dict[str, list[str]],
+    targets: dict[str, object],
+    resolved: dict[str, set[str]],
+    report: CrosswalkReport,
+) -> None:
+    """Refuse a report that lost something it was handed.
+
+    **The property here is conservation, not extent.** Extent — "how many
+    rows should there be" — is already settled upstream: the CPRT join is
+    exact, 279 elements to 279 pairs, asserted in `parse_cprt_crosswalk`.
+    What that says nothing about is whether everything that survived the
+    parse survives *this* function.
+
+    `apply_crosswalk` has two skip paths, and both are deliberate: a
+    citation with no counterpart in the eCFR-derived data, and a NIST ID
+    that did not normalize. **Every skip is recorded** — that is the real
+    invariant, and it was not held by anything. `unmatched_citations` and
+    `unparsed_nist_ids` are both empty against the published crosswalk, so
+    a test asserting they are empty stays green when the line that appends
+    to them is deleted. The bookkeeping and the behaviour are
+    indistinguishable while the data is clean, which is the whole failure
+    mode: the day CPRT publishes a citation this data does not carry, a
+    dropped `append` turns a reported gap into a silent one, in compliance
+    mappings.
+
+    Three statements, and **they are not all the same kind of check.**
+    An earlier draft of this docstring said all three were derived from
+    the inputs rather than from the loop's own bookkeeping, warned in the
+    next sentence that a check reading the loop's counters "agrees with
+    the loop by construction", and named `arc_ampe` for having done
+    exactly that — while statement 3's arithmetic was doing it. The
+    paragraph carried both the rule and an instance of it and identified
+    only the first, which is worse than saying nothing, because the next
+    reader takes the rule as satisfied. Caught by 80 and 9b re-running it
+    rather than reading it.
+
+    1. every citation is unmatched or resolves to a target, never both;
+    2. under a resolved citation, every NIST ID is attached or reported;
+    3. every target is mapped or listed as uncovered, never both.
+
+    **1 and 2 are derived from `mapping` and `targets` and can disagree
+    with what the loop recorded.** Two independent derivations of the
+    same fact, which is what lets them contradict each other. Deleting
+    either `append` makes them disagree.
+
+    **3 is two checks with different reach.** Its disjointness half
+    (`uncovered & resolved`) is a genuine partition and fails on
+    constructed state, which is why it has a test. Its arithmetic half is
+    an identity that holds for every possible input: `mapped_controls +
+    mapped_enhancements` is one increment per resolved target, and
+    `uncovered` is `targets - resolved` by construction, so the sum is
+    `len(targets)` whatever goes in — measured across an empty mapping,
+    an all-unmatched mapping, an all-unparsed mapping, a clean ID under
+    an unmatched citation, and two aliases colliding on one target. It is
+    kept as a **regression guard on the counting loop**, not as a
+    statement about conservation: changing `mapped_controls += 1` to
+    `+= 2` raises *"74 HIPAA requirement(s) went in; 90 were mapped and 9
+    reported uncovered, accounting for 99"*. That is what it is for, and
+    it is all it is for.
+
+    Statement 2 is scoped to resolved citations on purpose. A clean NIST
+    ID under an *unmatched* citation is dropped without appearing in
+    `unparsed_nist_ids`, and that is correct: the loss is already
+    accounted for one level up, by the citation itself being reported.
+    Stating it unscoped would be a stronger-sounding invariant that is
+    simply false.
+    """
+    unmatched = set(report.unmatched_citations)
+    unparsed = set(report.unparsed_nist_ids)
+
+    for citation in mapping:
+        target_id = CITATION_ALIASES.get(citation, citation)
+        known = target_id in targets
+        if known == (citation in unmatched):
+            raise ValueError(
+                f"citation {citation!r} is "
+                + (
+                    "both resolved and reported unmatched"
+                    if known
+                    else "neither resolved nor reported unmatched"
+                )
+                + " — a crosswalk gap must be visible, not inferred from an "
+                "absence"
+            )
+        if not known:
+            continue
+        for nist_id in mapping[citation]:
+            if nist_id.startswith("?"):
+                if nist_id[1:] not in unparsed:
+                    raise ValueError(
+                        f"{citation}: NIST ID {nist_id[1:]!r} did not normalize and "
+                        f"was not reported in unparsed_nist_ids"
+                    )
+            elif nist_id not in resolved.get(target_id, ()):
+                raise ValueError(
+                    f"{citation}: NIST ID {nist_id!r} was neither attached to "
+                    f"{target_id} nor reported as unparsed"
+                )
+
+    uncovered = set(report.unmapped_requirements)
+    if uncovered & set(resolved):
+        raise ValueError(
+            "requirement(s) reported as uncovered while also carrying a mapping: "
+            f"{sorted(uncovered & set(resolved))}"
+        )
+    accounted = report.mapped_controls + report.mapped_enhancements + len(uncovered)
+    if accounted != len(targets):
+        raise ValueError(
+            f"{len(targets)} HIPAA requirement(s) went in; "
+            f"{report.mapped_controls + report.mapped_enhancements} were mapped and "
+            f"{len(uncovered)} reported uncovered, accounting for {accounted}"
+        )

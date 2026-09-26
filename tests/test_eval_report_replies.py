@@ -83,7 +83,7 @@ def test_the_report_shows_a_failed_runs_replies_and_counts_cut_off_runs():
         runner.CaseResult(suite="answering", name="a-clean-case", outcomes=[passed, passed]),
     ]
 
-    report = runner.format_report(results, repeat=2)
+    report = runner.format_report(results, repeat=2, requested=["answering"])
 
     assert "replies: stop=length out=1019" in report
     assert "1 run(s) had a reply cut off at its budget" in report
@@ -93,7 +93,7 @@ def test_a_clean_report_says_nothing_about_cut_off_runs():
     passed = runner.Outcome(True, "", "right", replies=[("stop", 40, "m")])
     results = [runner.CaseResult(suite="answering", name="a-clean-case", outcomes=[passed])]
 
-    report = runner.format_report(results, repeat=1)
+    report = runner.format_report(results, repeat=1, requested=["answering"])
 
     assert "cut off" not in report
     assert "replies:" not in report

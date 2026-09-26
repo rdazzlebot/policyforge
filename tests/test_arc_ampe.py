@@ -383,6 +383,68 @@ def test_only_rows_with_content_count_as_skipped(workbook):
     assert summary.rows_skipped == 1
 
 
+def test_every_row_with_content_is_read_or_reported(workbook):
+    """**External extent: rows read plus rows skipped equals rows with
+    content.** Every other test here asks whether an entry is right; this
+    is the only one asking whether they are all here.
+
+    The failure it guards has already happened to this loader once — a
+    caption-matched header selecting the `Instructional Guidance` decoy
+    produces a plausible three-control catalog rather than an error. That
+    case is caught by name; this catches the general form, including a
+    row scan that stops early or a column that moves.
+    """
+    controls, summary = arc_ampe.parse_arc_ampe(workbook)
+    consumed = len(controls) + sum(len(c.enhancements) for c in controls)
+
+    # Not an equality against `consumed`: a control stated only as an
+    # enhancement gets a parent synthesised, and that parent has no row.
+    assert summary.rows_skipped == 1
+    assert consumed >= 1
+
+
+def test_a_row_that_is_neither_read_nor_reported_raises():
+    """The guard's contract, asserted directly.
+
+    **The first version of this check compared emitted items against
+    rows** and reconciled exactly against CMS's published workbook —
+    where every parent happens to have its own row. It broke six tests
+    built on sheets where one does not. A relationship that holds on the
+    shipped corpus and not in general is precisely what real data cannot
+    tell you is wrong, so the check counts rows and the test says so.
+    """
+    summary = arc_ampe.Summary()
+    summary.rows_skipped = 2
+
+    with pytest.raises(ValueError, match=r"unaccounted for"):
+        arc_ampe._require_every_row(summary, consumed=5, with_content=9)
+
+    # And it must ALLOW a sheet that reconciles, or it refuses everything.
+    arc_ampe._require_every_row(summary, consumed=7, with_content=9)
+
+
+def test_the_extent_guard_is_actually_called(workbook, monkeypatch):
+    """**A correct guard nobody calls is not a guard.**
+
+    The test above proves the contract; it passes with the call site
+    deleted. I found that by deleting each call in turn and recording
+    which test noticed — two of four noticed nothing, and this pair is
+    why. "The function is right" and "the function runs" are different
+    claims and a unit test only makes the first.
+    """
+    called: list[tuple[int, int]] = []
+    real = arc_ampe._require_every_row
+
+    def spy(summary, *, consumed, with_content):
+        called.append((consumed, with_content))
+        return real(summary, consumed=consumed, with_content=with_content)
+
+    monkeypatch.setattr(arc_ampe, "_require_every_row", spy)
+    arc_ampe.parse_arc_ampe(workbook)
+
+    assert called, "parse_arc_ampe returned without checking extent"
+
+
 def test_scanning_for_the_header_does_not_extend_the_sheet(workbook):
     """openpyxl materializes rows read past a writable sheet's last one.
 
@@ -471,3 +533,97 @@ def test_no_shipped_field_says_there_is_no_guidance():
     ]
 
     assert boilerplate == []
+
+
+# --------------------------------------------------------------------------
+# Optional columns whose caption drifts (#265)
+# --------------------------------------------------------------------------
+
+
+def _drifted_book(replace: dict[str, str]):
+    """The fixture's catalog sheet, with some header captions reworded."""
+    from openpyxl import Workbook
+
+    book = Workbook()
+    book.remove(book.active)
+    sheet = book.create_sheet("AE Mandatory Baseline")
+    sheet.append([replace.get(caption, caption) for caption in HEADER])
+    sheet.append(_row(1, "AC-01", "Policy", "a. Develop.", "•  Define roles.", "IA-1, PM-9"))
+    sheet.append(_row(2, "AC-02(01)", "Automated", "Support.", "•  Use automation.", "AC-2"))
+    return book
+
+
+GUIDANCE_CAPTION = "ARC-AMPE SUPPLEMENTAL CONTROL REQUIREMENTS & GUIDANCE"
+
+
+@pytest.mark.parametrize(
+    ("replace", "missing"),
+    [
+        ({GUIDANCE_CAPTION: GUIDANCE_CAPTION.replace("&", "and")}, ["guidance"]),
+        ({"Related Controls": "Related Control(s)"}, ["related"]),
+        ({"Control Family": "Family"}, ["family"]),
+        (
+            {GUIDANCE_CAPTION: GUIDANCE_CAPTION.replace("&", "and"), "Related Controls": "Related"},
+            ["guidance", "related"],
+        ),
+    ],
+)
+def test_a_drifted_optional_caption_still_parses_and_says_so(replace, missing):
+    """**The parse succeeding is the defect's shape, not the fix's absence.**
+
+    Each of these rewordings leaves the three required captions intact, so
+    the sheet still qualifies and every control is read — with one column
+    empty in every row. The count of controls is right; only the warning
+    says anything is wrong, so the warning is what is asserted, first in the
+    report and naming the field.
+    """
+    _, summary = arc_ampe.parse_arc_ampe(_drifted_book(replace))
+
+    assert summary.controls + summary.enhancements == 2, "the sheet must still qualify"
+    assert summary.missing_optional == missing
+    report = summary.format_report()
+    for index, field in enumerate(missing):
+        assert report[index].startswith(f"WARNING: no '{field}' column")
+
+
+def test_the_drift_really_empties_the_column():
+    """The premise of the warning, measured rather than assumed: with `&`
+    reworded, a row whose guidance cell is full reads as having none."""
+    controls, summary = arc_ampe.parse_arc_ampe(
+        _drifted_book({GUIDANCE_CAPTION: GUIDANCE_CAPTION.replace("&", "and")})
+    )
+
+    assert summary.with_guidance == 0
+    assert controls[0].discussion == ""
+    assert controls[1].enhancements[0].additional_requirements == ""  # AC-2(1), under AC-2
+
+
+def test_the_shipped_captions_raise_no_warning(workbook):
+    """The passing case. A warning that also fires on the real header is one
+    everybody learns to read past, which is the state it exists to end."""
+    _, summary = arc_ampe.parse_arc_ampe(workbook)
+
+    assert summary.missing_optional == []
+    assert not any(line.startswith("WARNING") for line in summary.format_report())
+
+
+def test_the_related_count_is_reported(workbook):
+    """It printed nothing before #265, so a column that read as empty in
+    every row looked identical to one that was never parsed."""
+    _, summary = arc_ampe.parse_arc_ampe(workbook)
+
+    # AC-1 only. "None." lists nothing, and AC-2(1)'s "AC-2" belongs to an
+    # enhancement, which has no related field to count.
+    assert summary.with_related == 1
+    assert f"{summary.with_related} controls list related controls." in summary.format_report()
+
+
+def test_every_caption_is_either_required_or_warned_about():
+    """**Derived, so a new caption cannot fall between the two.** A field
+    added to `COLUMN_CAPTIONS` and to neither list would go silent in
+    exactly the way #265 describes; the partition must cover the map."""
+    fields = set(arc_ampe.COLUMN_CAPTIONS.values())
+
+    assert set(arc_ampe.REQUIRED_FIELDS) | set(arc_ampe.OPTIONAL_FIELDS) == fields
+    assert not set(arc_ampe.REQUIRED_FIELDS) & set(arc_ampe.OPTIONAL_FIELDS)
+    assert set(arc_ampe.OPTIONAL_FIELDS) == {"family", "guidance", "related"}

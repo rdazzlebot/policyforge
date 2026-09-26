@@ -67,6 +67,49 @@ SKIP_FLAGS = {
 }
 
 
+class EmptyDerivation(RuntimeError):
+    """A check derived the set of things it examines, and got nothing.
+
+    **Raised rather than returned, because the alternative is PASS.** Every
+    tool this gate drives treats "no input" as success — `mdformat --check`
+    with no paths prints *"No files have been passed in. Doing nothing."*
+    and exits 0, and `run()` reports `returncode == 0` as a pass. So a
+    derivation that stops matching is indistinguishable in the summary from
+    a clean tree, and the exit code the charge tells everyone to condition
+    their push on is 0.
+
+    **Guarding the class, not the instance.** #224 named the markdown
+    population. There are three here — markdown targets from `rglob`,
+    tracked files from `ls-files --eol`, and the conflict-marker scan — and
+    all three had the same property. A guard written for the one that was
+    reported covers the one that was reported; the other two were found by
+    asking what else in this file derives a population and then believes a
+    clean result over it.
+
+    Deliberately NOT the same mechanism as a SKIP. A skip says a tool was
+    absent and is acknowledgeable with `--allow-skip`. This says the tool
+    ran and examined nothing, which is never acceptable and must not be
+    silenceable by the same flag.
+    """
+
+
+def derived(label: str, items: list, what: str) -> list:
+    """Return `items`, or refuse if the derivation produced nothing.
+
+    `what` names the thing that should have been found, in the reader's
+    terms, because the failure is always somebody's pathspec and the
+    message has to point at it.
+    """
+    if not items:
+        raise EmptyDerivation(
+            f"{label}: derived ZERO {what}.\n"
+            f"  That is a broken derivation, not a clean tree -- every tool\n"
+            f"  here treats no input as success, so this would otherwise\n"
+            f"  report PASS having examined nothing."
+        )
+    return items
+
+
 def run(label: str, cmd: list[str]) -> bool:
     print(f"\n{'=' * 60}\n{label}\n{'=' * 60}")
     result = subprocess.run(cmd, cwd=REPO_ROOT)
@@ -140,6 +183,8 @@ def _git(*args: str, root: Path | None = None) -> subprocess.CompletedProcess[st
         cwd=root or REPO_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
 
@@ -211,7 +256,11 @@ def check_line_endings(root: Path | None = None) -> bool | None:
         print(f"SKIPPED — `git ls-files --eol` failed:\n{result.stderr.strip()}")
         return None
 
-    rows = [line for line in result.stdout.splitlines() if line.strip()]
+    rows = derived(
+        label,
+        [line for line in result.stdout.splitlines() if line.strip()],
+        "tracked files -- `git ls-files --eol` returned nothing",
+    )
     offenders = [line for line in rows if line.split()[0] in {"i/crlf", "i/mixed"}]
     print(f"{len(rows)} tracked files examined, {len(offenders)} carrying CRLF in the index")
     for line in offenders:
@@ -260,18 +309,38 @@ def check_conflict_markers(root: Path | None = None) -> bool | None:
         return None
 
     hits = [line for line in result.stdout.splitlines() if line.strip()]
-    tracked = len(
-        [line for line in _git("ls-files", root=root).stdout.splitlines() if line.strip()]
+
+    # The corpus is built as a list and guarded, rather than counted twice:
+    # `tracked` and `others` are the numbers the message prints, and the
+    # thing that must not be empty is what was actually scanned.
+    tracked_files = [
+        line for line in _git("ls-files", root=root).stdout.splitlines() if line.strip()
+    ]
+    other_files = [
+        line
+        for line in _git(
+            "ls-files", "--others", "--exclude-standard", root=root
+        ).stdout.splitlines()
+        if line.strip()
+    ]
+    # Guarded as one corpus: what must not be empty is what was scanned.
+    # `tracked` and `others` below are measurements OF this list, so they
+    # cannot disagree with it -- the earlier version called `ls-files`
+    # twice and counted one of them separately.
+    # Called for the refusal, not for a value: `tracked` and `others`
+    # below are measurements of the same two lists.
+    derived(
+        label,
+        tracked_files + other_files,
+        "files to scan -- `git ls-files` returned no corpus",
     )
-    others = len(
-        [
-            line
-            for line in _git(
-                "ls-files", "--others", "--exclude-standard", root=root
-            ).stdout.splitlines()
-            if line.strip()
-        ]
-    )
+    # `tracked` and `others` are measurements OF `corpus`, so they cannot
+    # disagree with it. An earlier version asserted that they summed to
+    # `len(corpus)`; policyforge-ba pointed out that restates the
+    # construction and no input can make it differ -- **a line that reads
+    # as a check and is not one**, in the file that now exists to catch
+    # exactly that. It was also a bare `assert`, which `python -O` strips.
+    tracked, others = len(tracked_files), len(other_files)
     print(
         f"{tracked} tracked + {others} untracked files scanned, "
         f"{len(hits)} conflict marker(s) found"
@@ -315,6 +384,18 @@ def parse_allow_skip(argv: list[str] | None) -> set[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except EmptyDerivation as exc:
+        # Caught here so the reader gets a gate result rather than a
+        # traceback, and so the exit code is a deliberate 2 -- distinct
+        # from 1 (a check failed) because nothing was actually checked.
+        rule = "=" * 60
+        print(f"\n{rule}\nBROKEN DERIVATION\n{rule}\n{exc}", file=sys.stderr)
+        return 2
+
+
+def _main(argv: list[str] | None = None) -> int:
     allow_skip = parse_allow_skip(argv)
 
     # Before anything runs: the `policyforge` every check below would import
@@ -333,13 +414,17 @@ def main(argv: list[str] | None = None) -> int:
     # script and that hook can't disagree about what "formatted" means. Only
     # output/ is excluded — it holds generated drafts, which are checked by
     # `check_markdown_quality` at generation time instead.
-    md_targets = sorted(
-        str(p)
-        for p in REPO_ROOT.rglob("*.md")
-        if not any(
-            part in {".venv", ".tools", "output", "local_content", ".git", ".pytest_cache"}
-            for part in p.relative_to(REPO_ROOT).parts
-        )
+    md_targets = derived(
+        "mdformat (markdown quality)",
+        sorted(
+            str(p)
+            for p in REPO_ROOT.rglob("*.md")
+            if not any(
+                part in {".venv", ".tools", "output", "local_content", ".git", ".pytest_cache"}
+                for part in p.relative_to(REPO_ROOT).parts
+            )
+        ),
+        "markdown files -- the rglob or the exclusion set stopped matching",
     )
 
     lint_targets = ["src", "tests", "scripts"]
@@ -368,6 +453,23 @@ def main(argv: list[str] | None = None) -> int:
         "mdformat (markdown quality)": run(
             "mdformat --check", ["mdformat", "--check", *md_targets]
         ),
+        # **CI requires this and the gate did not run it.** Observed live on
+        # #211: this script reported 2,921 tests passing and every check
+        # green while CI was red on `changelog`. A pre-push gate that a
+        # required check can fail behind is not a gate -- it is a subset
+        # someone has to remember is a subset.
+        #
+        # Not skippable. The other four skips exist because a tool may be
+        # absent; this one is a script in this repository, so "it did not
+        # run" has no honest cause.
+        "changelog fragments (shape)": run(
+            "changelog_fragments --check",
+            [sys.executable, "scripts/changelog_fragments.py", "--check"],
+        ),
+        "committed shell (exit status)": run(
+            "shell_status",
+            [sys.executable, "scripts/shell_status.py"],
+        ),
         "gitleaks (secrets scan)": check_gitleaks(),
         # Tree hygiene last: both are fast, and both catch a class the rest
         # of the gate only ever caught by accident.
@@ -382,9 +484,28 @@ def summarise(results: dict[str, bool | None], allow_skip: set[str]) -> int:
     """Print the summary and return the exit code.
 
     Separate from `main` so the exit rule can be tested without installing
-    or uninstalling tools. The rule it encodes: a check that did not run is
-    not a check that passed.
+    or uninstalling tools. The rule it encodes: **a check that did not run
+    is not a check that passed.**
+
+    **And a gate with no checks is not a passing gate.** `summarise({}, set())`
+    returned 0 and printed `0 ran, 0 failed, 0 skipped` -- the same failure
+    this file's `derived()` guard exists to refuse, one level up, in the
+    function that produces the answer everyone conditions their push on.
+
+    policyforge-ba found it and argued it was categorically different,
+    because `results` is a dict literal whose keys cannot shrink without a
+    visible diff. That is true of the code as it stands today and it is an
+    argument from the current shape rather than from a guard -- it stops
+    holding the moment anyone builds `results` conditionally, which is a
+    two-line change nobody would flag. So it is refused here instead.
     """
+    if not results:
+        print(
+            "check.py: ZERO checks ran.\n"
+            "  That is not a clean tree; it is a gate that did not assemble.",
+            file=sys.stderr,
+        )
+        return 2
     # A check that declined to run but has no --allow-skip name would
     # fall out of the accounting below and be reported as a pass. Stop
     # instead: the failure mode this whole change exists to remove is

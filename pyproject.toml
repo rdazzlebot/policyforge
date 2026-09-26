@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "policyforge"
-version = "1.6.0"
+version = "1.6.1"
 description = "Cross-mapped compliance policy/standard/procedure generation from NIST 800-53, FedRAMP, ARC-AMPE, the HIPAA Security Rule, and (BYOC) HITRUST/GovRAMP."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -127,6 +127,9 @@ packages = [
     "arc-ampe/README.md",
     "arc-ampe/controls.json",
     "arc-ampe/framework.yaml",
+    "cfr-170-315-onc-certification/README.md",
+    "cfr-170-315-onc-certification/controls.json",
+    "cfr-170-315-onc-certification/framework.yaml",
     "cfr-171-information-blocking/README.md",
     "cfr-171-information-blocking/controls.json",
     "cfr-171-information-blocking/framework.yaml",
@@ -148,6 +151,9 @@ packages = [
     "nist-ai-rmf/README.md",
     "nist-ai-rmf/controls.json",
     "nist-ai-rmf/framework.yaml",
+    "nist-ai-rmf-playbook/README.md",
+    "nist-ai-rmf-playbook/controls.json",
+    "nist-ai-rmf-playbook/framework.yaml",
     "govramp/README.md",
     "hitrust-ai/README.md",
     "hitrust-csf/README.md",

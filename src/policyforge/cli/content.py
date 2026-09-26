@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
 import click
@@ -17,6 +18,35 @@ from policyforge.cli._common import (
     load_config_or_empty,
 )
 from policyforge.textfile import write_text_lf
+
+
+def history_hint(*, tier: str, name: str, previous: int | str, current: int | str) -> str:
+    """The `history` invocation that shows what changed, as printed.
+
+    **Extracted so the quoting is reachable from a test.** It was inline
+    in a `click.echo`, and reverting its `shlex.quote` left the suite
+    green -- the site was covered by neither the publisher test, which
+    reaches publishers, nor the source-level scan, whose population is
+    backtick-quoted strings.
+
+    A document name is user-authored: `Ryan's Access Policy` inside
+    hand-written quotes produces a valid command naming a different
+    document, silently. Same defect as a page title, different caller.
+
+    **The versions arrive as ints** (`VersionRecord.version`) and
+    `shlex.quote` takes only strings, so they are `str()`ed here. Without
+    that, every import that differed from a recorded version crashed after
+    it had written its file (#310). The first test of this helper passed
+    `"v1"`, a value no caller sends.
+    """
+    # Converted before the f-string, so the quoted expressions keep the text
+    # `test_printed_commands_run` pins them by.
+    previous, current = str(previous), str(current)
+    return (
+        f"Run `policyforge history "
+        f"--tier {shlex.quote(tier)} --name {shlex.quote(name)} "
+        f"--diff {shlex.quote(previous)}:{shlex.quote(current)}` to see what changed."
+    )
 
 
 @cli.command("export-confluence")
@@ -823,28 +853,91 @@ def import_confluence_cmd(
     markdown, and record it into the same local version-history stream
     `generate` uses for --tier/--name - so you can diff what this tool last
     generated against what's actually live (e.g. after a manual edit)."""
-    from policyforge.export.confluence_importer import import_from_confluence
+    from datetime import datetime, timezone
+
+    from policyforge.content.provenance import (
+        PREVIOUSLY_GENERATED_BY,
+        carried_content_class,
+        declared_content_class,
+        import_metadata,
+        read_generated_by,
+    )
+    from policyforge.content.tree import ContentError, parse_document, render_document
+    from policyforge.export.confluence_importer import (
+        confluence_to_markdown,
+        fetch_confluence_page,
+    )
     from policyforge.history.version_store import load_history, record_version
 
     # Checked before the network call, not after: a name that cannot be
     # stored is not worth fetching a page for.
     name = _checked_slug(name)
 
-    markdown_text = import_from_confluence(space=space, title=title, host=host)
+    page = fetch_confluence_page(space=space, title=title, host=host)
+    markdown_text = confluence_to_markdown(page.storage_body)
 
     out_path = out or Path(f"output/{tier}s") / f"{name}.imported.md"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    write_text_lf(out_path, markdown_text)
-    click.echo(f"Imported {title!r} from Confluence -> {out_path}")
-
     slug = f"{tier}/{name}"
     previous = load_history(history_dir, slug)
+
+    # What the local predecessors said about this document, read BEFORE
+    # anything is written, because --out may be one of them (#197). The
+    # generated file, and whatever sits at --out already (usually the last
+    # import), then every recorded version.
+    classes: list[str] = []
+    earlier_generation: dict = {}
+    for candidate in (Path(f"output/{tier}s") / f"{name}.md", out_path):
+        try:
+            metadata = parse_document(
+                candidate.read_text(encoding="utf-8"), path=candidate, root=candidate.parent
+            ).metadata
+        except (OSError, UnicodeDecodeError, ContentError):
+            continue
+        classes.append(declared_content_class(metadata))
+        earlier_generation = earlier_generation or (
+            read_generated_by(metadata) or dict(metadata.get(PREVIOUSLY_GENERATED_BY) or {})
+        )
+    classes += [str(v.metadata.get("content_class") or "") for v in previous]
+    content_class = carried_content_class(classes)
+
+    imported_from = {
+        "space": space,
+        "title": title,
+        "page_version": page.version,
+        "date": datetime.now(timezone.utc).date().isoformat(),
+    }
+    # No `generated_by` block, ever: the page may have been edited by a
+    # person. The earlier generation is kept whole under
+    # `previously_generated_by`, which attribution does not read, so it is
+    # history rather than a claim about this text.
+    metadata = import_metadata(
+        imported_from=imported_from,
+        content_class=content_class,
+        previously_generated_by=earlier_generation,
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    write_text_lf(out_path, render_document(metadata, markdown_text))
+    click.echo(f"Imported {title!r} from Confluence -> {out_path}")
+    if content_class:
+        click.echo(f"Content class {content_class!r}, carried from the local predecessor.")
+    else:
+        click.echo(
+            "Content class unknown: this document is governed by the wiki's visibility "
+            "rule until one is set. No local predecessor says what it was drawn from, "
+            "and the import does not guess."
+        )
+
     record = record_version(
         history_dir,
         slug,
         markdown_text,
         source="confluence-import",
-        metadata={"space": space, "title": title},
+        metadata={
+            "space": space,
+            "title": title,
+            "page_version": page.version,
+            **({"content_class": content_class} if content_class else {}),
+        },
     )
 
     if record is None:
@@ -855,8 +948,13 @@ def import_confluence_cmd(
     elif previous:
         click.echo(
             f"Differs from the last recorded version (v{previous[-1].version}) — recorded as "
-            f"{slug!r} v{record.version}. Run `policyforge history --tier {tier} --name {name} "
-            f"--diff {previous[-1].version}:{record.version}` to see what changed."
+            f"{slug!r} v{record.version}. "
+            + history_hint(
+                tier=tier,
+                name=name,
+                previous=previous[-1].version,
+                current=record.version,
+            )
         )
     else:
         click.echo(f"Recorded as {slug!r} v{record.version} (first version in this stream).")
@@ -881,7 +979,14 @@ def import_confluence_cmd(
     is_flag=True,
     help="Treat warnings as failures too. For a repo that has finished migrating.",
 )
-def check_cmd(content_dir: Path | None, synthesis_dir: Path, strict: bool):
+@click.option(
+    "--entail",
+    is_flag=True,
+    help="Also ask a model whether each cited obligation is actually carried by "
+    "the synthesis requirements it cites. Costs one call per cited obligation, "
+    "printed before anything runs. Reported only -- never changes the exit code.",
+)
+def check_cmd(content_dir: Path | None, synthesis_dir: Path, strict: bool, entail: bool):
     """Check the content tree before anything is published.
 
     Entirely offline, so it runs on a pull request from a fork with no
@@ -899,7 +1004,13 @@ def check_cmd(content_dir: Path | None, synthesis_dir: Path, strict: bool):
             "`zardoz.content_dir` in config/config.yaml."
         )
 
-    report = check_tree(root, synthesis_dir=synthesis_dir)
+    from policyforge.org.context import org_actors
+
+    # The organization's own names, so the Playbook check catches "..., and
+    # <Org> will adopt it" for THIS organization (#323).
+    report = check_tree(
+        root, synthesis_dir=synthesis_dir, org_actors=org_actors(load_config_or_empty())
+    )
     click.echo(report.format_report())
 
     # Licensed catalog content committed to a repository that has not
@@ -917,8 +1028,68 @@ def check_cmd(content_dir: Path | None, synthesis_dir: Path, strict: bool):
             mark = "ERROR" if finding.severity == "error" else "warn "
             click.echo(f"  {mark}  {finding.framework.id}: {finding.message}")
 
+    if entail:
+        _report_entailment(root, synthesis_dir)
+
+    # Deliberately after the entailment report and deliberately ignoring it.
+    # A model's verdict can differ between runs on identical input; a
+    # malformed document cannot. Putting the first behind this number would
+    # change what a non-zero exit means for every caller already relying on
+    # it -- including `--strict`, which promotes warnings to a failure and so
+    # would promote an opinion too.
     if not report.ok or not licences.ok or (strict and report.warnings):
         raise SystemExit(1)
+
+
+def _report_entailment(root: Path, synthesis_dir: Path) -> None:
+    """Judge cited obligations against their premises, and say what it costs first.
+
+    **The count is exact rather than estimated**: it is the number of cited
+    obligations that have a premise to judge, computed without calling
+    anything. A price per call would be a guess -- it depends on the model
+    and on how long each requirement is -- and a number nobody can stand
+    behind is worse than the count itself.
+    """
+    from policyforge.content.grounding import judgeable, ungrounded
+    from policyforge.content.tree import load_content_tree
+    from policyforge.entail import get_entailer
+
+    config = load_config_or_empty()
+    entailer = get_entailer(config)
+    if entailer is None:
+        click.echo("")
+        click.echo("Entailment: no judge configured — set `entail.provider` and `entail.model`.")
+        return
+    if not synthesis_dir.exists():
+        click.echo("")
+        click.echo(f"Entailment: no synthesis at {synthesis_dir}, so nothing to judge against.")
+        return
+
+    documents, _ = load_content_tree(root)
+    work = []
+    for doc in documents:
+        source = synthesis_dir / f"{doc.slug}.md"
+        if not source.exists():
+            continue
+        synthesis = source.read_text(encoding="utf-8")
+        work.append((doc, synthesis, len(judgeable(doc.body, synthesis))))
+
+    total = sum(count for _, _, count in work)
+    click.echo("")
+    click.echo(f"Entailment: {total} cited obligation(s) to judge, one model call each.")
+    if not total:
+        return
+
+    findings = 0
+    for doc, synthesis, count in work:
+        if not count:
+            continue
+        for finding in ungrounded(doc.body, synthesis, entailer):
+            findings += 1
+            click.echo(f"  {doc.relative_path}: {finding}")
+    if not findings:
+        click.echo("  Every cited obligation is carried by what it cites.")
+    click.echo("  These are opinions, and do not affect the exit code.")
 
 
 #: The two stores `publish`, `wiki-drift` and `pull` can talk to. Spelled

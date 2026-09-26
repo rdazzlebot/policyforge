@@ -1,5 +1,6 @@
 id: nist-800-53-r5
 name: NIST SP 800-53 Rev 5
+framework_id: nist-800-53
 licence: public-domain
 source: NIST OSCAL content repository, via policyforge etl-oscal
 notes: A US government work, so freely redistributable. Bundled with this project and safe

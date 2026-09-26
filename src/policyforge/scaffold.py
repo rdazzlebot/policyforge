@@ -32,6 +32,7 @@ from pathlib import Path
 #: pyproject.toml; the test compares the two.
 BUNDLED_CATALOGS = (
     "arc-ampe",
+    "cfr-170-315-onc-certification",
     "cfr-171-information-blocking",
     "cfr-42-part-2-sud-records",
     "fedramp",
@@ -39,6 +40,7 @@ BUNDLED_CATALOGS = (
     "nist-800-171-r3",
     "nist-800-53-r5",
     "nist-ai-rmf",
+    "nist-ai-rmf-playbook",
 )
 
 #: Bring-your-own catalogs: only the README explaining how to supply one.

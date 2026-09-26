@@ -315,34 +315,40 @@ def trial_run(
     import.
     """
     import policyforge
+    from policyforge.child_output import strict_text
 
     package_root = str(Path(policyforge.__file__).resolve().parent.parent)
     try:
-        result = subprocess.run(  # nosec B603 - fixed argv, this interpreter, no shell
-            [
-                sys.executable,
-                "-I",
-                "-B",
-                "-c",
-                _CHILD,
-                str(parser_path),
-                str(sample_path),
-                f"load_{framework_slug}_export",
-                package_root,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        # `-X utf8` because `-I` ignores PYTHONIOENCODING: without it the child
+        # WRITES cp1252 on Windows, and before #287 the parent happened to READ
+        # cp1252 too. Decoding the parent as UTF-8 alone would have made any
+        # non-ASCII line a candidate prints refuse -- the two ends move together.
+        argv = [
+            sys.executable,
+            "-I",
+            "-B",
+            "-X",
+            "utf8",
+            "-c",
+            _CHILD,
+            str(parser_path),
+            str(sample_path),
+            f"load_{framework_slug}_export",
+            package_root,
+        ]
+        result = subprocess.run(argv, capture_output=True, timeout=timeout)  # nosec B603
     except subprocess.TimeoutExpired:
         return TrialRun(False, detail=f"did not finish within {timeout:.0f}s")
 
-    lines = result.stdout.splitlines()
+    # DATA: the RECORDS and REFUSED lines decide whether the candidate is
+    # offered for promotion. The stderr tail is only SHOWN, so it may not raise.
+    lines = strict_text(result.stdout, site="generate-parser trial run", argv=argv).splitlines()
     refused = tuple(line[len("REFUSED ") :] for line in lines if line.startswith("REFUSED "))
     counted = [line for line in lines if line.startswith("RECORDS ")]
     if refused:
         return TrialRun(False, detail="tried to " + "; ".join(refused), refused=refused)
     if counted:
         return TrialRun(True, records=int(counted[-1].split()[1]))
-    tail = (result.stderr.strip().splitlines() or ["exited with no output"])[-1]
+    stderr = (result.stderr or b"").decode("utf-8", errors="replace")
+    tail = (stderr.strip().splitlines() or ["exited with no output"])[-1]
     return TrialRun(False, detail=tail)

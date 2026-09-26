@@ -128,3 +128,54 @@ def test_the_readme_does_not_name_the_dropped_entry_as_present(readme):
     still reports."""
     assert "no longer emitted" in readme
     assert "164.314(a)(2)(i)" in readme, "it must point at what to cite instead"
+
+
+def test_the_readme_names_every_section_whose_lead_in_is_dropped(readme, controls):
+    """#268: the loader drops the "... must, in accordance with § 164.306:"
+    framing sentence, and the README says which sections lose it. The set
+    is DERIVED from the committed eCFR fixture, not listed here, so a
+    re-pin that adds or removes such a section fails until the README
+    follows. Also holds the README's claim that § 164.306 ships as five
+    controls, since that is what makes the dropped link recoverable."""
+    import xml.etree.ElementTree as ET
+
+    fixture = Path(__file__).parent / "fixtures" / "ecfr_45cfr164_subpart_c.xml"
+    framed = set()
+    for section in ET.parse(fixture).getroot().iter("DIV8"):
+        number = re.search(r"164\.3\d\d", section.findtext("HEAD") or "")
+        for p in section.findall("P"):
+            text = " ".join("".join(p.itertext()).split())
+            if re.search(r"must, in accordance with \S+ 164\.306:$", text):
+                label = number.group(0) + ("(a)" if text.startswith("(a)") else "")
+                framed.add(label)
+    assert len(framed) >= 2, f"derivation found too few framed sections: {framed}"
+
+    text = " ".join(readme.split())
+    start = text.index("What is left out of each statement")
+    paragraph = text[start : text.index("ships as five controls", start)]
+    named = set(re.findall(r"164\.3\d\d(?:\(a\))?", paragraph.split("each begin")[0]))
+    assert named == framed, f"README names {sorted(named)}, the fixture frames {sorted(framed)}"
+
+    shipped = sorted(c["control_id"] for c in controls if c["control_id"].startswith("164.306"))
+    assert shipped == [f"164.306({x})" for x in "abcde"], shipped
+    assert "ships as five controls" in text
+    # The count of standards those sections hold, derived from the catalog:
+    # a lead-in in 164.308 governs only paragraph (a), so 164.308(b) is not
+    # counted. The first draft said "34", the whole catalog (9b, on #324).
+    held = [
+        c
+        for c in controls
+        if any(
+            c["control_id"].startswith(s + ("(a)" if s == "164.308" else ""))
+            for s in (f.replace("(a)", "") for f in framed)
+        )
+    ]
+    assert f"each of the {len(held)} standards those sections hold" in text, len(held)
+
+    # #268's code half: the link the README says is carried IS carried, on
+    # exactly the controls this derivation (ElementTree over the fixture, a
+    # different instrument from the loader's regex) says are framed.
+    carrying = sorted(c["control_id"] for c in controls if "164.306" in c["related_controls"])
+    assert carrying == sorted(c["control_id"] for c in held), (carrying, len(held))
+    assert all(c["related_controls"] == ["164.306"] for c in held)
+    assert "carried in each of those 20 controls' `related_controls`, as `164.306`" in text

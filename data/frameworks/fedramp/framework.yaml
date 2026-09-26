@@ -1,5 +1,6 @@
 id: fedramp
 name: FedRAMP Consolidated Rules for 2026 (control tailoring)
+framework_id: fedramp
 licence: public-domain
 source: FedRAMP/rules consolidated rules dataset, via policyforge etl-fedramp
 version: 2026.09.13.02

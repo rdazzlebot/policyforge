@@ -308,6 +308,8 @@ def test_the_cli_runs_as_a_module():
         [sys.executable, "-m", "policyforge.cli", "--help"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=120,
         check=False,
     )

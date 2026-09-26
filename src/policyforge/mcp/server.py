@@ -126,7 +126,8 @@ TOOLS: tuple[ToolSpec, ...] = (
             "Who answers for one requirement and which document says so. Takes any "
             "requirement id — NIST, HIPAA, HITRUST — and resolves it through the "
             "published crosswalk. Says for each claim whether it was anchored "
-            "directly, inherited from a parent control, or only reached through a "
+            "directly, inherited from an anchored parent (a control, or an AI RMF "
+            "category), or only reached through a "
             "crosswalk, which is the weakest of the three."
         ),
         schema=_text_schema("requirement", "A requirement id, e.g. AC-2.", required=True),

@@ -13,6 +13,13 @@
 # It writes nothing. Applying the update is a pull request somebody opens
 # after reading the report, because deciding what a changed requirement
 # means is the part that needs a person.
+#
+# Since #369 it also reports a reworded ENHANCEMENT (AC-2(3), a CFR
+# paragraph) under its own id; before, only a control's own text and its
+# list of enhancement ids were compared. The first run after that change can
+# go red on upstream edits that were always there and never seen. That red
+# is this job succeeding, not #369 breaking it: triage the list, do not
+# loosen the check.
 name: framework-drift
 
 on:
@@ -87,6 +94,21 @@ jobs:
             --controls data/frameworks/cfr-42-part-2-sud-records/controls.json \
             --detail --fail-on-change
 
+      # Refused, not absorbed, when the criterion set moves: the loader's
+      # live criteria must EQUAL an independently agreed set (#179). A red
+      # step here after a new ONC rule is this job working -- a person
+      # re-derives the set and re-pins; do not loosen the check.
+      - name: Fetch the current ONC certification criteria
+        if: always()
+        run: policyforge etl-onc
+
+      - name: What changed in 45 CFR 170.315
+        if: always()
+        run: |
+          policyforge drift \
+            --controls data/frameworks/cfr-170-315-onc-certification/controls.json \
+            --detail --fail-on-change
+
       - name: Fetch the current AI RMF Core
         if: always()
         run: policyforge etl-ai-rmf
@@ -95,6 +117,21 @@ jobs:
         if: always()
         run: |
           policyforge drift             --controls data/frameworks/nist-ai-rmf/controls.json             --detail --fail-on-change
+
+      # The Playbook is pinned to one export by its SHA-256 (NIST publishes no
+      # revision number), so when NIST re-publishes it the ETL REFUSES and
+      # this step goes red. That is this job succeeding: a person reviews the
+      # new export and re-pins. Do not "fix" the red by loosening the pin.
+      - name: Fetch the current AI RMF Playbook
+        if: always()
+        run: policyforge etl-ai-rmf-playbook
+
+      - name: What changed in the NIST AI RMF Playbook
+        if: always()
+        run: |
+          policyforge drift \
+            --controls data/frameworks/nist-ai-rmf-playbook/controls.json \
+            --detail --fail-on-change
 
       - name: Fetch the current SP 800-171 rev 3
         if: always()

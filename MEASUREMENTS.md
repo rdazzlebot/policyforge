@@ -19,6 +19,79 @@ python scripts/eval_zardoz.py --model <litellm model string> \
 
 ______________________________________________________________________
 
+## What this file rests on — rewritten 2026-09-24 (#207)
+
+**Most of this file cannot be re-derived, and it says so section by
+section.** The runs behind epochs 1–20, 22 and 23, the nine-model comparison
+and the 2026-09-13 baseline wrote their ledgers into session scratch
+directories that did not survive. Those sections are kept as they were
+recorded, because they are the only record, and each now opens with a
+marker saying its source was not retained. **Only the figures below are
+re-derived**, from files preserved in [`docs/measurements/ledgers/`](docs/measurements/ledgers/README.md). Nothing was
+re-run: this rewrite made no model calls (the user's decision, recorded on
+#207). The full-cost rerun is #291, and it spends nothing until the user
+approves an estimate.
+
+### What was measured, per provider — re-derived
+
+| path       | model                         | what                                                                                    | cost                                                                                                                          | time    |
+| ---------- | ----------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------- |
+| OpenRouter | `z-ai/glm-5.3-flash`          | 20 topics, synthesize + three tiers (epoch 21, 2026-09-17)                              | $0.2798, **$0.0140 per topic**                                                                                                | 103 min |
+| OpenRouter | `anthropic/claude-sonnet-5`   | 5 topics, the same pipeline (epoch 21)                                                  | $3.0875, **$0.6175 per topic**                                                                                                | 37 min  |
+| OpenRouter | `anthropic/claude-sonnet-4.5` | 25 topics, synthesize + Standard (epoch 24, 2026-09-21)                                 | $6.1487, mean **$0.2459 per topic**                                                                                           | 1.26 h  |
+| OpenRouter | `z-ai/glm-5.3-flash`          | 3 synthesize calls, paired by topic with epoch 21 (2026-09-24)                          | $0.0086, $0.0020–$0.0046 per call                                                                                             | —       |
+| OpenRouter | glm and `deepseek-v4-flash`   | eval-harness calls, 2026-09-18/19, attached to no written epoch (plus 2 sonnet-5 calls) | mean per call, by file: glm $0.00015–$0.00018 (calls $0.00003–$0.00037); deepseek $0.00009–$0.00010 (calls $0.00002–$0.00104) | —       |
+
+**A per-call rate is a rate for that kind of call.** A glm `synthesize` call
+averaged $0.0054 across epoch 21's twenty; a glm eval call cost about $0.0002.
+A figure of *$0.0002 per call* once circulated as glm's rate for synthesis
+(#186). It is an eval-call rate, 27x below the synthesize mean ($0.0054 / $0.0002).
+
+### What was not measured, and why
+
+- **Claude through its direct API.** Not authorised for this release (the
+  user, 2026-09-21). **Every Claude figure in this file went through
+  OpenRouter.** The grounds differ in strength, strongest first:
+
+  - **The configured model string**, for the two retained Claude runs.
+    Epoch 21's sonnet-5 run was configured as
+    `openrouter/anthropic/claude-sonnet-5`, recorded in its committed step
+    record, and epoch 24's as `openrouter/anthropic/claude-sonnet-4.5`,
+    which is named in that entry's own text but in no preserved file. A
+    LiteLLM model string prefixed `openrouter/` is routed through OpenRouter
+    whatever keys are present.
+  - **The request ids**, as corroboration. Those calls, and the two sonnet-5
+    calls in the 2026-09-18 eval ledger that have no recorded config, carry
+    `gen-…` ids, 27 of 27: the form OpenRouter returns. None carries the
+    `msg_…` form Anthropic's API has used, though Anthropic does not promise
+    that format. The ledger's `provider: litellm` does not settle it: that
+    names the library, which can call Anthropic directly for
+    `anthropic/claude-sonnet-5`.
+  - **The file's own record**, for the sections whose sources did not
+    survive. Epoch 11 notes that the only credential the project had
+    configured was `OPENROUTER_API_KEY`. That is the weakest of the three: a
+    process environment can hold an Anthropic key the project never
+    configured, and LiteLLM would use it.
+
+  The two paths are different code, and nothing here measures the direct one.
+
+- **Gemini through its direct API.** Never measured. Gemini appears only via
+  OpenRouter, in the 2026-09-12 comparison, whose source was not retained.
+
+- **Local models through `openai-compat`.** Never measured. One
+  `ollama_chat/qwen3:14b` row exists, from 2026-09-12 and before the
+  `qwen3:14b-pf` variant, and its source was not retained.
+
+- **The full three-tier matrix across providers, and a second paid
+  provider.** Refused by the user on 2026-09-21. Epoch 24 is the authorised
+  partial: one provider, one tier.
+
+- **Eval-suite scores.** Every score in this file comes from a run whose
+  results were not retained. The 2026-09-18/19 ledgers record calls, not
+  grades, so no score can be re-derived from them.
+
+______________________________________________________________________
+
 ## Method, and what to distrust
 
 - **`--repeat 3`** unless noted. The harness reports a *rate*, not a
@@ -126,6 +199,8 @@ ______________________________________________________________________
 
 ## Current baseline — 2026-09-13
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 After the budget, prompt and check fixes described in the epochs below.
 Only these three models have been re-measured since; every other row in
 this file predates those changes.
@@ -148,6 +223,8 @@ across every suite measured, at roughly a fifteenth of the cost.
 ______________________________________________________________________
 
 ## The nine-model comparison — 2026-09-12
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 Original configuration: budgets 64/150/200, prompts before the router and
 resolution fixes. **These are the numbers the recommendation was made
@@ -200,16 +277,63 @@ Recorded so nobody re-derives them as model verdicts.
 
 ______________________________________________________________________
 
+## How an epoch is registered
+
+A pre-registered epoch fixes its criteria before the data exists, so that
+nothing can be tuned to the result. Three conventions, each earned by
+epoch 23, where the registration was sound in intent and still left the
+measurer to decide a verdict it should have decided in advance.
+
+**1. Every criterion carries a number, or states "no tolerance" as a
+choice.** Epoch 23 registered *"N reported and comparable to arm A's"*,
+which implies a tolerance, and *"a fall in N against arm A fails
+independently"*, which implies none. N fell 1058 → 1041 (−1.6%). Applying
+the unnumbered clause at zero tolerance would have meant inventing the
+tolerance while reading the data, so the verdict was referred rather than
+decided. **Where a numbered clause and an unnumbered one govern the same
+quantity, the numbered one governs**, and the next registration should not
+contain the pair.
+
+**2. Characterise the variance before the data exists.** Epoch 23 fixed a
+direction with no idea what the noise looked like. Arm A turned out bimodal
+at the document level: 9 documents entirely short-form, 11 entirely
+qualified, none mixed, so the ~1,050 citations were about 20 draws, not
+1,050. **Found afterwards, that is only a fact; used as a reason, it is
+inventing a tolerance.** Known beforehand, it would have set the tolerance.
+
+**3. Run the null.** An arm-A-versus-arm-A re-run is how convention 2 gets
+its number. It is a baseline, not a tiebreaker, which is why it is worth
+running when nothing is in dispute: that is the only time nobody is
+tempted to read it as a verdict. On this corpus it costs cents (see epoch
+23's cost correction), so **declining it on cost is declining it on a
+figure that was never measured.**
+
+A registration that follows all three states, for each criterion:
+
+```
+criterion:   <quantity>, <direction>
+tolerance:   <number, with its unit>  |  none, by choice: <why>
+variance:    <null-run spread, with its date and commit>  |  not yet measured
+cost:        <calls x measured rate, provider, date>  -- not an estimate carried
+             forward from a different instrument
+```
+
+______________________________________________________________________
+
 ## Configuration epochs
 
 What changed, and therefore which numbers may be compared.
 
 ### 1. Original — up to 2026-09-12
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 Budgets 64/150/200. Router prompt relying on two default-to-documents
 rules. `check_answer` without the placeholder and provenance checks.
 
 ### 2. Raised budgets — 2026-09-12
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 800/1500/2000, after measuring that a tight budget does not degrade an
 answer but deletes one, and costs more doing it.
@@ -224,6 +348,8 @@ had been paying a retry tax invisibly.
 
 ### 3. `check_answer` fixes — 2026-09-13
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 Two false positives were costing about five points on *every* model's
 answering score, with nothing pointing at the checker.
 
@@ -235,6 +361,8 @@ answering score, with nothing pointing at the checker.
 `deepseek-v4-flash` answering: 91 → **96**.
 
 ### 4. Router and resolution prompts — 2026-09-13
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 Each analysis given positive and negative criteria so routing does not
 depend on the default.
@@ -255,11 +383,15 @@ three-model panel revealed it.
 
 ### 5. Structured outputs — 2026-09-13
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 Routing constrained by an enum schema where the model supports one, falling
 back to prose otherwise. No regression: `glm-5.3-flash` 100 routing and
 **198/198** paraphrase; `deepseek-v4-flash` held at its 99 baseline.
 
 ### 6. Fenced passages — 2026-09-14
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 Each retrieved passage wrapped in a per-request delimiter, with the contract
 naming it stated in full before the passages and again after them. Three
@@ -300,6 +432,8 @@ it with a single clause cost `deepseek-v4-flash` a point and put
 restatement is doing work, not taking up room. Reverted.
 
 ### 7. The write path — 2026-09-15
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 First epoch for `edit_plan` and `edit_apply`, so nothing here compares with
 the Zardoz suites. The edit prompts now fence the page (S-01) with the same
@@ -366,6 +500,8 @@ now counts markers against the source, and the re-run is the 1/3 above.
 
 ### 8. Refusal read by equality, identifiers need a cue — 2026-09-15
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 No prompt changed. Two changes to how Zardoz reads its inputs and outputs:
 a reply is a refusal only when it *is* `INSUFFICIENT_CONTEXT` (S-07), and a
 HITRUST- or CFR-shaped token gates retrieval only when it is cued or cited
@@ -402,6 +538,8 @@ suite 27 cases and totals after this epoch not comparable with the ones
 above.
 
 ### 9. The drafting prompts, measured for the first time — 2026-09-15
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 First epoch for `generation`, and the largest gap the review found: every
 prompt that actually writes policy was unmeasured. Six cases over one fixed
@@ -453,6 +591,8 @@ against a document set it is the difference worth knowing before choosing.
 
 ### 10. Schemas on the two prose parsers — 2026-09-15
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 `build_edit_plan` and `cluster_leftovers` both described a shape in the
 system prompt and recovered it with a parser. Both now send a JSON Schema
 where the provider can honour one, keeping the parser and the prompt for
@@ -496,6 +636,8 @@ Titles with delimiters are not a contrived case — `Backup | Restore` and
 
 ### 11. Native citations — 2026-09-15, unverified against the real endpoint
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 `answer_question` now sends its passages as document blocks when the
 provider can, and reads back the spans the API says were quoted.
 `citation_disagreements` compares those against the model's own `[n]`
@@ -536,6 +678,8 @@ or would only train readers to ignore warnings — which is the reason it is
 not one today.
 
 ### 12. Full-suite baseline: `moonshotai/kimi-k3` — 2026-09-15
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 First full run of `openrouter/moonshotai/kimi-k3` across every suite
 (`--min-interval 6`, after the rate limit voided the two earlier attempts
@@ -614,6 +758,8 @@ number; the 0/5 says nothing about kimi-k3.
 
 ### 13. Two more skills on the router — 2026-09-16
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 `bundle` (everything one team owns) and `addresses` (who answers for one
 requirement, and which document says so) ship as CLI commands and as Zardoz
 skills, so each arrives with routing cases rather than being added to the
@@ -644,6 +790,8 @@ Not comparable with epoch 12's routing row: the suite gained six cases, so
 the denominator changed.
 
 ### 14. Routing that carries the scope — 2026-09-16
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 The router returned an analysis name and nothing else, and the shell ran
 that analysis with no arguments at all. "Which controls are orphaned in the
@@ -717,6 +865,8 @@ was actually broken.
 
 ### 15. The harness was measuring the fallback — and chaining — 2026-09-16
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 *Provider path:* `eval_zardoz.py --model`, LiteLLM built directly, so schema
 and effort were both used. A config-built run in this window reached the
 schema path too — `supports_schema` was forwarded — but sent no effort; see
@@ -773,6 +923,8 @@ so single-intent cases grade the count strictly.
 Cost was not captured for this run.
 
 ### 16. The production request, re-measured — 2026-09-16
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 *Provider path:* `eval_zardoz.py --model`, LiteLLM built directly. "The
 production request" below means the request the code builds for a provider
@@ -905,6 +1057,8 @@ nine match.
 
 ### 17. The other four suites through the fixed meter — 2026-09-16
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 Measured by policyforge-ba from a worktree at `b39a102`, `--repeat 3 --min-interval 1`; every suite printed `Code: b39a102`, and the prompt texts
 match the epoch 16 fingerprints. Output was searched for 429, rate-limit,
 API errors, exceptions, tracebacks and timeouts, and none were found, so no
@@ -958,6 +1112,8 @@ generation result is the open quality problem this epoch adds, and it is
 not yet explained.
 
 ### 18. Drafting prompts that may not invent a value or a hedge — 2026-09-16
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 Epoch 17's open problem, explained and fixed by policyforge-ba. Prompts:
 `generate.standard` v3 (`e1b15e2b94b0`) and `generate.procedure` v2
@@ -1020,6 +1176,8 @@ omitting Okta. The vendor case is flaky on both flash models and is open.
 
 ### 19. Generation graded the way the CLI generates — 2026-09-17
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 policyforge-ba's fix for epoch 18's open vendor case, merged as `571a593`
 and measured at `c6373d7`, which differs from the merged code only by one
 reordered import in `evals/runner.py`. No prompt changed: `generate.standard`
@@ -1076,6 +1234,8 @@ Standard; it did so in both of its failing runs here. glm still sometimes
 settles the undecided lockout count.
 
 ### 20. Mapping a framework onto 800-53 — 2026-09-16
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 A new suite and a new prompt (`crosswalk.propose` v1, `dc1342fdc46a`), so
 nothing here compares with the epochs above.
@@ -1258,6 +1418,8 @@ than written to `relationship` (R1).
   changes no report.
 
 ### 21. What a policy set costs — 2026-09-17
+
+> **Source retained** (#207): [`docs/measurements/ledgers/`](docs/measurements/ledgers/README.md), the three 2026-09-17 ledgers and their step records. Re-derived on 2026-09-24: the table (topics, calls, tokens, cost, wall clock), the per-topic and per-site figures, and the pre-1.2.1 run's $0.2141 and its 15, 11 and 4 truncations. The 19x answering ratio comes from the nine-model comparison and is not re-derivable.
 
 The number a buyer asks first, and the first measurement of the whole
 pipeline rather than one prompt. Not comparable with any suite row above: no
@@ -1446,6 +1608,8 @@ than archaeological.
 
 ### Output headroom, before the 1.2.1 budgets
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
+
 Measured on `553d430`, the last commit before the fix, through
 `eval_zardoz.py --model` (so effort was sent): the generation and answering
 suites, `--repeat 3`, on `glm-5.3-flash` and `deepseek-v4-flash`. 200 calls,
@@ -1478,6 +1642,8 @@ so the procedure case has room; the answering site's 1,024 is unchanged and
 is queued for sizing.
 
 ### 22. The entailment judge, after its input was fixed — 2026-09-18
+
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived.
 
 The entailment check judges every cited sentence in an answer against the
 passage it cites. It was measured once before and **the measurement was
@@ -1608,6 +1774,8 @@ its verdict, which is sequenced after this run.
 
 ### 23. Whether the prompt alone stops short-form NIST citations — 2026-09-20
 
+> **Source not retained** (#207, 2026-09-24): the ledger or results behind this section's figures did not survive, so they stand as recorded at the time and cannot be re-derived. The one exception is the null-run cost correction, which rests on [`docs/measurements/ledgers/`](docs/measurements/ledgers/README.md).
+
 **Pre-registered before the data existed** (design, thresholds and the
 blocking prerequisite fixed 2026-09-18, held by 1d), and run once 800-171
 landed as #143 gave the tree its second NIST-family catalog. Arm A is the
@@ -1680,9 +1848,22 @@ draws. **This is recorded as a fact and deliberately not used as a reason**
 — excusing a delta by variance discovered afterwards is the same move as
 inventing a tolerance. The lesson belongs to the next pre-registration, not
 retrofitted into this one: **an arm-A-versus-arm-A re-run gives the null
-distribution for about $0.28**, and it is worth that even when no criterion
-is in dispute, because it is the only way anyone gets a first number for
-document-level variance on this corpus.
+distribution**, and it is worth running even when no criterion is in
+dispute, because it is the only way anyone gets a first number for
+document-level variance on this corpus. **Its cost, corrected 2026-09-24
+(#186):** this said *about $0.28*, which priced epoch 21's four calls per
+topic, three of them output-heavy `generate` calls. An arm here is 20
+`synthesize` calls. A glm-5.3-flash `synthesize` call measured $0.0020 to
+$0.0046 on 2026-09-24, **mean $0.0029** (three calls through OpenRouter,
+paired by topic with epoch 21's), and **mean $0.0054** across epoch 21's
+twenty (2026-09-17). So a null arm is **about $0.06 to $0.11**: 20 x each
+mean. The three calls' own range, 20 x $0.0020 to $0.0046, gives $0.04 to
+$0.09, lower at both ends. Three calls are too few to bound a rate, so the
+estimate uses the means, and the larger sample sets the top. Those calls used four catalogs and this
+epoch used seven, which makes inputs larger, so read it as an order of
+magnitude, not a quote. A figure of *$0.0002/call* also circulated for this
+comparison. It does not reproduce, and it is 9x below the cheapest
+`synthesize` call on record.
 
 **Secondary guardrails, as registered.** Citation density rose 118.40 →
 118.65 (+0.2%; the threshold was a fall of no more than 10%). Truncation:
@@ -1739,6 +1920,129 @@ and `FedRAMP CM-2` attributes an 800-53 id to a framework that is not
 800-53. **Fabrication is not mis-formation**, six is small enough to
 characterise exactly, and nothing here was designed to detect it.
 
+### 24. What a document set costs, one provider — 2026-09-21
+
+> **Source retained** (#207): [`docs/measurements/ledgers/2026-09-21-document-set-sonnet-4.5.jsonl`](docs/measurements/ledgers/2026-09-21-document-set-sonnet-4.5.jsonl). Every figure in this section's tables was re-derived on 2026-09-24.
+
+**Authorised in advance at ~$8.70 and 25 topics**, one provider, Standard
+tier only. The full three-tier matrix and a second provider were **not**
+authorised. Run from a worktree pinned to `6244fb1`, against
+`openrouter/anthropic/claude-sonnet-4.5`.
+
+|            |                                                           |
+| ---------- | --------------------------------------------------------- |
+| topics     | **25 of 25**                                              |
+| calls      | 50 — a synthesis per *topic*, a generation per *document* |
+| **actual** | **$6.1487**                                               |
+| estimate   | $8.70                                                     |
+| difference | **−$2.5513 (−29%)**                                       |
+| wall clock | 1.26 h against ~2.3 h                                     |
+| hard stop  | did not fire                                              |
+
+Per topic: mean **$0.2459**, median $0.2444, range $0.0747–$0.4227.
+
+**Which population the control counts describe**, because two readings of one
+registry disagree by a factor of three and both are correct:
+
+| per topic                                  | median | range    | probe topic |
+| ------------------------------------------ | ------ | -------- | ----------- |
+| anchor ids in `config/topics.example.yaml` | 7      | 3–19     | 10          |
+| **controls after crosswalk expansion**     | **18** | **3–45** | **28**      |
+
+Every count in this entry is the **second** row — what `build_synthesis_topic`
+returns once each anchor has pulled in the controls other frameworks map to it.
+The crosswalk was built **in-process by `build_crosswalk()` over the catalogs
+named below**, not read from `crosswalk.json`; that file is produced by
+`policyforge map`, is not tracked, and a clean clone has none. **A re-run with
+an empty crosswalk resolves each anchor to one control and reproduces the first
+row exactly** — which is how policyforge-d8 found this gap in review: their
+counts matched the anchor distribution identically, and two supposedly different
+quantities agreeing exactly is the tell that both were the same thing.
+
+To reproduce the second row: load `nist-800-53-r5`, `nist-ai-rmf`,
+`hipaa-security-rule`, `fedramp` and `arc-ampe`, pass them to
+`build_crosswalk()`, then to `build_synthesis_topic()` per topic.
+
+**The two passes used different catalog sets, and that did not move the
+numbers.** The first 20 topics ran without `nist-ai-rmf`; re-deriving them with
+it gives identical control counts, and both match the ledger. The AI RMF
+contributes no crosswalk rows, so adding it changes only the five topics that
+anchor on it.
+
+#### The first pass came in 34% under, and the underspend WAS the defect
+
+It covered **20 of 25**. The five missing were every AI topic — they anchor
+on `Govern 1`, `Map 1`, `Measure 1`, `Manage 1`, and the catalog set I chose
+omitted `nist-ai-rmf`, so each resolved zero controls and was skipped.
+
+**A 20% population loss presenting as a 34% cost saving**, and the lost
+topics were 1.6's headline feature. The number was right for what ran; the
+population was wrong — and *under* is the direction nobody investigates,
+because an underspend harms no one and reads as efficiency.
+
+It surfaced only because the run printed **requested beside completed**. A
+report of "$5.74 spent, 20 documents written" is true, complete-looking, and
+says nothing about the five. **The completion pass cost $0.4113.**
+
+#### A rate from one topic is a rate for that topic
+
+The estimate came from a single probe topic at $0.3477 — *Identity Lifecycle
+& Access Review*, 28 controls. By control count that topic sits at the **60th
+percentile** of the 25: 15 of 25 have strictly fewer, against a median of 18.
+
+```
+25 x $0.3477 (one topic)   =  $8.69      the estimate
+actual across 25 topics    =  $6.1487    −29%
+```
+
+**The same topic cost $0.3879 in this run — 12% more than in the probe, on
+identical input.** That is the spread a single measurement cannot show, now
+measured rather than argued: the probe was not merely unrepresentative of the
+other 24 topics, **its own figure was one draw from a distribution with at
+least 12% of width.** So it was wrong in two directions at once — an
+above-median topic, and a draw that happened to land low.
+
+This entry first said the **72nd** percentile. That placed the probe's cost
+from the *separate* rate-probe run into *this* run's cost distribution — two
+runs in one comparison — and then set the result beside a median of
+**controls**, so the sentence compared a cost rank with a control count.
+policyforge-f2 recomputed from the table and got the 60th; policyforge-d8,
+who had approved having checked the table but not the figure derived from
+it, agreed. **Every way the figure can be taken:**
+
+| quantity                                  | strictly below | at or below |
+| ----------------------------------------- | -------------- | ----------- |
+| **controls** (what the sentence is about) | **60th**       | 64th        |
+| cost, this run's value ($0.3879)          | 88th           | 92nd        |
+| cost, rate-probe value ($0.3477)          | 72nd           | 72nd        |
+
+The conclusion survives on every row — the probe was above the middle — but
+only the first row answers the sentence it sits in.
+
+This is the same shape as the earlier fixture error one level in: that probe
+under-stated by 13x by measuring a 647-character synthesis; this one
+over-stated by 29% by measuring an above-median topic once. **Both are "the
+population is one".**
+
+#### What could not be measured, and why
+
+**Claude-direct was not authorised for this release.** It is the most
+informative cell in the matrix — direct against via-OpenRouter differ by
+*code path*, so a difference between them is a finding about this project
+rather than about a model — and it is absent by decision rather than by
+oversight.
+
+**Stated because a missing row has no incoherence to notice.** The totals
+are correct, every figure present is true, and nothing inside the artefact
+contradicts anything else. A reader cannot detect it by reading; only the
+person who knew what was requested can record what did not happen, at the
+time of the run.
+
+**Not "absent because no key exists"** — that phrasing is false and invites
+the wrong remedy. A reader who goes looking may find an `ANTHROPIC_API_KEY`
+in some environment and conclude the row can simply be re-run; a credential
+that happens to be reachable is not an authorisation to spend against it.
+
 ______________________________________________________________________
 
 ## Two ways a run can lie, found the hard way
@@ -1774,6 +2078,68 @@ arrives after the money is spent.
 ______________________________________________________________________
 
 ## Findings that outlived the numbers
+
+**Nothing compares what a generated document SAYS against what its synthesis
+said — only which controls each cites.** Found 2026-09-20 while
+pre-registering a different measurement; independent of that measurement and
+of the framework that exposed it.
+
+`evals/runner._tags` compares **control references**. So the grader asks
+*"does this document cite what the synthesis cited, and nothing more?"* and
+never asks *"does this document say what the synthesis said?"* A requirement
+invented under a tag the synthesis genuinely cites would be
+indistinguishable from one the synthesis wrote.
+
+**Stated as a missing check rather than as an observed defect, and the
+correction is the instructive part.** This first went in claiming the #164
+document contained a fabricated requirement, citing *"The inventory
+mechanism shall be resourced according to organizational risk priorities"*
+as present in the document and absent from the synthesis — **tested with a
+literal substring match.** Measured on the `docs/probes/airmf-generation`
+stub, whose identifiers and shape differ from the shipped catalog — `GOVERN-1.6`
+here, `Govern 1.6` there; see that probe's README, which states the
+difference and why the conclusions still hold. The synthesis bullet for `GOVERN-1.6`
+reads
+*"Mechanisms are in place to inventory AI systems **and are resourced
+according to organizational risk priorities**."* The sentence is a
+decomposition of its premise, not an invention. **The test answered "is this
+string present" while the question was "does the synthesis support this
+claim"** — a neighbouring question, inside a finding about checks that
+answer neighbouring questions.
+
+Measured properly, by joining each cited sentence to the synthesis
+requirements its tag indexes, every cited obligation in that document is
+43–100% lexically grounded in its own premise, and the words that are new
+are `acme`, `health`, `ensure`, `establish`, `maintain` — the organisation's
+name and obligation verbs, which generation is supposed to supply.
+
+**What is demonstrably present is the untagged case.** *"The inventory shall
+be maintained in [Asset Inventory System] and shall cover all AI systems
+within the scope of this Standard"* binds, introduces scope language the
+synthesis never states, and **carries no citation at all**, so there is no
+premise to judge it against. `content/check.py:_check_uncited` only fires on
+a document citing *nothing*, so a document with seven good tags and three
+untagged obligations passes it whole.
+
+**The two halves are different kinds of claim and that is the whole design.**
+An obligation with no citation is a **fact** — deterministic, free, and
+checkable twice with the same answer. An obligation whose cited requirements
+do not carry it is a model's **opinion**. Only the first may gate an exit
+code; the ruling on #196 is that an exit code carries facts, not opinions.
+
+**`generate/policy_writer.py` already forbids the invention** — *"do not add
+requirements that weren't in the input"* — which is the right rule and is
+currently true. Nothing enforces it. The gap is a missing check, not a
+missing rule, and the shape is one this project keeps meeting: **the check
+that exists measures the neighbouring property.** Citations are easy to
+compare, so citations are what got compared, and *"cites correctly"* quietly
+stood in for *"says what it was given"*.
+
+**What would close it** is that content-level accounting — not a similarity
+score, which an earlier attempt on #164 showed fragments on markdown, but
+every binding sentence in the document tracing to a requirement in the
+synthesis, and anything that does not being reported as an addition. Named
+here so the absence is a decision rather than an oversight.
 
 **Terse scores do not predict answering scores.** `deepseek-v4-flash` went
 92 on routing and 96 on answering; `gpt-oss-120b` went 89 on routing and 80

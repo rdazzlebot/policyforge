@@ -353,3 +353,142 @@ def test_synthesis_topic_pulls_hipaa_requirements_for_a_nist_anchored_topic():
     # § 164.312(a)(2)(iv) "Encryption and decryption" lives on the
     # § 164.312(a)(1) Access control standard, which is what gets pulled in.
     assert "164.312(a)(1)" in pulled
+
+
+# --------------------------------------------------------------------------
+# Conservation: every skip is recorded
+# --------------------------------------------------------------------------
+#
+# `apply_crosswalk` drops a citation with no counterpart and a NIST ID that
+# did not normalize, and reports both. Against the published crosswalk it
+# drops neither, so `unmatched_citations == []` and `unparsed_nist_ids == []`
+# — the assertions the suite already made — hold just as well with the lines
+# that append to them deleted. The reporting was untested, in the one part of
+# this loader whose whole job is to make a gap visible.
+#
+# Every case below therefore feeds input the published data does not contain,
+# and each is paired: what the guard must ALLOW comes first, because a guard
+# that refuses everything passes a test that only checks it refuses.
+
+
+def test_an_unmatched_citation_is_reported_rather_than_dropped():
+    """The allowed case. A citation the HIPAA data does not carry is a real
+    possibility — CPRT and the eCFR are two publishers on two schedules —
+    and the required behaviour is to report it and carry on."""
+    from policyforge.ingest.hipaa_crosswalk_loader import apply_crosswalk
+
+    controls = _controls()
+    mapping = dict(_mapping())
+    mapping["164.399(z)(9)"] = ["AC-1"]
+
+    report = apply_crosswalk(controls, mapping)
+
+    assert report.unmatched_citations == ["164.399(z)(9)"]
+    # The rest of the crosswalk still lands: one bad citation is not a
+    # reason to lose the other 68.
+    assert report.mapped_controls == 25
+    assert report.mapped_enhancements == 40
+
+
+def test_dropping_the_unmatched_report_is_refused():
+    """The guard, exercised the way it would actually break: the report is
+    lost while the skip stays. That is a one-line edit with no visible
+    effect on the published data, and it turns a reported compliance gap
+    into an absence nobody can distinguish from coverage."""
+    import pytest
+
+    from policyforge.ingest import hipaa_crosswalk_loader as loader
+
+    mapping = dict(_mapping())
+    mapping["164.399(z)(9)"] = ["AC-1"]
+
+    report = loader.CrosswalkReport()
+    with pytest.raises(ValueError, match="neither resolved nor reported unmatched"):
+        loader._require_nothing_dropped(mapping, {}, {}, report)
+
+
+def test_an_unparsable_nist_id_is_reported_rather_than_dropped():
+    """The allowed case for the second skip path. CPRT writes the SP 800-53
+    ID as free text, so a row that is not a control ID at all is possible;
+    `parse_cprt_crosswalk` preserves it behind `?` precisely so this
+    function can report it."""
+    from policyforge.ingest.hipaa_crosswalk_loader import apply_crosswalk
+
+    controls = _controls()
+    mapping = dict(_mapping())
+    mapping["164.312(a)"] = [*mapping["164.312(a)"], "?Withdrawn"]
+
+    report = apply_crosswalk(controls, mapping)
+
+    assert report.unparsed_nist_ids == ["Withdrawn"]
+    assert report.unmatched_citations == []
+
+
+def test_dropping_the_unparsed_report_is_refused():
+    import pytest
+
+    from policyforge.ingest import hipaa_crosswalk_loader as loader
+
+    report = loader.CrosswalkReport()
+    with pytest.raises(ValueError, match="did not normalize and was not reported"):
+        loader._require_nothing_dropped(
+            # Unaliased, so the citation is its own target ID and this
+            # case turns only on the NIST ID.
+            {"164.312(b)": ["?Withdrawn"]},
+            {"164.312(b)": object()},
+            {},
+            report,
+        )
+
+
+def test_every_requirement_is_mapped_or_reported_uncovered():
+    """The third axis, and the one the existing tests come closest to
+    holding: they pin `mapped_controls`, `mapped_enhancements` and
+    `len(unmapped_requirements)` as three separate numbers, which is not
+    the same as saying they add up to everything that went in."""
+    from policyforge.ingest.hipaa_crosswalk_loader import apply_crosswalk
+
+    controls = _controls()
+    report = apply_crosswalk(controls, _mapping())
+
+    requirements = sum(1 + len(c.enhancements) for c in controls)
+    assert (
+        report.mapped_controls + report.mapped_enhancements + len(report.unmapped_requirements)
+        == requirements
+    )
+
+
+def test_a_requirement_that_is_both_mapped_and_uncovered_is_refused():
+    import pytest
+
+    from policyforge.ingest import hipaa_crosswalk_loader as loader
+
+    report = loader.CrosswalkReport(mapped_controls=1, unmapped_requirements=["164.312(a)(1)"])
+    with pytest.raises(ValueError, match="uncovered while also carrying a mapping"):
+        loader._require_nothing_dropped(
+            {}, {"164.312(a)": object()}, {"164.312(a)(1)": {"AC-1"}}, report
+        )
+
+
+def test_apply_crosswalk_calls_the_guard(monkeypatch):
+    """**Proven called, not just proven correct.**
+
+    Three times now in this repo a guard has been written, tested against
+    hand-built arguments, and never wired to the code path it was written
+    for — `oscal_loader`, `arc_ampe` and `fedramp` each shipped a check
+    whose unit tests all passed with the call site deleted. The tests
+    above have exactly that shape: they invoke `_require_nothing_dropped`
+    directly. This is the one that fails if `apply_crosswalk` stops
+    calling it.
+    """
+    from policyforge.ingest import hipaa_crosswalk_loader as loader
+
+    calls = []
+    monkeypatch.setattr(
+        loader,
+        "_require_nothing_dropped",
+        lambda *args, **kwargs: calls.append(args),
+    )
+    loader.apply_crosswalk(_controls(), _mapping())
+
+    assert len(calls) == 1, "apply_crosswalk returned without running the conservation check"

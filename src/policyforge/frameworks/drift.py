@@ -47,7 +47,8 @@ CHANGED = "changed"
 
 #: Fields whose change alters what the organization must *do*. Everything
 #: else is editorial: worth recording, not worth re-opening a document over.
-SUBSTANTIVE_FIELDS = ("control_statement", "baseline", "enhancements", "parameters")
+#: `description` is an enhancement's requirement text (#369).
+SUBSTANTIVE_FIELDS = ("control_statement", "description", "baseline", "enhancements", "parameters")
 
 #: Inline source tags in a generated document — `[NIST AC-2 | HIPAA 164.x]`.
 #: How a document says which control it answers for, and therefore how this
@@ -172,8 +173,57 @@ def diff_catalogs(old_controls, new_controls) -> list[ControlChange]:
                     detail=detail,
                 )
             )
+        changes.extend(_enhancement_changes(old, new))
 
     return changes
+
+
+def _enhancement_changes(old, new) -> list[ControlChange]:
+    """Each enhancement of a control present in both loads that arrived, left,
+    or is not what it was, under the ENHANCEMENT's own id (#369).
+
+    **Compared this used to be by id alone**, so a reworded enhancement was
+    never reported: measured on the shipped catalogs, 0 changes for 1,573
+    enhancements across 8 catalogs, including every 800-53 enhancement, AI
+    RMF subcategory and HIPAA implementation specification. The id a user
+    cites, and the id impact has to reach (#339), is the enhancement's; the
+    parent keeps `fields=["enhancements"]` for an add or remove, as a pointer
+    (80's ruling on #369).
+
+    **Fields compared** (named so a later narrowing is visible): the
+    `description` (the requirement's text) and `title`, whitespace-normalised
+    as `control_statement` is; the `baseline` (HIPAA's Required/Addressable);
+    and the parameter ids. Not compared: `additional_requirements` and
+    `source_crosswalk`, as at the control level.
+    """
+    old_by_id = {e.enhancement_id: e for e in getattr(old, "enhancements", [])}
+    new_by_id = {e.enhancement_id: e for e in getattr(new, "enhancements", [])}
+    found: list[ControlChange] = []
+    for eid in sorted(set(new_by_id) - set(old_by_id)):
+        found.append(ControlChange(control_id=eid, kind=ADDED, title=new_by_id[eid].title))
+    for eid in sorted(set(old_by_id) - set(new_by_id)):
+        found.append(ControlChange(control_id=eid, kind=REMOVED, title=old_by_id[eid].title))
+    for eid in sorted(set(old_by_id) & set(new_by_id)):
+        a, b = old_by_id[eid], new_by_id[eid]
+        fields: list[str] = []
+        detail = ""
+        if _normalize(a.description) != _normalize(b.description):
+            fields.append("description")
+            detail = _statement_diff(a.description, b.description)
+        if (a.baseline or "") != (b.baseline or ""):
+            fields.append("baseline")
+            detail = detail or f"    baseline: {a.baseline or 'none'} -> {b.baseline or 'none'}"
+        if set(a.parameter_values or {}) != set(b.parameter_values or {}):
+            fields.append("parameters")
+        if _normalize(a.title) != _normalize(b.title):
+            fields.append("title")
+        if fields:
+            found.append(
+                ControlChange(
+                    control_id=eid, kind=CHANGED, title=b.title, fields=fields, detail=detail
+                )
+            )
+    return found
 
 
 def documents_citing(controls: set[str], root: Path) -> dict[str, list[str]]:
@@ -204,17 +254,61 @@ def documents_citing(controls: set[str], root: Path) -> dict[str, list[str]]:
     return {key: sorted(set(value)) for key, value in hits.items()}
 
 
-def assess_impact(changes, *, topics=(), content_root=None, decisions=None) -> dict[str, Impact]:
-    """Work out what each changed control reaches."""
+#: Catalogs whose ids read like an anchored catalog's but that no topic
+#: anchors: a Playbook change keyed `Govern 1.1` is NIST's suggestion under
+#: that subcategory, not the subcategory ("never anchored", ANCHOR_DECISIONS).
+_REACHES_NO_TOPIC = frozenset({"nist-ai-rmf-playbook"})
+
+
+def _topic_keys(control_id: str, framework: str) -> set[str] | None:
+    """The ids a topic may anchor to claim `control_id`, from `framework`'s
+    rule, or None if a change in `framework` reaches no topic (#339).
+
+    **For a catalog topics anchor (800-53, the AI RMF Core), coverage's own
+    rule, `topics.coverage.parent_of`**: the control, or the one it hangs
+    off, so `AC-2(3)` reaches the topic anchoring `AC-2` and `Govern 1.1`
+    the topic anchoring `Govern 1`. This used `_base_control` for every
+    catalog while its comment claimed coverage's rule, and `_base_control`
+    knows only the 800-53 grammar: an AI RMF subcategory change reached no
+    topic (9b, on #336).
+
+    **The Playbook reaches none**, whatever its ids look like. `parent_of`
+    reads no framework, which is why it is only applied to the anchored
+    catalogs here (it claimed 72 Playbook rows in `programme.py`, #318).
+
+    Any other catalog, or none named, keeps the rule it had: the id, or its
+    800-53-style base (FedRAMP and ARC-AMPE ids are 800-53's). That is not
+    this change's question.
+    """
+    from policyforge.mapping.crosswalk import anchors_a_topic, normalize_framework
+    from policyforge.topics.coverage import parent_of
+
+    key = normalize_framework(framework) if framework else ""
+    if key in _REACHES_NO_TOPIC:
+        return None
+    upper = control_id.upper()
+    if framework and anchors_a_topic(framework):
+        parent = parent_of(control_id)
+        return {upper} | ({parent.upper()} if parent else set())
+    return {upper, _base_control(control_id)}
+
+
+def assess_impact(
+    changes, *, topics=(), content_root=None, decisions=None, framework: str = ""
+) -> dict[str, Impact]:
+    """Work out what each changed control reaches.
+
+    `framework` is the catalog the changes are in; it decides which ids a
+    topic may anchor to be reached (`_topic_keys`).
+    """
     changed_ids = {c.control_id for c in changes}
     impacts = {control_id: Impact(control_id=control_id) for control_id in changed_ids}
 
     for topic in topics or ():
         anchors = {a.upper() for a in getattr(topic, "nist_controls", [])}
         for control_id in changed_ids:
-            # An anchor claims its enhancements, the same rule coverage.py
-            # uses, so a change to AC-2(3) reaches the topic anchoring AC-2.
-            if control_id.upper() in anchors or _base_control(control_id) in anchors:
+            keys = _topic_keys(control_id, framework)
+            if keys and keys & anchors:
                 impacts[control_id].topics.append(topic.name)
 
     if content_root is not None:
@@ -335,17 +429,20 @@ def read_committed(path: Path, *, revision: str = "HEAD") -> str | None:
     anybody having to snapshot anything first: the ETL overwrites the
     catalog in place and git is still holding the version you had.
     """
+    from policyforge.child_output import strict_text
+
+    argv = ["git", "show", f"{revision}:{Path(path).as_posix()}"]
     try:
-        result = subprocess.run(  # nosec B603 B607
-            ["git", "show", f"{revision}:{Path(path).as_posix()}"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
+        result = subprocess.run(argv, capture_output=True, timeout=60, check=False)  # nosec B603 B607
     except (OSError, subprocess.SubprocessError):
         return None
-    return result.stdout if result.returncode == 0 and result.stdout.strip() else None
+    if result.returncode != 0:
+        return None
+    # DATA: parsed as the committed catalog a drift is measured against.
+    # Before #287 a committed `café` read back as `cafÃ©`, and a byte cp1252
+    # leaves undefined crashed with an AttributeError on None.
+    text = strict_text(result.stdout, site="drift (committed catalog)", argv=argv)
+    return text if text.strip() else None
 
 
 def _controls_from_json(text: str):
@@ -374,6 +471,12 @@ def analyze_drift(
         new_version=(new_controls[0].framework_version if new_controls else ""),
         changes=changes,
         impacts=assess_impact(
-            changes, topics=topics, content_root=content_root, decisions=decisions
+            changes,
+            topics=topics,
+            content_root=content_root,
+            decisions=decisions,
+            framework=(new_controls or old_controls or [None])[0].framework
+            if (new_controls or old_controls)
+            else "",
         ),
     )

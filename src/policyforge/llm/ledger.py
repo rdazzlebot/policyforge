@@ -53,6 +53,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import escalation
 from .base import LLMProvider, LLMResponse
 from .boundary import classify_provider
 
@@ -115,6 +116,13 @@ class CallRecord:
     #: The provider's own id for the request. Free on the response, the
     #: first thing a vendor asks for, and unrecoverable afterwards.
     request_id: str | None = None
+    #: Every bigger-budget re-send inside this call, with the billed attempt
+    #: before it: its request id, cost and output tokens (#361). The row's
+    #: tokens and request id are the LAST attempt's; this is where the
+    #: earlier, billed ones are kept, on a failed call as on a good one (#343).
+    #: Their `first_cost_usd` is already in the row's cost: never an addend
+    #: to it, error rows included (#372, #343).
+    escalations: tuple = ()
 
     def as_json(self) -> str:
         return json.dumps(dataclasses.asdict(self))
@@ -210,9 +218,13 @@ def about(subject: str, *, site: str | None = None, content_class: str | None = 
     """
     scope = Scope(subject=subject, site=site, content_class=content_class)
     token = _scope.set(scope)
+    # Escalations are scoped with it (#372): one announced by a call that
+    # recorded no row is dropped here, not taken by an unrelated later row.
+    pending = escalation.begin()
     try:
         yield scope
     finally:
+        escalation.end(pending)
         _scope.reset(token)
 
 
@@ -341,7 +353,15 @@ class RecordingProvider(LLMProvider):
         prompt: str,
         response: LLMResponse | None,
         error: str | None = None,
+        billed: BaseException | None = None,
     ) -> None:
+        # A call that raised after billing (a re-send that came back empty
+        # again, `ReasoningBudgetExhausted`) carries what was billed on the
+        # exception: the summed cost and the last attempt's id and tokens,
+        # which would otherwise reach no row at all (#343).
+        def _billed(name: str):
+            return getattr(billed, name, None) if billed is not None else None
+
         scope = current_scope()
         record = CallRecord(
             timestamp=datetime.now(timezone.utc).isoformat(),
@@ -355,16 +375,17 @@ class RecordingProvider(LLMProvider):
             subject=scope.subject if scope else None,
             site=scope.site if scope else None,
             content_class=scope.content_class if scope else None,
-            input_tokens=response.input_tokens if response else None,
-            output_tokens=response.output_tokens if response else None,
-            cost_usd=response.cost_usd if response else None,
+            input_tokens=response.input_tokens if response else _billed("input_tokens"),
+            output_tokens=response.output_tokens if response else _billed("output_tokens"),
+            cost_usd=response.cost_usd if response else _billed("cost_usd"),
             stop_reason=response.stop_reason if response else None,
             cached_input_tokens=response.cached_input_tokens if response else None,
             hidden_output_tokens=response.hidden_output_tokens if response else None,
             stripped_reasoning_chars=(response.stripped_reasoning_chars if response else None),
-            request_id=response.request_id if response else None,
+            request_id=response.request_id if response else _billed("request_id"),
             prompt_sha=prompt_digest(system, prompt),
             error=error,
+            escalations=escalation.take(),
         )
         append(record, self._path)
         if scope is not None:
@@ -395,7 +416,9 @@ class RecordingProvider(LLMProvider):
             # Recorded before re-raising. The request reached the vendor and
             # was billed, and the content in it was exposed whether or not a
             # reply came back — which is the half a spend-only meter misses.
-            self._record(system=system, prompt=prompt, response=None, error=type(exc).__name__)
+            self._record(
+                system=system, prompt=prompt, response=None, error=type(exc).__name__, billed=exc
+            )
             raise
         self._record(system=system, prompt=prompt, response=response)
         return response
@@ -471,7 +494,9 @@ class RecordingProvider(LLMProvider):
                 system=system, prompt=prompt, schema=schema, **kwargs
             )
         except Exception as exc:
-            self._record(system=system, prompt=prompt, response=None, error=type(exc).__name__)
+            self._record(
+                system=system, prompt=prompt, response=None, error=type(exc).__name__, billed=exc
+            )
             raise
         self._record(system=system, prompt=prompt, response=response)
         return response
@@ -492,7 +517,9 @@ class RecordingProvider(LLMProvider):
                 system=system, prompt=prompt, documents=documents, **kwargs
             )
         except Exception as exc:
-            self._record(system=system, prompt=prompt, response=None, error=type(exc).__name__)
+            self._record(
+                system=system, prompt=prompt, response=None, error=type(exc).__name__, billed=exc
+            )
             raise
         self._record(system=system, prompt=prompt, response=response)
         return response

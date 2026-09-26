@@ -178,14 +178,38 @@ class OpenAICompatProvider(LLMProvider):
         # eight on a 12-token budget; see `_anthropic_compat` for the full
         # account. Retry with room to speak.
         if needs_more_room(text, choice.get("finish_reason")):
+            from . import escalation
+
             second = retry_budget(max_tokens)
+            first_usage = data.get("usage") or {}
+            # Said before it is sent, and kept for this call's ledger row (#361).
+            escalation.announce(
+                model=self.model,
+                first_max_tokens=max_tokens,
+                max_tokens=second,
+                input_tokens=first_usage.get("prompt_tokens"),
+                first_request_id=data.get("id"),
+                first_output_tokens=first_usage.get("completion_tokens"),
+                first_stop_reason=choice.get("finish_reason"),
+            )
             data = self._post({**payload, "max_tokens": second})
             choice = (data.get("choices") or [{}])[0]
             message = choice.get("message") or {}
             text, stripped = answer_and_stripped(message.get("content", ""))
             stripped += len(_separated_reasoning(message))
             if needs_more_room(text, choice.get("finish_reason")):
-                raise exhausted(self.model, max_tokens, second)
+                # Both attempts reached the endpoint; the last one's id and
+                # tokens go to the ledger on the exception (#343). This API
+                # reports no cost, so none is carried.
+                usage = data.get("usage") or {}
+                raise exhausted(
+                    self.model,
+                    max_tokens,
+                    second,
+                    request_id=data.get("id"),
+                    input_tokens=usage.get("prompt_tokens"),
+                    output_tokens=usage.get("completion_tokens"),
+                )
 
         usage = data.get("usage") or {}
         return LLMResponse(

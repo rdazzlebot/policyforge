@@ -128,6 +128,9 @@ def _parse_section(section_id: str, head: str, body: str) -> list[Control]:
     # too — CFR sections don't italicize every list item, only the first
     # one that introduces the list.
     current_enh: ControlEnhancement | None = None
+    # Framing prose before any item opens, with the citation it sits at:
+    # `(a) A covered entity ... must, in accordance with § 164.306:`.
+    lead_ins: list[tuple[str, str]] = []
 
     for match in _PARA_RE.finditer(body):
         for raw in _COMPOUND_SPLIT_RE.split(match.group("content")):
@@ -147,6 +150,8 @@ def _parse_section(section_id: str, head: str, body: str) -> list[Control]:
                         else "control_statement"
                     )
                     setattr(target, field, f"{getattr(target, field)} {text}".strip())
+                elif text:
+                    lead_ins.append((citation, text))
                 continue  # otherwise: framing prose before any item has opened
             italic_text = _strip_tags(italic_match.group("italic"))
             rest_text = _strip_tags(italic_match.group("rest"))
@@ -188,7 +193,54 @@ def _parse_section(section_id: str, head: str, body: str) -> list[Control]:
             controls.append(current)
 
     _drop_empty_enhancements(controls)
+    _relate_lead_ins(section_id, lead_ins, controls)
     return controls
+
+
+#: A section cited in a lead-in: `§ 164.306`, or each of `§§ 164.306 and 164.308`.
+_CITED_SECTION_RE = re.compile(r"\b(164\.\d+)\b")
+
+
+def _relate_lead_ins(section_id: str, lead_ins: list[tuple[str, str]], controls) -> None:
+    """Carry what a dropped lead-in says onto the controls it frames (#268).
+
+    Four sections open with `A covered entity or business associate must, in
+    accordance with § 164.306:` and then list their standards. The lead-in
+    is dropped, deliberately: prepending it would rewrite 20 standards' text
+    to record a relationship (80's ruling on #268). **The relationship is the
+    source's**, so each control the lead-in frames names the cited section
+    in `related_controls`, exactly as the source cites it (`164.306`), and
+    nothing more.
+
+    Framed means: the control's citation sits under the lead-in's. The one
+    in § 164.308 is at `(a)`, so § 164.308(b) is not framed by it; the other
+    three have no leading token and frame the whole section.
+
+    **A lead-in that cites a section is never dropped silently.** If it
+    frames no control, the parse refuses, because then the relationship
+    would be lost with nothing saying so. A lead-in that cites nothing
+    (§ 164.302's applicability sentence) has nothing to carry.
+    """
+    for citation, text in lead_ins:
+        cited = list(dict.fromkeys(_CITED_SECTION_RE.findall(text)))
+        if not cited and "§" not in text:
+            continue  # cites nothing at all: nothing to carry
+        # Keyed on what was FOUND, not on the `§` sign (1d on #355): a lead-in
+        # naming `164.306` without `§` is carried, and one with `§` citing
+        # nothing this loader reads is refused below rather than skipped.
+        framed = [
+            c
+            for c in controls
+            if c.control_id == citation or c.control_id.startswith(citation + "(")
+        ]
+        if not cited or not framed:
+            raise ValueError(
+                f"§ {section_id}: the lead-in at {citation} ({text[:80]!r}) cites "
+                f"{cited or 'no section this loader can read'} and frames {len(framed)} "
+                "control(s); the relationship would be dropped with nothing saying so."
+            )
+        for control in framed:
+            control.related_controls.extend(s for s in cited if s not in control.related_controls)
 
 
 def _drop_empty_enhancements(controls: list[Control]) -> None:
@@ -284,6 +336,65 @@ def parse_hipaa_security_rule(xml_text: str) -> list[Control]:
     subpart_text = xml_text[subpart_start : subpart_end if subpart_end != -1 else None]
 
     controls: list[Control] = []
+    recognised: list[str] = []
     for match in _SECTION_RE.finditer(subpart_text):
+        recognised.append(match.group("id"))
         controls.extend(_parse_section(match.group("id"), match.group("head"), match.group("body")))
+
+    _require_every_section(recognised, in_subpart=_ANY_SECTION_RE.findall(subpart_text))
+    _require_related_sections_exist(controls)
     return controls
+
+
+def _require_related_sections_exist(controls: list[Control]) -> None:
+    """Every section named in `related_controls` yields controls here (#268),
+    so `164.306` points at § 164.306(a)-(e) in this catalog, not at nothing."""
+    ids = [c.control_id for c in controls]
+    dangling = sorted(
+        {
+            ref
+            for c in controls
+            for ref in c.related_controls
+            if not any(i == ref or i.startswith(ref + "(") for i in ids)
+        }
+    )
+    if dangling:
+        raise ValueError(f"related_controls name section(s) with no control here: {dangling}")
+
+
+#: Every section-level node in the subpart, counted **without** consulting
+#: `_SECTION_RE`'s `164\.\d+` identifier. The two are compared below, so
+#: the check tests the pattern against the document rather than against a
+#: number someone typed.
+_ANY_SECTION_RE = re.compile(r'<DIV8 N="([^"]+)" TYPE="SECTION"')
+
+
+def _require_every_section(recognised: list[str], *, in_subpart: list[str]) -> None:
+    """Refuse a parse that skipped a section Subpart C contains.
+
+    **The failure this guards does not raise on its own.** `_SECTION_RE`
+    pins the identifier as `164\\.\\d+`; if eCFR renumbers, adds a suffix,
+    or changes the attribute order, the pattern matches *fewer* sections
+    and returns a smaller catalog. Not an error — a catalog that is
+    internally consistent, well-formed, and short.
+
+    Every other check in this module asks whether an entry is right. This
+    is the only one that asks whether they are **all here**, and those are
+    different questions. The ONC catalog shipped twelve fabricated
+    criteria through a loader that asked only the first.
+
+    Compared against the **document**, never a constant: `in_subpart` is
+    counted with a pattern that does not know what a section identifier
+    looks like, so both sides come from the XML being parsed and neither
+    can go stale. `part2_loader._require_sections` and
+    `info_blocking._require_every_section` are the same check with
+    different anchors.
+    """
+    missed = [n for n in in_subpart if n not in recognised]
+    if missed:
+        raise ValueError(
+            f"Subpart C contains {len(in_subpart)} section(s) and only "
+            f"{len(recognised)} were recognised; missed {missed}. Either eCFR "
+            f"changed how it numbers the Security Rule, or _SECTION_RE no longer "
+            f"matches it — and the catalog returned would be short, not wrong."
+        )

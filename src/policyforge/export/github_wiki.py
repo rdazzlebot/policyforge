@@ -30,6 +30,7 @@ never touch a command line or `.git/config` — see `_wiki_auth.py`.
 from __future__ import annotations
 
 import re
+import shlex
 import subprocess  # nosec B404 - argv only, never shell=True
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -94,15 +95,38 @@ class _Git:
     env: dict[str, str] = field(default_factory=dict)
 
     def __call__(self, *args: str, timeout: int = 60) -> subprocess.CompletedProcess:
+        """For git whose output is SHOWN -- clone, commit and push messages.
+        `replace` cannot raise; the one text test on it, "nothing to commit",
+        is ASCII and survives replacement (#287)."""
         return subprocess.run(  # nosec B603 B607 - fixed argv, no shell
             ["git", *args],
             cwd=str(self.cwd),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             check=False,
             env=self.env or None,
         )
+
+    def data(self, *args: str, timeout: int = 60) -> tuple[int, str]:
+        """(returncode, stdout) for git whose output is DATA -- the branch a
+        push goes to, the SHA and marker a page's version is read from.
+        Bytes, decoded strictly in this thread, so a byte that is not UTF-8
+        refuses rather than becoming U+FFFD inside a SHA or a branch (#287)."""
+        from policyforge.child_output import strict_text
+
+        argv = ["git", *args]
+        result = subprocess.run(  # nosec B603 B607 - fixed argv, no shell
+            argv,
+            cwd=str(self.cwd),
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+            env=self.env or None,
+        )
+        return result.returncode, strict_text(result.stdout, site="GitHub wiki", argv=argv)
 
 
 class GitHubWikiPublisher(Publisher):
@@ -173,9 +197,9 @@ class GitHubWikiPublisher(Publisher):
 
     def _default_branch(self) -> str:
         """Whatever this wiki calls its branch. GitHub wikis are `master`."""
-        head = self._git("symbolic-ref", "refs/remotes/origin/HEAD")
-        if head.returncode == 0 and head.stdout.strip():
-            return head.stdout.strip().rsplit("/", 1)[-1]
+        code, head = self._git.data("symbolic-ref", "refs/remotes/origin/HEAD")
+        if code == 0 and head.strip():
+            return head.strip().rsplit("/", 1)[-1]
         for candidate in ("master", "main"):
             if self._git("rev-parse", "--verify", f"origin/{candidate}").returncode == 0:
                 return candidate
@@ -239,10 +263,12 @@ class GitHubWikiPublisher(Publisher):
                 )
             raise LookupError(f"no page titled {title!r} in the {location} wiki")
 
-        log = self._git("log", "-1", "--format=%H%x00%an%x00%as%x00%B", "--", page_filename(title))
+        code, log = self._git.data(
+            "log", "-1", "--format=%H%x00%an%x00%as%x00%B", "--", page_filename(title)
+        )
         sha = author = date = message = ""
-        if log.returncode == 0 and log.stdout.strip():
-            parts = log.stdout.split("\x00")
+        if code == 0 and log.strip():
+            parts = log.split("\x00")
             sha, author, date, message = (parts + ["", "", "", ""])[:4]
 
         return LivePage(
@@ -375,9 +401,15 @@ class GitHubWikiPublisher(Publisher):
         return list(self._notes)
 
     def reconcile_command(self, doc) -> str:
+        # **Quoted with `shlex.quote`, because this line is printed for a
+        # person to copy.** A document title is user-authored prose: the
+        # title `Vendor "Bring Your Own" Policy` inside a hand-written
+        # `"..."` produces `--title "Vendor Bring"`, which is a valid
+        # command naming the wrong document, silently. #187.
         return (
-            f'policyforge pull --target {CLI_TARGET} --title "{self.title(doc)}" '
-            f"--tier {doc.tier or 'standard'} --apply"
+            f"policyforge pull --target {CLI_TARGET} "
+            f"--title {shlex.quote(self.title(doc))} "
+            f"--tier {shlex.quote(doc.tier or 'standard')} --apply"
         )
 
     # -- links -------------------------------------------------------------

@@ -10,3 +10,9 @@
 # trouble, since ruff does not care, and changing that would rewrite far
 # more of the working tree than this problem justifies.
 *.md text eol=lf
+
+# Byte-exact, never converted: the AI RMF Playbook parser REFUSES any export
+# whose SHA-256 is not the pinned one (#177), so an LF->CRLF rewrite on a
+# Windows checkout (core.autocrlf=true) would make the fixture fail its own
+# pin -- on Windows only, where nothing about it looks wrong.
+tests/fixtures/airc_ai_rmf_playbook.json -text

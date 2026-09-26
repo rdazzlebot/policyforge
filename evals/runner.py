@@ -29,6 +29,7 @@ and a suite people cannot run offline is a suite people stop running.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -720,6 +721,52 @@ def _cited_blocks(document: str) -> list[str]:
     return [block for block in joined if _SOURCE_TAG_RE.search(block)]
 
 
+#: A data-state qualifier a document can assert, and what grounds it in a
+#: premise. Only "in transit" (#174): sized on epoch 21's 59 documents, it
+#: fired 3 times in 1,096 cited blocks and every one was a real addition --
+#: including "encryption in transit" cited to SC-28, which is protection AT
+#: REST. "At rest" fired 4 times, mostly on defensible glosses (access-control
+#: encryption, integrity protection read as storage), so it is left out on
+#: that measurement. "In use" was 3 of 3 ordinary English.
+_TRANSIT_CLAIM = re.compile(r"\b(?:in transit|in motion)\b", re.I)
+_TRANSIT_GROUND = re.compile(
+    r"\b(?:in transit|in motion|transmi\w*|transport\w*|transfer\w*)\b", re.I
+)
+
+
+def unfounded_transit(document: str, synthesis: str) -> list[str]:
+    """Cited blocks that say "in transit" where their own citations never do.
+
+    `_tags` asks whether a reference is one the synthesis carries, and never
+    whether the sentence under it came from that reference (#174). A block
+    can assert "encrypt ePHI at rest and in transit" under HIPAA
+    164.312(a)(2)(iv), whose text is "a mechanism to encrypt and decrypt
+    electronic protected health information", and pass: the citation is
+    real.
+
+    **The premise is the synthesis lines carrying one of the block's own
+    references, not the whole synthesis.** Measured: the topic that produced
+    the instance above says "transmitting" once, in an unrelated backup-test
+    control, so a whole-synthesis comparison grounds the invention in a
+    sentence it never cited. And transmission is matched as a family of
+    words, because a heading glossing HIPAA's transmission specifications as
+    "in transit" is a faithful paraphrase and must stay quiet.
+
+    Returns the first line of each firing block that states the qualifier.
+    """
+    lines = synthesis.splitlines()
+    found: list[str] = []
+    for block in _cited_blocks(document):
+        if not _TRANSIT_CLAIM.search(block):
+            continue
+        references = _tags(block)
+        premise = "\n".join(line for line in lines if _tags(line) & references)
+        if _TRANSIT_GROUND.search(premise):
+            continue
+        found.append(next(ln for ln in block.splitlines() if _TRANSIT_CLAIM.search(ln)).strip())
+    return found
+
+
 def _heading_name(line: str) -> str:
     """A `## ` heading's name, without the numbering documents often carry."""
     return re.sub(r"^\d+[.)]\s*", "", line[3:].strip()).lower()
@@ -831,6 +878,14 @@ def run_generation(case: dict, provider, corpora: dict | None = None) -> Outcome
             document,
         )
 
+    unfounded = unfounded_transit(document, synthesis)
+    if unfounded:
+        return Outcome(
+            False,
+            f"a cited block says 'in transit' where its citations never do: {unfounded[0][:100]!r}",
+            document,
+        )
+
     matched = [p for p in case.get("forbid_patterns") or [] if re.search(p, document, re.I)]
     if matched:
         return Outcome(False, f"matches forbidden pattern {matched[0]!r}", document)
@@ -873,6 +928,150 @@ def run_generation(case: dict, provider, corpora: dict | None = None) -> Outcome
             return Outcome(False, f"{subsections} step subsection(s), expected {fewest}+", document)
 
     return grade_text(document, case)
+
+
+_SYNTHESIS_CATALOGS: dict = {}
+
+
+def _synthesis_catalogs() -> dict:
+    """Catalogs and crosswalk for the synthesis suite, loaded once per run.
+
+    **Two NIST-family catalogs, and that is not incidental.** The prompt rule
+    under test says to name a framework as its catalog declares it — `NIST
+    800-53`, not `NIST` — *"so a citation still resolves when a second
+    NIST-family catalog is loaded"*. With one NIST catalog loaded, bare
+    `NIST` resolves by prefix uniqueness and the grader cannot fail. A suite
+    that loads one catalog would pass whatever the prompt said, which is the
+    condition #117 shipped under.
+    """
+    if not _SYNTHESIS_CATALOGS:
+        from policyforge.ingest.schema import load_controls
+        from policyforge.mapping.crosswalk import build_crosswalk
+
+        root = Path(__file__).resolve().parents[1] / "data" / "frameworks"
+        controls: list = []
+        for name in (
+            "nist-800-53-r5",
+            "nist-800-171-r3",
+            "nist-ai-rmf",
+            "hipaa-security-rule",
+            "fedramp",
+        ):
+            controls += load_controls(root / name / "controls.json")
+        _SYNTHESIS_CATALOGS.update(controls=controls, crosswalk=build_crosswalk(controls))
+    return _SYNTHESIS_CATALOGS
+
+
+def run_synthesis(case: dict, provider, corpora: dict | None = None) -> Outcome:
+    """Does the synthesis prompt produce requirements an assessor can follow?
+
+    **The prompt in `synthesis/merge.py` had no suite until this one**, which
+    is how #117 shipped verifiable only through `policyforge synthesize`
+    (#184). The anchor logic around it is well covered by
+    `tests/test_anchor_concepts.py`; what nothing graded is whether a model
+    follows the prompt's own rules.
+
+    Graded on the rules the prompt actually states, not on where a defect
+    seemed likely:
+
+    1. a markdown bullet list and nothing else — no preamble, no closing
+    2. every bullet ends in a source tag
+    3. **every framework named resolves to a loaded catalog** — the rule
+       #117 added, checked by resolution rather than by spelling
+    4. nothing cited that was not in the topic
+    5. nothing silently dropped: every source framework reaches a tag
+
+    **What it must allow, stated because a guard with no passing case is a
+    guard nobody can satisfy:** a single bullet naming two frameworks is a
+    *merge*, which the prompt asks for and this must never penalise; a
+    placeholder with no framework-defined value stays as it is; and a
+    baseline qualifier inside a tag is part of the citation, not noise.
+    """
+    from policyforge.content.tags import source_tags
+    from policyforge.mapping.crosswalk import normalize_framework
+    from policyforge.synthesis.merge import build_synthesis_topic, synthesize_topic
+    from policyforge.topics.satisfies import _catalog_index, parse_citations, resolve_framework
+
+    loaded = _synthesis_catalogs()
+    topic = build_synthesis_topic(
+        case["topic"], list(case["anchors"]), loaded["controls"], loaded["crosswalk"]
+    )
+    # **Checked against the case, not against what the builder returned.**
+    # Deriving the expected set from `topic.controls` would agree with
+    # `build_synthesis_topic` by construction: a builder that silently
+    # dropped a framework would shrink the expectation with it and the
+    # assertion would still pass. ba hit that exact shape in `arc_ampe`,
+    # where a conservation guard read the loop's own bookkeeping. The case
+    # states what its anchors must supply, written from the inputs.
+    # **Extent, not just population.** The framework set alone is the
+    # zero-case guard: it catches a catalog vanishing and misses a topic
+    # shrinking from six controls to three, because the surviving three
+    # still cover every framework. Measured on this suite before the count
+    # was pinned -- a 6 -> 3 loss passed and went on to call the model,
+    # grading the prompt on half its input. "Non-empty" is the special case
+    # where the expected bound is "more than zero", and it is almost never
+    # the interesting one.
+    if len(topic.controls) != case["expect_controls"]:
+        return Outcome(
+            False,
+            f"the topic supplied {len(topic.controls)} controls, the case expects "
+            f"{case['expect_controls']} -- an anchor or crosswalk change, not a prompt result",
+            "",
+        )
+    supplied = {normalize_framework(c.framework) for c in topic.controls}
+    expected = set(case["expect_frameworks"])
+    if supplied != expected:
+        return Outcome(
+            False,
+            f"the topic supplied {sorted(supplied)}, the case expects {sorted(expected)} "
+            f"-- an anchor or crosswalk change, not a prompt result",
+            "",
+        )
+
+    text = synthesize_topic(topic, provider)
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    bullets = [line for line in lines if line.startswith(("-", "*"))]
+    if not bullets:
+        return Outcome(False, "produced no bullet list", text)
+    stray = [line for line in lines if not line.startswith(("-", "*"))]
+    if stray:
+        return Outcome(
+            False, f"{len(stray)} line(s) outside the bullet list: {stray[0][:60]!r}", text
+        )
+
+    untagged = [b for b in bullets if not source_tags(b)]
+    if untagged:
+        return Outcome(False, f"{len(untagged)} bullet(s) carry no source tag", text)
+
+    # Resolution, not spelling. `"NIST 800-53" in bullet` would be satisfied
+    # by the string appearing anywhere, including inside prose -- evidence
+    # that a string exists rather than that a citation resolves.
+    index = _catalog_index(loaded["controls"])
+    names = {c.framework for c in loaded["controls"]}
+    unresolved = []
+    cited_frameworks = set()
+    for framework, requirement_id, _qualifier, _section in parse_citations(text, names, index):
+        key = resolve_framework(framework, index)
+        if not key:
+            unresolved.append(f"{framework} {requirement_id}")
+        else:
+            cited_frameworks.add(key)
+    if unresolved:
+        return Outcome(
+            False,
+            f"{len(unresolved)} citation(s) name a framework that resolves to nothing: "
+            f"{unresolved[0]!r}",
+            text,
+        )
+
+    missing = sorted(expected - cited_frameworks)
+    if missing:
+        return Outcome(False, f"no requirement cites {missing}, which the topic supplied", text)
+
+    return Outcome(
+        True, f"{len(bullets)} requirement(s) across {len(cited_frameworks)} framework(s)", text
+    )
 
 
 _CROSSWALK_CATALOGS: dict = {}
@@ -986,14 +1185,39 @@ SUITES = {
     # the floor only: what plainly addresses the requirement is mapped, and
     # a control that merely shares its words is not.
     "crosswalk": run_crosswalk,
+    # The synthesis prompt, which had no suite at all until #184 -- which
+    # is how #117 shipped verifiable only through `policyforge synthesize`.
+    "synthesis": run_synthesis,
 }
 
 
-def load_cases(path: Path = DEFAULT_CASES) -> dict[str, list[dict]]:
+#: Suites the shipped cases fill from their own files rather than from
+#: `cases.yaml`. A `--cases` file gets these only by naming them (#275).
+GENERATED_SUITES = ("paraphrase", "answer_paraphrase")
+
+
+def load_cases(path: Path | None = None) -> dict[str, list[dict]]:
+    """The cases to run: the shipped set, or exactly what `path` names.
+
+    **A named file is the whole population** (#275, 80's ruling). With a
+    path, only the suites that file lists are loaded, its own `paraphrase:`
+    and `answer_paraphrase:` rows included. It used to gain the 66 shipped
+    paraphrases whatever it said, and the shipped rewordings of any
+    answering case whose name matched a shipped parent. A two-case routing
+    file planned 68 cases, and a file's own paraphrase rows were replaced
+    rather than run. Nothing in the file said so, so a cost estimated from
+    it came out 34x low.
+
+    With no path, the shipped cases load as before, generated suites
+    included.
+    """
     import yaml
 
-    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    source = DEFAULT_CASES if path is None else Path(path)
+    data = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
     cases = {suite: list(rows or []) for suite, rows in data.items() if suite in SUITES}
+    if path is not None:
+        return cases
 
     paraphrases = load_paraphrases()
     if paraphrases:
@@ -1159,6 +1383,8 @@ def code_provenance() -> list[str]:
                 cwd=Path(__file__).resolve().parent.parent,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=10,
             ).stdout.strip()
         except Exception:  # noqa: BLE001 - provenance is never worth failing a run over
@@ -1273,10 +1499,28 @@ def _entailment_report(results: list[CaseResult]) -> list[str]:
     return lines
 
 
-def format_report(results: list[CaseResult], *, repeat: int) -> str:
+def format_report(results: list[CaseResult], *, repeat: int, requested: Sequence[str]) -> str:
+    """The graded run, one block per suite, as pasted into an epoch.
+
+    **`requested` is required because results alone cannot show an
+    absence** (#223). A suite with no results used to produce no line, so a
+    report of two suites out of three read like a complete run of two, and
+    this report is what becomes an epoch in `MEASUREMENTS.md`. Every
+    requested suite now gets a line, and one that contributed nothing says
+    so. It has no default, so a caller that forgets it fails rather than
+    quietly getting the old behaviour back.
+    """
+    unknown = sorted(set(requested) - set(SUITES))
+    if unknown:
+        raise ValueError(f"not a suite: {', '.join(unknown)}")
+    not_run = [s for s in SUITES if s in requested and not any(r.suite == s for r in results)]
+
     lines = []
     for suite in SUITES:
         rows = [r for r in results if r.suite == suite]
+        if suite in not_run:
+            lines.append(f"{suite}: NOT RUN, 0 cases, so this report says nothing about it")
+            continue
         if not rows:
             continue
         passes = sum(r.passes for r in rows)
@@ -1305,7 +1549,16 @@ def format_report(results: list[CaseResult], *, repeat: int) -> str:
     errored = [r for r in results if r.errors]
     flaky = [r for r in results if r.flaky and not r.errors]
     failed = [r for r in results if r.passes == 0 and not r.errors]
-    lines += ["", f"{len(results)} case(s) x {repeat} run(s)"]
+    # The suite list is part of the measurement: eleven of twelve suites is a
+    # different epoch from twelve, even when every figure in it is right.
+    asked = [s for s in SUITES if s in requested]
+    lines += [
+        "",
+        f"{len(results)} case(s) x {repeat} run(s), "
+        f"{len(asked) - len(not_run)} of {len(asked)} requested suite(s) measured",
+    ]
+    if not_run:
+        lines.append(f"  {len(not_run)} requested suite(s) NOT RUN: {', '.join(not_run)}")
     if errored:
         lines += [
             f"  {len(errored)} could not run — the API refused the request, so "
@@ -1320,7 +1573,11 @@ def format_report(results: list[CaseResult], *, repeat: int) -> str:
             "cannot tell from right always"
         )
     if not failed and not flaky:
-        lines.append("  every case passed every run")
+        # "every case" with a suite missing is true of the cases and false of
+        # the run, so it says which.
+        lines.append(
+            "  every case that ran passed every run" if not_run else "  every case passed every run"
+        )
 
     if cut_off_runs:
         # Said even when every case passed: a reply that stopped at its

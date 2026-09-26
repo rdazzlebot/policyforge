@@ -11,7 +11,9 @@
     "discussion": "This requirement focuses on account management for systems and applications. The definition and enforcement of access authorizations other than those determined by account type (e.g., privileged access, non-privileged access) are addressed in [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.01.02)03.01.02. System account types include individual, group, temporary, system, guest, anonymous, emergency, developer, and service. Users who require administrative privileges on system accounts receive additional scrutiny by personnel responsible for approving such accounts and privileged access. Types of accounts that organizations may prohibit due to increased risk include group, emergency, guest, anonymous, and temporary. Organizations may choose to define access privileges or other attributes by account, type of account, or a combination of both. Other attributes required for authorizing access include restrictions on the time of day, day of the week, and point of origin. When defining other system account attributes, organizations consider system requirements (e.g., system upgrades, scheduled maintenance) and mission and business requirements (e.g., time zone differences, remote access to facilitate travel requirements). Users who pose a significant security risk include individuals for whom reliable evidence indicates either the intention to use authorized access to the system to cause harm or that adversaries will cause harm through them. Close coordination among mission and business owners, system administrators, human resource managers, and legal staff is essential when disabling system accounts for high-risk individuals. Time periods for the notification of organizational personnel or roles may vary. Inactivity logout is behavior- or policy-based and requires users to take physical action to log out when they are expecting inactivity longer than the defined period. Automatic enforcement of inactivity logout is addressed by [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.01.10) 03.01.10.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-2, AC-2(3), AC-2(5), AC-2(13)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -33,7 +35,9 @@
     "discussion": "Access control policies control access between active entities or subjects (i.e., users or system processes acting on behalf of users) and passive entities or objects (i.e., devices, files, records, domains) in organizational systems. Types of system access include remote access and access to systems that communicate through external networks, such as the internet. Access enforcement mechanisms can also be employed at the application and service levels to provide increased protection for CUI. This recognizes that the system can host many applications and services in support of mission and business functions. Access control policies are defined in [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.15.01) 03.15.01.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-3"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -55,7 +59,9 @@
     "discussion": "Information flow control regulates where CUI can transit within a system and between systems (in contrast to who is allowed to access the information) and without regard to subsequent accesses to that information. Flow control restrictions include keeping CUI from being transmitted in the clear to the internet, blocking external communications traffic that claims to be sourced from within the organization, restricting requests to the internet that are not from the internal web proxy server, and limiting CUI transfers between organizations based on data structures and content. Transferring CUI between organizations may require an agreement that specifies how the information flow is enforced (see [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.12.05)03.12.05). Transferring CUI between systems that represent different security domains with different security policies introduces the risk that such transfers violate one or more domain security policies. In such situations, information owners or stewards provide guidance at designated policy enforcement points between interconnected systems. Organizations consider mandating specific architectural solutions when required to enforce specific security policies. Enforcement includes prohibiting CUI transfers between interconnected systems (i.e., allowing information access only), employing hardware mechanisms to enforce one-way information flows, and implementing trustworthy regrading mechanisms to reassign security attributes and security labels. Organizations commonly use information flow control policies and enforcement mechanisms to control the flow of CUI between designated sources and destinations (e.g., networks, individuals, and devices) within systems and between interconnected systems. Flow control is based on characteristics of the information or the information path. Enforcement occurs in boundary protection devices (e.g., encrypted tunnels, routers, gateways, and firewalls) that use rule sets or establish configuration settings that restrict system services, provide a packet-filtering capability based on header information, or provide a message-filtering capability based on message content (e.g., implementing key word searches or using document characteristics). Organizations also consider the trustworthiness of filtering and inspection mechanisms (i.e., hardware, firmware, and software components) that are critical to information flow enforcement.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-4"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -77,7 +83,9 @@
     "discussion": "Separation of duties addresses the potential for abuse of authorized privileges and reduces the risk of malevolent activity without collusion. Separation of duties includes dividing mission functions and support functions among different individuals or roles, conducting system support functions with different individuals or roles (e.g., quality assurance, configuration management, network security, system management, assessments, and programming), and ensuring that personnel who administer access control functions do not also administer audit functions. Because separation of duty violations can span systems and application domains, organizations consider the entirety of their systems and system components when developing policies on separation of duties. This requirement is enforced by [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.01.02) 03.01.02.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-5"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -99,7 +107,9 @@
     "discussion": "Organizations employ the principle of least privilege for specific duties and authorized access for users and system processes. Least privilege is applied to the development, implementation, and operation of the system. Organizations consider creating additional processes, roles, and system accounts to achieve least privilege. Security functions include establishing system accounts and assigning privileges, installing software, configuring access authorizations, configuring settings for events to be audited, establishing vulnerability scanning parameters, establishing intrusion detection parameters, and managing audit information. Security-relevant information includes threat and vulnerability information, filtering rules for routers or firewalls, configuration parameters for security services, security architecture, cryptographic key management information, access control lists, and audit information.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-6, AC-6(1), AC-6(7), AU-9(4)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -121,7 +131,9 @@
     "discussion": "Privileged accounts refer to accounts that are granted elevated privileges to access resources (including security functions or security-relevant information) that are otherwise restricted for non-privileged accounts. These accounts are typically described as system administrator or super user accounts. For example, a privileged account is often required in order to perform privileged functions such as executing commands that could modify system behavior. Restricting privileged accounts to specific personnel or roles ensures that only those authorized users can access and manipulate security functions or security-relevant information. Requiring the use of non-privileged accounts when such access is not needed can limit unauthorized access to and manipulation of security functions or security-relevant information.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-6(2), AC-6(5)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -143,7 +155,9 @@
     "discussion": "Privileged functions include establishing system accounts, performing system integrity checks, conducting patching operations, changing system configuration settings, or administering cryptographic key management activities. Non-privileged users do not possess the authorizations to execute privileged functions. Bypassing intrusion detection and prevention mechanisms or malicious code protection mechanisms are examples of privileged functions that require protection from non-privileged users. This requirement represents a condition achieved by the definition of authorized privileges in [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.01.01)03.01.01 and privilege enforcement in [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.01.02)03.01.02. The misuse of privileged functions \u2014 whether intentionally or unintentionally by authorized users or by unauthorized external entities that have compromised system accounts \u2014 is a serious and ongoing concern that can have significant adverse impacts on organizations. Logging the use of privileged functions is one way to detect such misuse and mitigate risks from advanced persistent threats and insider threats.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-6(9), AC-6(10)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -165,7 +179,9 @@
     "discussion": "Due to the potential for denial of service, automatic system lockouts are in most cases, temporary and automatically release after a predetermined time period established by the organization (i.e., using a delay algorithm). Organizations may employ different delay algorithms for different system components based on the capabilities of the respective components. Responses to unsuccessful system logon attempts may be implemented at the system and application levels. Organization-defined actions that may be taken include prompting the user to answer a secret question in addition to the username and password, invoking a lockdown mode with limited user capabilities (instead of a full lockout), allowing users to only logon from specified Internet Protocol (IP) addresses, requiring a CAPTCHA to prevent automated attacks, or applying user profiles, such as location, time of day, IP address, device, or Media Access Control (MAC) address.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-7"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -187,7 +203,9 @@
     "discussion": "System use notifications can be implemented using messages or warning banners. The messages or warning banners are displayed before individuals log in to a system that processes, stores, or transmits CUI. System use notifications are used for access via logon interfaces with human users and are not required when human interfaces do not exist. Organizations consider whether a secondary use notification is needed to access applications or other system resources after the initial network logon. Posters or other printed materials may be used in lieu of an automated system message. This requirement is related to [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.15.03) 03.15.03.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-8"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -209,7 +227,9 @@
     "discussion": "Device locks are temporary actions taken to prevent access to the system when users depart from the immediate vicinity of the system but do not want to log out due to the temporary nature of their absences. Device locks can be implemented at the operating system level or application level. User-initiated device locking is behavior- or policy-based and requires users to take physical action to initiate the device lock. Device locks are not an acceptable substitute for logging out of the system (e.g., when organizations require users to log out at the end of workdays). Publicly viewable images can include static or dynamic images, such as patterns used with screen savers, solid colors, photographic images, a clock, a battery life indicator, or a blank screen with the caveat that controlled unclassified information is not displayed.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-11, AC-11(1)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -231,7 +251,9 @@
     "discussion": "This requirement addresses the termination of user-initiated logical sessions in contrast to the termination of network connections that are associated with communications sessions (i.e., disconnecting from the network) in [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.13.09)03.13.09. A logical session is initiated whenever a user (or processes acting on behalf of a user) accesses a system. Logical sessions can be terminated (and thus terminate user access) without terminating network sessions. Session termination ends all system processes associated with a user\u2019s logical session except those processes that are created by the user (i.e., session owner) to continue after the session is terminated. Conditions or trigger events that require automatic session termination can include organization-defined periods of user inactivity, time-of-day restrictions on system use, and targeted responses to certain types of incidents.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-12"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -253,7 +275,9 @@
     "discussion": "Remote access is access to systems (or processes acting on behalf of users) that communicate through external networks, such as the internet. Monitoring and controlling remote access methods allows organizations to detect attacks and ensure compliance with remote access policies. Routing remote access through managed access control points enhances explicit control over such connections and reduces susceptibility to unauthorized access to the system, which could result in the unauthorized disclosure of CUI. Remote access to the system represents a significant potential vulnerability that can be exploited by adversaries. Restricting the execution of privileged commands and access to security-relevant information via remote access reduces the exposure of the organization and its susceptibility to threats by adversaries. A privileged command is a human-initiated command executed on a system that involves the control, monitoring, or administration of the system, including security functions and security-relevant information. Security-relevant information is information that can potentially impact the operation of security functions or the provision of security services in a manner that could result in failure to enforce the system security policy or maintain isolation of code and data. Privileged commands give individuals the ability to execute sensitive, security-critical, or security-relevant system functions.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-17, AC-17(3), AC-17(4)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -275,7 +299,9 @@
     "discussion": "Wireless networking capabilities represent a significant potential vulnerability that can be exploited by adversaries. Establishing usage restrictions, configuration requirements, and connection requirements for wireless access to the system provides criteria to support access authorization decisions. These restrictions and requirements reduce susceptibility to unauthorized system access through wireless technologies. Wireless networks use authentication protocols that provide credential protection and mutual authentication. Organizations authenticate individuals and devices to protect wireless access to the system. Special attention is given to the variety of devices with potential wireless access to the system, including small form factor mobile devices (e.g., smart phones, tablets, smart watches). Wireless networking capabilities that are embedded within system components represent a potential vulnerability that can be exploited by adversaries. Strong authentication of users and devices, strong encryption, and disabling wireless capabilities that are not needed for essential mission or business functions can reduce susceptibility to threats by adversaries involving wireless technologies.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-18, AC-18(1), AC-18(3)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -297,7 +323,9 @@
     "discussion": "A mobile device is a computing device with a small form factor such that it can be carried by a single individual; is designed to operate without a physical connection; possesses local, non-removable, or removable data storage; and includes a self-contained power source. Mobile device functionality may include on-board sensors that allow the device to capture information, voice communication capabilities, and/or built-in features for synchronizing local data with remote locations. Examples include smart phones, smart watches, and tablets. Mobile devices are typically associated with a single individual. The processing, storage, and transmission capabilities of mobile devices may be comparable to or a subset of notebook or desktop systems, depending on the nature and intended purpose of the device. Some organizations may consider notebook computers to be mobile devices. The protection and control of mobile devices are behavior- or policy-based and require users to take physical action to protect and control such devices when outside of controlled areas. Controlled areas are spaces for which the organization provides physical or procedural controls to meet the requirements established for protecting CUI. Due to the large variety of mobile devices with different characteristics and capabilities, organizational restrictions may vary for the different classes or types of such devices. Usage restrictions, configuration requirements, and connection requirements for mobile devices include configuration management, device identification and authentication, implementing mandatory protective software, scanning devices for malicious code, updating virus protection software, scanning for critical software updates and patches, conducting operating system and possibly other software integrity checks, and disabling unnecessary hardware. On mobile devices, secure containers provide software-based data isolation designed to segment enterprise applications and information from personal apps and data. Containers may present multiple user interfaces, one of the most common being a mobile application that acts as a portal to a suite of business productivity apps, such as email, contacts, and calendar. Organizations can employ full-device encryption or container-based encryption to protect the confidentiality of CUI on mobile devices.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-19, AC-19(5)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -319,7 +347,9 @@
     "discussion": "External systems are systems that are used by but are not part of the organization. These systems include personally owned systems, system components, or devices; privately owned computing and communication devices in commercial or public facilities; systems owned or controlled by nonfederal organizations; and systems managed by contractors. Organizations have the option to prohibit the use of any type of external system or specified types of external systems (e.g., prohibit the use of external systems that are not organizationally owned). Terms and conditions are consistent with the trust relationships established with the entities that own, operate, or maintain external systems and include descriptions of shared responsibilities. Authorized individuals include organizational personnel, contractors, or other individuals with authorized access to the organizational system and over whom organizations have the authority to impose specific rules of behavior regarding system access. Restrictions that organizations impose on authorized individuals may vary depending on the trust relationships between organizations. Organizations need assurance that external systems satisfy the necessary security requirements so as not to compromise, damage, or harm the system. This requirement is related to [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.16.03) 03.16.03.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-20, AC-20(1), AC-20(2)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -341,7 +371,9 @@
     "discussion": "In accordance with applicable laws, Executive Orders, directives, policies, regulations, standards, and guidelines, the public is not authorized to have access to nonpublic information, including CUI.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-22"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -363,7 +395,9 @@
     "discussion": "Organizations provide basic and advanced levels of security literacy training to system users (including managers, senior executives, system administrators, and contractors) and measures to test the knowledge level of users. Organizations determine the content of literacy training based on specific organizational requirements, the systems to which personnel have authorized access, and work environments (e.g., telework). The content includes an understanding of the need for security and the actions required of users to maintain security and respond to incidents. The content also addresses the need for operations security and the handling of CUI. Security awareness techniques include displaying posters, offering supplies inscribed with security reminders, generating email advisories or notices from organizational officials, displaying logon screen messages, and conducting awareness events using podcasts, videos, and webinars. Security literacy training is conducted at a frequency consistent with applicable laws, directives, regulations, and policies. Updating literacy training content on a regular basis ensures that the content remains relevant. Events that may precipitate an update to literacy training content include assessment or audit findings, security incidents or breaches, or changes in applicable laws, Executive Orders, directives, regulations, policies, standards, and guidelines. Potential indicators and possible precursors of insider threats include behaviors such as inordinate, long-term job dissatisfaction; attempts to gain access to information that is not required for job performance; unexplained access to financial resources; sexual harassment or bullying of fellow employees; workplace violence; and other serious violations of the policies, procedures, rules, directives, or practices of organizations. Organizations may consider tailoring insider threat awareness topics to roles (e.g., training for managers may be focused on specific changes in the behavior of team members, while training for employees may be focused on more general observations). Social engineering is an attempt to deceive an individual into revealing information or taking an action that can be used to breach, compromise, or otherwise adversely impact a system. Social engineering includes phishing, pretexting, impersonation, baiting, quid pro quo, threadjacking, social media exploitation, and tailgating. Social mining is an attempt to gather information about the organization that may be used to support future attacks. Security literacy training includes how to communicate employee and management concerns regarding potential indicators of insider threat and potential and actual instances of social engineering and data mining through appropriate organizational channels in accordance with established policies and procedures.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AT-2, AT-2(2), AT-2(3)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -385,7 +419,9 @@
     "discussion": "Organizations determine the content and frequency of security training based on the assigned duties, roles, and responsibilities of individuals and the security requirements of the systems to which personnel have authorized access. In addition, organizations provide system developers, enterprise architects, security architects, software developers, systems integrators, acquisition/procurement officials, system and network administrators, personnel conducting configuration management and auditing activities, personnel performing independent verification and validation, security assessors, and personnel with access to system-level software with security-related technical training specifically tailored for their assigned duties. Comprehensive role-based training addresses management, operational, and technical roles and responsibilities that cover physical, personnel, and technical controls. Such training can include policies, procedures, tools, and artifacts for the security roles defined. Organizations also provide the training necessary for individuals to carry out their responsibilities related to operations and supply chain security within the context of organizational information security programs.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AT-3"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -407,7 +443,9 @@
     "discussion": "An event is any observable occurrence in a system, including unlawful or unauthorized system activity. Organizations identify event types for which a logging functionality is needed. This includes events that are relevant to the security of systems and the environments in which those systems operate to meet specific and ongoing auditing needs. Event types can include password changes, the execution of privileged functions, failed logons or accesses related to systems, administrative privilege usage, or third-party credential usage. In determining event types that require logging, organizations consider the system monitoring and auditing that are appropriate for each of the security requirements. When defining event types, organizations consider the logging necessary to cover related events, such as the steps in distributed, transaction-based processes (e.g., processes that are distributed across multiple organizations) and actions that occur in service-oriented or cloud-based architectures. Monitoring and auditing requirements can be balanced with other system needs. For example, organizations may determine that systems must have the capability to log every file access \u2014 both successful and unsuccessful \u2014 but only activate that capability under specific circumstances due to the potential burden on system performance. The event types that are logged by organizations may change over time. Reviewing and updating the set of logged event types are necessary to ensure that the current set of event types remains relevant.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AU-2"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -429,7 +467,9 @@
     "discussion": "Audit record content that may be necessary to support the auditing function includes time stamps, source and destination addresses, user or process identifiers, event descriptions, file names, and the access control or flow control rules that are invoked. Event outcomes can include indicators of event success or failure and event-specific results (e.g., the security state of the system after the event occurred). Detailed information that organizations consider in audit records may include a full text recording of privileged commands or the individual identities of group account users.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AU-3, AU-3(1)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -451,7 +491,9 @@
     "discussion": "Audit records can be generated at various levels of abstraction, including at the packet level as information traverses the network. Selecting the appropriate level of abstraction is a critical aspect of an audit logging capability and can facilitate the identification of root causes to problems. The ability to add information generated in audit records is dependent on system functionality to configure the audit record content. Organizations may consider additional information in audit records, including the access control or flow control rules invoked and the individual identities of group account users. Organizations may also consider limiting additional audit record information to only information that is explicitly needed for audit requirements.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AU-11, AU-12"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -473,7 +515,9 @@
     "discussion": "Audit logging process failures include software and hardware errors, failures in audit log capturing mechanisms, and reaching or exceeding audit log storage capacity. Response actions include overwriting the oldest audit records, shutting down the system, and stopping the generation of audit records. Organizations may choose to define additional actions for audit logging process failures based on the type of failure, the location of the failure, the severity of the failure, or a combination of such factors. When the audit logging process failure is related to storage, the response is carried out for the audit log storage repository (i.e., the distinct system component where the audit logs are stored), the system on which the audit logs reside, the total audit log storage capacity of the organization (i.e., all audit log storage repositories combined), or all three. Organizations may decide to take no additional actions after alerting designated roles or personnel.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AU-5"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -495,7 +539,9 @@
     "discussion": "Audit record review, analysis, and reporting cover information security logging performed by organizations and can include logging that results from the monitoring of account usage, remote access, wireless connectivity, configuration settings, the use of maintenance tools and nonlocal maintenance, system component inventory, mobile device connection, equipment delivery and removal, physical access, temperature and humidity, communications at system interfaces, and the use of mobile code. Findings can be reported to organizational entities, such as the incident response team, help desk, and security or privacy offices. If organizations are prohibited from reviewing and analyzing audit records or unable to conduct such activities, the review or analysis may be carried out by other organizations granted such authority. The scope, frequency, and/or depth of the audit record review, analysis, and reporting may be adjusted to meet organizational needs based on new information received. Correlating audit record review, analysis, and reporting processes helps to ensure that audit records collectively create a more complete view of events.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AU-6, AU-6(3)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -517,7 +563,9 @@
     "discussion": "Audit records are generated in [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.03.03)03.03.03. Audit record reduction and report generation occur after audit record generation. Audit record reduction is a process that manipulates collected audit information and organizes it in a summary format that is more meaningful to analysts. Audit record reduction and report generation capabilities do not always come from the same system or organizational entities that conduct auditing activities. An audit record reduction capability can include, for example, modern data mining techniques with advanced data filters to identify anomalous behavior in audit records. The report generation capability provided by the system can help generate customizable reports. The time ordering of audit records can be a significant issue if the granularity of the time stamp in the record is insufficient.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AU-7"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -539,7 +587,9 @@
     "discussion": "Time stamps generated by the system include the date and time. Time is often expressed in Coordinated Universal Time (UTC) \u2014 a modern continuation of Greenwich Mean Time (GMT) \u2014 or local time with an offset from UTC. The granularity of time measurements refers to the degree of synchronization between system clocks and reference clocks (e.g., clocks synchronizing within hundreds or tens of milliseconds). Organizations may define different time granularities for system components. Time service can be critical to other security capabilities (e.g., access control and identification and authentication), depending on the nature of the mechanisms used to support those capabilities.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AU-8"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -561,7 +611,9 @@
     "discussion": "Audit information includes the information needed to successfully audit system activity, such as audit records, audit log settings, audit reports, and personally identifiable information. Audit logging tools are programs and devices used to conduct audit and logging activities. The protection of audit information focuses on technical protection and limits the ability to access and execute audit logging tools to authorized individuals. The physical protection of audit information is addressed by media and physical protection requirements. Individuals or roles with privileged access to a system and who are also the subject of an audit by that system may affect the reliability of the audit information by inhibiting audit activities or modifying audit records. Requiring privileged access to be further defined between audit-related privileges and other privileges limits the number of users or roles with audit-related privileges.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AU-9, AU-9(4)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -583,7 +635,9 @@
     "discussion": "Baseline configurations for the system and system components include aspects of connectivity, operation, and communications. Baseline configurations are documented, formally reviewed, and agreed-upon specifications for the system or configuration items within the system. Baseline configurations serve as a basis for future builds, releases, or changes to the system and include information about system components, operational procedures, network topology, and the placement of components in the system architecture. Maintaining baseline configurations requires creating new baselines as the system changes over time. Baseline configurations of the system reflect the current enterprise architecture.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "CM-2"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -605,7 +659,9 @@
     "discussion": "Configuration settings are the set of parameters that can be changed in hardware, software, or firmware components of the system and that affect the security posture or functionality of the system. Security-related configuration settings can be defined for systems (e.g., servers, workstations), input and output devices (e.g., scanners, copiers, printers), network components (e.g., firewalls, routers, gateways, voice and data switches, wireless access points, network appliances, sensors), operating systems, middleware, and applications. Security parameters are those parameters that impact the security state of the system, including the parameters required to satisfy other security requirements. Security parameters include registry settings; account, file, and directory permission settings (i.e., privileges); and settings for functions, ports, protocols, and remote connections. Organizations establish organization-wide configuration settings and subsequently derive specific configuration settings for the system. The established settings become part of the system\u2019s configuration baseline. Common secure configurations (also referred to as security configuration checklists, lockdown and hardening guides, security reference guides, and security technical implementation guides) provide recognized, standardized, and established benchmarks that stipulate secure configuration settings for specific information technology platforms/products and instructions for configuring those system components to meet operational requirements. Common secure configurations can be developed by a variety of organizations, including information technology product developers, manufacturers, vendors, consortia, academia, industry, federal agencies, and other organizations in the public and private sectors.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "CM-6"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -627,7 +683,9 @@
     "discussion": "Configuration change control refers to tracking, reviewing, approving or disapproving, and logging changes to the system. Specifically, it involves the systematic proposal, justification, implementation, testing, review, and disposition of changes to the system, including system upgrades and modifications. Configuration change control includes changes to baseline configurations for system components (e.g., operating systems, applications, firewalls, routers, mobile devices) and configuration items of the system, changes to configuration settings, unscheduled and unauthorized changes, and changes to remediate vulnerabilities. This requirement is related to [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.04.04) 03.04.04.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "CM-3"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -649,7 +707,9 @@
     "discussion": "Organizational personnel with security responsibilities conduct impact analyses that include reviewing system security plans, policies, and procedures to understand security requirements; reviewing system design documentation and operational procedures to understand how system changes might affect the security state of the system; reviewing the impacts of system changes on supply chain partners with stakeholders; and determining how potential changes to a system create new risks and the ability to mitigate those risks. Impact analyses also include risk assessments to understand the impacts of changes and determine whether additional security requirements are needed. Changes to the system may affect the safeguards and countermeasures previously implemented. This requirement is related to [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.04.03)03.04.03. Not all changes to the system are configuration controlled.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "CM-4, CM-4(2)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -671,7 +731,9 @@
     "discussion": "Changes to the hardware, software, or firmware components of the system or the operational procedures related to the system can have potentially significant effects on the security of the system. Therefore, organizations permit only qualified and authorized individuals to access the system for the purpose of initiating changes. Access restrictions include physical and logical access controls, software libraries, workflow automation, media libraries, abstract layers (i.e., changes implemented into external interfaces rather than directly into the system), and change windows (i.e., changes occur only during specified times).",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "CM-5"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -693,7 +755,9 @@
     "discussion": "Systems can provide a variety of functions and services. Some functions and services that are routinely provided by default may not be necessary to support essential organizational missions, functions, or operations. It may be convenient to provide multiple services from single system components. However, doing so increases risk over limiting the services provided by any one component. Where feasible, organizations limit functionality to a single function per component. Organizations review the functions and services provided by the system or system components to determine which functions and services are candidates for elimination. Organizations disable unused or unnecessary physical and logical ports and protocols to prevent the unauthorized connection of devices, the transfer of information, and tunneling. Organizations can employ network scanning tools, intrusion detection and prevention systems, and endpoint protection systems (e.g., firewalls and host-based intrusion detection systems) to identify and prevent the use of prohibited functions, ports, protocols, system connections, and services. Bluetooth, File Transfer Protocol (FTP), and peer-to-peer networking are examples of the types of protocols that organizations consider eliminating, restricting, or disabling.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "CM-7, CM-7(1)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -715,7 +779,9 @@
     "discussion": "If provided with the necessary privileges, users can install software in organizational systems. To maintain control over the software installed, organizations identify permitted and prohibited actions regarding software installation. Permitted software installations include updates and security patches to existing software and downloading new applications from organization-approved \u201capp stores.\u201d The policies selected for governing user-installed software are organization-developed or provided by some external entity. Policy enforcement methods can include procedural methods and automated methods. Authorized software programs can be limited to specific versions or come from specific sources. To facilitate a comprehensive authorized software process and increase the strength of protection against attacks that bypass application-level authorized software, software programs may be decomposed into and monitored at different levels of detail. These levels include applications, application programming interfaces, application modules, scripts, system processes, system services, kernel functions, registries, drivers, and dynamic link libraries.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "CM-7(5)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -737,7 +803,9 @@
     "discussion": "System components are discrete, identifiable assets (i.e., hardware, software, and firmware elements) that compose a system. Organizations may implement centralized system component inventories that include components from all systems. In such situations, organizations ensure that the inventories include the system-specific information required for component accountability. The information necessary for effective accountability of system components includes the system name, software owners, software version numbers, software license information, hardware inventory specifications, and \u2014 for networked components \u2014 the machine names and network addresses for all implemented protocols (e.g., IPv4, IPv6). Inventory specifications include component type, physical location, date of receipt, manufacturer, cost, model, serial number, and supplier information.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "CM-8, CM-8(1)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -759,7 +827,9 @@
     "discussion": "Information location addresses the need to understand the specific system components where CUI is being processed and stored and the users who have access to CUI so that appropriate protection mechanisms can be provided, including information flow controls, access controls, and information management.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "CM-12"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -781,7 +851,9 @@
     "discussion": "When it is known that a system or a system component will be in a high-risk area, additional security requirements may be needed to counter the increased threat. Organizations can implement protective measures on the systems or system components used by individuals departing on and returning from travel. Actions include determining whether the locations are of concern, defining the required configurations for the components, ensuring that the components are configured as intended before travel is initiated, and taking additional actions after travel is completed. For example, systems going into high-risk areas can be configured with sanitized hard drives, limited applications, and more stringent configuration settings. Actions applied to mobile devices upon return from travel include examining the device for signs of physical tampering and purging and reimaging the device storage.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "CM-2(7)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -803,7 +875,9 @@
     "discussion": "System users include individuals (or system processes acting on behalf of individuals) who are authorized to access a system. Typically, individual identifiers are the usernames associated with the system accounts assigned to those individuals. Since system processes execute on behalf of groups and roles, organizations may require the unique identification of individuals in group accounts or the accountability of individual activity. The unique identification and authentication of users apply to all system accesses. Organizations use passwords, physical authenticators, biometrics, or some combination thereof to authenticate user identities. Organizations may re-authenticate individuals in certain situations, including when roles, authenticators, or credentials change; when the execution of privileged functions occurs; after a fixed time period; or periodically.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "IA-2, IA-11"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -825,7 +899,9 @@
     "discussion": "Devices that require unique device-to-device identification and authentication are defined by type, device, or a combination of type and device. Organization-defined device types include devices that are not owned by the organization. Systems use shared known information (e.g., Media Access Control .MAC, Transmission Control Protocol/Internet Protocol .TCP/IP addresses) for device identification or organizational authentication solutions (e.g., Institute of Electrical and Electronics Engineers .IEEE 802.1x and Extensible Authentication Protocol .EAP, RADIUS server with EAP-Transport Layer Security .TLS authentication, Kerberos) to identify and authenticate devices on local and wide area networks. Public Key Infrastructure (PKI) and certificate revocation checking for the certificates exchanged can be included as part of device authentication.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "IA-3"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -847,7 +923,9 @@
     "discussion": "This requirement applies to user accounts. Multi-factor authentication requires the use of two or more different factors to achieve authentication. The authentication factors are defined as follows: something you know (e.g., a personal identification number .PIN), something you have (e.g., a physical authenticator, such as a cryptographic private key), or something you are (e.g., a biometric). Multi-factor authentication solutions that feature physical authenticators include hardware authenticators that provide time-based or challenge-response outputs and smart cards. In addition to authenticating users at the system level, organizations may also employ authentication mechanisms at the application level to provide increased information security.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "IA-2(1), IA-2(2)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -869,7 +947,9 @@
     "discussion": "Authentication processes resist replay attacks if it is impractical to successfully authenticate by recording or replaying previous authentication messages. Replay-resistant techniques include protocols that use nonces or challenges, such as time synchronous or challenge-response one-time authenticators.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "IA-2(8)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -891,7 +971,9 @@
     "discussion": "Identifiers are provided for users, processes acting on behalf of users, and devices. Prohibiting the reuse of identifiers prevents the assignment of previously used individual, group, role, service, or device identifiers to different individuals, groups, roles, services, or devices. Characteristics that identify the status of individuals include contractors, foreign nationals, and non-organizational users. Identifying the status of individuals by these characteristics provides information about the people with whom organizational personnel are communicating. For example, it is useful for an employee to know that one of the individuals on an email message is a contractor.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "IA-4, IA-4(4)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -913,7 +995,9 @@
     "discussion": "Password-based authentication applies to passwords used in single-factor or multi-factor authentication. Long passwords or passphrases are preferable to shorter passwords. Enforced composition rules provide marginal security benefits while decreasing usability. However, organizations may choose to establish and enforce certain rules for password generation (e.g., minimum character length) under certain circumstances. For example, account recovery can occur when a password is forgotten. Cryptographically protected passwords include salted one-way cryptographic hashes of passwords. The list of commonly used, compromised, or expected passwords includes passwords obtained from previous breach corpuses, dictionary words, and repetitive or sequential characters. The list includes context-specific words, such as the name of the service, username, and derivatives thereof. Changing temporary passwords to permanent passwords immediately after system logon ensures that the necessary strength of the authentication mechanism is implemented at the earliest opportunity and reduces susceptibility to authenticator compromises. Long passwords and passphrases can be used to increase the complexity of passwords.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "IA-5(1)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -935,7 +1019,9 @@
     "discussion": "Authentication feedback does not provide information that would allow unauthorized individuals to compromise authentication mechanisms. For example, for desktop or notebook systems with relatively large monitors, the threat may be significant (commonly referred to as shoulder surfing). For mobile devices with small displays, this threat may be less significant and is balanced against the increased likelihood of input errors due to small keyboards. Therefore, the means of obscuring authenticator feedback is selected accordingly. Obscuring feedback includes displaying asterisks when users type passwords into input devices or displaying feedback for a limited time before fully obscuring it.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "IA-6"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -957,7 +1043,9 @@
     "discussion": "Authenticators include passwords, cryptographic devices, biometrics, certificates, one-time password devices, and ID badges. The initial authenticator content is the actual content of the authenticator (e.g., the initial password). In contrast, requirements for authenticator content contain specific characteristics. Authenticator management is supported by organization-defined settings and restrictions for various authenticator characteristics (e.g., password complexity and composition rules, validation time window for time synchronous one-time tokens, and the number of allowed rejections during the verification stage of biometric authentication). The requirement to protect individual authenticators may be implemented by [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.15.03)03.15.03 for authenticators in the possession of individuals and by [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.01.01) 03.01.01, [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.01.02) 03.01.02, [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.01.05)03.01.05, and [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.13.08)03.13.08 for authenticators stored in organizational systems. This includes passwords stored in hashed or encrypted formats or files that contain hashed or encrypted passwords that are accessible with administrator privileges. Actions can be taken to protect authenticators, including maintaining possession of authenticators, not sharing authenticators with others, and immediately reporting lost, stolen, or compromised authenticators. Developers may deliver system components with factory default authentication credentials to allow for initial installation and configuration. Default authentication credentials are often well-known, easily discoverable, and present a significant risk. Authenticator management includes issuing and revoking authenticators for temporary access when they are no longer needed. The use of long passwords or passphrases may obviate the need to periodically change authenticators.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "IA-5"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -979,7 +1067,9 @@
     "discussion": "Incident-related information can be obtained from a variety of sources, including audit monitoring, network monitoring, physical access monitoring, user and administrator reports, and reported supply chain events. An effective incident handling capability involves coordination among many organizational entities, including mission and business owners, system owners, human resources offices, physical and personnel security offices, legal departments, operations personnel, and procurement offices.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "IR-4"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1001,7 +1091,9 @@
     "discussion": "Documenting incidents includes maintaining records about each incident, the status of the incident, and other pertinent information necessary for forensics as well as evaluating incident details, trends, and handling. Incident information can be obtained from many sources, including network monitoring, incident reports, incident response teams, user complaints, supply chain partners, audit monitoring, physical access monitoring, and user and administrator reports. [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.06.01)03.06.01 provides information on the types of incidents that are appropriate for monitoring. The types of incidents reported, the content and timeliness of the reports, and the reporting authorities reflect applicable laws, Executive Orders, directives, regulations, policies, standards, and guidelines. Incident information informs risk assessments, the effectiveness of security assessments, the security requirements for acquisitions, and the selection criteria for technology products. Incident response support resources provided by organizations include help desks, assistance groups, automated ticketing systems to open and track incident response tickets, and access to forensic services or consumer redress services, when required.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "IR-5, IR-6, IR-7"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1023,7 +1115,9 @@
     "discussion": "Organizations test incident response capabilities to determine their effectiveness and identify potential weaknesses or deficiencies. Incident response testing includes the use of checklists, walk-through or tabletop exercises, and simulations. Incident response testing can include a determination of the effects of incident response on organizational operations, organizational assets, and individuals. Qualitative and quantitative data can help determine the effectiveness of incident response processes.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "IR-3"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1045,7 +1139,9 @@
     "discussion": "Incident response training is associated with the assigned roles and responsibilities of organizational personnel to ensure that the appropriate content and level of detail are included in such training. For example, users may only need to know how to recognize an incident or whom to call; system administrators may require additional training on how to handle incidents; and incident responders may receive specific training on data collection techniques, forensics, reporting, system recovery, and system restoration. Incident response training includes user training in identifying and reporting suspicious activities from external and internal sources. Incident response training for users may be provided as part of [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.02.02)03.02.02. Events that may cause an update to incident response training content include incident response plan testing, response to an actual incident, audit or assessment findings, or changes in applicable laws, Executive Orders, policies, directives, regulations, standards, and guidelines.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "IR-2"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1067,7 +1163,9 @@
     "discussion": "It is important that organizations develop and implement a coordinated approach to incident response. Organizational mission and business functions determine the structure of incident response capabilities. As part of the incident response capabilities, organizations consider the coordination and sharing of information with external organizations, including external service providers and other organizations involved in the supply chain.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "IR-8"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1089,7 +1187,9 @@
     "discussion": "Approving, controlling, monitoring, and reviewing maintenance tools address security-related issues associated with the tools that are used for diagnostic and repair actions on the system. Maintenance tools can include hardware and software diagnostic and test equipment as well as packet sniffers. The tools may be pre-installed, brought in with maintenance personnel on media, cloud-based, or downloaded from a website. Diagnostic and test programs are potential vehicles for transporting malicious code into the system, either intentionally or unintentionally. Examples of media inspection include checking the cryptographic hash or digital signatures of diagnostic and test programs and media. If organizations inspect media that contain diagnostic and test programs and determine that the media also contain malicious code, the incident is handled consistent with incident handling policies and procedures. A periodic review of system maintenance tools can result in the withdrawal of approval for outdated, unsupported, irrelevant, or no-longer-used tools. Maintenance tools do not address the hardware and software components that support maintenance and are considered a part of the system.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "MA-3, MA-3(1), MA-3(2), MA-3(3)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1111,7 +1211,9 @@
     "discussion": "Nonlocal maintenance and diagnostic activities are conducted by individuals who communicate through an external or internal network. Local maintenance and diagnostic activities are carried out by individuals who are physically present at the location of the system and not communicating across a network connection. Authentication techniques used to establish nonlocal maintenance and diagnostic sessions reflect the requirements in [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.05.01) 03.05.01.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "MA-4"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1133,7 +1235,9 @@
     "discussion": "Maintenance personnel refers to individuals who perform hardware or software maintenance on the system, while [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.10.01)03.10.01 addresses physical access for individuals whose maintenance duties place them within the physical protection perimeter of the system. The technical competence of supervising individuals relates to the maintenance performed on the system, while having required access authorizations refers to maintenance on and near the system. Individuals who have not been previously identified as authorized maintenance personnel (e.g., manufacturers, consultants, systems integrators, and vendors) may require privileged access to the system, such as when they are required to conduct maintenance with little or no notice. Organizations may choose to issue temporary credentials to these individuals based on their risk assessments. Temporary credentials may be for one-time use or for very limited time periods.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "MA-5"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1155,7 +1259,9 @@
     "discussion": "System media include digital and non-digital media. Digital media include diskettes, flash drives, magnetic tapes, external or removable solid state or magnetic drives, compact discs, and digital versatile discs. Non-digital media include paper and microfilm. Physically controlling stored media includes conducting inventories, establishing procedures to allow individuals to check out and return media to libraries, and maintaining accountability for stored media. Secure storage includes a locked drawer, desk, or cabinet or a controlled media library. Controlled areas provide physical and procedural controls to meet the requirements established for protecting information and systems. Sanitization techniques (e.g., destroying, cryptographically erasing, clearing, and purging) prevent the disclosure of CUI to unauthorized individuals. The sanitization process removes CUI from media such that the information cannot be retrieved or reconstructed.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "MP-4"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1177,7 +1283,9 @@
     "discussion": "System media include digital and non-digital media. Access to CUI on system media can be restricted by physically controlling such media. This includes conducting inventories, ensuring that procedures are in place to allow individuals to check out and return media to the media library, and maintaining accountability for stored media. For digital media, access to CUI can be restricted by using cryptographic means. Encrypting data in storage or at rest is addressed in [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.13.08) 03.13.08.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "MP-2"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1199,7 +1307,9 @@
     "discussion": "Media sanitization applies to digital and non-digital media that are subject to disposal or reuse, whether or not the media are considered removable. Examples include digital media in scanners, copiers, printers, notebook computers, mobile devices, workstations, network components, and non-digital media. The sanitization process removes CUI from media such that the information cannot be retrieved or reconstructed. Sanitization techniques (e.g., cryptographically erasing, clearing, purging, and destroying) prevent the disclosure of CUI to unauthorized individuals when such media are reused or released for disposal. NARA policies control the sanitization process for media that contain CUI and may require destruction when other methods cannot be applied to the media.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "MP-6"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1221,7 +1331,9 @@
     "discussion": "System media include digital and non-digital media. Marking refers to the use or application of human-readable security attributes. Labeling refers to the use of security attributes for internal system data structures. Digital media include diskettes, magnetic tapes, external or removable solid state or magnetic drives, flash drives, compact discs, and digital versatile discs. Non-digital media include paper and microfilm. CUI is defined by NARA along with marking, safeguarding, and dissemination requirements for such information.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "MP-3"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1243,7 +1355,9 @@
     "discussion": "System media include digital and non-digital media. Digital media include flash drives, diskettes, magnetic tapes, external or removable solid state or magnetic drives, compact discs, and digital versatile discs. Non-digital media include microfilm and paper. Controlled areas are spaces for which organizations provide physical or procedural measures to meet the requirements established for protecting CUI and systems. Media protection during transport can include cryptography and/or locked containers. Activities associated with media transport include releasing media for transport, ensuring that media enter the appropriate transport processes, and the actual transport. Authorized transport and courier personnel may include individuals external to the organization. Maintaining accountability of media during transport includes restricting transport activities to authorized personnel and tracking or obtaining the records of transport activities as the media move through the transportation system to prevent and detect loss, destruction, or tampering. This requirement is related to [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.13.08)03.13.08 and [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.13.11) 03.13.11.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "MP-5, SC-28"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1265,7 +1379,9 @@
     "discussion": "In contrast to requirement [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.08.01)03.08.01, which restricts user access to media, this requirement restricts or prohibits the use of certain types of media, such as external hard drives, flash drives, or smart displays. Organizations can use technical and non-technical measures (e.g., policies, procedures, and rules of behavior) to control the use of system media. For example, organizations may control the use of portable storage devices by using physical cages on workstations to prohibit access to external ports or disabling or removing the ability to insert, read, or write to devices. Organizations may limit the use of portable storage devices to only approved devices, including devices provided by the organization, devices provided by other approved organizations, and devices that are not personally owned. Organizations may also control the use of portable storage devices based on the type of device \u2014 prohibiting the use of writeable, portable devices \u2014 and implement this restriction by disabling or removing the capability to write to such devices. Limits on the use of organization-controlled system media in external systems include restrictions on how the media may be used and under what conditions. Requiring identifiable owners (e.g., individuals, organizations, or projects) for removable system media reduces the risk of using such technologies by allowing organizations to assign responsibility and accountability for addressing known vulnerabilities in the media (e.g., insertion of malicious code).",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "MP-7"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1287,7 +1403,9 @@
     "discussion": "The selection of cryptographic mechanisms is based on the need to protect the confidentiality of backup information. Hardware security module (HSM) devices safeguard and manage cryptographic keys and provide cryptographic processing. Cryptographic operations (e.g., encryption, decryption, and signature generation and verification) are typically hosted on the HSM device, and many implementations provide hardware-accelerated mechanisms for cryptographic operations. This requirement is related to [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.13.11) 03.13.11.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "CP-9, CP-9(8)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1309,7 +1427,9 @@
     "discussion": "Personnel security screening activities involve the assessment of the conduct, integrity, judgment, loyalty, reliability, and stability of an individual (i.e., the individual\u2019s trustworthiness) prior to authorizing access to the system or when elevating system access. The screening and rescreening activities reflect applicable federal laws, Executive Orders, directives, policies, regulations, and criteria established for the level of access required for the assigned position.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "PS-3"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1331,7 +1451,9 @@
     "discussion": "Security-related system property includes hardware authentication tokens, system administration technical manuals, keys, identification cards, and building passes. Exit interviews ensure that terminated individuals understand the security constraints imposed by being former employees and that accountability is achieved for the organizational property. Security topics at exit interviews include reminding individuals of potential limitations on future employment and non-disclosure agreements. Exit interviews may not always be possible for some individuals, including in cases related to the unavailability of supervisors, illnesses, or job abandonment. The timely execution of termination actions is essential for individuals who have been terminated for cause. Organizations may consider disabling the accounts of individuals who are being terminated prior to the individuals being notified. This requirement applies to the reassignment or transfer of individuals when the personnel action is permanent or of such extended duration as to require protection. Protections that may be required for transfers or reassignments to other positions within organizations include returning old and issuing new identification cards, keys, and building passes; changing system access authorizations (i.e., privileges); closing system accounts and establishing new accounts; and providing access to official records to which individuals had access at previous work locations in previous system accounts.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "PS-4, PS-5"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1353,7 +1475,9 @@
     "discussion": "A facility can include one or more physical locations containing systems or system components that process, store, or transmit CUI. Physical access authorizations apply to employees and visitors. Individuals with permanent physical access authorization credentials are not considered visitors. Authorization credentials include identification badges, identification cards, and smart cards. Organizations determine the strength of the authorization credentials consistent with applicable laws, Executive Orders, directives, regulations, policies, standards, and guidelines. Physical access authorizations may not be necessary to access certain areas within facilities that are designated as publicly accessible.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "PE-2"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1375,7 +1499,9 @@
     "discussion": "A facility can include one or more physical locations containing systems or system components that process, store, or transmit CUI. Physical access monitoring includes publicly accessible areas within organizational facilities. Examples of physical access monitoring include guards, video surveillance equipment (i.e., cameras), and sensor devices. Reviewing physical access logs can help to identify suspicious activities, anomalous events, or potential threats. The reviews can be supported by audit logging controls if the access logs are part of an automated system. Incident response capabilities include investigations of physical security incidents and responses to those incidents. Incidents include security violations or suspicious physical access activities, such as access outside of normal work hours, repeated access to areas not normally accessed, access for unusual lengths of time, and out-of-sequence access.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "PE-6"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1397,7 +1523,9 @@
     "discussion": "Alternate work sites include the private residences of employees or other facilities designated by the organization. Alternate work sites can provide readily available alternate locations during contingency operations. Organizations can define different security requirements for specific alternate work sites or types of sites, depending on the work-related activities conducted at the sites. Assessing the effectiveness of the requirements and providing a means to communicate incidents at alternate work sites supports the contingency planning activities of organizations.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "PE-17"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1419,7 +1547,9 @@
     "discussion": "This requirement addresses physical locations containing systems or system components that process, store, or transmit CUI. Organizations determine the types of guards needed, including professional security staff or administrative staff. Physical access devices include keys, locks, combinations, biometric readers, and card readers. Physical access control systems comply with applicable laws, Executive Orders, directives, policies, regulations, standards, and guidelines. Organizations have flexibility in the types of audit logs employed. Audit logs can be procedural, automated, or some combination thereof. Physical access points can include exterior access points, interior access points to systems that require supplemental access controls, or both. Physical access control applies to employees and visitors. Individuals with permanent physical access authorizations are not considered visitors. Controlling physical access to output devices includes placing output devices in locked rooms or other secured areas with keypad or card reader access controls and only allowing access to authorized individuals, placing output devices in locations that can be monitored by personnel, installing monitor or screen filters, and using headphones. Examples of output devices include monitors, printers, scanners, facsimile machines, audio devices, and copiers.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "PE-3, PE-5"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1441,7 +1571,9 @@
     "discussion": "Safeguarding measures applied to system distribution and transmission lines prevent accidental damage, disruption, and physical tampering. Such measures may also be necessary to prevent eavesdropping or the modification of unencrypted transmissions. Safeguarding measures used to control physical access to system distribution and transmission lines include disconnected or locked spare jacks, locked wiring closets, cabling protection with conduit or cable trays, and wiretapping sensors.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "PE-4"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1463,7 +1595,9 @@
     "discussion": "Establishing the system boundary is a prerequisite to assessing the risk of the unauthorized disclosure of CUI. Risk assessments consider threats, vulnerabilities, likelihood, and adverse impacts to organizational operations and assets based on the operation and use of the system and the unauthorized disclosure of CUI. Risk assessments also consider risks from external parties (e.g., contractors operating systems on behalf of the organization, service providers, individuals accessing systems, and outsourcing entities). Risk assessments can be conducted at the organization level, the mission or business process level, or the system level and at any phase in the system development life cycle. Risk assessments include supply chain-related risks associated with suppliers or contractors and the system, system component, or system service that they provide.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "RA-3, RA-3(1), SR-6"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1485,7 +1619,9 @@
     "discussion": "Organizations determine the required vulnerability scanning for system components and ensure that potential sources of vulnerabilities (e.g., networked printers, scanners, and copiers) are not overlooked. Vulnerability analyses for custom software may require additional approaches, such as static analysis, dynamic analysis, or binary analysis. Organizations can use these approaches in source code reviews and tools (e.g., static analysis tools, web-based application scanners, binary analyzers). Vulnerability scanning includes scanning for patch levels; scanning for functions, ports, protocols, and services that should not be accessible to users or devices; and scanning for improperly configured or incorrectly operating flow control mechanisms. To facilitate interoperability, organizations consider using scanning tools that express vulnerabilities in the Common Vulnerabilities and Exposures (CVE) naming convention. Sources for vulnerability information also include the Common Weakness Enumeration (CWE) listing, the National Vulnerability Database (NVD), and the Common Vulnerability Scoring System (CVSS).",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "RA-5, RA-5(2)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1507,7 +1643,9 @@
     "discussion": "This requirement addresses the need to determine an appropriate response to risk before generating a plan of action and milestones (POAM) entry. It may be possible to mitigate the risk immediately so that a POAM entry is not needed. However, a POAM entry is generated if the risk response is to mitigate the identified risk and the mitigation cannot be completed immediately.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "RA-7"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1529,7 +1667,9 @@
     "discussion": "By assessing the security requirements, organizations determine whether the necessary safeguards and countermeasures are implemented correctly, operating as intended, and producing the desired outcome. Security assessments identify weaknesses in the system and provide the essential information needed to make risk-based decisions. Security assessment reports document assessment results in sufficient detail as deemed necessary by the organization to determine the accuracy and completeness of the reports. Security assessment results are provided to the individuals or roles appropriate for the types of assessments being conducted.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "CA-2"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1551,7 +1691,9 @@
     "discussion": "Plans of action and milestones (POAMs) are important documents in organizational security programs. Organizations use POAMs to describe how unsatisfied security requirements will be met and how planned mitigations will be implemented. Organizations can document system security plans and POAMs as separate or combined documents in any format. Federal agencies may consider system security plans and POAMs as inputs to risk-based decisions on whether to process, store, or transmit CUI on a system hosted by a nonfederal organization.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "CA-5"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1573,7 +1715,9 @@
     "discussion": "Continuous monitoring at the system level facilitates ongoing awareness of the system security posture to support risk management decisions. The terms continuous and ongoing imply that organizations assess and monitor their systems at a frequency that is sufficient to support risk-based decisions. Different types of security requirements may require different monitoring frequencies.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "CA-7"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1595,7 +1739,9 @@
     "discussion": "Information exchange applies to information exchanges between two or more systems, both internal and external to the organization. Organizations consider the risks related to new or increased threats that may be introduced when systems exchange information with other systems that may have different security requirements or policies. The types of agreements selected are based on factors such as the relationship between the organizations exchanging information (e.g., government to government, business to business, government to business, government or business, or government or business to individual) and the level of access to the organizational system by users of the other system. The types of agreements can include information exchange security agreements, interconnection security agreements, memoranda of understanding or agreement, service-level agreements, or other types of agreements. Organizations may incorporate agreement information into formal contracts, especially for information exchanges established between federal agencies and nonfederal organizations (e.g., service providers, contractors, system developers, and system integrators). The types of information contained in exchange agreements include the interface characteristics, security requirements, controls, and responsibilities for each system.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "CA-3"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1617,7 +1763,9 @@
     "discussion": "Managed interfaces include gateways, routers, firewalls, network-based malicious code analysis, virtualization systems, and encrypted tunnels implemented within a security architecture. Subnetworks that are either physically or logically separated from internal networks are referred to as demilitarized zones or DMZs. Restricting or prohibiting interfaces within organizational systems includes restricting external web traffic to designated web servers within managed interfaces, prohibiting external traffic that appears to be spoofing internal addresses, and prohibiting internal traffic that appears to be spoofing external addresses.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SC-7"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1639,7 +1787,9 @@
     "discussion": "Preventing unauthorized and unintended information transfer via shared system resources stops information produced by the actions of prior users or roles (or actions of processes acting on behalf of prior users or roles) from being available to current users or roles (or current processes acting on behalf of current users or roles) that obtain access to shared system resources after those resources have been released back to the system. Information in shared system resources also applies to encrypted representations of information. In other contexts, the control of information in shared system resources is referred to as object reuse and residual information protection. Information in shared system resources does not address information remanence, which refers to the residual representation of data that has been nominally deleted, covert channels (including storage and timing channels) in which shared system resources are manipulated to violate information flow restrictions, or components within systems for which there are only single users or roles.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SC-4"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1661,7 +1811,9 @@
     "discussion": "This requirement applies to inbound and outbound network communications traffic at the system boundary and at identified points within the system. A deny-all, allow-by-exception network communications traffic policy ensures that only essential and approved connections are allowed.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SC-7(5)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1683,7 +1835,9 @@
     "discussion": "This requirement applies to internal and external networks and any system components that can transmit CUI, including servers, notebook computers, desktop computers, mobile devices, printers, copiers, scanners, facsimile machines, and radios. Unprotected communication paths are susceptible to interception and modification. Encryption protects CUI from unauthorized disclosure during transmission and while in storage. Cryptographic mechanisms that protect the confidentiality of CUI during transmission include TLS and IPsec. Information in storage (i.e., information at rest) refers to the state of CUI when it is not in process or in transit and resides on internal or external storage devices, storage area network devices, and databases. Protecting CUI in storage does not focus on the type of storage device or the frequency of access to that device but rather on the state of the information. This requirement relates to [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.13.11) 03.13.11.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SC-8, SC-8(1), SC-28, SC-28(1)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1705,7 +1859,9 @@
     "discussion": "This requirement applies to internal and external networks. Terminating network connections associated with communications sessions includes deallocating TCP/IP addresses or port pairs at the operating system level or deallocating networking assignments at the application level if multiple application sessions are using a single network connection. Time periods of inactivity may be established by organizations and include time periods by type of network access or for specific network accesses.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SC-10"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1727,7 +1883,9 @@
     "discussion": "Cryptographic keys can be established and managed using either manual procedures or automated mechanisms supported by manual procedures. Organizations satisfy key establishment and management requirements in accordance with applicable federal laws, Executive Orders, policies, directives, regulations, and standards that specify appropriate options, levels, and parameters. This requirement is related to [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.13.11) 03.13.11.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SC-12"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1749,7 +1907,9 @@
     "discussion": "Cryptography is implemented in accordance with applicable laws, Executive Orders, directives, regulations, policies, standards, and guidelines. FIPS-validated cryptography is recommended for the protection of CUI.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SC-13"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1771,7 +1931,9 @@
     "discussion": "Collaborative computing devices include white boards, microphones, and cameras. Notebook computers, smartphones, display monitors, and tablets containing cameras and microphones are considered part of collaborative computing devices when conferencing software is in use. Indication of use includes notifying users (e.g., a pop-up menu stating that recording is in progress or that the microphone has been turned on) when collaborative computing devices are activated. Dedicated video conferencing systems, which typically rely on one of the participants calling or connecting to the other party to activate the video conference, are excluded. Solutions to prevent device usage include webcam covers and buttons to disable microphones.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SC-15"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1793,7 +1955,9 @@
     "discussion": "Mobile code includes software programs or parts of programs that are obtained from remote systems, transmitted across a network, and executed on a local system without explicit installation or execution by the recipient. Decisions regarding the use of mobile code are based on the potential for the code to cause damage to the system if used maliciously. Mobile code technologies include Java applets, JavaScript, HTML5, VBScript, and WebGL. Usage restrictions and implementation guidelines apply to the selection and use of mobile code installed on servers and downloaded and executed on individual workstations and devices, including notebook computers, smart phones, and smart devices. Mobile code policies and procedures address the actions taken to prevent the development, acquisition, and use of unacceptable mobile code within the system, including requiring mobile code to be digitally signed by a trusted source.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SC-18"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1815,7 +1979,9 @@
     "discussion": "Protecting session authenticity addresses communications protection at the session level, not at the packet level. Such protection establishes grounds for confidence at both ends of the communications sessions in the ongoing identities of other parties and the validity of the transmitted information. Authenticity protection includes protecting against adversary-in-the-middle attacks, session hijacking, and the insertion of false information into sessions.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SC-23"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1837,7 +2003,9 @@
     "discussion": "Organizations identify systems that are affected by announced software and firmware flaws, including potential vulnerabilities that result from those flaws, and report this information to designated personnel with information security responsibilities. Security-relevant updates include patches, service packs, hot fixes, and anti-virus signatures. Organizations address the flaws discovered during security assessments, continuous monitoring, incident response activities, and system error handling. Organizations can take advantage of available resources (e.g., CWE or CVE databases) when remediating system flaws. Organization-defined time periods for updating security-relevant software and firmware may vary based on a variety of factors, including the criticality of the update (i.e., severity of the vulnerability related to the discovered flaw). Some types of flaw remediation may require more testing than other types.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SI-2"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1859,7 +2027,9 @@
     "discussion": "Malicious code insertions occur through the exploitation of system vulnerabilities. Malicious code can be inserted into the system in a variety of ways, including email, the internet, and portable storage devices. Malicious code includes viruses, worms, Trojan horses, and spyware. Malicious code can be encoded in various formats, contained in compressed or hidden files, or hidden in files using techniques such as steganography. Malicious code may be present in commercial off-the-shelf software and custom-built software and could include logic bombs, backdoors, and other types of attacks that could affect organizational mission and business functions. Periodic scans of the system and real-time scans of files from external sources as files are downloaded, opened, or executed can detect malicious code. Malicious code protection mechanisms can also monitor systems for anomalous or unexpected behaviors and take appropriate actions. Malicious code protection mechanisms include signature- and non-signature-based technologies. Non-signature-based detection mechanisms include artificial intelligence techniques that use heuristics to detect, analyze, and describe the characteristics or behavior of malicious code and to provide controls against such code for which signatures do not yet exist or for which existing signatures may not be effective. Malicious code for which active signatures do not yet exist or may be ineffective includes polymorphic malicious code (i.e., code that changes signatures when it replicates). Non-signature-based mechanisms include reputation-based technologies. Pervasive configuration management, anti-exploitation software, and software integrity controls may also be effective in preventing unauthorized code execution. If malicious code cannot be detected by detection methods or technologies, organizations can rely on secure coding practices, configuration management and control, trusted procurement processes, and monitoring practices to help ensure that the software only performs intended functions. Organizations may determine that different actions are warranted in response to the detection of malicious code. For example, organizations can define actions to be taken in response to the detection of malicious code during scans, malicious downloads, or malicious activity when attempting to open or execute files.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SI-3"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1881,7 +2051,9 @@
     "discussion": "There are many publicly available sources of system security alerts and advisories. The Department of Homeland Security\u2019s Cybersecurity and Infrastructure Security Agency (CISA), the National Security Agency (NSA), and the Federal Bureau of Investigation (FBI) generate security alerts and advisories to maintain situational awareness across the Federal Government and in nonfederal organizations. Software vendors, subscription services, and industry Information Sharing and Analysis Centers (ISACs) may also provide security alerts and advisories. Compliance with security directives is essential due to the critical nature of many of these directives and the potential immediate adverse effects on organizational operations and assets, individuals, other organizations, and the Nation should the directives not be implemented in a timely manner.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SI-5"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1903,7 +2075,9 @@
     "discussion": "System monitoring involves external and internal monitoring. Internal monitoring includes the observation of events that occur within the system. External monitoring includes the observation of events that occur at the system boundary. Organizations can monitor the system by observing audit record activities in real time or by observing other system aspects, such as access patterns, characteristics of access, and other actions. The monitoring objectives may guide determination of the events. A system monitoring capability is achieved through a variety of tools and techniques (e.g., audit record monitoring software, intrusion detection systems, intrusion prevention systems, malicious code protection software, scanning tools, network monitoring software). Strategic locations for monitoring devices include selected perimeter locations and near server farms that support critical applications with such devices being employed at managed system interfaces. The granularity of monitoring the information collected is based on organizational monitoring objectives and the capability of the system to support such objectives. Systems connections can be network, remote, or local. A network connection is any connection with a device that communicates through a network (e.g., local area network, the internet). A remote connection is any connection with a device that communicates through an external network (e.g., the internet). Network, remote, and local connections can be either wired or wireless. Unusual or unauthorized activities or conditions related to inbound and outbound communications traffic include internal traffic that indicates the presence of malicious code in the system or propagating among system components, the unauthorized export of information, or signaling to external systems. Evidence of malicious code is used to identify a potentially compromised system. System monitoring requirements, including the need for types of system monitoring, may be referenced in other requirements.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SI-4, SI-4(4)"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1925,7 +2099,9 @@
     "discussion": "Federal agencies consider data retention requirements for nonfederal organizations. Retaining CUI on nonfederal systems after contracts or agreements have concluded increases the attack surface for those systems and the risk of the information being compromised. NARA provides federal policy and guidance on records retention and schedules.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SI-12"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1947,7 +2123,9 @@
     "discussion": "This requirement addresses policies and procedures for the protection of CUI. Policies and procedures contribute to security assurance and should address each family of the CUI security requirements. Policies can be included as part of the organizational security policy or be represented by separate policies that address each family of security requirements. Procedures describe how policies are implemented and can be directed at the individual or role that is the object of the procedure. Procedures can be documented in system security plans or in one or more separate documents.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "AC-1, AT-1, AU-1, CA-1, CM-1, IA-1, IR-1, MA-1, MP-1, PE-1, PL-1, PS-1, RA-1, SA-1, SC-1, SI-1, SR-1"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1969,7 +2147,9 @@
     "discussion": "System security plans provide key characteristics of the system that is processing, storing, and transmitting CUI and how the system and information are protected. System security plans contain sufficient information to enable a design and implementation that are unambiguously compliant with the intent of the plans and the subsequent determinations of risk if the plan is implemented as intended. System security plans can be a collection of documents, including documents that already exist. Effective system security plans reference policies, procedures, and documents (e.g., design specifications) that provide additional detailed information. This reduces the documentation requirements associated with security programs and maintains security information in other established management or operational areas related to enterprise architecture, the system development life cycle, systems engineering, and acquisition.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "PL-2"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -1991,7 +2171,9 @@
     "discussion": "Rules of behavior represent a type of access agreement for system users. Organizations consider rules of behavior for the handling of CUI based on individual user roles and responsibilities and differentiate between rules that apply to privileged users and rules that apply to general users.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "PL-4"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -2013,7 +2195,9 @@
     "discussion": "Organizations apply systems security engineering principles to new development systems. For legacy systems, organizations apply systems security engineering principles to system modifications to the extent feasible, given the current state of hardware, software, and firmware components. The application of systems security engineering principles helps to develop trustworthy, secure, and resilient systems and reduce the susceptibility of organizations to disruptions, hazards, and threats. Examples include developing layered protections; establishing security policies, architectures, and controls as the foundation for system design; incorporating security requirements into the system development life cycle; delineating physical and logical security boundaries; ensuring that developers are trained on how to build trustworthy secure software; and performing threat modeling to identify use cases, threat agents, attack vectors and patterns, design patterns, and compensating controls needed to mitigate risk. Organizations that apply security engineering principles can facilitate the development of trustworthy, secure systems, system components, and system services; reduce risks to acceptable levels; and make informed risk-management decisions.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SA-8"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -2035,7 +2219,9 @@
     "discussion": "Support for system components includes software patches, firmware updates, replacement parts, and maintenance contracts. An example of unsupported components includes when vendors no longer provide critical software patches or product updates, which can result in opportunities for adversaries to exploit weaknesses or deficiencies in the installed components. Exceptions to replacing unsupported system components include systems that provide critical mission or business capabilities when newer technologies are unavailable or when the systems are so isolated that installing replacement components is not an option. Alternative sources of support address the need to provide continued support for system components that are no longer supported by the original manufacturers, developers, or vendors when such components remain essential to organizational missions and business functions. If necessary, organizations can establish in-house support by developing customized patches for critical software components or obtain the services of external service providers who provide ongoing support for unsupported components through contractual relationships. Such contractual relationships can include open-source software value-added vendors. The increased risk of using unsupported system components can be mitigated by prohibiting the connection of such components to public or uncontrolled networks or implementing other forms of isolation.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SA-22"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -2057,7 +2243,9 @@
     "discussion": "External system services are provided by external service providers. Organizations establish relationships with external service providers in a variety of ways, including through business partnerships, contracts, interagency agreements, lines of business arrangements, licensing agreements, joint ventures, and supply chain exchanges. The responsibility for managing risks from the use of external system services remains with the organization charged with protecting CUI. Service-level agreements define expectations of performance, describe measurable outcomes, and identify remedies, mitigations, and response requirements for instances of noncompliance. Information from external service providers regarding the specific functions, ports, protocols, and services used in the provision of such services can be useful when there is a need to understand the trade-offs involved in restricting certain functions and services or blocking certain ports and protocols. This requirement is related to [](#/cprt/framework/version/SP_800_171_3_0_0/home?element=03.01.20) 03.01.20.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SA-9"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -2079,7 +2267,9 @@
     "discussion": "Dependence on the products, systems, and services of external providers and the nature of the relationships with those providers present an increasing level of risk to an organization. Threat actions that may increase security risks include unauthorized production, the insertion or use of counterfeits, tampering, poor manufacturing and development practices in the supply chain, theft, and the insertion of malicious software, firmware, and hardware. Supply chain risks can be endemic or systemic within a system, component, or service. Managing supply chain risks is a complex, multifaceted undertaking that requires a coordinated effort across an organization to build trust relationships and communicate with internal and external stakeholders. Supply chain risk management (SCRM) activities include identifying and assessing risks, determining appropriate risk response actions, developing SCRM plans to document response actions, and monitoring performance against the plans. The system-level SCRM plan is implementation-specific and provides constraints, policy implementation, requirements, and implications. It can either be stand-alone or incorporated into system security plans. The SCRM plan addresses the management, implementation, and monitoring of SCRM requirements and the development or sustainment of systems across the system development life cycle to support mission and business functions. Because supply chains can differ significantly across and within organizations, SCRM plans are tailored to individual program, organizational, and operational contexts.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SR-2"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -2101,7 +2291,9 @@
     "discussion": "The acquisition process provides an important vehicle for protecting the supply chain. There are many useful tools and techniques available, including obscuring the end use of a system or system component, using blind purchases, requiring tamperevident packaging, or using trusted or controlled distribution. The results from a supply chain risk assessment can inform the strategies, tools, and methods that are most applicable to the situation. Tools and techniques may provide protections against unauthorized production, theft, tampering, the insertion of counterfeits, the insertion of malicious software or backdoors, and poor development practices throughout the system life cycle. Organizations also consider providing incentives for suppliers to implement safeguards, promote transparency in their processes and security practices, provide contract language that addresses the prohibition of tainted or counterfeit components, and restrict purchases from untrustworthy suppliers. Organizations consider providing training, education, and awareness programs for personnel regarding supply chain risks, available mitigation strategies, and when the programs should be employed. Methods for reviewing and protecting development plans, documentation, and evidence are commensurate with the security requirements of the organization. Contracts may specify documentation protection requirements.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SR-5"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",
@@ -2123,7 +2315,9 @@
     "discussion": "Supply chain elements include organizations, entities, or tools that are employed for the research, development, design, manufacturing, acquisition, delivery, integration, operations, maintenance, and disposal of systems and system components. Supply chain processes include hardware, software, firmware, and systems development processes; shipping and handling procedures; physical security programs; personnel security programs; configuration management tools, techniques, and measures to maintain provenance; or other programs, processes, or procedures associated with the development, acquisition, maintenance, and disposal of systems and system components. Supply chain elements and processes are provided by organizations, system integrators, or external service providers. Weaknesses or deficiencies in supply chain elements or processes represent potential vulnerabilities that can be exploited by adversaries to harm the organization and affect its ability to carry out its core missions or business functions.",
     "enhancements": [],
     "related_controls": [],
-    "source_crosswalk": {},
+    "source_crosswalk": {
+      "nist-800-53": "SR-3"
+    },
     "source_path": "https://raw.githubusercontent.com/usnistgov/oscal-content/v1.5.0/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json",
     "parameter_values": {},
     "additional_requirements": "",

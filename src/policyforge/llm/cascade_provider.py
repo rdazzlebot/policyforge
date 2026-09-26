@@ -88,21 +88,61 @@ class CascadeProvider(LLMProvider):
             "temperature": temperature,
             **kwargs,
         }
-        return self._run(lambda half: half.generate(**request))
+        return self._run(lambda half: half.generate(**request), max_tokens=max_tokens)
 
-    def _run(self, call):
+    def _run(self, call, *, max_tokens: int | None = None):
         """`call(primary)`, then `call(escalate_to)` on a recoverable failure."""
         self.primary_calls += 1
         try:
             return call(self._primary)
-        except self._escalate_on:
+        except self._escalate_on as exc:
             self.escalations += 1
+            failed = exc
+
+        # **The primary's attempts were billed** (#343). Its exhaustion is
+        # caught here, so it never reaches the ledger as an exception: the
+        # hop to the stronger model is announced before it is sent, like any
+        # re-send (#361), which keeps the primary's last billed attempt in
+        # this call's `escalations`; and its cost is added to what the call
+        # returns or raises, so the row's cost is everything the call billed.
+        billed = getattr(failed, "cost_usd", None)
+        if getattr(failed, "request_id", None) is not None or billed is not None:
+            from . import escalation
+
+            escalation.announce(
+                model=getattr(self._escalate_to, "model", "?"),
+                first_max_tokens=getattr(failed, "max_tokens", None) or 0,
+                max_tokens=max_tokens or getattr(failed, "max_tokens", None) or 0,
+                input_tokens=getattr(failed, "input_tokens", None),
+                first_request_id=getattr(failed, "request_id", None),
+                first_cost_usd=getattr(failed, "last_cost_usd", None),
+                first_output_tokens=getattr(failed, "output_tokens", None),
+                first_stop_reason="length",
+                first_model=getattr(self._primary, "model", None),
+            )
 
         # Outside the `except` so that a failure of the stronger model is
         # reported on its own terms rather than chained to the first one.
         # "Pro also ran out of room" is the useful message; "Pro failed
         # while handling Flash failing" buries it.
-        return call(self._escalate_to)
+        #
+        # A cost of None means "billed, amount unknown" (a provider that
+        # reports no cost), so the sum stays None rather than becoming the
+        # known part presented as the whole. The known parts are not lost:
+        # each billed attempt is in the row's `escalations` (1d on #378). An
+        # exception with no `cost_usd` at all never reached a bill we can see.
+        try:
+            response = call(self._escalate_to)
+        except Exception as second:
+            if billed is not None:
+                if not hasattr(second, "cost_usd"):
+                    second.cost_usd = billed
+                elif second.cost_usd is not None:
+                    second.cost_usd += billed
+            raise
+        if billed is not None and response.cost_usd is not None:
+            response.cost_usd += billed
+        return response
 
     # ---- capabilities: a flag is true only when both halves honour it ----
     #

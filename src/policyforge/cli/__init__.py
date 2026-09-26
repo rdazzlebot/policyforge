@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import click
 
+from policyforge.child_output import UndecodableOutput
 from policyforge.config import load_config
 from policyforge.llm.base import EmptyReply, ProviderRejected, TruncatedResponse, get_provider
 
@@ -41,12 +42,17 @@ class _Group(click.Group):
     than the day somebody notices its traceback. Every writer runs its model
     calls before its file writes, so nothing partial is on disk when this
     fires; `tests/test_truncation.py` holds the writers to that.
+
+    `UndecodableOutput` is the same kind of refusal (#287): a child wrote
+    bytes that are not UTF-8 where the output is data, and the message names
+    the site, the command and the byte. It reached the user as a traceback
+    with that message at the bottom until 1d measured it on #294.
     """
 
     def invoke(self, ctx):
         try:
             return super().invoke(ctx)
-        except (TruncatedResponse, EmptyReply, ProviderRejected) as exc:
+        except (TruncatedResponse, EmptyReply, ProviderRejected, UndecodableOutput) as exc:
             raise click.ClickException(str(exc)) from exc
 
 

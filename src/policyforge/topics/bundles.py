@@ -31,13 +31,11 @@ the three they are being shown, so `Route` travels with every answer.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 
 from policyforge.mapping.crosswalk import normalize_framework
+from policyforge.topics.coverage import parent_of
 from policyforge.topics.registry import Topic
-
-_ENHANCEMENT_RE = re.compile(r"^([A-Z]{2}-\d+)\(\d+\)$")
 
 #: Anchored by name. The strongest claim: somebody wrote this control id
 #: into the registry against this topic.
@@ -54,19 +52,15 @@ CROSSWALKED = "crosswalked"
 ROUTE_NOTES = {
     DIRECT: "anchored directly by this topic",
     INHERITED: (
-        "inherited — the parent control is anchored, and anchoring a control "
-        "claims its enhancements"
+        "inherited — the parent is anchored, and anchoring an item claims what "
+        "sits beneath it: a control's enhancements, or an AI RMF category's "
+        "subcategories"
     ),
     CROSSWALKED: (
         "reached through the published crosswalk from an anchored NIST control, "
         "not written down as this requirement"
     ),
 }
-
-
-def _parent_of(requirement_id: str) -> str | None:
-    match = _ENHANCEMENT_RE.match(requirement_id)
-    return match.group(1) if match else None
 
 
 @dataclass
@@ -172,7 +166,8 @@ class TeamBundle:
                 lines.append("      no published documents")
         lines += [
             "",
-            f"{len(direct)} anchored directly, {len(inherited)} inherited from a parent control.",
+            f"{len(direct)} anchored directly, {len(inherited)} inherited from an anchored "
+            "parent (a control, or an AI RMF category).",
         ]
 
         if self.frameworks:
@@ -272,7 +267,7 @@ def _claims_for(
     specifically-anchored enhancement can sit with a different team than its
     parent without either being reported as contested.
     """
-    parent = _parent_of(requirement_id)
+    parent = parent_of(requirement_id)
     direct, inherited = [], []
     for topic in topics:
         anchors = [a for a in topic.nist_controls if a in catalog_ids]

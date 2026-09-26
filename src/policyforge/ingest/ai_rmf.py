@@ -61,7 +61,10 @@ FRAMEWORK_VERSION = "1.0"
 #: silently skipped by a hard-coded list.
 FUNCTIONS = ("Govern", "Map", "Measure", "Manage")
 
-#: The Core's shape at revision 1.0, which this catalog is pinned to.
+#: **The Core's expected shape is PINNED IN THE CATALOG, not here** (#189):
+#: `shape:` in `data/frameworks/nist-ai-rmf/framework.yaml`, beside the
+#: revision's other pins (`source_ref`, `content_sha256`), so a new revision
+#: is a data edit plus a README update rather than a code change.
 #:
 #: **Parsing MORE than NIST publishes is as much a defect as parsing
 #: fewer**, and the structural checks do not catch it: contiguity accepts
@@ -74,7 +77,45 @@ FUNCTIONS = ("Govern", "Map", "Measure", "Manage")
 #: and **both need a person**: the first is a parser bug, the second means
 #: this catalog's pin, its README and its provenance stamp are all stale.
 #: Neither should be absorbed silently by a loader.
-EXPECTED_SHAPE = (19, 72)
+#:
+#: **The ETL cannot rewrite it.** `provenance.record_source_provenance` owns
+#: only `PROVENANCE_KEYS` and preserves every other key untouched, so a
+#: re-run leaves `shape:` as a person wrote it -- a guard updated by the run
+#: it guards would be "warn and proceed" in disguise.
+SHAPE_KEY = "shape"
+
+
+def expected_shape(framework_yaml) -> tuple[int, int]:
+    """(categories, subcategories) as pinned in a catalog's `framework.yaml`.
+
+    Refuses, loudly, when the pin is missing or malformed: a parse with no
+    expected shape would accept any shape, and that is the failure the pin
+    exists to prevent.
+    """
+    from pathlib import Path
+
+    import yaml
+
+    path = Path(framework_yaml)
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else None
+    pin = (data or {}).get(SHAPE_KEY) if isinstance(data, dict) else None
+    if not isinstance(pin, dict):
+        raise AiRmfParseError(
+            f"no `{SHAPE_KEY}:` pin in {path}. The AI RMF catalog's expected shape "
+            "lives there (categories, subcategories); without it a parse of any size "
+            "would be accepted."
+        )
+    categories, subcategories = pin.get("categories"), pin.get("subcategories")
+    if not all(
+        isinstance(n, int) and not isinstance(n, bool) and n > 0
+        for n in (categories, subcategories)
+    ):
+        raise AiRmfParseError(
+            f"`{SHAPE_KEY}:` in {path} must give positive integer `categories` and "
+            f"`subcategories`; it reads {pin!r}."
+        )
+    return categories, subcategories
+
 
 #: Abbreviations NIST uses in the Playbook and in its own crosswalks.
 _FUNCTION_ABBR = {"Govern": "GV", "Map": "MP", "Measure": "MS", "Manage": "MG"}
@@ -173,7 +214,7 @@ def _sort_key(row: _Row) -> list[int]:
     return [FUNCTIONS.index(function), *(int(part) for part in number.split("."))]
 
 
-def parse_ai_rmf(html: str) -> list[Control]:
+def parse_ai_rmf(html: str, *, expected_shape: tuple[int, int]) -> list[Control]:
     """Parse AIRC's Core page into one Control per category.
 
     **A category is the Control and its subcategories are the
@@ -230,11 +271,11 @@ def parse_ai_rmf(html: str) -> list[Control]:
             )
 
     shape = (len(categories), len(subcategories))
-    if shape != EXPECTED_SHAPE:
+    if shape != tuple(expected_shape):
         raise AiRmfParseError(
             f"the Core parsed to {shape[0]} categories and {shape[1]} "
-            f"subcategories; revision {FRAMEWORK_VERSION} has "
-            f"{EXPECTED_SHAPE[0]} and {EXPECTED_SHAPE[1]}. Either the page "
+            f"subcategories; revision {FRAMEWORK_VERSION} is pinned at "
+            f"{expected_shape[0]} and {expected_shape[1]} (framework.yaml). Either the page "
             f"changed shape, or NIST has revised the Framework -- in which "
             f"case this catalog's pin, README and provenance stamp are all "
             f"stale and a person has to say so."

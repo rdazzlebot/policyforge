@@ -287,7 +287,21 @@ def call_messages_api(
     # call in eight on a 12-token budget: intermittent, invisible, and
     # wrong. So a truncation before any text is retried with room to speak.
     if not text and getattr(response, "stop_reason", "") == "max_tokens":
-        response = _create(max_tokens=max(max_tokens * 8, MIN_RETRY_TOKENS))
+        from . import escalation
+
+        second = max(max_tokens * 8, MIN_RETRY_TOKENS)
+        first_usage = getattr(response, "usage", None)
+        # Said before it is sent, and kept for this call's ledger row (#361).
+        escalation.announce(
+            model=model,
+            first_max_tokens=max_tokens,
+            max_tokens=second,
+            input_tokens=getattr(first_usage, "input_tokens", None),
+            first_request_id=getattr(response, "_request_id", None),
+            first_output_tokens=getattr(first_usage, "output_tokens", None),
+            first_stop_reason=getattr(response, "stop_reason", None),
+        )
+        response = _create(max_tokens=second)
         text = _text_of(response)
 
     usage = response.usage

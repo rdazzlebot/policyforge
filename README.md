@@ -25,9 +25,9 @@ were run start to finish on a clean directory: two model calls, $0.0070 and
 about 90 seconds on `openrouter/z-ai/glm-5.3-flash`.
 
 ```bash
-brew install rdazzlebot/tap/policyforge
+brew install rdazzleman/tap/policyforge
 # or, without Homebrew:
-# pipx install git+https://github.com/rdazzlebot/policyforge@v1.6.0
+# pipx install git+https://github.com/rdazzleman/policyforge@v1.6.0
 
 policyforge init my-policies && cd my-policies
 
@@ -105,13 +105,13 @@ any good.
 ### Installing the command (macOS and Linux)
 
 ```bash
-brew install rdazzlebot/tap/policyforge
+brew install rdazzleman/tap/policyforge
 ```
 
 That installs the `policyforge` command from the
-[rdazzlebot/homebrew-tap](https://github.com/rdazzlebot/homebrew-tap) tap,
+[rdazzleman/homebrew-tap](https://github.com/rdazzleman/homebrew-tap) tap,
 with the core providers; the optional extras (`bedrock`, `vertex`, `litellm`,
-`mcp`) are not included. Without Homebrew, `pipx install git+https://github.com/rdazzlebot/policyforge@v1.6.0` does the same, and
+`mcp`) are not included. Without Homebrew, `pipx install git+https://github.com/rdazzleman/policyforge@v1.6.0` does the same, and
 takes extras as `policyforge[mcp] @ git+…`.
 
 An installed command has no clone around it, and every command reads
@@ -1701,10 +1701,12 @@ in an open repo. Treat them differently:
 | **FedRAMP**                           | US federal government work — public domain                                                                                        | Bundled directly in `data/frameworks/fedramp/`, sourced from the `FedRAMP/rules` consolidated rules dataset via `policyforge etl-fedramp`. Control tailoring only — FedRAMP publishes no machine-readable baseline any more                                                                                                                                                                                                                                                                                                                                              |
 | **ARC-AMPE**                          | Published by CMS (federal agency) — public domain                                                                                 | Bundled directly in `data/frameworks/arc-ampe/`, sourced from CMS's published Volume II SSPP workbook via `policyforge etl-arc-ampe`. The Direct Enrollment Entity baseline is zONE-gated, so it is BYOC via `--export`                                                                                                                                                                                                                                                                                                                                                  |
 | **HIPAA Security Rule**               | US federal regulation (45 CFR 164 Subpart C) — public domain                                                                      | Bundled directly in `data/frameworks/hipaa-security-rule/`, sourced from eCFR's public API via `policyforge etl-hipaa`, with NIST's official 800-53 crosswalk attached via `policyforge etl-hipaa-crosswalk`                                                                                                                                                                                                                                                                                                                                                             |
+| **ONC certification criteria**        | US federal regulation (45 CFR 170.315) — public domain                                                                            | Bundled directly in `data/frameworks/cfr-170-315-onc-certification/`, sourced from eCFR's public API via `policyforge etl-onc`. **59 live criteria**, one criterion one control, cited as `170.315(g)(10)`. A certification criterion says what a product must be able to do, not what your organization runs. Shipped once with fabricated criteria and withdrawn; this version is refused unless its criteria equal a set two independent sources agree on. Read its README                                                                                            |
 | **Information blocking**              | US federal regulation (45 CFR Part 171) — public domain                                                                           | Bundled directly in `data/frameworks/cfr-171-information-blocking/`, sourced from eCFR's public API via `policyforge etl-info-blocking`. **Not a control catalog** — it states the conditions under which a practice is *not* information blocking, so an entry is a condition of an exception rather than a safeguard. No crosswalk, deliberately: read its README before citing it                                                                                                                                                                                     |
 | **SUD patient records**               | US federal regulation (42 CFR Part 2) — public domain                                                                             | Bundled directly in `data/frameworks/cfr-42-part-2-sud-records/`, sourced from eCFR's public API via `policyforge etl-part2`. **Two of the part's 38 sections**, § 2.16 and § 2.19 — the rest is conduct (when a disclosure is permitted, what a court must find), and citing a conduct rule as a control asserts a safeguard exists where the regulation says only that a disclosure was lawful. The thinness is deliberate; its README states the test and what it rejected                                                                                            |
 | **NIST SP 800-171 Rev 3**             | US government work — public domain                                                                                                | Bundled directly in `data/frameworks/nist-800-171-r3/`, sourced from NIST's OSCAL edition via `policyforge etl-800-171`. **Rev 3**, which is what NIST publishes machine-readable — CMMC Level 2 currently assesses against R2, a different revision with differently shaped identifiers (`3.1.1` against `03.01.01`). Read its README before citing it for a CMMC assessment                                                                                                                                                                                            |
 | **NIST AI RMF 1.0**                   | US government work — public domain                                                                                                | Bundled directly in `data/frameworks/nist-ai-rmf/`, sourced from NIST's AIRC via `policyforge etl-ai-rmf`. The whole Core — **19 categories carrying 72 subcategories**. **This catalog states outcomes, not obligations**, so a citation to it can be fully traceable and still commit nobody to anything; NIST puts the actions in the separately versioned, voluntary Playbook. There is deliberately no crosswalk — mapping an outcome to a control would assert the control achieves the outcome, the claim NIST declined to make. Read its README before citing it |
+| **NIST AI RMF Playbook**              | US government work — public domain                                                                                                | Bundled directly in `data/frameworks/nist-ai-rmf-playbook/`, sourced from NIST's AIRC via `policyforge etl-ai-rmf-playbook`. NIST's **suggested actions** for each of the 72 AI RMF subcategories — **459 actions**. **The Playbook is voluntary**: a document may say NIST suggests an action, never that NIST requires it. Pinned to one export by its SHA-256, since NIST publishes no revision number. Carries no outcome wording — each outcome is read from the AI RMF catalog. Read its README before citing it                                                   |
 | **GovRAMP**                           | GovRAMP's Terms & Conditions claim ownership of "documents, downloadable files" on their site, with no redistribution grant found | **Not bundled.** Treated as bring-your-own-content (BYOC) via `local_content/` until GovRAMP grants explicit permission (worth emailing info@govramp.org — ask before assuming).                                                                                                                                                                                                                                                                                                                                                                                         |
 | **HITRUST AI Security Certification** | Contractually licensed content                                                                                                    | **Never bundled.** An add-on to a CSF assessment, so it is carried alongside `hitrust-csf` rather than instead of it. README-only, and there is no `etl-hitrust-ai` yet — `etl-hitrust` stamps `HITRUST-CSF` on whatever it parses, so it must not be used for an AI export. Read its README before bringing your own                                                                                                                                                                                                                                                    |
 | **HITRUST CSF**                       | Contractually licensed content                                                                                                    | **Never bundled.** BYOC only — you supply your own MyCSF/CSF export under your own license, and it's parsed locally. It is never committed, never uploaded anywhere by this tool, and stays out of git via `.gitignore`.                                                                                                                                                                                                                                                                                                                                                 |
@@ -1770,9 +1772,15 @@ Each catalog directory carries a `framework.yaml` declaring its terms:
 ```yaml
 id: hitrust-csf
 name: HITRUST CSF v11.3
+framework_id: hitrust-csf   # the key crosswalks, coverage and citations file it under
 licence: licensed        # or: public-domain
 source: MyCSF export, 2026-01
 ```
+
+`etl-hitrust` and `etl-govramp` write this file beside the catalog they
+import, if there isn't one yet. Without a `framework_id`, a name is keyed by
+the built-in table or else by its first word, so every unlisted NIST name
+shares `nist`.
 
 `policyforge frameworks` lists what's on disk and where each one stands.
 `policyforge check` fails on licensed content committed to a repo that hasn't

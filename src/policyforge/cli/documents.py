@@ -133,7 +133,12 @@ def synthesize_cmd(
     import json
     import re
 
-    from policyforge.synthesis.merge import build_synthesis_topic, synthesize_topic, write_synthesis
+    from policyforge.synthesis.merge import (
+        build_synthesis_topic,
+        playbook_actions,
+        synthesize_topic,
+        write_synthesis,
+    )
     from policyforge.topics.registry import load_topics
 
     if topic_name and (topic or nist_controls):
@@ -229,6 +234,19 @@ def synthesize_cmd(
         c.framework_id or path.name for c, path in zip(classified, controls_paths, strict=True)
     ]
 
+    from policyforge.mapping.crosswalk import normalize_framework
+
+    playbook = playbook_actions(nist_ids, controls)
+    # Anchors that name an AI RMF Core category or subcategory the loaded
+    # catalogs hold: the case where an empty Playbook block means "not loaded".
+    core_ids = {
+        i
+        for c in controls
+        if normalize_framework(c.framework) == "nist-ai-rmf"
+        for i in (c.control_id, *(e.enhancement_id for e in c.enhancements))
+    }
+    ai_anchored = [i for i in nist_ids if i in core_ids]
+
     with ledger.about(f"synthesis/{slug}", site="synthesize", content_class=content_class):
         result = synthesize_topic(synthesis_topic, provider)
 
@@ -247,9 +265,28 @@ def synthesize_cmd(
             # and classify_path will read this file as the organization's own.
             content_class=content_class,
             derived_from=derived_from,
+            # NIST's suggested actions for the AI RMF subcategories this topic
+            # anchors, in the frontmatter so only the Standard reads them (#301).
+            playbook=playbook,
         ),
     )
     click.echo(f"Synthesized {len(synthesis_topic.controls)} controls for {topic!r} -> {out_path}")
+    # Said, not silent (1d on #359): an empty Playbook block reads the same
+    # whether the topic has no AI RMF anchors or the catalog was not loaded.
+    if playbook:
+        actions = sum(len(entry["actions"]) for entry in playbook)
+        click.echo(
+            f"  NIST AI RMF Playbook: {len(playbook)} subcategories, {actions} suggested "
+            "actions for the Standard"
+        )
+    elif ai_anchored and not any(
+        normalize_framework(c.framework) == "nist-ai-rmf-playbook" for c in controls
+    ):
+        click.echo(
+            f"  Warning: {len(ai_anchored)} AI RMF anchor(s) resolved, but no NIST AI RMF "
+            "Playbook catalog is loaded, so the Standard gets none of NIST's suggested "
+            "actions. Add --controls data/frameworks/nist-ai-rmf-playbook/controls.json."
+        )
     if owner:
         click.echo(f"  Owner: {owner}" + (f" | cadence: {cadence}" if cadence else ""))
     else:
@@ -552,6 +589,7 @@ def generate_cmd(
         owner=str(metadata.get("owner") or ""),
         cadence=str(metadata.get("cadence") or ""),
         evidence=list(metadata.get("evidence") or []),
+        playbook=list(metadata.get("playbook") or []),
     )
     if topic_context.owner:
         click.echo(f"Topic owner from synthesis frontmatter: {topic_context.owner}")
@@ -626,7 +664,19 @@ def generate_cmd(
                 topic=topic_context,
             )
         else:
-            document = generate_standard(topic_synthesis, org, provider, topic=topic_context)
+            from policyforge.generate.playbook_repair import PlaybookRepairFailed
+            from policyforge.org.context import org_actors
+
+            try:
+                document = generate_standard(
+                    topic_synthesis,
+                    org,
+                    provider,
+                    topic=topic_context,
+                    org_actors=org_actors(config),
+                )
+            except PlaybookRepairFailed as exc:
+                raise click.ClickException(str(exc)) from exc
 
     # Fill the role placeholders here rather than trusting the prompt to have
     # done it consistently. Same document plus same config gives the same

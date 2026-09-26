@@ -186,6 +186,11 @@ def test_etl_govramp_refuses_to_write_into_the_bundled_directory(tmp_path):
 
 
 class _NoReport:
+    # The real Summary's interface: etl-hitrust appends the loader's losses
+    # to `warnings` before printing (#266).
+    def __init__(self):
+        self.warnings: list[str] = []
+
     def format_report(self):
         return ""
 
@@ -201,7 +206,8 @@ def _hitrust(monkeypatch, tmp_path, *args):
     export = tmp_path / "hitrust-export.csv"
     export.write_text("placeholder", encoding="utf-8")
     monkeypatch.setattr(
-        "policyforge.ingest.byoc_loader.load_hitrust_export", lambda path, version: []
+        "policyforge.ingest.byoc_loader.load_hitrust_export",
+        lambda path, version, losses=None: [],
     )
     monkeypatch.setattr("policyforge.ingest.hitrust.summarize", lambda controls: _NoReport())
     return CliRunner().invoke(cli_mod.cli, ["etl-hitrust", "--export", str(export), *args])
@@ -868,13 +874,76 @@ def test_import_confluence_writes_markdown_and_records_history(tmp_path, monkeyp
     )
 
     assert result.exit_code == 0
-    assert out_path.read_text(encoding="utf-8").startswith("# Authenticator Management Standard")
+    # The body is the page; the frontmatter records the import (#197).
+    written = out_path.read_text(encoding="utf-8")
+    assert written.startswith("---\nimported_from:\n"), written[:80]
+    assert "\n---\n\n# Authenticator Management Standard\n" in written
 
     from policyforge.history.version_store import load_history
 
     history = load_history(history_dir, "standard/authenticator-mgmt")
     assert len(history) == 1
     assert history[0].source == "confluence-import"
+
+
+def test_an_import_that_drifted_prints_a_history_command_that_runs(tmp_path, monkeypatch):
+    """#310: the drift case is what the command is for, and it crashed.
+
+    `history_hint` passed the integer version numbers to `shlex.quote`, so
+    every import that differed from a recorded version exited 1. The
+    helper's own test passed strings no caller sends. This runs the real
+    command against a real recorded version and then runs the command it
+    printed, so both halves are measured on the user's path.
+    """
+    import re
+    import shlex
+    from pathlib import Path
+
+    import policyforge.export.confluence_importer as importer
+    from policyforge.cli import cli
+    from policyforge.export.confluence_importer import ConfluencePage
+    from policyforge.history.version_store import record_version
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        importer,
+        "fetch_confluence_page",
+        lambda **_: ConfluencePage(
+            id="1",
+            title="Access",
+            version=4,
+            storage_body="<h1>Edited in Confluence</h1>",
+            webui_url="/x",
+        ),
+    )
+    record_version(
+        Path("output/.history"), "standard/access", "# Drafted\n", source="generate", metadata={}
+    )
+    result = CliRunner().invoke(
+        cli,
+        [
+            "import-confluence",
+            "--tier",
+            "standard",
+            "--name",
+            "access",
+            "--space",
+            "ENG",
+            "--title",
+            "Access",
+            "--host",
+            "https://example.atlassian.net/wiki",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Differs from the last recorded version (v1)" in result.output
+
+    printed = re.search(r"Run `policyforge (history [^`]+)`", result.output)
+    assert printed, result.output
+    shown = CliRunner().invoke(cli, shlex.split(printed.group(1)))
+    assert shown.exit_code == 0, shown.output
+    assert "-# Drafted" in shown.output
+    assert "+# Edited in Confluence" in shown.output
 
 
 def test_history_command_lists_and_diffs_versions(tmp_path):

@@ -1,5 +1,1132 @@
 # Changelog
 
+## 1.6.1
+
+**Generated Standards and Procedures now write a NIST AI RMF Playbook action as
+NIST suggesting it, never as a requirement, and `policyforge check` reports
+one that does not as an error.** The Playbook is voluntary, and the
+generation prompts now say so. **The prompt rule reduces this but does not
+stop it**, which is why `policyforge check` reports any Playbook-cited action
+still written as a requirement. A Standard for an AI topic is also
+regenerated or refused when its Playbook sentences would fail the check (see
+the entry on Standards for AI topics in this release). A Procedure is not, so for a Procedure the prompt rule and
+`policyforge check` are the whole safeguard. If your organization adopts a
+suggested action as its own requirement, the document states it in a
+separate sentence without the Playbook tag, and `policyforge check` reports
+that sentence for a person to confirm.
+
+**`policyforge check` can now exit non-zero** on a document with a sentence
+that cites only the Playbook and is not framed as NIST's: its subject must be
+NIST or the Playbook, and it must not say NIST requires or mandates anything.
+Any other wording fails, so an obligation in words nobody anticipated is still
+caught. A sentence whose tag also cites a binding source, such as
+`[NIST 800-53 CM-8 | NIST AI RMF Playbook ...]`, is held to that source's
+rules instead. A correctly worded Playbook sentence is no longer reported as a
+weakened requirement.
+
+**`policyforge check` now reports an invented id in a shortened Playbook
+citation, and the id no longer lets the sentence escape the Playbook check.**
+In `[NIST AI RMF Playbook Govern 1.1 Action 1 | Govern 9.9 Action 1]`, the
+second id names an action NIST never published. It used to make the sentence
+count as citing two frameworks, so "Acme will adopt ..." drew only a warning
+instead of the Playbook error. Now the sentence is still checked as a
+Playbook sentence, and `check` reports `Govern 9.9 Action 1` as an error of
+its own. A part that names another framework, such as `NIST 800-53 AC-2` or
+`HIPAA 164.308(a)(1)`, is still read as that framework's, provided its
+catalog is on disk.
+
+**`policyforge check` now catches an organisation committing inside a Playbook
+sentence.** A sentence citing only the NIST AI RMF Playbook must speak as
+NIST, and "NIST suggests reviewing the inventory, and Acme will adopt it"
+passed, because only the start of the sentence was read. A clause after
+", and", ", but", ", so", a semicolon or a dash is now refused when its
+subject is the organisation: "the organization", "we", "our", "staff", "the
+team" and similar, or the organisation's own name, team names and vendor
+names, read from `org:` in your config. Your own names match as you wrote them,
+so a team called "Security" is caught but the word "security" in a list is not.
+An actor that is none of these is not caught, and the check says so in its
+documentation.
+
+**The Playbook check now judges each item of a colon list.** In
+`policyforge check`, a list introduced by a colon, such as "Acme Health
+must:", was read as one statement, so when one item cited only the NIST AI
+RMF Playbook and another cited NIST SP 800-53, the Playbook item's
+obligation passed unreported. Each item is now checked as the lead-in plus
+that item, against its own citations, and reported at the item's line. A
+lead-in with NIST as its subject, such as "NIST suggests:", still frames
+every item as NIST's suggestion. A list whose items all cite only the
+Playbook was already an error and still is, but is now reported once per
+item instead of once for the list.
+
+**`check` can now see a citation whose identifier contains a dot.** It
+could not before, and the failure was silent: a Standard whose
+requirements were all correctly cited and all written as *"should
+consider"* reported nothing.
+
+`weakened_citations` — the check that catches a cited requirement
+rendered as advice instead of an obligation — **had never fired for
+HIPAA**. The sentence splitter broke at every full stop, including the
+ones inside `164.308(a)(3)(i)`, so the citation became three fragments,
+none of which is a citation.
+
+Counted from the catalogs this release ships rather than estimated: **914
+of 2,434 identifiers contain a dot, and six catalogs are entirely dotted** —
+`hipaa-security-rule`, `cfr-171-information-blocking`,
+`cfr-42-part-2-sud-records`, `nist-800-171-r3`, and the two new in this
+release, `cfr-170-315-onc-certification` and `nist-ai-rmf-playbook`. The
+check worked for 800-53, FedRAMP and ARC-AMPE.
+
+**`nist-ai-rmf` was neither, and it is the case worth understanding**:
+72 of its 91 identifiers contain a dot. Its nineteen categories —
+`Govern 1` through `Manage 4` — the check could always read; all
+seventy-two subcategories beneath them, `Govern 1.1` through
+`Manage 4.3`, it could not. **A catalog where the check fires
+for some citations and not others is the hardest kind to notice**,
+because the check was visibly working the whole time.
+
+**What you will see change.** On a document whose requirements bind
+correctly, nothing — measured on the two generated Standards in
+`docs/probes/`, findings stayed at zero, while the statements the checker
+could see as cited went from 0 to 7 and 0 to 10. On a document that
+hedges a cited requirement, you will now get the finding you should
+always have got.
+
+No command, option or exit code changes.
+
+**`policyforge etl-vault` no longer reports a file count as a control
+count, and no longer exits 0 on a vault it could not read.** It now
+prints `Parsed N of M control note(s)` and fails when any note could not
+be parsed, naming each one.
+
+**The defect it fixes was silent in both directions.** Every field in the
+note parser had a default, so an empty `.md` file became a control whose
+ID was taken from its *filename*, with no title and no statement. Five
+real notes plus two empty files reported `Parsed 7 controls` and exited
+0, and the resulting `controls.json` loaded back without complaint. A
+vault where every note failed was indistinguishable from a vault with no
+notes.
+
+**Whether this changes anything for you.** If every note in your vault
+parses, `etl-vault` exits 0 exactly as before and writes the same file.
+Nothing else changes for you.
+
+**If some note does not parse, the run now fails where it used to
+succeed — and the catalog it was writing was already short.** This is
+the uncomfortable half: you may run 1.6.1 against a vault that has been
+working for months and be told it is incomplete. Nothing got worse. The
+notes that fail today were failing before, silently, and the
+`controls.json` you have been generating has been missing them the whole
+time. The new exit code is the first time anything has said so, and the
+names it prints are the notes to fix.
+
+**An empty `Controls/` directory is now an error rather than a success.**
+`--controls-dir` pointing one level too high, or at a vault that stores
+notes under another extension, produced `Parsed 0 controls` and exit 0.
+
+**Nothing is written unless every note parsed, and this is the part that
+protects a file you already have.** `--out` defaults to a path inside
+`data/frameworks/`, so a mistyped `--controls-dir` used to overwrite a
+good catalog with `[]` before reporting the problem. A run that cannot
+read the whole vault now leaves the previous file exactly as it was and
+names the notes to fix. **A catalog short by ten controls loses the same
+ten as an empty one and looks healthier doing it**, so a partial result
+is discarded rather than committed.
+
+**The FedRAMP loader now refuses a parse that dropped a rule the dataset
+declares.** Every `CTL` entry is either tailored or is not a mapping, and
+the third outcome — silently absent — is no longer possible.
+
+FedRAMP publishes no machine-readable baseline any more, so the
+consolidated rules dataset is the whole of what this catalog can know. A
+short parse produced a tailoring that was internally consistent, every
+entry well-formed, and missing controls FedRAMP requires — with nothing
+else to notice the shortfall against.
+
+Nothing about a correct parse changes: the published dataset reconciles
+exactly, 79 entries tailored of 79 declared.
+
+**Four loaders now refuse a parse that quietly found less than its source
+contains.** `info_blocking`, `hipaa_loader`, `oscal_loader` and `arc_ampe`
+each assert *external extent* — how many entries there should be — in
+addition to the internal consistency they already checked.
+
+**Nothing about a correct catalog changes.** All four parse their current
+sources exactly as before; the new checks raise only where a parse would
+previously have returned a short catalog and said nothing.
+
+**Why this is a class of defect rather than four bugs.** A loader that
+asserts hard about the *shape* of what it found and nothing about
+*whether it found everything* fails in one direction only: it returns
+fewer entries, and every remaining entry is well-formed. No exception,
+no empty result, no malformed id — a catalog that is internally
+consistent, renders correctly, crosswalks correctly, and is missing a
+requirement. Every count a README states about it stays true of the
+catalog as parsed.
+
+**Each check asks the source document, never a constant.** eCFR emits a
+node per section; OSCAL declares its controls in arrays; the ARC-AMPE
+workbook has rows. Both sides of every comparison come from the artefact
+being parsed, so a publisher may extend a framework without anyone
+editing a number here, and there is no expected total to go stale.
+
+The NIST AI RMF remains the deliberate exception: its source is a flat
+HTML table that declares no extent of its own, so there is nothing to
+reconcile against and a pinned shape is the only option left. That is
+documented where the pin lives rather than left as the pattern to copy.
+
+**`import-confluence` no longer crashes when a page has changed.** When the
+imported page differed from the last recorded version of the document, the
+command wrote the file and the history entry, then exited 1 with a
+`TypeError` instead of printing the `policyforge history` command that shows
+what changed. It now exits 0 and prints that command. The printed command
+runs as shown.
+
+**New bundled catalog: the NIST AI RMF Playbook**, NIST's suggested actions for
+each of the 72 subcategories of the AI RMF 1.0 Core. That makes 459 actions,
+cited as `[NIST AI RMF Playbook Govern 1.1 Action 3]`. The AI RMF Core states
+outcomes, not actions, and NIST published its actions separately in the
+Playbook. This catalog lets a document name an action and attribute it to NIST
+without PolicyForge inventing one.
+
+**The Playbook is voluntary.** A document may say NIST suggests an action,
+never that NIST requires it. The catalog's README says so first, in NIST's own
+words. This release enforces it: `policyforge check` reports a Playbook
+action written as a requirement as an error, and a Standard whose Playbook
+sentences fail that check is regenerated or refused.
+
+Fetch it again with `policyforge etl-ai-rmf-playbook`. NIST publishes no
+revision number for the Playbook, so the catalog is pinned to the exact export
+it was built from, and the command refuses any other. The catalog carries no
+outcome wording, because the Playbook's restatement of the outcomes differs
+from the AI RMF 1.0 Core in 30 of the 72 subcategories. Each outcome is read
+from the AI RMF catalog under the same id.
+
+**The ONC certification criteria catalog is back**: 45 CFR 170.315, 59 live
+criteria across 9 categories, cited as `170.315(g)(10)`. Refresh it with
+`policyforge etl-onc`.
+
+The first version was withdrawn before release because it contained
+criteria that do not exist. The regulation's structure lives only in its
+text, where a numbered item three levels inside one criterion looks like the
+next criterion. This version reads the formatting eCFR uses to tell those
+apart. **It also refuses to produce a catalog unless its criteria exactly
+match a list that two independent sources agree on**: ONC's own test-method
+index, and the Federal Register's amendment history applied to CHPL's list of
+every criterion ever used.
+
+Reserved and expired criteria are left out and named on every run.
+`170.315(b)(3)` stays in: it is a live criterion that only opens with a
+reserved sub-paragraph. `170.315(a)(9)` is left out because its own text says
+it expired on 1 January 2025.
+
+A certification criterion describes what a product must be able to do, not
+what your organization runs. The catalog's README explains the difference.
+
+**The NIST SP 800-171 rev 3 catalog now carries NIST's own mapping to
+800-53.** NIST's OSCAL file, the one this catalog is built from, links every
+one of its 97 requirements to the 800-53 controls it was derived from: 157
+links, 114 to controls and 43 to control enhancements. Until now the catalog
+kept none of them, so `/coverage` reported 800-171 as reaching nothing. With
+the example topic registry it now reports 97 of 97 requirements mapping to an
+owned 800-53 control, and `policyforge map` gains 157 800-171 entries across
+155 800-53 controls. The 800-53 coverage figures (1,105 in scope, 905 owned)
+and topic anchoring are unchanged: 800-171 is still reached through 800-53,
+not anchored beside it. `policyforge etl-800-171` now refuses to write the
+catalog unless every link resolves to an 800-53 control or enhancement. The
+catalog's `content_sha256` changes because the catalog it is computed over
+changed; the NIST source it was built from did not.
+
+**The HIPAA Security Rule catalog now records that its safeguards apply "in
+accordance with § 164.306".** Sections 164.308(a), 164.310, 164.312 and
+164.316 open with that phrase before listing their standards, and the
+catalog left it out. Each of the 20 standards in those sections now names
+`164.306` in its `related_controls` in the catalog, linking it to the general
+rules, including flexibility of approach and the Required and Addressable
+distinction. No requirement text changed.
+
+**A catalog can now declare its framework key in `framework.yaml`.** Add
+`framework_id: acme-baseline` beside `name:`, and every place PolicyForge keys that
+catalog's name will use your key, including crosswalks, coverage and
+citations. Before, a name the built-in table did not know was keyed by its
+first word, so "NIST Privacy Framework" and every other unlisted NIST name
+shared the key `nist`. Every bundled catalog now declares its key, and none
+of those keys changed. `etl-hitrust` and `etl-govramp` now write the
+declaration beside the catalog they import, with the key the name already
+had; a `framework.yaml` you wrote yourself is kept, and a different key in it
+is named rather than replaced. `policyforge frameworks` and the importers
+point out a declaration whose name alone would have produced another
+framework's key, or the first word of a bundled catalog's name such as
+`nist`, since citations written before the declaration were filed there.
+Other commands stay quiet about it. Name lookup now
+ignores extra spacing, so an irregularly spaced name may key differently
+than it did.
+
+**NIST AI 100-2 and the AI RMF's document number now key to their own
+catalogs.** A catalog named "NIST AI 100-2", the Adversarial Machine Learning
+Taxonomy, was filed under a bare `nist` key. So was "NIST AI 100-1", the AI
+RMF's own document number, even though "NIST AI RMF" and "NIST AI Risk
+Management Framework" already keyed correctly. They now key to
+`nist-ai-100-2` and `nist-ai-rmf`.
+
+Some names are deliberately left as they are, and tested so the choice is
+visible. "AI Taxonomy" and "adversarial machine learning" are not treated as
+NIST names, because OECD, Microsoft, MITRE and others publish catalogs under
+the same words. A catalog named only "AI Taxonomy" or "NIST AI Taxonomy"
+keeps its current key. The names of ONC programmes still share the key `onc`,
+since their exact names are not yet known. A fix that keys every catalog by a
+name it declares is planned for a later release.
+
+**The AI RMF catalog's expected shape now lives in its `framework.yaml`**
+(`shape:`, 19 categories and 72 subcategories), next to the revision's other
+pins, instead of in the loader. `policyforge etl-ai-rmf` reads it from the
+catalog it regenerates and refuses any page that parses to a different
+shape. A refusal is now a one-line error instead of a traceback. The command
+never rewrites the pin, so moving to a new revision is a deliberate edit.
+
+**One shipped figure was wrong and is corrected.** ARC-AMPE's README said
+*95 of the 402 guidance cells say there is no guidance*. The catalog has
+**96**, and so does CMS's published workbook. The same figure was wrong
+in the loader's own module docstring.
+
+**Three catalog READMEs now have their numbers held to their catalogs** —
+`arc-ampe`, `fedramp` and `nist-800-53-r5`. The other five already did.
+These files ship inside the wheel, so a stale number reaches a reader who
+has no way to check it against anything.
+
+Nothing else changes: `fedramp` and `nist-800-53-r5` were accurate, and
+are now checked rather than merely correct.
+
+**FedRAMP's figures are the ones worth knowing are subtle.** `19` counts
+parameter *values*, not the entries carrying them — there are 15 of
+those. `the 79 controls FedRAMP tailors` is a union: 85 items exist, and
+79 carry at least one of the two things a profile adds. Reading either
+number the obvious way gives the wrong answer, and both are now pinned
+with the reasoning beside them.
+
+**The 800-171 rev 3 catalog's README no longer says that nobody has
+published a mapping to 800-53.** NIST's own OSCAL file for rev 3, the one
+the catalog is built from, links all 97 requirements to the 800-53 controls
+they were derived from, and the catalog now carries those links (see the NIST SP
+800-171 entry in this release). The README says the mapping is NIST's own, and that
+the requirements should not be hand-mapped with `crosswalk seed`.
+
+**The HIPAA catalog's README now says what each control's statement leaves
+out.** Four sections of the Security Rule open with *"A covered entity or
+business associate must, in accordance with § 164.306:"*, and the catalog
+drops that sentence, so each control reads as the regulation's own
+requirement. The README names those sections, and it says that § 164.306's
+general rules, flexibility of approach, and the Required and Addressable
+distinction still ship as their own five controls. What is not yet recorded
+is the link from each control back to § 164.306.
+
+**The ONC certification catalog's README records a pending ONC
+proposal.** ONC's *Deregulatory Actions To Unleash Prosperity* (90 FR 60970)
+is a proposed rule that would remove many
+§ 170.315 criteria. No final rule has been published, so every criterion in
+the catalog is still live. The README says that the scheduled drift check
+will go red if it is finalised, and that this is the check doing its job.
+
+**The 42 CFR Part 2 catalog's README no longer says that no authority
+maps Part 2 to 800-53.** It now says none was found, lists what was
+searched, and names the one place that could not be checked: NIST's OLIR
+catalog. It also explains why the HIPAA crosswalk PolicyForge ingests
+does not map Part 2 indirectly: § 2.16 does not incorporate the HIPAA
+Security Rule, which is the part those crosswalks map.
+
+**A Standard for an AI topic now says what NIST suggests for each AI RMF
+subcategory the topic covers.** `generate --tier standard` gives it the NIST AI
+RMF Playbook's actions for exactly those subcategories. The Standard writes one
+sentence per subcategory in NIST's voice ("NIST suggests, among its N actions
+for Govern 1.4, ..."), cited to the actions it draws on. Policies and
+Procedures are not given them, and the Playbook is still not something a topic
+owns, so `/coverage` is unchanged.
+
+**If a Standard's Playbook sentences would fail `policyforge check`,
+generation now fixes them or refuses.** A sentence the check rejects, or a
+subcategory with no sentence, is regenerated up to three times. If one still
+fails, `generate` stops with an error naming the subcategory and writes no
+file, instead of writing a Standard that `check` would reject.
+
+**The documentation now says what a document generated from an AI topic
+is: an outcomes document.** The five AI topics anchor the NIST AI RMF, which
+states outcomes rather than obligations, so a Standard generated from them
+describes what good AI risk management looks like and commits nobody to a
+specific action. The obligations an AI programme draws on are 800-53
+controls owned by the security topics in the same registry. PolicyForge
+does not claim those controls achieve the AI RMF outcomes; which serve which
+is your organisation's decision. Stated in `config/topics.example.yaml` and
+in the AI RMF catalog's README.
+
+**PolicyForge now tells you when it re-sends a request with a bigger token
+budget, and what that could cost.** A reasoning model can spend its whole
+budget thinking and return nothing, which is still billed. PolicyForge then
+re-sends the request with up to eight times the budget. That used to happen
+silently: measured on one AI Standard with Claude Sonnet 5, an empty reply
+cost $0.20, and the re-send could have cost up to $1.35 more at the model's
+list price. You now get a warning before the re-send goes out, naming the
+document, the model, the new budget and the worst-case cost at that model's
+list price ("unpriced" when no price is known). The call log
+(`output/.model-log/calls.jsonl`) records the billed attempt that came back
+empty, with its request id and cost, under `escalations`.
+
+**The call ledger now records what a failed re-send cost.** When a reasoning
+model came back empty, was re-sent with more room and came back empty again,
+the ledger row had no cost and no request id, so the re-send's charge was
+recorded nowhere. The row now carries the cost of both attempts and the
+re-send's request id. A cascade that falls back to its stronger model
+likewise counts the first model's billed attempts in the row, and now says
+so before it re-sends, as a re-send to the same model already did.
+
+**`policyforge check` now reports an obligation that binds while citing
+nothing, where the obligations around it do carry citations.** A generated
+Standard can assert "Reviewers shall retain evidence for seven years" beside
+properly cited requirements, and until now nothing said so — the existing
+check only fires on a document citing *nothing at all*, so seven good tags
+masked three untagged obligations. **Expect new warnings on generated
+documents**: on the 33 generated Standards we measured, it reports 22. They
+are warnings rather than errors, so only `--strict` turns them into a
+failing exit.
+
+**And `policyforge check --entail` asks a model whether each cited obligation
+is actually carried by the synthesis requirements it cites.** Off by default,
+one model call per cited obligation, and **the count is printed before
+anything runs** so the cost is known rather than discovered. These findings
+are reported and **never change the exit code**: a malformed document is a
+fact anyone can verify twice with the same answer, and a model's verdict is
+not.
+
+**`policyforge check` now reads a heading that states an obligation.** A
+heading such as "## Acme Health must retain all records for six years", or
+the same line with `---` under it, was skipped by the "binds but cites
+nothing" and strength checks, however it was worded. It now gets the same
+warning a sentence would, and the message says it is a heading, because the
+rendered page hides that. A heading that states nothing, such as "## Access
+Control", is still not reported, and neither is a cited title such as
+"## Account Management [NIST 800-53 AC-2]". None of the 33 generated
+Standards we measured has a heading worded as an obligation, so documents
+generated by PolicyForge should see no new warnings.
+
+**`policyforge check` no longer reads a sentence across a heading.** Text on
+either side of a heading could be judged as one sentence, carrying the second
+part's citations and its "must" or "shall". An obligation that sits just
+before a heading is now judged on its own citations, not on the next
+section's.
+
+**A NIST AI RMF Playbook sentence that also cites the AI RMF Core is now held
+to the Playbook rules.** The Core states outcomes, not obligations, so citing
+it beside the Playbook no longer exempts a sentence from the check that the
+Playbook is presented as NIST's suggestion. A sentence that also cites a
+catalog of obligations, such as SP 800-53, is still judged by that catalog's
+rules instead.
+
+**`policyforge check` now reads "Network Security is responsible for
+approving each request" as an obligation.** A team made responsible or
+accountable for doing something binds, the same as a "must". Before, it was
+read as a statement of fact. That meant its citation, or its missing
+citation, was never checked. The rule doesn't apply when the subject is a
+document or framework ("This Standard is responsible for ..."), when the
+sentence is NIST's own suggestion, or when what follows "for" is a noun
+("responsible for any use of the account"). Imperative steps, "will", "is
+expected to" and "is subject to" still don't bind, deliberately: a Procedure
+step carries out the Standard requirement above it, and that requirement
+holds the citation.
+
+**`policyforge check` now reads "X is required." and "X is not permitted."
+as binding.** A requirement or prohibition stated as a predicate, such as
+"MFA is required.", "Compliance is mandatory." or "Personal devices are not
+permitted.", was read as stating nothing, so it escaped the uncited,
+strength and Playbook checks. It now binds like "is required to" and "is
+prohibited". A phrase that states no requirement about its subject still
+does not: "No action is required.", "as required by HIPAA", "what is
+required", a condition such as "where required", or a category such as
+"required or addressable".
+
+**`policyforge check` no longer reads "may" that states a possibility as a
+permission or prohibition.** "Systems may not be considered external", "may
+also be known as", "may be visible", "may not always be possible" or "may be
+necessary" describe what might be true, not what anyone may or may not do,
+and now read as stating neither. A "may" before an action still binds: "You
+may not share your password", "may not be granted" and "may be required" read
+as before. Known gap: a thing's capability ("the process may not support
+verification") still reads as a prohibition.
+
+**A blank line now ends a sentence in `policyforge check`.** A paragraph
+that did not end in a full stop followed by a capital, such as one ending
+in a citation in backticks, was read together with the next paragraph. In a
+Standard that states its own requirements against the AI RMF Core and then
+NIST's suggestions from the Playbook, that produced false Playbook errors;
+it could also hide a real one. A citation on its own line under a
+sentence, even after a blank line, still belongs to that sentence.
+
+**A sentence no longer borrows the citation of the list item under it.**
+In `policyforge check`, a sentence ending in a full stop was read together
+with a list item on the next line, even across a blank line, so an uncited
+requirement took the item's citation and was never reported as uncited.
+The same happened between two list items. A list item now starts a new
+statement. A lead-in ending in a colon, such as "The owner must identify:",
+still reads as one statement with its items, including a citation placed
+under the list.
+
+**A citation tag can now list several ids from one framework without
+repeating the framework's name.** In `[NIST AI RMF Playbook Govern 1.1 Action 1 | Govern 1.1 Action 2]`, the second id now counts as a Playbook
+citation. Before, `policyforge check` could not tell that such a sentence
+cited only the voluntary Playbook, so it warned about correct "NIST suggests
+..." wording and let "Acme must ..." through. Traceability also dropped
+the later ids. A part without a framework name takes the framework of the
+part before it, and must then exist in that framework's catalog: `[NIST 800-53 AC-2 | Govern 1.1 Action 2]` reports the second part as an
+unresolved citation instead of reading it as either framework.
+
+**`policyforge check` no longer reports an error for a Playbook sentence that
+opens with a short, standard phrase.** A sentence citing only the NIST AI RMF
+Playbook must speak as NIST ("NIST suggests …"). It may now open with one of
+four fixed phrases: "For Govern 1.4,", "Among the 7 actions NIST suggests for
+Govern 1.4,", "Across these actions," and "Of the 7 actions for Govern 1.4,".
+The subcategory named must exist in the AI RMF catalog. Any other opening
+still fails, deliberately, including harmless ones such as "In practice,": a
+fixed list cannot carry an organisation's commitment the way free text can.
+
+**`policyforge check` no longer reports an error when a Playbook sentence
+quotes NIST's own "must".** A sentence citing the NIST AI RMF Playbook may
+not bind anyone, but some Playbook actions use the word themselves: Govern
+1.7 Action 4 speaks of "artifacts that must be preserved". A binding word is
+now allowed only inside a run of at least six words quoted verbatim from an
+action that same sentence cites. A paraphrased "must", or one quoting an
+action the sentence does not cite, is still reported.
+
+**`/addresses` and `/bundle` now credit an AI team with the AI RMF
+subcategories under the categories its topics anchor, as `/coverage` already
+did.** Asked who answers for `Govern 1.1`, `/addresses` found no owner for any
+of the 72 AI RMF subcategories, although `/coverage` attributes every one of
+them. `/bundle` reported the five AI teams as answering for 19 requirements
+between them where `/coverage` attributes 91: AI Risk / GRC read 5 where it
+now reads 22. Each command kept its own copy of the rule that anchoring a
+control claims its children, and only `/coverage`'s knew the AI RMF. They now
+share that one rule, so the three commands name the same owner for all 905
+requirements the shipped registry covers. 800-53 answers are unchanged.
+
+**`/satisfies` no longer reports an AI topic's anchors as "cited nowhere"
+when its documents cite them.** The command counted only NIST SP 800-53
+citations as answering for a topic's anchors, so every AI RMF anchor was
+listed as a gap, however the documents cited it. On the Standards generated
+for the shipped registry's five AI topics, all 19 of their anchors were
+listed; now none are. That section is the one an assessor reads first, and
+it was telling you to fix documents that were already right. A citation now
+counts when its framework is one a topic can anchor (SP 800-53 or the AI
+RMF). A citation of the AI RMF Playbook still does not: it shares the
+Core's ids, and NIST's suggestions do not answer for a Core outcome. 800-53
+results are unchanged.
+
+**The shell's `/coverage` now reads the crosswalk relationships the CLI
+reads.** It passed none, so every lookup returned `None`, `None` is not a
+partial relationship, and a mapping an organisation had reviewed and
+recorded as `superset` or `intersects` counted as **full** coverage in the
+shell while counting as **partial** in `policyforge coverage`.
+
+Two views of one registry, disagreeing about what the organisation's own
+recorded decision means — and the shell's view was the optimistic one.
+
+**`/coverage` no longer claims a search nobody made, or tells you to rebuild
+a mapping a catalog already carries.** When a framework read zero and nothing
+explained why, its row said *"no published crosswalk yet"* and suggested
+`crosswalk seed`. That printed for every such catalog: 42 CFR Part 2, every
+catalog you bring yourself, and, whenever your topics owned none of the
+controls they map to, HIPAA and FedRAMP too. Both of those ship their
+publisher's mapping.
+
+The row now names the actual cause:
+
+- **A catalog that maps to 800-53** (HIPAA, FedRAMP, ARC-AMPE) now accounts
+  for every requirement, with a count for each reason it reads zero:
+
+  - how many your topics reach only in part, because your organisation's
+    crosswalk overlay records the mapping as `superset` or `intersects`.
+    Whether that is enough is a decision for a person;
+  - how many map to 800-53 controls none of your topics owns. That gap is in
+    your topics, so do not seed them by hand: a hand-made mapping would
+    compete with the publisher's;
+  - how many carry no mapping in the catalog's crosswalk at all. HIPAA has
+    9 of these, including the general rules in 164.306.
+
+  A reason with nothing to count is left out, and nothing on these rows
+  suggests a command.
+
+- **42 CFR Part 2** says *"no published crosswalk found"*, because a search
+  was made. It covered NIST, HHS/OCR, SAMHSA rulemaking and HITRUST's source
+  list, but not NIST's OLIR catalog, where a formal mapping would be
+  registered. The search and its limits are recorded beside the claim in the
+  code.
+
+- **A catalog with no mapping at all** says *"this catalog carries no
+  crosswalk"*.
+
+The last two still suggest `crosswalk seed` to start one. The note above the
+rows no longer counts the kinds of zero; each row names its own.
+
+**HITRUST coverage is no longer always zero.** `policyforge coverage` and
+`/coverage` reported every imported HITRUST requirement as unreached, whatever
+your topics owned, and `/coverage` then suggested building a crosswalk by hand
+for a catalog whose export already carries HITRUST's own mappings. HITRUST
+publishes its mappings per level ("01.a Level 1"), and coverage was counting
+per control reference ("01.a"), so the two never matched.
+
+HITRUST is now counted per level requirement, across every level the catalog
+carries, and the report says so on the HITRUST line. Levels are not rolled up
+into their control reference, because that would claim a mapping for levels
+HITRUST never mapped. Choosing which levels apply to your organisation is not
+part of this release.
+
+Two more places a mapping can live are now read, both by coverage and by the
+zero-row explanation added in this release:
+
+- a mapping written on an 800-53 control and naming another framework's
+  requirement, which was stored under the framework's name as written and so
+  was never matched;
+- HITRUST's level-scoped mappings, which the zero row counted as "carry no
+  mapping".
+
+No shipped catalog uses the first, so shipped figures are unchanged. The
+change applies to catalogs you bring yourself.
+
+**A drift report now shows an AI RMF subcategory change reaching the topic
+that anchors its category.** `policyforge drift` decided which topics a
+changed control reaches by the NIST SP 800-53 rule alone, so a change to
+"Govern 1.1" reached no topic anchoring "Govern 1". It now uses the same
+rule as `/coverage` for the catalogs topics anchor. A change in the NIST AI
+RMF Playbook reaches no topic, since a topic never anchors the Playbook.
+
+**`policyforge drift` now reports a reworded enhancement.** Before, drift
+compared a control's own text and its list of enhancement ids, so a change
+to the text of an enhancement, such as NIST SP 800-53's AC-2(3), an AI RMF
+subcategory or a HIPAA implementation specification, was never reported.
+Such a change is now reported under the enhancement's own id, and reaches
+the topics and documents that id reaches. The first scheduled drift run
+after this change may go red on upstream edits that were always there and
+never reported; that is the job working.
+
+**A command that fails in `policyforge zardoz` no longer ends the session.**
+Any error a shell command raised used to exit the whole shell with a
+traceback, losing the session's state, including the refusals made louder in
+this release, such as `/drift` refusing output that is not UTF-8. Now an
+expected refusal prints its message, an unexpected error prints its full
+traceback, and both are followed by a line saying the command failed and the
+session continues. A failed command never prints output that looks as though
+it succeeded. Ctrl-C and Ctrl-D behave as before.
+
+**Three printed commands no longer break when a value contains a space.**
+`policyforge` prints commands for you to copy, and three of them
+interpolated a value without quoting it:
+
+- `etl-hitrust` and `etl-workbook` print
+  `generate-parser --framework … --sample <your export>`. A HITRUST
+  export is normally named something like `MyCSF Assessment Export.xlsx`,
+  and the printed command split it into three arguments — so the command
+  offered as the remedy could not run.
+- `zardoz satisfies` prints `crosswalk seed --framework … --controls …`.
+  A framework name or catalog path containing a space did the same.
+- `history` prints a `--diff` hint naming two versions.
+
+**What changes for you: a printed command now runs as printed.** Nothing
+about the commands themselves changed, only the quoting, so anything
+that worked before still works.
+
+**The guard behind it now asks a different question.** It used to look
+for an interpolated value inside hand-written quotes — the shape where a
+quote character truncates a command and names the wrong document. It now
+asks whether the value was quoted at all, which covers both that shape
+and the one above, where an unquoted value adds arguments instead of
+losing them.
+
+**A command the product prints is now checked against the CLI that has to
+run it.** Every backtick-quoted `policyforge …` carrying a flag is extracted
+and each flag verified against `--help` on the live CLI, so a printed
+command cannot name an option the product does not accept.
+
+**Three sites interpolated a value inside hand-written quotes.** A document
+title is user-authored prose, so `--title "Vendor "Bring Your Own" Policy"`
+parses as `--title "Vendor Bring"` — a valid command naming the wrong
+document, with nothing to indicate it went wrong. Those now use
+`shlex.quote`, which handles the quote characters the value may itself
+contain.
+
+Illustrative strings — `satisfies --controls ...`, `--content-dir <your markdown tree>` — are recognised as examples rather than invocations. A
+class check that cannot say *this one is an example* fails on strings doing
+their job, which is the fastest way to get it deleted.
+
+**`etl-hitrust` now says when a rendered report loses text.** Reading an
+HTML or MHTML export can discard requirement text in two ways, and until now
+it did so silently. The record count did not change and nothing was printed:
+
+- a row of text with no label, such as a long cell continued onto the next
+  page without its label reprinted, was skipped;
+- a requirement statement that arrived as two different copies, such as one
+  split across a page break with its label reprinted, kept the longer copy
+  and dropped the other.
+
+Both are now reported as `warn` lines in the import summary, with the count
+and the first few pieces of text lost, so an export that hits either shape
+says so on its first run. **What is read has not changed**: which copy of a
+statement is kept is the same as before. PolicyForge has never seen a real
+export in either shape, and changing the parse on a guess about a licensed
+format would alter a customer's catalog with nothing to check it against. A
+field left empty, a spacer row, and a statement printed twice identically
+are not reported, because nothing is lost. A page title, page number or
+print date that sits in a cell of its own **is** counted, because it cannot be
+told apart from a continuation for certain. The warning splits the count into
+rows that look like page furniture and rows that do not, and shows the second
+kind first, so real lost text is not hidden behind page footers.
+
+The CSV and Excel exports are unaffected. They remain the better choice where
+you have one.
+
+**`etl-hitrust` now accounts for every cell of text in a rendered report.**
+Each cell is either read into the catalog, part of a row that deliberately
+carries nothing, or reported. The rows that carry nothing are a heading such
+as "Level 1 | Implementation Requirements" for a level the report uses, a
+label left empty, and "Topics:", which PolicyForge knows and does not keep.
+Anything else is reported by default, so text in a shape PolicyForge does
+not know shows up as a warning instead of disappearing.
+
+Five ways of losing text were silent until now, and in the first the record
+count dropped with no explanation:
+
+- a row whose label is not second-to-last, such as a label, its text and
+  then an extra cell, was misread, skipped, and took the whole level record
+  it would have opened with it;
+- a row whose label PolicyForge does not recognise, with or without a
+  trailing colon, was skipped with its text;
+- a statement label with no level in it, such as "Implementation:", was
+  recognised and then dropped;
+- a level row that came before any "Control Reference:" had nowhere to go
+  and was dropped;
+- a cell in front of a label and value was ignored while the row around it
+  was read.
+
+All are now `warn` lines in the import summary, showing the text. **What is
+read has not changed**: PolicyForge has never seen a real export in any of
+these shapes, so the warning is the evidence a later fix would need.
+
+**`etl-arc-ampe` now warns when an optional column is missing from the
+workbook header, and refuses to overwrite a catalog whose guidance, related
+controls or family it would empty.** The loader finds each column by its
+exact caption. Before this change, a caption CMS rewords (`&` spelled `and`,
+or `Related Controls` spelled `Related Control(s)`) did not fail the parse:
+the sheet still qualified, all 215 controls were read, and every row read the
+column as empty. The shipped catalog would have lost its 306 guidance entries
+or its 210 related-control lists in a file that still loaded normally. The
+parse report now starts with a `WARNING` line naming each missing column and
+counts the controls that list related controls. The write is refused whenever
+any of the three counts would fall below the catalog being replaced, and that
+includes a partial drop as well as a total one. **If a new ARC-AMPE revision
+really does remove content, move the existing catalog aside and re-run;** the
+command otherwise exits non-zero.
+
+**`import-confluence` now carries a document's content class, which is what
+keeps licensed text off a public wiki.** An
+imported page used to come back with no frontmatter, so it lost the content
+class that stops licensed text reaching a public GitHub wiki. That became a
+live risk as soon as someone declared a wiki target on the import. The
+import now carries the class forward from the local draft or its recorded
+versions, and never invents one: if nothing local says, the command prints
+that the class is unknown. It also records where the page came from
+(`imported_from`: space, title, page version, date) and never claims a model
+wrote text a person may have edited. `content check` lists imported
+documents as imported.
+
+**The limit, stated so nobody relies on more:** a page with no local draft
+and no recorded version imports with no class. The command says so, and the
+page is then governed only by the wiki's visibility rule, so `--allow-public`
+would publish it. **Set `content_class: licensed` by hand before publishing
+any page whose class the import reports as unknown.**
+
+**A HIPAA crosswalk gap is now reported or refused, never silently
+dropped.** `apply_crosswalk` skips two things by design: a CPRT citation
+the eCFR-derived HIPAA data does not carry, and an SP 800-53 identifier
+that did not parse. Both are meant to be reported, and the reporting had
+no test — against the published crosswalk neither happens, so the
+existing assertions that both lists are empty held just as well with the
+lines that fill them removed.
+
+**Whether this changes anything for you: no, not today.** The bundled
+crosswalk maps every one of its 68 citations, so nothing in the data you
+have changes, and `policyforge etl-hipaa-crosswalk` produces byte-identical
+output.
+
+**It changes what happens on the next CPRT revision.** NIST publishes the
+crosswalk on its own schedule and the eCFR moves on another. When the two
+drift — a citation renumbered, an identifier written as free text — the
+run now either names the gap in its report or stops. Previously a drop
+that escaped the report would have written a mapping that looks complete
+and covers less than it claims, which in compliance data reads as
+coverage.
+
+**A crosswalk built on one platform is no longer reported stale on
+another.** `map` records a digest of each file in `config/crosswalks/`
+beside the crosswalk it builds, and `synthesize` compares them. Those
+digests were taken over raw bytes, so the same overlay checked out on
+Windows and on Linux produced two different values.
+
+**The symptom was a hard failure with the wrong cause.** `synthesize`
+refused to run — *"was not built from the crosswalk overlays now in
+config/crosswalks/"* — and told you to rebuild a crosswalk that was
+correct.
+
+**Whether this changes anything for you:**
+
+**If your overlays are stored with LF — Linux, macOS, and Windows
+checkouts configured for it — nothing changes and there is nothing to
+do.** Your recorded digests are identical before and after; the
+normalisation has nothing to normalise.
+
+**If your overlays are checked out with CRLF**, their digests change
+once. A crosswalk built before this upgrade then reads as stale the
+first time, and one `policyforge map` settles it.
+
+**The fix is for teams with both.** A Windows member recorded one digest
+and a Linux member computed another from the same committed file, so
+whoever ran `synthesize` second was told to rebuild. That stops.
+
+`.gitattributes` pins only `*.md` to LF, so a `config/crosswalks/*.yaml`
+still checks out however `core.autocrlf` decides. That is now harmless
+rather than load-bearing.
+
+**Non-ASCII names no longer break the checks that read git.** On Windows,
+PolicyForge read git's output in the system's legacy codepage instead of
+UTF-8, so any name with an accent came back garbled:
+
+- **An edited page named with an accent, such as `café.md`, was reported as
+  having no uncommitted changes.** The check that stops an edit overwriting
+  work you have not committed was silently off for that page.
+- A reviewer named José was recorded in the crosswalk overlay as `JosÃ©`.
+- A committed catalog containing non-ASCII text was compared against a
+  garbled copy of itself, and one containing certain bytes crashed.
+- Authors of wiki pages were shown garbled, and paths under a folder with an
+  accent were printed in full instead of relative to the repository.
+
+All of these now read UTF-8. Where the output is used as data, such as a
+path, a name that gets recorded, or a catalog, text that is not valid UTF-8
+now stops with an error naming the command, instead of being recorded with
+the bad characters replaced. Where it is only shown to you, such as an error
+message, such characters are shown as `�`.
+
+**Documentation links and the container image's source label now point at the
+repository's new home, `rdazzleman/policyforge`.** The
+project moved from `rdazzlebot`; the old addresses still work only because
+GitHub forwards them, and that forwarding stops if anything is ever created at
+the old name. Updated: the security-advisory link in `SECURITY.md`, the `pipx`
+install commands in the README, the formula URL template in `CONTRIBUTING.md`,
+a CI run link in the security architecture notes, and the
+`org.opencontainers.image.source` label every built image carries.
+
+**The Homebrew tap moved too: install with `brew install rdazzleman/tap/policyforge`.** An existing
+installation from `rdazzlebot/tap` keeps updating through GitHub's forwarding
+for now.
+
+**Removed `prev.md` from the repository root** — a copy of the 1.5.0 changelog
+left in the 1.6.0 release by mistake. It was never used by anything and
+duplicated release history for anyone searching it.
+
+**`docs/verifying-a-merge.md` gains the three rules an audit of orphaned
+commits produced**, two of which invert a reading people already have.
+
+**Half of a shortstat is the opposite of a finding.** Diffing a commit
+against its PR's merge commit is directional: *insertions* mean the merge
+commit is a superset and nothing was lost; only *deletions* are lines the
+merge did not carry. Read the wrong way, every cleanly-merged commit looks
+like a loss.
+
+**For changelog fragments, absent-from-main is what success looks like.**
+Fragments are consumed and deleted at release, so a sweep for unlanded
+content flags every shipped fragment as lost work.
+
+And the method that survives both traps is written as four steps: find the
+PR whose head the commit was, take its merge commit, diff over the commit's
+own files, read the deletions, and **classify each one** — a line absent
+from the merge is lost work *or* a removal a reviewer asked for, and those
+are indistinguishable in a diff and opposite in consequence. Measured on
+#204, the PR that shipped this document: 17 deletions, every one requested
+during review. Not by subject — squash rewrites it — and
+not against `origin/main`, which has moved. **Both wrong methods were tried
+first and both gave confident false answers**, including 165 "unlanded"
+lines in a commit that had been reviewed and approved into a merged PR.
+
+**Wrote down the verification idioms that answer the wrong question**, in
+`docs/verifying-a-merge.md`, where someone checking a merge will meet them
+rather than in four people's memories.
+
+`git branch --merged` and `merge-base --is-ancestor <branch>` are blind to
+squash merges, and two long-since-merged branches report `NO`. **And the
+flag answers a question you did not ask** — with no argument it
+means *merged into this clone's current HEAD*, not into main. On one clone
+at one instant that is 6 against 3, unchanged by pruning; and the 3 are
+`origin/HEAD`, `origin/main` and an unrelated branch, so the real count of
+merged feature branches is **zero**.
+
+**The content check that was proposed as the remedy does not work either**,
+which is measured here rather than assumed: diffing a merged branch's own
+files against main reports 459 insertions, because later work touched the
+same files. What works is asking GitHub for the merge commit and testing
+*that* for ancestry — which correctly reports #168 as merged and **not** in
+main, the stranding that had to be recovered as #169.
+
+**And content-checking works too — from the reviewed SHA rather than the
+branch head.** `git diff <reviewed-sha> <merge-commit>` over the reviewed
+files comes back empty when what was approved is what landed. **Ancestry
+says *something* landed; the content diff says *what* landed**, so use
+both. The reviewed SHA survives nowhere except the review that recorded it.
+
+**And "not an ancestor of main" is two different facts**, so the document
+answers in three states rather than a boolean: *landed*, *pending* (the
+base has not merged yet — says nothing), and *stranded* (the base merged
+and did not carry it). During a release train, recently merged PRs are
+not yet ancestors of main at all, and every one of them is healthy.
+
+**CI's lock moves `filelock` to 3.32.7 and `virtualenv` to 21.7.10**, the
+versions Dependabot proposed in #239–#242, regenerated with the lock's own
+header command rather than merged as Dependabot wrote them. Both are
+dev-only tools; nothing a user installs changes.
+
+**The documented way to do that has a hazard, now written beside the rule.**
+The lock header's command alone moves nothing, and the obvious addition —
+`--upgrade-package <name>` — upgrades to the *latest* release, which ignores
+the seven-day cooldown the Dependabot config exists to enforce. On the day
+this was done that reached for `filelock` 4.0.3, a major version, and
+`virtualenv` 21.11.1 — both uploaded that same day. Naming the proposed
+version (`--upgrade-package "filelock==3.32.7"`) reproduced Dependabot's edit
+byte-for-byte.
+
+**The pre-push gate could report PASS having examined nothing.**
+`scripts/check.py` derived its markdown targets with `rglob` and passed
+them to `mdformat --check`, which exits 0 on an empty argument list —
+*"No files have been passed in. Doing nothing."* — so `run()` saw
+`returncode == 0` and printed **PASS**. Measured in-process before the
+fix: an empty population and a clean tree returned the identical value,
+and the exit code the charge tells everyone to condition their push on
+was 0.
+
+**Three populations had that property, not one.** #224 reported the
+markdown targets; the tracked-file list behind the CRLF check and the
+corpus behind the conflict-marker scan were the same shape, found by
+asking what else in the file derives a set and then believes a clean
+result over it.
+
+All three now pass through one `derived()` guard, which refuses an empty
+population and names what was not found. **An empty derivation exits 2,
+deliberately distinct from 1**: `1` means a check ran and failed and
+sends a reader looking for it; `2` means nothing was checked. It is not
+silenceable with `--allow-skip`, which acknowledges a tool that is
+*absent* — a tool that ran and examined nothing is a different fact and
+must not share the same acknowledgement.
+
+A test derives the population list from the source by parsing, so a
+fourth one added later is covered by the check that exists rather than by
+somebody remembering, and names that are genuinely not populations are
+enumerated by hand with a reason. Its own exemption list is asserted
+against the source, so an entry for something that no longer exists
+fails rather than silently pre-exempting the next thing to take that
+name.
+
+**And the same failure one level up: `summarise({}, set())` returned 0**,
+printing `0 ran, 0 failed, 0 skipped`. A gate with no checks is not a
+passing gate, and it now exits 2. It was argued to be categorically
+different because the check table is a dict literal whose keys cannot
+shrink without a visible diff — true of the code as it stands, and an
+argument from the current shape rather than from a guard, which stops
+holding the moment anyone builds that table conditionally.
+
+Closes #224.
+
+**`scripts/check.py` now runs the changelog-fragment check that CI
+requires.** It did not, so a fragment CI rejects passed the pre-push gate
+green — observed live: the gate reported 2,921 tests and every check
+passing while CI was red.
+
+**A gate a required check can fail behind is not a gate**, it is a subset
+someone has to remember is a subset. The new check is deliberately not
+skippable: the other skips exist because a tool may be absent, and this one
+is a script in this repository, so *"it did not run"* has no honest cause.
+
+A test now derives the required scripts from `ci.yml` rather than listing
+them, so a script added to CI later is covered without anyone remembering
+the test exists.
+
+**The release check now refuses a Homebrew formula whose download address
+names the repository's old owner.** Such a formula installs perfectly —
+GitHub forwards the old address — so the check's own install test could not
+see it, and it would have kept working only until anything was created at
+the old name. The address is now compared as written. Release tooling only;
+nothing a user installs changes.
+
+**`scripts/release_check.py` now installs from `rdazzleman/tap`**, the tap's
+new home after the repository and tap moved from `rdazzlebot`. Release
+tooling only; nothing a user installs changes.
+
+The check exists to prove that the install command a new user types
+actually works, so it has to name the command the README names. Pointed at
+the old owner, it would have gone on passing while testing a path the README
+no longer documents.
+
+**And the install check could not complete on Windows at all.** It read
+Homebrew's output with the system's default encoding — cp1252 on the
+machine the release is cut from — and crashed on the first non-ASCII byte
+Homebrew prints, before it could say whether the install worked. It now reads output as UTF-8, and prints it without crashing on a
+character the console cannot show. The crash only ever blocked a release rather than
+passing one falsely, but it blocked it for a reason unrelated to the
+install, and the obvious response to a traceback at the cut is to skip the
+check.
+
+**`release_check.py` no longer passes without an install.** It gained a
+fourth assertion: install the published formula in a clean container and run
+the CLI. If the container cannot be started, the check reports **did not
+run** and the script fails — unless you accept the gap explicitly with
+`--allow-skip install`, the same contract `scripts/check.py` uses.
+
+**The script was itself the substitution.** The recorded procedure was to
+verify in a container *before* pushing the formula; what happened was push,
+run this script, call it done. It reads the formula and compares values and
+**never installed anything** — so the cheap check stood in for the expensive
+one, and a substituted step leaves a false assurance where a skipped one
+would only leave a gap.
+
+The container smoke tests are pinned here rather than retyped each cut,
+because the previous run's two failures were both the tests being wrong:
+`policyforge --version` does not exist, and `policyforge frameworks` in an
+empty directory exits 1 by design. **A smoke test that is wrong is
+indistinguishable from a release that is broken until somebody checks
+which.**
+
+**`scripts/review_lines.py` reads a pull request's `Reviewed-SHA:` verdict
+lines and says what each one is a claim about.** The review record here is
+a convention rather than a mechanism — every session authenticates as the
+same account, so GitHub's own approvals are refused as self-approval — and
+a convention has no validator, so every failure it has had has been silent.
+
+**A well-formed SHA that names nothing splits three ways, and they differ
+in whether the review survives.** Three sessions produced one of these in a
+single day — forty hex characters, syntactically perfect, naming no object,
+because the visible prefix of an abbreviated display was extended with
+invented characters. If the longest resolving prefix *is* the reviewed head,
+the prefix is evidence the reviewer read the right commit: a correct review
+with a broken anchor, and recoverable. If it names a different commit, what
+was read is unknown. If nothing resolves, nobody read anything identifiable.
+The message names the object the prefix resolves to, because **the remedy is
+in the display, not in the discipline** — the rule *never lengthen an
+abbreviated SHA* has now failed three times, and it asks a person to resist
+something the tooling hands them.
+
+**Five states, because "not at head" was hiding four different facts.**
+`AT HEAD` is the only one that counts. `STALE` is a real ancestor. `ELSEWHERE`
+is a real commit that is *not* an ancestor — a review against a pre-rebase
+history, which reads as valid to a naive tool. `FABRICATED` is a well-formed
+SHA naming no object, which has happened here. `MALFORMED` is a SHA that is
+not 40 hex, reported separately from whether it resolves.
+
+**Shape and location are asked independently**, because chaining them meant
+a malformed line never had its ancestry asked and the tool credited a review
+the pull request had never carried.
+
+**A stale approval and a stale block are opposite facts.** An expiring
+approval is safe — the work changed, read it again. An expiring
+`changes-requested` is not: a push about something unrelated turns an
+unanswered objection into "no blocking verdicts". Stale blocks are warned
+about separately, and the warning is suppressed when that same reviewer
+later approved at head.
+
+**It refuses rather than reports when its own population is short**, by
+comparing the comment list it assembled against the count GitHub maintains —
+two derivations independent in dimension. And it prints its timestamp and
+population in the first three lines, because a report that was true when
+taken and false when read has already caused one misroute.
+
+**It does not compute consent**, deliberately. Counting verdicts into a merge
+decision would turn a written convention into an authorisation mechanism, and
+no such mechanism exists. A reader reports; a person decides.
+
+**A green CI markdown check could have examined nothing.** `ci.yml` ran
+`git ls-files -z '*.md' | xargs -0 mdformat --check`. GitHub's default shell
+is `bash -e`, which does **not** set `pipefail`, so the step's exit status
+came from `xargs` alone: measured, the same pipeline exits 0 under `bash -e`
+and 1 with pipefail. If `git ls-files` failed, the step passed having
+checked no files, and the green light read as "markdown is fine".
+
+**Adding `set -o pipefail` closes half of it.** `mdformat --check` with no
+paths prints *"No files have been passed in"* and exits 0, so a pathspec
+that stops matching still reads as all-clean — and pipefail never fires,
+because nothing failed. The step now asserts the file list is non-empty
+before believing a clean result, and says how many files it checked.
+
+The empty-input rule is keyed on the **shell construct**, not on a list of
+tool names: `xargs` without `-r` runs its command once on empty input,
+whatever that command is. An earlier version enumerated four tools, and
+measuring the venv found `semgrep`, `pip-audit` and `pytest` share the
+property and were missing — so the list was already incomplete the day it
+was written. `xargs -r` is accepted as the other legitimate fix.
+
+**`scripts/shell_status.py` is the new check that finds both**, in the
+pre-push gate and in CI. It derives what a shell will execute from
+`git ls-files` rather than from a list, so a script added tomorrow is
+covered by the check that exists rather than by someone remembering, and it
+refuses to pass on an empty derivation — a check whose population can
+silently become empty reports the absence of input as the absence of
+problems, which is the defect it exists to find in other people's
+pipelines.
+
+It states what it **allows** as carefully as what it refuses:
+capture-then-branch (`cmd > log 2>&1; rc=$?`), plain sequencing with no pipe,
+and a pipeline whose right-hand side is the real work. Documentation
+snippets are not required to set `pipefail` — a snippet is run by hand and
+watched, a script runs unattended and is believed — but a snippet still
+cannot pipe a status into a `&&`, because a reader who pastes it gets the
+wrong outcome wherever it came from.
+
+One known false positive is written down rather than papered over: the bad
+shape inside a quoted string is reported, because `bash -c 'x | tail && y'`
+cannot be told from `echo 'x | tail && y'` without a shell parser, and the
+first one really does execute it.
+
+Closes #215 and #216.
+
+**A changelog fragment that could never be published is now refused instead
+of ignored.** `changelog.d/` entries are `.md` files; a file saved there
+with any other extension was silently skipped — it committed, passed the
+gate, passed CI, and its entry simply never appeared in the release. Nothing
+anywhere said a file had been ignored. The check now names it.
+
+**Two heading rules changed, in opposite directions.** A fragment beginning
+with `# ` was accepted although it splits the release section exactly as
+`## ` does; both are now refused, by heading level rather than by the
+literal characters. And a `##` inside a fenced code block was refused
+although it is an example rather than structure, so a fragment documenting
+the changelog format could not be written; fenced blocks are now skipped.
+`###` and deeper were legitimate before and still are.
+
+**Nothing changes for a fragment that was already correct**, and the
+existing rules — no empty file, no CR — are untouched.
+
+**Two internal checks that reported success over a population they had
+quietly halved now refuse it.** Neither is a command you run, and neither
+changes any output — this is the project's own tooling catching its own
+blind spot.
+
+`scripts/shell_status.py`, which refuses committed shell that reports
+success for a command that failed, guarded its own population by asking
+whether it was empty. Breaking a pathspec so it matched one workflow
+instead of three left it reporting `clean across 41 source(s)` and
+exiting 0, with two workflow files unexamined. It now compares the files
+a crude scan says contain shell against the files its parser actually
+read, and names any that stopped being read.
+
+The guard on printed commands did the same: narrowing the span it
+searches took its population from 14 interpolated values to 11 with the
+suite still green, and a real unquoted value among the missing three went
+uncaught. It now pins which values it expects to find, by module and
+expression.
+
+**Nothing about the product changes.** No command, option, output or exit
+code differs. The reason it is worth a line is that both guards had
+already been reviewed, mutation-tested and merged — *non-empty* looked
+like asserting the population, and it is the special case where the
+expected extent is "more than zero".
+
 ## 1.6.0
 
 **Known issues are tracked publicly from this release.** Everything found

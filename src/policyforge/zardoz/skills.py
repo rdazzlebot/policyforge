@@ -30,6 +30,7 @@ to publish could not be written in this file.
 
 from __future__ import annotations
 
+import shlex
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -141,6 +142,7 @@ def _controls(state):
 
 
 def _coverage(state, args: list[str]) -> str:
+    from policyforge.crosswalk.overlay import accepted_relationships, load_overlays
     from policyforge.mapping.crosswalk import build_crosswalk
     from policyforge.topics.coverage import (
         analyze_coverage,
@@ -195,6 +197,21 @@ def _coverage(state, args: list[str]) -> str:
         scope=scope_label(nist, baseline),
         other_controls=other,
         crosswalk=build_crosswalk(controls),
+        # **Passed, because the CLI passes it and they answer one question.**
+        # Without it every lookup returns None, None is not in
+        # PARTIAL_RELATIONSHIPS, and a mapping an organisation reviewed and
+        # recorded as `superset` or `intersects` counts as FULL coverage
+        # here while counting as partial in `policyforge coverage`.
+        #
+        # Measured before fixing, with every HIPAA mapping recorded as
+        # superset: the shell said 65 of 74 covered and the CLI said 0.
+        # Two views of one registry, disagreeing about what the
+        # organisation's own reviewed decision means.
+        #
+        # `_controls` already applies the overlays to the controls; this is
+        # the same overlays read for their relationships rather than their
+        # pairs, so the shell is not reading anything the CLI does not.
+        relationships=accepted_relationships(load_overlays()),
     )
     return "\n".join(
         [
@@ -291,7 +308,9 @@ def _check(state, args: list[str]) -> str:
     root = Path(state.content_dir or DEFAULT_CONTENT_DIR)
     if not root.exists():
         return f"No content tree at {root}, so there is nothing to check."
-    return check_tree(root).format_report()
+    from policyforge.org.context import org_actors
+
+    return check_tree(root, org_actors=org_actors(state.config or {})).format_report()
 
 
 def _catalogs_used(controls) -> str:
@@ -584,21 +603,62 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
     """Why each framework reachable through the crosswalk covers nothing.
 
     **A zero under a heading that reads as a gap is not a finding until it
-    carries its cause.** Three frameworks report zero and they mean two
-    different things:
+    carries its cause.** A zero means one of several things, and which ones
+    a user sees depends on their topics and overlays as much as on the
+    catalogs:
 
     - `Information Blocking` is refused **by design**. Its entries are
       conditions of an exception, not controls to implement, so mapping
       them would assert something neither document says. That zero is the
       correct answer and `NOT_CROSSWALK_ANCHORABLE` already holds the
       reason as prose.
-    - `42 CFR Part 2` and `NIST 800-171` seed a crosswalk normally.
-      Nobody has published one. That zero is work nobody has done.
+    - `42 CFR Part 2` seeds a crosswalk normally, and no published mapping
+      was found (#264). That zero is work nobody has done -- as far as a
+      search that did not enumerate NIST OLIR can say -- and
+      `SEARCHED_NONE_FOUND` holds the search record.
+    - **A source that publishes a mapping PolicyForge does not yet read**:
+      that zero is a gap in PolicyForge, not in the source, and
+      `PUBLISHED_UPSTREAM` holds the reason. `NIST 800-171` was the case
+      until #259 -- NIST's own OSCAL links all 97 requirements to 800-53 --
+      and it now carries that mapping, so it is a crosswalk-carrying
+      catalog below. The table is empty today.
+    - **A catalog that carries a crosswalk** -- HIPAA, FedRAMP, ARC-AMPE
+      -- reads zero for up to three reasons AT ONCE, one per requirement,
+      so its row is one counted clause per reason and the counts sum to
+      the catalog's whole requirement count (80's ruling on #270):
+      *partial* -- the topics own the control, but the organisation's
+      overlay records the mapping as `superset`/`intersects`, so whether
+      that is enough is a person's call; *unowned* -- mapped to a control
+      no topic owns, so the gap is in the topics and a hand-seeded pair
+      would compete with the publisher's; *unmapped* -- no mapping in this
+      catalog's crosswalk at all (HIPAA's 164.306(a)-(e) among 9), with no
+      advice. One sentence spoke for this mixed population three times on
+      #270 before it was split. `covered` is the catalog joined to the
+      user's topics and overlay, not a fact about the file: the example
+      registry anchors so much that none of this showed (1d, on #270).
+    - **Any other catalog** -- every BYOC one, and any shipped one added
+      later without a crosswalk -- is in none of those tables and carries no
+      mapping. Its row states only that. Until #264 this branch printed "no
+      published crosswalk yet" for all of them, including the two above,
+      which is a claim about the world that no one had checked.
 
-    Those want opposite responses — *leave it alone* against *go and map
-    it* — and the report prints the same number for both. The reasons are
-    looked up from the declared framework name, which is reliable since
-    the two CFR catalogs were renamed to be citable.
+    **This docstring said the opposite until #260**: *"`42 CFR Part 2` and
+    `NIST 800-171` seed a crosswalk normally. Nobody has published one."*
+    The report then told 800-171 users to rebuild by hand, with `crosswalk
+    seed`, a mapping NIST publishes in the very file the catalog is built
+    from. The two-way framing — *leave it alone* against *go and map it* —
+    had no place for a zero the source had already answered, so the third
+    kind was filed under the second.
+
+    Those want different responses — *leave it alone*, *wait for the
+    ingest*, *fix the topics*, *decide whether partial is enough*, *go and
+    map it*, and *find out, then map it* — and the report prints the same
+    number for all of them. The header names no count: it went from two
+    kinds to six in a day, and a count in output is a claim that goes stale
+    in a place nobody adding a kind thinks to look (80, on #270). The rows
+    carry the taxonomy. The reasons are looked up from the declared
+    framework name, which is reliable since the two CFR catalogs were
+    renamed to be citable.
 
     **`catalog_paths` is what makes the remedy performable.** Without it
     this printed `crosswalk seed --framework 'NIST 800-171'`, which the
@@ -614,12 +674,32 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
     framework plus the 800-53 anchor a crosswalk is built against. Both,
     because seeding needs the thing being mapped and the thing it maps to.
     """
-    from policyforge.crosswalk.overlay import _refusal_reason
+    from policyforge.crosswalk.overlay import (
+        _refusal_reason,
+        _searched_none_found,
+        _upstream_reason,
+    )
 
     declared = {}
+    # Frameworks whose catalog carries any 800-53 mapping, at either level --
+    # NIST's HIPAA crosswalk maps implementation specifications separately
+    # from their Standards, so a control-level check alone would miss some.
     for control in controls:
-        key = _framework_key(control.framework)
-        declared.setdefault(key, control.framework)
+        declared.setdefault(_framework_key(control.framework), control.framework)
+
+    # Per framework, the requirement ids the crosswalk maps to 800-53 -- read
+    # from `build_crosswalk`, the instrument coverage itself uses, so the R/N
+    # split and the covered count pass through ONE instrument (#278). It
+    # takes in all three places a mapping can live: a catalog's own
+    # `source_crosswalk`, an 800-53 control naming another framework's ids,
+    # and HITRUST's level-scoped requirement mappings ("01.a Level 1").
+    # Reading only the first made the other two print "carry no mapping".
+    from policyforge.mapping.crosswalk import build_crosswalk
+
+    mapped: dict[str, set[str]] = {}
+    for by_framework in build_crosswalk(controls).values():
+        for framework_key, ids in by_framework.items():
+            mapped.setdefault(framework_key, set()).update(ids)
 
     path_for = _paths_by_framework(catalog_paths or [])
     anchor_path = path_for.get(_framework_key("NIST 800-53"))
@@ -634,15 +714,75 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
             notes.append(
                 f"  {framework.framework.upper()}: not mapped by design. {_first_sentence(reason)}"
             )
+        elif (upstream := _upstream_reason(name)) is not None:
+            # The third kind of zero. Printed whole rather than cut to a first
+            # sentence: the second sentence -- a gap in PolicyForge, not in the
+            # source -- is the point, and no command follows, because the one
+            # this branch used to print told users to rebuild by hand what the
+            # publisher already publishes. #260.
+            notes.append(f"  {framework.framework.upper()}: {upstream}")
+        elif framework.partial or _framework_key(framework.framework) in mapped:
+            # A catalog that carries a crosswalk, read zero. **One sentence
+            # spoke for a mixed population three times** (1d twice, ba once,
+            # on #270), so the row is built from clauses -- one per kind of
+            # requirement, each with its live count, omitted at zero -- and
+            # the three counts sum to every requirement the catalog has:
+            #
+            #   P  reached only through mappings the organisation recorded as
+            #      superset/intersects; whether that is enough is a person's
+            #      call. "listed as partial above" holds because `_coverage`,
+            #      this function's only production caller, prints
+            #      `format_report` first, and that lists them.
+            #   R  mapped, but to no control a topic owns: the gap is in the
+            #      topics, and a hand-seeded pair would compete with the
+            #      publisher's mapping.
+            #   N  no mapping in this catalog's crosswalk at all -- HIPAA's
+            #      164.306(a)-(e) among them. No advice: whether each could be
+            #      mapped is a claim nobody has measured.
+            #
+            # Product ruling 80, on #270. No command on any clause.
+            own = mapped.get(_framework_key(framework.framework), set())
+            reach = [r for r in framework.uncovered if r in own]
+            none = [r for r in framework.uncovered if r not in own]
+            clauses = []
+            if framework.partial:
+                clauses.append(
+                    f"{len(framework.partial)} reach controls your topics own, but only in "
+                    "part (listed as partial above); whether that is enough is a person's call."
+                )
+            if reach:
+                clauses.append(
+                    f"{len(reach)} map to 800-53 controls none of your topics owns; that gap "
+                    "is in your topics, not the mapping, so do not seed them by hand."
+                )
+            if none:
+                clauses.append(f"{len(none)} carry no mapping in this catalog's crosswalk.")
+            notes.append(f"  {framework.framework.upper()}: " + " ".join(clauses))
         else:
-            flags = ""
+            # Named for its contract, because the name is what the source
+            # scan sees at the interpolation site: a pre-assembled fragment
+            # cannot be quoted again there without collapsing it into one
+            # argument, so the quoting has to happen here, per value.
+            quoted_flags = ""
             own_path = path_for.get(_framework_key(framework.framework))
             for path in (own_path, anchor_path):
-                if path and path not in flags:
-                    flags += f" --controls {path}"
+                if path and shlex.quote(str(path)) not in quoted_flags:
+                    quoted_flags += f" --controls {shlex.quote(str(path))}"
+            # Two kinds of zero share the seed advice -- neither catalog carries
+            # any mapping -- and differ only in what the row may claim. "found"
+            # is reserved for a framework someone actually searched for
+            # (`SEARCHED_NONE_FOUND`, whose search record sits beside it --
+            # Part 2, #264). Every other catalog, including any BYOC one, gets
+            # a fact about the catalog and no claim about the world: nobody
+            # searched for it, so nothing was "not found".
+            if _searched_none_found(name) is not None:
+                state = "no published crosswalk found"
+            else:
+                state = "this catalog carries no crosswalk"
             notes.append(
-                f"  {framework.framework.upper()}: no published crosswalk yet — "
-                f"`policyforge crosswalk seed --framework {name!r}{flags}` starts one."
+                f"  {framework.framework.upper()}: {state} — "
+                f"`policyforge crosswalk seed --framework {shlex.quote(name)}"
+                f"{quoted_flags}` starts one."
             )
     if not notes:
         return []
@@ -650,8 +790,8 @@ def _zero_row_reasons(controls, report, catalog_paths=None) -> list[str]:
         "",
         "Why those are zero",
         "-" * 60,
-        "  A zero here is either work nobody has done or a mapping that would be",
-        "  wrong to make. They are not the same and they want opposite responses.",
+        "  A zero here has one of several causes, and they want different responses.",
+        "  Each line below names its cause.",
         *notes,
     ]
 

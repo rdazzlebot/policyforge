@@ -141,8 +141,9 @@ def addresses_cmd(requirement: str, topics_path: Path, controls_paths):
     HITRUST - and this resolves it through the crosswalk to the topics the
     registry anchors, then names the owner and the pages.
 
-    Every claim says how it was reached: anchored directly, inherited from a
-    parent control, or reached through a published crosswalk. The last is
+    Every claim says how it was reached: anchored directly, inherited from an
+    anchored parent (a control, or an AI RMF category), or reached through a
+    published crosswalk. The last is
     the weakest and is labelled as such, because a mapping is not evidence
     that anybody wrote the requirement down.
     """
@@ -572,8 +573,13 @@ def parameters_cmd(
             for topic in load_topics(topics_path)
             for control_id in topic.nist_controls
         }
-        # An anchor claims its enhancements, the same rule coverage.py uses,
-        # so AC-2 in the registry brings AC-2(1)'s parameters with it.
+        # An anchor claims its enhancements by id prefix, so AC-2 in the
+        # registry brings AC-2(1)'s parameters with it. **Deliberately NOT
+        # coverage's `parent_of`** (#318): that rule reads no framework and
+        # is only ever given the anchorable catalogs, while this filters
+        # every loaded catalog. Swapped in here, it claimed 72 NIST AI RMF
+        # Playbook rows (`Govern 1.1` under an anchored `Govern 1`), and a
+        # topic owns nothing in the Playbook.
         controls = [
             c
             for c in controls
@@ -637,6 +643,16 @@ def frameworks_cmd():
         raise SystemExit(1)
 
     click.echo(report.format_report())
+    # Where declarations are inspected is where their prose collisions are
+    # shown (80 on #347): facts for the user to judge, never a failure.
+    from policyforge.frameworks.registry import key_collisions
+
+    facts = key_collisions(config)
+    if facts:
+        click.echo("")
+        click.echo("Framework keys worth a look:")
+        for fact in facts:
+            click.echo(f"  {fact}")
     if report.allowed:
         click.echo("")
         click.echo(
@@ -782,8 +798,10 @@ def satisfies_cmd(
 
     Two resolution rules worth knowing, because the counts look wrong
     without them. Citing an enhancement counts as citing its control, so a
-    topic that cites AC-2(3) is not reported as never mentioning AC-2 - the
-    same reading `coverage` and `drift` use. And a topic's anchors are
+    topic that cites AC-2(3) is not reported as never mentioning AC-2, and
+    one citing Govern 1.1 is not reported as never mentioning Govern 1 - the
+    same `parent_of` reading `coverage` uses, and `drift` for the catalogs
+    topics anchor. And a topic's anchors are
     answered by its documents together rather than one file at a time, so a
     Policy is not reported as missing anchors its own Procedure cites; the
     report names how much it searched. Under --document, one file is all

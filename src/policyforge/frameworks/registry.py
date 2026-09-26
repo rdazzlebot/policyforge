@@ -44,6 +44,7 @@ from __future__ import annotations
 
 # Used for exactly one thing: asking git whether a path is tracked.
 import subprocess  # nosec B404
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -73,6 +74,14 @@ class Framework:
     licence: str = LICENSED
     source: str = ""
     notes: str = ""
+    #: The framework key the catalog DECLARES (#295), e.g. `nist-800-53`, from
+    #: `framework_id:` in its manifest: the identity citations, crosswalks,
+    #: coverage and `/satisfies` all key it by. Not the manifest's `id:`,
+    #: which names the directory (`nist-800-53-r5`). It wins over keying from the prose name;
+    #: empty when the manifest has none. The manifest field is not called
+    #: `key:` because gitleaks' generic-api-key rule reads `key: <long token>`
+    #: as a secret (it flagged `cfr-170-315-onc-certification`).
+    key: str = ""
     #: True when a manifest was found. Without one there is nothing to go on
     #: but the directory's location, so the framework is reported as
     #: undeclared rather than assumed safe.
@@ -116,6 +125,7 @@ def load_framework(directory: Path) -> Framework:
         licence=PUBLIC_DOMAIN if licence == PUBLIC_DOMAIN else LICENSED,
         source=str(data.get("source") or ""),
         notes=str(data.get("notes") or ""),
+        key=str(data.get("framework_id") or "").strip(),
         declared=bool(data),
     )
 
@@ -178,6 +188,259 @@ def discover(config: dict | None = None, *, roots: list[Path] | None = None) -> 
     return list(found.values())
 
 
+class FrameworkKeyWarning(UserWarning):
+    """A declared framework key that prose keying would not have produced,
+    or two catalogs declaring one name with different keys (#295)."""
+
+
+def config_or_defaults(what: str, category: type[Warning] = UserWarning) -> dict:
+    """This project's config, or `{}` -- the default search paths -- if it
+    cannot be read. The ONE copy of that fallback (1d on #346).
+
+    **A lookup never fails on the config file** (1d on #344). Keying a
+    framework name runs under commands that never read config themselves,
+    like `map`, so a config that does not parse must not become their
+    traceback. (`check` does read config, since #329, and still raises on a
+    malformed one; this fallback does not change that.) It is named in one
+    warning of `category`, saying `what` was read from the default search
+    paths and the bundled catalogs instead. A missing config is ordinary and
+    silent.
+    """
+    import warnings
+
+    import yaml
+
+    from policyforge.config import load_config, resolve_config_path
+
+    try:
+        return load_config()
+    except FileNotFoundError:
+        return {}
+    except (yaml.YAMLError, OSError, UnicodeDecodeError, ValueError) as exc:
+        warnings.warn(
+            category(
+                f"{resolve_config_path()} could not be read ({type(exc).__name__}), so {what} "
+                "from the default search paths and the bundled catalogs only."
+            ),
+            stacklevel=4,
+        )
+        return {}
+
+
+def _catalog_roots(config: dict | None) -> list[Path]:
+    """The search paths, then the bundled catalogs: every place a catalog
+    this project can cite may live, wherever the command runs. A
+    repository's own copy shadows the bundled one exactly as `discover`
+    lets it."""
+    roots = list(search_paths(config))
+    try:
+        from policyforge.scaffold import bundled_root
+
+        bundled = Path(str(bundled_root().joinpath("frameworks")))
+        if bundled.is_dir():
+            roots.append(bundled)
+    except (RuntimeError, ModuleNotFoundError, OSError):
+        pass
+    return roots
+
+
+def _catalog_names(
+    config: dict | None, roots: list[Path] | None
+) -> Iterator[tuple[Path, Framework, list[str]]]:
+    """Each catalog on disk, with every name it goes by: the ONE walk (#340, #295).
+
+    The manifest's `name` (when a manifest declares one) and each
+    `framework` string its `controls.json` rows carry (`NIST 800-53` there,
+    `NIST SP 800-53 Rev 5` in the manifest), for every catalog under
+    `roots` -- by default the search paths, then the bundled root. A
+    directory reached twice is read once, the first time. Rows that cannot
+    be read cost the row names, not the manifest's.
+
+    `known_framework_names` and `declared_keys` both read catalogs through
+    this, so the names a tag part is matched against and the names a key is
+    declared for cannot drift apart (9b on #346).
+    """
+    import json
+
+    seen: set[Path] = set()
+    for root in roots if roots is not None else _catalog_roots(config):
+        if not root.is_dir():
+            continue
+        for directory in sorted(p for p in root.iterdir() if p.is_dir()):
+            resolved = directory.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            framework = load_framework(directory)
+            names = {framework.name} if framework.declared else set()
+            if framework.has_controls:
+                try:
+                    rows = json.loads(framework.controls_path.read_text(encoding="utf-8"))
+                    names.update(str(r.get("framework") or "") for r in rows if isinstance(r, dict))
+                except (OSError, ValueError):
+                    pass
+            yield directory, framework, sorted(n for n in names if n.strip())
+
+
+def known_framework_names(
+    config: dict | None = None, *, roots: list[Path] | None = None
+) -> frozenset[str]:
+    """Every framework name a catalog on disk goes by (#340).
+
+    See `_catalog_names` for which names and which catalogs: a catalog a
+    user brings, under `frameworks/` or `local_content/`, is known as surely
+    as a shipped one. Derived from the catalogs, never typed.
+
+    The ONE list of names both readers of a tag's parts use (80's ruling on
+    #340): the Playbook gate, to tell a part naming another framework from a
+    shorthand part that inherits, and `satisfies`, which adds the catalogs it
+    has loaded.
+    """
+    return frozenset(n for _, _, names in _catalog_names(config, roots) for n in names)
+
+
+def _shipped_buckets() -> dict[str, str]:
+    """{first word: the shipped catalog name it comes from}: `nist`, `hipaa`...
+
+    These are the buckets prose keying's first-word fallback fills: every
+    "NIST ..." name nobody pinned keys to `nist`, which is the collision
+    #295 exists to end. Derived from the bundled catalogs, never typed, and
+    read whatever roots the caller passed, because which catalogs ship does
+    not depend on where a command looks for others (80's ruling on #295).
+    Every name a shipped catalog goes by counts, the rows' as well as the
+    manifest's; the first name in sorted order is the one reported.
+    """
+    try:
+        from policyforge.scaffold import bundled_root
+
+        bundled = Path(str(bundled_root().joinpath("frameworks")))
+    except (RuntimeError, ModuleNotFoundError, OSError):
+        return {}
+    buckets: dict[str, str] = {}
+    for name in sorted(n for _, _, names in _catalog_names(None, [bundled]) for n in names):
+        buckets.setdefault(name.lower().split()[0], name)
+    return buckets
+
+
+def _declarations(
+    config: dict | None, roots: list[Path] | None
+) -> tuple[dict[str, tuple[str, Path]], list[tuple[str, str, Path, str]]]:
+    """({normal name: (declared key, directory)}, [names whose prose key differs]).
+
+    Two catalogs declaring one name with different keys raise a
+    `FrameworkKeyWarning` naming both, wherever keys are read: that is an
+    ambiguity in what is on disk, and the first root's declaration is kept.
+    """
+    import warnings
+
+    from policyforge.mapping.crosswalk import prose_framework_key
+
+    found: dict[str, tuple[str, Path]] = {}
+    differing: list[tuple[str, str, Path, str]] = []
+    for directory, framework, names in _catalog_names(config, roots):
+        if not framework.key:
+            continue
+        for name in names:
+            normal = " ".join(name.lower().split())
+            if normal in found:
+                if found[normal][0] != framework.key:
+                    warnings.warn(
+                        FrameworkKeyWarning(
+                            f"{name!r} is declared as {found[normal][0]!r} by "
+                            f"{found[normal][1]} and as {framework.key!r} by {directory}; "
+                            f"keeping {found[normal][0]!r}"
+                        ),
+                        stacklevel=3,
+                    )
+                continue
+            found[normal] = (framework.key, directory)
+            prose = prose_framework_key(name)
+            if prose != framework.key:
+                differing.append((name, framework.key, directory, prose))
+    return found, differing
+
+
+def declared_keys(config: dict | None = None, *, roots: list[Path] | None = None) -> dict[str, str]:
+    """{name, whitespace-collapsed and lower-cased: declared key} (#295).
+
+    **Every name a catalog goes by** (`_catalog_names`) is mapped to the
+    `framework_id:` its `framework.yaml` declares; a catalog declaring none
+    is skipped. The first root that declares a name wins, as in `discover`,
+    and two catalogs declaring one name differently are warned about.
+
+    A declared key that differs from the name's prose key is NOT warned
+    about here, because this runs under every command that keys a name; see
+    `key_collisions`, which the commands that make and inspect declarations
+    print (80's ruling on #347).
+
+    Read from the directories rather than registered when a catalog is
+    loaded, so that keying a name does not depend on what was loaded first
+    (80's condition on #295): a citation parsed before any catalog is read
+    still gets the declared key.
+    """
+    found, _ = _declarations(config, roots)
+    return {name: key for name, (key, _) in found.items()}
+
+
+def key_collisions(
+    config: dict | None = None,
+    *,
+    roots: list[Path] | None = None,
+    directory: Path | None = None,
+) -> list[str]:
+    """Each declaration whose name, keyed by prose alone, lands on a KNOWN key.
+
+    Then citations written before the declaration were filed under that
+    other key, which is worth a person's attention. Every deliberate
+    declaration differs from its name's first word -- "Acme Security
+    Baseline" declared `acme-baseline` prose-keys to `acme` -- so a
+    difference alone says nothing, and is not reported.
+
+    A prose key is known if it is (1) a key another catalog declares, (2) an
+    alias target, or (3) the first word of a shipped catalog's name -- the
+    shared fallback bucket, `nist` above all, that #295 exists to empty (80's
+    rulings on #347). Each is reported as a fact, naming which of the three
+    made the key known, for the user to judge.
+
+    **Shown only where a declaration is made or inspected**: the BYOC
+    importers and `policyforge frameworks`. Not on every command that loads
+    catalogs (80). `directory`, when given, limits the report to that
+    catalog -- the one an importer just declared -- and reads its parent
+    directory ahead of the search paths, since it may lie outside them.
+    """
+    import warnings
+
+    from policyforge.mapping.crosswalk import FRAMEWORK_ALIASES
+
+    if directory is not None and roots is None:
+        # The catalog just written may sit outside the search paths.
+        roots = [directory.parent, *_catalog_roots(config)]
+    with warnings.catch_warnings():
+        # Conflicts are warned about where keys are read; not twice here.
+        warnings.simplefilter("ignore", FrameworkKeyWarning)
+        found, differing = _declarations(config, roots)
+
+    known: dict[str, str] = {}
+    for key, source in sorted(found.values(), key=lambda item: (item[0], str(item[1]))):
+        known.setdefault(key, f"the key {source} declares")
+    for _, target in FRAMEWORK_ALIASES:
+        known.setdefault(target, "a key the built-in alias table assigns")
+    for word, name in _shipped_buckets().items():
+        known.setdefault(word, f"the first word of shipped catalog {name!r}")
+
+    wanted = directory.resolve() if directory is not None else None
+    facts = []
+    for name, key, where, prose in differing:
+        if prose not in known or (wanted is not None and where.resolve() != wanted):
+            continue
+        facts.append(
+            f"{where} declares {key!r} for {name!r}; its prose would key to {prose!r}, "
+            f"{known[prose]}. Citations written before this declaration were filed "
+            f"under {prose!r}."
+        )
+    return facts
+
+
 def is_tracked(path: Path) -> bool | None:
     """Whether git tracks anything under `path`.
 
@@ -190,10 +453,11 @@ def is_tracked(path: Path) -> bool | None:
         # Fixed argv and no shell; the only variable part is a path the
         # caller already has. `git` resolves from PATH on purpose, since
         # pinning an absolute path would break every platform but one.
+        # Bytes: only emptiness is read, so nothing is decoded and nothing
+        # can fail to decode (#287).
         result = subprocess.run(  # nosec B603 B607
             ["git", "ls-files", "--", str(path)],
             capture_output=True,
-            text=True,
             timeout=15,
             check=False,
         )
@@ -221,10 +485,10 @@ def is_ignored(path: Path) -> bool | None:
     try:
         # Fixed argv and no shell; the only variable part is a path the
         # caller already has.
+        # Bytes: `-q` prints nothing and only the return code is read (#287).
         result = subprocess.run(  # nosec B603 B607
             ["git", "check-ignore", "-q", "--no-index", str(path)],
             capture_output=True,
-            text=True,
             timeout=15,
             check=False,
         )

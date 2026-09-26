@@ -43,6 +43,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from evals.provider import EVAL_SITE, Metered, build_provider, eval_config
 from evals.runner import (
+    GENERATED_SUITES,
     SUITES,
     format_report,
     load_cases,
@@ -112,23 +113,67 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    cases = load_cases(args.cases) if args.cases else load_cases()
+    cases = load_cases(args.cases)
     corpora = load_corpora(args.cases) if args.cases else load_corpora()
-    wanted = args.suite or sorted(SUITES)
+    requested = args.suite or sorted(SUITES)
+    # Once each, in the order first named (#276). Naming a suite twice
+    # planned its cases twice: double the spend for no extra information,
+    # since spread comes from --repeat, and each case counted twice in the
+    # epoch.
+    wanted = list(dict.fromkeys(requested))
     planned = [
         (suite, case)
         for suite in wanted
         for case in (cases.get(suite, [])[: args.limit] if args.limit else cases.get(suite, []))
     ]
 
+    # Every way the plan differs from the command line gets said, rather than
+    # fixed quietly (#276, #275): a silent de-duplication, or a suite a
+    # `--cases` file does not name, is a population change a reader of the
+    # plan cannot see. Printed before the refusal below, so a refused run
+    # says why its suite is empty.
+    notices = [
+        f"{suite} named {requested.count(suite)} times; planned once"
+        for suite in wanted
+        if requested.count(suite) > 1
+    ]
+    if args.cases is not None:
+        notices += [
+            f"{suite}  0  (not in --cases file)"
+            for suite in GENERATED_SUITES
+            if suite in wanted and not cases.get(suite)
+        ]
+    for line in notices:
+        print(line)
+
+    # Per suite, not over the union (#223). `if not planned` alone is
+    # satisfied by any one suite's cases, so a requested suite contributing
+    # none dropped out of the run and the report without a word, and the
+    # totals stayed true about what did run. Derived from `planned` rather
+    # than from `cases`, so whatever emptied a suite — the file, `--limit` —
+    # is what gets counted.
+    empty = [suite for suite in wanted if not any(s == suite for s, _ in planned)]
+    if args.suite and empty:
+        # Asked for by name: a run without it is not the run that was asked
+        # for, so refuse before anything is spent rather than report around
+        # the hole.
+        print(f"No cases for requested suite(s), so nothing was run: {', '.join(empty)}")
+        return 1
     if not planned:
         print("No cases selected.")
         return 1
+    # Not asked for by name, so a `--cases` file covering some suites is a
+    # legitimate run of those — but the rest are named here and in the
+    # report, so the run cannot be read as covering them. Whether the
+    # SHIPPED cases fill every suite is a test, not a runtime judgement.
+    not_run = f"NOT RUN, no cases: {', '.join(empty)}" if empty else ""
 
     if args.dry_run:
         print(f"{len(planned)} case(s) x {args.repeat} run(s) = {len(planned) * args.repeat} calls")
         for suite, case in planned:
             print(f"  {suite:11} {case.get('name') or case.get('question')}")
+        if not_run:
+            print(not_run)
         return 0
 
     # One construction path, whether or not --model was given: the options
@@ -177,6 +222,8 @@ def main() -> int:
         set_entailer(judge)
 
     print(f"Running {len(planned)} case(s) x {args.repeat} against {grading}...")
+    if not_run:
+        print(not_run)
     if judge is not None:
         print(f"Entailment judged by {args.entail_model}, one call per cited sentence.")
     print()
@@ -192,7 +239,7 @@ def main() -> int:
         )
         print(mark, end="", flush=True)
     print("\n")
-    print(format_report(results, repeat=args.repeat))
+    print(format_report(results, repeat=args.repeat, requested=wanted))
     print(f"\n{provider.summary()}")
     if judge is not None:
         print(f"entailment: {judge_meter.summary()}")

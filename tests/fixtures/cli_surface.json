@@ -1,7 +1,7 @@
 {
   "commands": {
     "addresses": {
-      "help": "Who answers for one requirement, and which document says so.\n\nThe assessor's direction of travel. Name any requirement - NIST, HIPAA,\nHITRUST - and this resolves it through the crosswalk to the topics the\nregistry anchors, then names the owner and the pages.\n\nEvery claim says how it was reached: anchored directly, inherited from a\nparent control, or reached through a published crosswalk. The last is\nthe weakest and is labelled as such, because a mapping is not evidence\nthat anybody wrote the requirement down.",
+      "help": "Who answers for one requirement, and which document says so.\n\nThe assessor's direction of travel. Name any requirement - NIST, HIPAA,\nHITRUST - and this resolves it through the crosswalk to the topics the\nregistry anchors, then names the owner and the pages.\n\nEvery claim says how it was reached: anchored directly, inherited from an\nanchored parent (a control, or an AI RMF category), or reached through a\npublished crosswalk. The last is\nthe weakest and is labelled as such, because a mapping is not evidence\nthat anybody wrote the requirement down.",
       "name": "addresses",
       "params": [
         {
@@ -210,6 +210,24 @@
           "nargs": 1,
           "opts": [
             "--strict"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "help": "Also ask a model whether each cited obligation is actually carried by the synthesis requirements it cites. Costs one call per cited obligation, printed before anything runs. Reported only -- never changes the exit code.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "Option",
+          "multiple": false,
+          "name": "entail",
+          "nargs": 1,
+          "opts": [
+            "--entail"
           ],
           "required": false,
           "secondary_opts": [],
@@ -1373,6 +1391,75 @@
         }
       ]
     },
+    "etl-ai-rmf-playbook": {
+      "help": "Fetch the NIST AI RMF Playbook -- NIST's suggested actions per Core\nsubcategory -- and parse it into this project's data schema. A US\ngovernment work, so safe to bundle.\n\nTHE PLAYBOOK IS VOLUNTARY: NIST calls its suggestions \"voluntary\" and\n\"neither a checklist nor set of steps to be followed in its entirety\".\nA document citing an action may say NIST suggests it, never that NIST\nrequires it. The catalog's README carries the long form.\n\nPinned to one export by its SHA-256, because NIST publishes no revision\nnumber: a different export is refused, and on the scheduled drift job\nthat refusal is the job working. The per-subcategory action counts are\npinned to an independent count, and a short or long parse is refused\nwhole.",
+      "name": "etl-ai-rmf-playbook",
+      "params": [
+        {
+          "default": "data/frameworks/nist-ai-rmf-playbook/controls.json",
+          "help": "Where to write the parsed data.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        },
+        {
+          "default": null,
+          "help": "Parse a saved copy of playbook.json instead of fetching. It must be the pinned export, byte for byte.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "json_path",
+          "nargs": 1,
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": false,
+            "exists": true,
+            "file_okay": true,
+            "name": "file"
+          }
+        },
+        {
+          "default": "data/frameworks/nist-ai-rmf/controls.json",
+          "help": "The AI RMF Core catalog. Every Playbook entry must serve one of its subcategories.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "core",
+          "nargs": 1,
+          "opts": [
+            "--core"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": false,
+            "exists": true,
+            "file_okay": true,
+            "name": "file"
+          }
+        }
+      ]
+    },
     "etl-arc-ampe": {
       "help": "Fetch CMS's ARC-AMPE Volume II baseline and parse it into this schema.\n\nPublic domain - published by CMS, a federal agency, with no copyright\nnotice or redistribution restriction, same basis as the NIST and eCFR\nsources.\n\nNote which volume this reads. Volume I is the narrative PDF and holds no\ncontrols; Volume II is the System Security and Privacy Plan workbook,\nand its `AE Mandatory Baseline` sheet is the catalog - 402 controls\nrequired of an ACA Administering Entity, with CMS's parameter decisions\nalready written into the control text. The sheet is found by its shape\nrather than its name, so the Direct Enrollment Entity workbook reads the\nsame way via --export. See ingest/arc_ampe.py.",
       "name": "etl-arc-ampe",
@@ -1838,6 +1925,51 @@
         },
         {
           "default": "data/frameworks/cfr-171-information-blocking/controls.json",
+          "help": "Where to write the parsed data.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "out",
+          "nargs": 1,
+          "opts": [
+            "--out"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "dir_okay": true,
+            "exists": false,
+            "file_okay": true,
+            "name": "path"
+          }
+        }
+      ]
+    },
+    "etl-onc": {
+      "help": "Fetch the ONC certification criteria (45 CFR 170.315) from eCFR's\npublic API and parse them into this project's data schema. A US federal\nregulation, so safe to bundle.\n\nONE CRITERION IS ONE CONTROL, cited as 170.315(g)(10). Its category is\nthe family, and its sub-paragraphs are its statement.\n\nTHE PARSE IS REFUSED unless the live criteria EQUAL an independently\nagreed set (#179): this catalog shipped once with fabricated criteria\n(#152, reverted as #163). Reserved and expired criteria are left out and\nreported by id on every run.",
+      "name": "etl-onc",
+      "params": [
+        {
+          "default": null,
+          "help": "eCFR effective date (YYYY-MM-DD) to fetch, for reproducibility. Default: eCFR's current published date for Title 45.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "Option",
+          "multiple": false,
+          "name": "date",
+          "nargs": 1,
+          "opts": [
+            "--date"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "data/frameworks/cfr-170-315-onc-certification/controls.json",
           "help": "Where to write the parsed data.",
           "hidden": false,
           "is_flag": false,
@@ -3399,7 +3531,7 @@
       ]
     },
     "satisfies": {
-      "help": "What a published document can be shown against, and how strong the evidence is.\n\nThe assessor's direction of travel, from the page rather than the\nrequirement: name a document and this reports the requirements it cites,\nthe ones those citations reach through the crosswalk, and - separately -\nthe controls its topic claims that nothing in the topic actually says.\n\nThe citations in the text are the evidence. A topic anchor is an\nintention, so the two are never added together. Every crosswalked\nmapping says where it came from: the published crosswalk, an overlay row\nsomebody reviewed, or an overlay row nobody has. The last are shown and\nmarked rather than dropped. No model call and no network.\n\nThe crosswalk is anchored on NIST 800-53 and is walked from the NIST\nrequirements a document cites, so a document citing none reaches nothing\nthrough it - and the report says so rather than printing an empty\nsection, which on this command would read as an absence of coverage.\n\nTwo resolution rules worth knowing, because the counts look wrong\nwithout them. Citing an enhancement counts as citing its control, so a\ntopic that cites AC-2(3) is not reported as never mentioning AC-2 - the\nsame reading `coverage` and `drift` use. And a topic's anchors are\nanswered by its documents together rather than one file at a time, so a\nPolicy is not reported as missing anchors its own Procedure cites; the\nreport names how much it searched. Under --document, one file is all\nthere is to search, and it says so.",
+      "help": "What a published document can be shown against, and how strong the evidence is.\n\nThe assessor's direction of travel, from the page rather than the\nrequirement: name a document and this reports the requirements it cites,\nthe ones those citations reach through the crosswalk, and - separately -\nthe controls its topic claims that nothing in the topic actually says.\n\nThe citations in the text are the evidence. A topic anchor is an\nintention, so the two are never added together. Every crosswalked\nmapping says where it came from: the published crosswalk, an overlay row\nsomebody reviewed, or an overlay row nobody has. The last are shown and\nmarked rather than dropped. No model call and no network.\n\nThe crosswalk is anchored on NIST 800-53 and is walked from the NIST\nrequirements a document cites, so a document citing none reaches nothing\nthrough it - and the report says so rather than printing an empty\nsection, which on this command would read as an absence of coverage.\n\nTwo resolution rules worth knowing, because the counts look wrong\nwithout them. Citing an enhancement counts as citing its control, so a\ntopic that cites AC-2(3) is not reported as never mentioning AC-2, and\none citing Govern 1.1 is not reported as never mentioning Govern 1 - the\nsame `parent_of` reading `coverage` uses, and `drift` for the catalogs\ntopics anchor. And a topic's anchors are\nanswered by its documents together rather than one file at a time, so a\nPolicy is not reported as missing anchors its own Procedure cites; the\nreport names how much it searched. Under --document, one file is all\nthere is to search, and it says so.",
       "name": "satisfies",
       "params": [
         {

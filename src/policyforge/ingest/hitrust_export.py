@@ -318,7 +318,23 @@ def read_mhtml(path: Path) -> str:
 _LABEL_VALUE_WIDTH = 2
 
 
-def records_from_pairs(rows: list[list[str]]) -> list[Record]:
+#: The three outcomes every cell of text ends in (#281). `records_from_pairs`
+#: records (outcome, cells) into `ledger` when given -- a placed row's label
+#: and value as one entry, any cell in front of them as another -- so a test
+#: can assert they PARTITION the input's cells: nothing may leave every
+#: outcome.
+PLACED, QUIET, REPORTED = "placed", "quiet", "reported"
+
+#: Labels this reader knows and deliberately does not keep. Enumerated, so a
+#: quiet row is a decision someone wrote down, not a default.
+_KNOWN_UNREAD = frozenset({"topics"})
+
+
+def records_from_pairs(
+    rows: list[list[str]],
+    losses: list[str] | None = None,
+    ledger: list[tuple[str, list[str]]] | None = None,
+) -> list[Record]:
     """Read a rendered report's label/value rows into records.
 
     The page is a stream: tier headings set the context that following
@@ -326,6 +342,47 @@ def records_from_pairs(rows: list[list[str]]) -> list[Record]:
     "Control Reference:" starts a new control; a level-scoped label
     ("Level 2 Implementation:") starts or extends that control's record for
     that level.
+
+    **Two things this discards, and neither can be ruled out** (#266). Both
+    rest on how SSRS lays out a page break, and no real export has been
+    seen by this project -- the fixture is our belief about the format:
+
+    - a row carrying text but no label (a cell continued onto the next page
+      *without* its label reprinted) is skipped, so its text is lost;
+    - a statement that arrives as two different copies keeps the longer
+      (`_absorb`), so the shorter is lost -- including in the shape SSRS is
+      assumed to produce, with the label reprinted.
+
+    The parse is unchanged; what changed is that neither is silent. Each is
+    described into `losses` when given, and `etl-hitrust` prints them as
+    warnings, so an export that hits either shape says so on its first run.
+
+    **Every cell with text is placed, deliberately quiet, or reported**
+    (#277; 1d and 9b on #281). Quiet is an enumerated set -- a bare label
+    with no value, a label in `_KNOWN_UNREAD`, and a level heading whose
+    two cells are both captions ("Level 1 | Implementation Requirements")
+    for a level the report actually uses in a placed row. Anything else is
+    REPORTED by default: a row whose label is not second-to-last (read as
+    text plus an extra cell, taking its level record with it), a label
+    this reader does not know, colon or not, a recognised label with
+    nowhere to go -- no level in it, or no Control Reference yet -- and a
+    cell IN FRONT of a label and value that were read: the row is placed,
+    that cell's text is not. `ledger` records the outcome per group of
+    cells, so the partition can be tested against the input's cells.
+
+    **Page furniture is one cell too, if SSRS puts it in a table** -- a
+    report title, "Page 1 of 212", a print date. Whether it does is as
+    unmeasured as the two shapes above (9b and 1d, on #273). Dropping rows
+    that look like furniture would be a guess that fails silently, so none
+    is dropped: `_looks_like_furniture` only CLASSIFIES, the warning keeps
+    the whole count and says how it splits, and the excerpts are drawn from
+    the unclassified rows first. Furniture is recognised by recurring: text
+    that appears on more than one row once its numbers are masked ("3 of
+    12", "Page 3/12", "- 3 -", a title), plus "Page N" and a dated print
+    line. **A footer shape seen only once, or furniture that does not recur,
+    is still unclassified and can still take an excerpt slot** -- this
+    orders what is shown, it does not guarantee it. A misclassified
+    continuation is still counted; it is only shown later.
     """
     context = Record()
     records: list[Record] = []
@@ -346,9 +403,42 @@ def records_from_pairs(rows: list[list[str]]) -> list[Record]:
             records.append(fresh)
         return current[level]
 
+    skipped_text: list[str] = []
+    discarded: list[tuple[str, str]] = []
+    misplaced: list[list[str]] = []
+    unknown: list[tuple[str, str]] = []
+    orphaned: list[tuple[str, str]] = []
+    stray: list[str] = []
+    headings: list[list[str]] = []
+    levels_used: set[str] = set()
+
+    def outcome(kind: str, cells: list[str]) -> None:
+        if ledger is not None:
+            ledger.append((kind, cells))
+
+    def settled(kind: str, cells: list[str]) -> None:
+        """Label and value end in `kind`. Any cell IN FRONT of them does not
+        share that outcome, so it is reported: the unit that carries text is
+        the cell, not the row (9b, on #281 -- found first for placed rows,
+        then for the known-unread branch, which quieted the whole row)."""
+        outcome(kind, cells[-2:])
+        if len(cells) > _LABEL_VALUE_WIDTH:
+            stray.extend(cells[:-2])
+            outcome(REPORTED, cells[:-2])
+
+    def placed(cells: list[str]) -> None:
+        settled(PLACED, cells)
+
     for row in rows:
         cells = [cell for cell in row if cell.strip()]
+        if not cells:
+            continue  # a spacer row carries nothing, so it is not a row of text
         if len(cells) < _LABEL_VALUE_WIDTH:
+            if hitrust.field_for_label(cells[0]) is not None:
+                outcome(QUIET, cells)  # a bare label: a field left empty
+            else:
+                skipped_text.append(cells[0])
+                outcome(REPORTED, cells)
             continue
         label, value = cells[-2], cells[-1]
         field = hitrust.field_for_label(label)
@@ -357,15 +447,18 @@ def records_from_pairs(rows: list[list[str]]) -> list[Record]:
         if field in ("category", "objective", "objective_statement"):
             setattr(context, field, value)
             current.clear()
+            placed(cells)
             continue
         if field == "reference":
             context.reference = value
             context.specification = ""
             context.factor_type = ""
             current.clear()
+            placed(cells)
             continue
         if field in ("specification", "factor_type"):
             setattr(context, field, value)
+            placed(cells)
             continue
         if field in (
             "statement",
@@ -375,34 +468,201 @@ def records_from_pairs(rows: list[list[str]]) -> list[Record]:
             "mapping",
         ):
             if level and context.reference:
-                _absorb(record_for(level), field, value)
+                levels_used.add(level)
+                lost = _absorb(record_for(level), field, value)
+                if lost:
+                    discarded.append((f"{context.reference} {level}", lost))
+                placed(cells)
+            else:
+                # Recognised, and then nowhere to put it: no level in the
+                # label ("Implementation:"), or no Control Reference yet.
+                # This `continue` dropped text silently until 1d measured it
+                # on #281 -- a guard that drops a recognised row reports it.
+                orphaned.append((label, value))
+                outcome(REPORTED, cells)
+            continue
+        if field in _KNOWN_UNREAD:
+            settled(QUIET, cells)  # a label this reader knows and does not keep
+            continue
+        if (
+            len(cells) == _LABEL_VALUE_WIDTH
+            and field is None
+            and hitrust.field_for_label(value) is not None
+        ):
+            # A heading candidate: "Level 1 | Implementation
+            # Requirements". Decided after the loop: quiet only if the report
+            # USES that level in a placed row, because any "Level X" is a
+            # valid overlay name and "Level 2 MARKER" is shaped exactly like
+            # one (9b, on #281). No "label has a level" test here: a label
+            # without one has level "", which is never in `levels_used`, so
+            # it is reported below either way -- the condition could not be
+            # told apart by any input, and was removed rather than kept as
+            # an untestable guard.
+            headings.append(cells)
             continue
 
+        # Nothing placed this row and it is in no quiet set, so it is
+        # REPORTED by default: a new shape fails loud rather than vanishing
+        # (#277, #281). The parse is unchanged.
+        if any(hitrust.field_for_label(cell) is not None for cell in cells[:-2]):
+            # A recognised label that is not second-to-last: read as (text,
+            # extra cell), so its value AND the level record it would have
+            # opened are both gone.
+            misplaced.append(cells)
+        else:
+            unknown.append((label, value))
+        outcome(REPORTED, cells)
+
+    for cells in headings:
+        if hitrust.level_from_label(cells[0]) in levels_used:
+            outcome(QUIET, cells)
+        else:
+            unknown.append((cells[0], cells[1]))
+            outcome(REPORTED, cells)
+
+    if losses is not None:
+        losses.extend(
+            _describe_losses(skipped_text, discarded, misplaced, unknown, orphaned, stray)
+        )
     return records
 
 
-def _absorb(record: Record, field: str, value: str) -> None:
-    """Fold a value into a record that may already hold part of it.
+def _excerpt(text: str, width: int = 70) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= width else text[: width - 3] + "..."
 
-    SSRS breaks a long cell across a page boundary and re-prints its label
-    on the next page, so one requirement's mapping list can arrive as two
-    rows. Overwriting would keep only the tail. List-shaped fields are
-    therefore concatenated, while a statement -- which is one paragraph and
-    never split in practice -- keeps whichever copy is longer.
+
+#: Single-cell text that is probably page furniture: a page number, or a
+#: "printed on <date>" line. Deliberately narrow -- this only decides the
+#: ORDER excerpts are shown in, never whether a row counts -- and it needs a
+#: real date, because "run ... every 30 days" is how a requirement reads.
+_FURNITURE_RE = re.compile(
+    r"^(?:page\s+\d+(?:\s+of\s+\d+)?"
+    r"|.*\b(?:printed|generated|run|created)\s+(?:on|at)\s+\S*\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}.*)$",
+    re.IGNORECASE,
+)
+
+
+def _template(text: str) -> str:
+    """`text` with every run of digits masked, so "3 of 12" and "4 of 12"
+    are one template -- a footer recurs with only its number changing."""
+    return re.sub(r"\d+", "#", " ".join(text.split()))
+
+
+def _looks_like_furniture(text: str, occurrences: int) -> bool:
+    """A page number or print line, or text whose digit-masked template
+    recurs on more than one row -- a title or a numbered footer on every
+    page (1d, on #273). A continuation is part of one requirement's text,
+    so it has no reason to recur; two continuations differing ONLY in their
+    numbers would be classed as furniture, and are still counted."""
+    return occurrences > 1 or bool(_FURNITURE_RE.match(" ".join(text.split())))
+
+
+def _describe_losses(
+    skipped_text: list[str],
+    discarded: list[tuple[str, str]],
+    misplaced: list[list[str]] | None = None,
+    unknown: list[tuple[str, str]] | None = None,
+    orphaned: list[tuple[str, str]] | None = None,
+    stray: list[str] | None = None,
+) -> list[str]:
+    """Warnings for what `records_from_pairs` could not place, first three shown.
+
+    Skipped rows are classified, never filtered: the count is the total, and
+    the split says how many look like page furniture. Excerpts come from the
+    rest first, so the rows most likely to be lost requirement text are the
+    ones a reader sees."""
+    notes = []
+    if skipped_text:
+        seen: dict[str, int] = {}
+        for text in skipped_text:
+            seen[_template(text)] = seen.get(_template(text), 0) + 1
+        furniture = [s for s in skipped_text if _looks_like_furniture(s, seen[_template(s)])]
+        other = [s for s in skipped_text if not _looks_like_furniture(s, seen[_template(s)])]
+        shown = (other + furniture)[:3]
+        notes.append(
+            f"{len(skipped_text)} row(s) of text had no label and were skipped "
+            f"({len(other)} unclassified, {len(furniture)} look like page numbers, "
+            "print dates or repeated titles). If any continues a requirement across "
+            "a page break, that text is NOT in the catalog: "
+            + "; ".join(repr(_excerpt(s)) for s in shown)
+        )
+    if discarded:
+        notes.append(
+            f"{len(discarded)} statement(s) arrived as two different copies; the "
+            "longer was kept and the shorter is NOT in the catalog: "
+            # Truncate the lost text, never the location: a prefix inside the
+            # excerpt once left ~30 characters of what was actually lost.
+            + "; ".join(f"{where}: {_excerpt(lost)!r}" for where, lost in discarded[:3])
+        )
+    if misplaced:
+        notes.append(
+            f"{len(misplaced)} row(s) had more than two cells with the label not "
+            "second-to-last, so nothing read them: their text, and any level "
+            "record they would have opened, is NOT in the catalog: "
+            + "; ".join(repr(_excerpt(" | ".join(cells))) for cells in misplaced[:3])
+        )
+    if unknown:
+        notes.append(
+            f"{len(unknown)} row(s) had a label this reader does not recognise, so "
+            "their text is NOT in the catalog: "
+            + "; ".join(f"{_excerpt(label)!r}: {_excerpt(value)!r}" for label, value in unknown[:3])
+        )
+    if orphaned:
+        notes.append(
+            f"{len(orphaned)} row(s) had a recognised label but no level in it, or came "
+            "before any Control Reference, so their text is NOT in the catalog: "
+            + "; ".join(
+                f"{_excerpt(label)!r}: {_excerpt(value)!r}" for label, value in orphaned[:3]
+            )
+        )
+    if stray:
+        notes.append(
+            f"{len(stray)} cell(s) sat in front of a label and value that were read; "
+            "their own text is NOT in the catalog: "
+            + "; ".join(repr(_excerpt(s)) for s in stray[:3])
+        )
+    return notes
+
+
+def _absorb(record: Record, field: str, value: str) -> str:
+    """Fold a value into a record that may already hold part of it, and
+    return any text that was discarded doing so (`""` when nothing was).
+
+    **Assumed, not measured** (#266): that SSRS breaks a long cell across a
+    page boundary and re-prints its label on the next page, so one
+    requirement's mapping list can arrive as two rows. Overwriting would
+    keep only the tail, so list-shaped fields are concatenated.
+
+    **Also assumed, and measured to lose text where it fails:** that a
+    statement is one paragraph and never split. A statement keeps whichever
+    copy is longer, so if one IS split -- label reprinted, exactly the shape
+    above -- the shorter half is discarded. It is returned so the caller can
+    report it. Keeping the longer copy is unchanged, because concatenating
+    would change the catalog built from a customer's file on a guess about
+    a format nobody here has seen. An identical copy, or one contained in
+    the other, discards nothing.
     """
     existing = getattr(record, field)
     if not existing:
         setattr(record, field, value)
-        return
+        return ""
     if field == "statement":
+        if value in existing:
+            return ""
+        if existing in value:
+            setattr(record, field, value)
+            return ""
         if len(value) > len(existing):
             setattr(record, field, value)
-        return
+            return existing
+        return value
     if value not in existing:
         setattr(record, field, existing + "\n" + value)
+    return ""
 
 
-def records_from_markup(markup: str) -> list[Record]:
+def records_from_markup(markup: str, losses: list[str] | None = None) -> list[Record]:
     """Read a rendered report, whichever way SSRS laid it out.
 
     A report rendered as a grid is a table with a header row; a report
@@ -421,7 +681,7 @@ def records_from_markup(markup: str) -> list[Record]:
         if not missing_fields(detect_fields(header, body)):
             return records_from_table(header, body)
 
-    records = records_from_pairs(rows)
+    records = records_from_pairs(rows, losses)
     if not records:
         raise ExportFormatError(
             "the rendered report had no recognisable HITRUST labels "
@@ -449,8 +709,12 @@ def version_from_name(path: Path) -> str:
     return f"v{match.group(1)}" if match else ""
 
 
-def read_records(path: Path) -> list[Record]:
-    """Read any supported HITRUST export into records."""
+def read_records(path: Path, losses: list[str] | None = None) -> list[Record]:
+    """Read any supported HITRUST export into records.
+
+    `losses` collects what a rendered report could not place; see
+    `records_from_pairs`. The CSV and workbook readers have no such case.
+    """
     suffix = path.suffix.lower()
     if suffix in CSV_SUFFIXES:
         header, rows = read_csv(path)
@@ -459,16 +723,16 @@ def read_records(path: Path) -> list[Record]:
         header, rows = read_workbook(path)
         return records_from_table(header, rows)
     if suffix in MHTML_SUFFIXES:
-        return records_from_markup(read_mhtml(path))
+        return records_from_markup(read_mhtml(path), losses)
     if suffix in HTML_SUFFIXES:
-        return records_from_markup(path.read_text(encoding="utf-8", errors="replace"))
+        return records_from_markup(path.read_text(encoding="utf-8", errors="replace"), losses)
     raise ExportFormatError(
         f"no reader for {suffix or 'a file with no extension'}. Supported: "
         + ", ".join(sorted(CSV_SUFFIXES | WORKBOOK_SUFFIXES | HTML_SUFFIXES | MHTML_SUFFIXES))
     )
 
 
-def load(path: Path, *, version: str = "") -> list:
+def load(path: Path, *, version: str = "", losses: list[str] | None = None) -> list:
     """Read a HITRUST CSF export into `Control` objects.
 
     The whole BYOC path in one call: read the file, name its columns,
@@ -477,7 +741,7 @@ def load(path: Path, *, version: str = "") -> list:
     reference.
     """
     path = Path(path)
-    records = read_records(path)
+    records = read_records(path, losses)
     return hitrust.build_controls(
         records,
         version=version or version_from_name(path),

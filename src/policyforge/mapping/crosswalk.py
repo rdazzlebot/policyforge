@@ -60,12 +60,84 @@ def normalize_framework(name: str) -> str:
     The first word remains the fallback, which is what keeps every catalog
     not named in the table — including one a user brings — working exactly
     as before.
+
+    **A catalog's declared key wins (#295).** A name that a catalog's
+    `framework.yaml` declares a key for (`framework_id:`) keys to that key, whatever the
+    prose would give, so a sibling of a pinned name cannot fall through to
+    the first word. The declarations are read from the catalog directories
+    once, lazily (`frameworks.registry.declared_keys`), so the answer does
+    not depend on which catalog was loaded first.
     """
+    declared = _declared_keys().get(" ".join(name.lower().split()))
+    return declared or prose_framework_key(name)
+
+
+_DECLARED_KEYS: dict[str, str] | None = None
+
+
+def _declared_keys() -> dict[str, str]:
+    """Every catalog's declared name -> key, read once per process (#295)."""
+    global _DECLARED_KEYS
+    if _DECLARED_KEYS is None:
+        # Assigned only once the build has succeeded (1d on #344): a failed
+        # build that left `{}` behind would key every later lookup by prose,
+        # silently dropping every declaration. Building cannot recurse into
+        # this function -- `declared_keys` keys names with
+        # `prose_framework_key` -- so nothing needs a placeholder.
+        _DECLARED_KEYS = declared_keys_from_config()
+    return _DECLARED_KEYS
+
+
+def declared_keys_from_config() -> dict[str, str]:
+    """`declared_keys` for this project's configured search paths.
+
+    **Keying never fails on the config file** (1d on #344): an unreadable
+    config is named once in a `FrameworkKeyWarning` and the defaults are
+    read, through `registry.config_or_defaults`, the one copy of that rule.
+    """
+    from policyforge.frameworks.registry import (
+        FrameworkKeyWarning,
+        config_or_defaults,
+        declared_keys,
+    )
+
+    config = config_or_defaults("framework keys were declared", FrameworkKeyWarning)
+    return declared_keys(config)
+
+
+def reset_declared_keys() -> None:
+    """Forget the cached declarations, so the next lookup reads the
+    directories again: after an importer writes a new catalog, or in tests."""
+    global _DECLARED_KEYS
+    _DECLARED_KEYS = None
+
+
+def prose_framework_key(name: str) -> str:
+    """The key a framework NAME gives on its own: the first alias needle it
+    contains, else its first word. What `normalize_framework` falls back to
+    where no catalog declares the name (#295)."""
     lowered = name.strip().lower()
     for needle, framework in FRAMEWORK_ALIASES:
-        if needle in lowered:
+        if _needle_found(needle, lowered):
             return framework
     return lowered.split()[0] if lowered.split() else ""
+
+
+def _needle_found(needle: str, lowered: str) -> bool:
+    """Whether `needle` occurs in `lowered` -- and, for a needle ending in a
+    digit, occurs with NO digit after it.
+
+    A document number is a prefix of its successors: as a plain substring,
+    `ai 100-1` matched NIST AI 100-10 through 100-19 and filed them under the
+    RMF, and `ai 100-2` took 100-20 onward (80 and 1d, on #296). `(?!\\d)`,
+    not a word boundary, because the Taxonomy's 2025 edition is written
+    `100-2e2025` -- a letter follows, and it must stay mapped. The rule holds
+    for every digit-ending needle, not only the two that exposed it:
+    `800-53` must not take a hypothetical 800-530 either.
+    """
+    if not needle[-1].isdigit():
+        return needle in lowered
+    return re.search(re.escape(needle) + r"(?!\d)", lowered) is not None
 
 
 def _is_nist(framework: str) -> bool:
@@ -131,8 +203,27 @@ FRAMEWORK_ALIASES: tuple[tuple[str, str], ...] = (
     # add-on you cannot hold standalone, so any user with one has both.
     # Two needles for AI RMF because NIST writes the name both ways and
     # neither spelling contains the other.
+    # The Playbook BEFORE the Core, because first match wins and "NIST AI RMF
+    # Playbook" contains "ai rmf": without this it keyed to `nist-ai-rmf` and
+    # merged NIST's voluntary suggested actions into the Core's outcomes --
+    # two separately versioned publications in one bucket (#177).
+    ("ai rmf playbook", "nist-ai-rmf-playbook"),
     ("ai rmf", "nist-ai-rmf"),
     ("ai risk management", "nist-ai-rmf"),
+    # The RMF's document number, which NIST prints on its cover and CPRT
+    # uses as its id (`AI_100_1`). Without it `NIST AI 100-1` fell to the
+    # bare `nist` key while both prose spellings were pinned (#176).
+    ("ai 100-1", "nist-ai-rmf"),
+    # Its sibling, AI 100-2, the Adversarial ML Taxonomy, published beside the
+    # RMF. Pinned by its DOCUMENT NUMBER only, which no other publisher uses.
+    # **Not pinned, deliberately** (1d, on #296): "ai taxonomy" -- OECD, the
+    # EU, ISO, Microsoft and MITRE ATLAS all publish an "AI Taxonomy", and a
+    # needle would merge them into NIST's key -- nor "nist ai taxonomy", which
+    # no NIST source has been found to declare (CPRT's `AITAXONOMY` is a code
+    # identifier, not a name). Nor the title words "adversarial machine
+    # learning", for the same reason as "ai taxonomy". A catalog named only
+    # "AI Taxonomy" keeps the bare `ai` orphan; keying it is #295's job.
+    ("ai 100-2", "nist-ai-100-2"),
     ("hitrust ai", "hitrust-ai"),
     ("800-172", "nist-800-172"),
     ("800-137", "nist-800-137"),
@@ -147,7 +238,22 @@ FRAMEWORK_ALIASES: tuple[tuple[str, str], ...] = (
     ("iso/iec 27001", "iso-27001"),
     ("iso/iec 27002", "iso-27002"),
     ("pci dss", "pci-dss"),
+    # The ONC catalog's own declared name (#179): a name this project has
+    # READ, because it declares it. Its siblings stay unpinned -- see below.
+    ("onc certification criteria", "cfr-170-315-onc-certification"),
 )
+# **ONC's siblings are deliberately absent** (#176). The ONC catalog's own
+# name is pinned above (#179); every OTHER ONC name keys to the bare `onc` --
+# "ONC Health IT Certification Program", "ONC Certification Program
+# Requirements" -- which is harmless while no second ONC catalog exists and
+# becomes a collision the day one lands (Part 170's Subparts D and E are
+# also "ONC ... Certification"). They
+# are not pre-pinned because their declared names are a guess until someone
+# reads the regulation: this table is for names that have been READ, and a
+# pin written in anticipation reads as decided. `test_onc_siblings_share_
+# the_bare_key` pins today's behaviour, so the next ONC catalog meets this
+# decision instead of the gap. The structural remedy -- a key the catalog
+# declares -- is #295.
 
 #: The old name, kept because the table's first readers were the HITRUST
 #: importer's authoritative-source names. It is the same table; the catalog
@@ -209,6 +315,67 @@ NIST_ANCHOR = "nist-800-53"
 #: but it must be read as one -- the report names the catalogs in scope for
 #: exactly that reason.
 TOPIC_ANCHORS: frozenset[str] = frozenset({NIST_ANCHOR, "nist-ai-rmf"})
+
+#: The value `ANCHOR_DECISIONS` gives a catalog that topics may anchor.
+ANCHORS = "anchors"
+
+#: **Every catalog's answer to "may a topic anchor it?", written down** (#175).
+#: Keyed by catalog DIRECTORY -- the unit someone adds -- bundled and
+#: bring-your-own alike. The value is `ANCHORS`, or the reason it is not.
+#:
+#: Adding a catalog forced four declarations (bundled or BYOC, licence, alias,
+#: README row) and never this one, which is the one that decides whether its
+#: requirements enter `/coverage`'s denominator and whether synthesis can
+#: retrieve them. Wrong either way, it fails silently: omitted, and the catalog
+#: is inert (#171); included, and every user's coverage figure moves for a
+#: framework they never adopted (#169). `test_anchor_decisions.py` derives the
+#: catalog population from `data/frameworks/` and the scaffold lists and
+#: refuses a catalog with no entry here, an entry for no catalog, and any
+#: disagreement with `TOPIC_ANCHORS`.
+#:
+#: The reasons record the state as of 2026-09-24, drawn from the rulings on
+#: each catalog's issue; changing one is a product decision (80), not an edit.
+ANCHOR_DECISIONS: dict[str, str] = {
+    "nist-800-53-r5": ANCHORS,
+    "nist-ai-rmf": ANCHORS,
+    "arc-ampe": "reached through its crosswalk to 800-53, not anchored beside it",
+    "fedramp": "reached through its crosswalk to 800-53, not anchored beside it",
+    "hipaa-security-rule": "reached through its crosswalk to 800-53, not anchored beside it",
+    "nist-800-171-r3": (
+        "reached through NIST's own mapping to 800-53, carried since #259; a topic "
+        "anchors the 800-53 controls it maps to"
+    ),
+    "cfr-171-information-blocking": (
+        "conditions of an exception, not controls to implement: refused by design "
+        "(NOT_CROSSWALK_ANCHORABLE)"
+    ),
+    "cfr-170-315-onc-certification": (
+        "a certification criterion describes what a certified product can do, not what "
+        "an organization implements, so a topic owning one would count a product "
+        "capability as organizational coverage (its README; 80, on #308)"
+    ),
+    "cfr-42-part-2-sud-records": (
+        "no published mapping was found (#264); reached only through a crosswalk an "
+        "organisation seeds"
+    ),
+    "nist-ai-rmf-playbook": (
+        "never anchored or counted in /coverage, because its actions are voluntary; "
+        "a Standard retrieves them through the Core subcategories its topic anchors, "
+        "and no Policy or Procedure is given them (#301)"
+    ),
+    "govramp": (
+        "bring-your-own: no ids ship, so there is nothing to anchor until a user "
+        "supplies the catalog"
+    ),
+    "hitrust-ai": (
+        "bring-your-own: no ids ship, so there is nothing to anchor until a user "
+        "supplies the catalog"
+    ),
+    "hitrust-csf": (
+        "bring-your-own: no ids ship, so there is nothing to anchor until a user "
+        "supplies the catalog"
+    ),
+}
 
 
 def anchors_a_topic(framework: str) -> bool:
@@ -281,6 +448,11 @@ def build_crosswalk(controls: list[Control]) -> dict[str, dict[str, list[str]]]:
         for nist_id, source_crosswalk in _crosswalk_sources(control):
             entry = crosswalk.setdefault(nist_id, {})
             for framework, raw in source_crosswalk.items():
+                # Keyed as the other two loops key it. The raw name ("HIPAA
+                # Security Rule") never matched coverage's normalised key
+                # ("hipaa"), so a mapping carried on the 800-53 side was in
+                # the crosswalk and invisible to every reader of it (#278).
+                framework = normalize_framework(framework)
                 for id_ in _extract_ids(raw):
                     ids = entry.setdefault(framework, [])
                     if id_ not in ids:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
 import click
@@ -38,10 +39,39 @@ def etl_vault(controls_dir: Path, out: Path):
 
     from policyforge.ingest.nist_vault_loader import load_vault_controls
 
-    controls = load_vault_controls(controls_dir)
+    report = load_vault_controls(controls_dir)
+
+    # **Every refusal happens before the write, and the ordering is the
+    # whole point.** The first version of this checked after writing, so a
+    # mistyped `--controls-dir` replaced a good catalog with `[]` and
+    # *then* exited 1. An exit code after the damage is a report, not a
+    # refusal: the only moment the check could have helped had already
+    # passed. Found by policyforge-80 on #225 — and it is the same family
+    # as a guard whose argument is fetched at the moment of use, with the
+    # ordering inverted rather than the source.
+    if not report.attempted:
+        raise click.ClickException(
+            f"no *.md control notes found in {controls_dir}. An empty directory is "
+            f"not an empty vault — check the path points at Controls/. Nothing was "
+            f"written; {out} is unchanged."
+        )
+    if report.unreadable:
+        for path, why in report.unreadable:
+            click.echo(f"  unreadable: {path}: {why}", err=True)
+        raise click.ClickException(
+            f"{len(report.unreadable)} of {report.attempted} control note(s) could not "
+            f"be parsed. Nothing was written; {out} is unchanged. A short catalog "
+            f"written over a good one loses the same controls as an empty one and "
+            f"looks healthier, so the partial result is discarded rather than "
+            f"committed — fix the notes named above and run again."
+        )
+
     out.parent.mkdir(parents=True, exist_ok=True)
-    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
-    click.echo(f"Parsed {len(controls)} controls -> {out}")
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in report.controls], indent=2))
+    # Says what was attempted, not only what survived. The old line read
+    # `Parsed {len(controls)} controls` and exited 0 whatever happened, so
+    # five good notes and two empty files reported "Parsed 7 controls".
+    click.echo(f"Parsed {len(report.controls)} of {report.attempted} control note(s) -> {out}")
 
 
 @cli.command("etl-oscal")
@@ -144,6 +174,7 @@ def etl_800_171(out: Path):
 
     catalog = fetch_800_171_catalog()
     controls, withdrawn = parse_oscal_catalog(catalog, dialect=NIST_800_171_REV3)
+    links = _require_800_53_links_resolve(controls)
 
     out.parent.mkdir(parents=True, exist_ok=True)
     write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
@@ -158,6 +189,53 @@ def etl_800_171(out: Path):
         click.echo(f"Recorded provenance: {version} sha256:{stamp[:16]}… -> {out.parent}")
     click.echo(f"Parsed {len(controls)} requirements (rev 3, {version}) -> {out}")
     click.echo(f"Excluded {withdrawn} withdrawn requirements.")
+    click.echo(
+        f"Carried NIST's {links['total']} links to 800-53 on {links['requirements']} requirements: "
+        f"{links['controls']} to controls, {links['enhancements']} to enhancements, all resolved."
+    )
+
+
+def _require_800_53_links_resolve(controls) -> dict[str, int]:
+    """Refuse unless every 800-53 id the requirements cite exists in 800-53 (#259).
+
+    **A read count proves nothing here; a resolve count does.** NIST pads its
+    ids (`AC-02(03)`), and 43 of rev 3's 157 targets are enhancements, which
+    the 800-53 catalog nests under their control rather than listing as
+    rows. Skip the padding and 22 resolve; key on `control_id` alone and 114
+    do. Both are partial crosswalks that look like working ones (80 and 9b
+    on #259). So each id must be a `control_id` or an `enhancement_id` of the
+    bundled 800-53 catalog, and one that is neither stops the run.
+    """
+    import json
+
+    from policyforge.ingest.oscal_loader import CROSSWALK_KEY_800_53
+    from policyforge.scaffold import bundled_root
+
+    rows = json.loads(
+        bundled_root()
+        .joinpath("frameworks", "nist-800-53-r5", "controls.json")
+        .read_text(encoding="utf-8")
+    )
+    control_ids = {r["control_id"] for r in rows}
+    enhancement_ids = {e["enhancement_id"] for r in rows for e in r.get("enhancements") or []}
+    cited = [
+        (c.control_id, i.strip())
+        for c in controls
+        for i in c.source_crosswalk.get(CROSSWALK_KEY_800_53, "").split(",")
+        if i.strip()
+    ]
+    missing = [f"{req} -> {i}" for req, i in cited if i not in control_ids | enhancement_ids]
+    if missing:
+        raise click.ClickException(
+            f"{len(missing)} of {len(cited)} links to 800-53 name no control or enhancement "
+            f"in the bundled 800-53 catalog, so nothing was written: {', '.join(missing[:10])}"
+        )
+    return {
+        "total": len(cited),
+        "requirements": len({req for req, _ in cited}),
+        "controls": sum(1 for _, i in cited if i in control_ids),
+        "enhancements": sum(1 for _, i in cited if i in enhancement_ids),
+    }
 
 
 def _crosswalk_mappings(catalog: list[dict]) -> int:
@@ -247,6 +325,74 @@ def _preserve_crosswalk(out: Path, replacement: list[dict]) -> None:
             citation = enhancement.get("enhancement_id")
             if not enhancement.get("source_crosswalk") and known.get(citation):
                 enhancement["source_crosswalk"] = dict(known[citation])
+
+
+def _optional_field_counts(catalog: list[dict]) -> dict[str, int]:
+    """How many entries carry each field a catalog may legitimately leave empty.
+
+    **Guidance lives in two places, and counting one of them would pass the
+    regression in the other.** ARC-AMPE puts a control's supplemental
+    guidance in `discussion` and an enhancement's in
+    `additional_requirements`: 179 and 127 in the shipped catalog. A guard
+    that counted only the first would let a parse that emptied every
+    enhancement's guidance through untouched.
+    """
+    enhancements = [e for c in catalog for e in (c.get("enhancements") or [])]
+    return {
+        "guidance": sum(1 for c in catalog if (c.get("discussion") or "").strip())
+        + sum(1 for e in enhancements if (e.get("additional_requirements") or "").strip()),
+        "related": sum(1 for c in catalog if c.get("related_controls")),
+        "family": sum(1 for c in catalog if (c.get("family") or "").strip()),
+    }
+
+
+def _refuse_optional_field_loss(out: Path, replacement: list[dict]) -> None:
+    """Stop before overwriting a catalog whose optional fields this write empties.
+
+    The same shape as `_refuse_crosswalk_loss` below, for the same reason
+    (#265). An optional column whose caption stops matching does not fail the
+    parse — every row simply reads it as empty — so the catalog still loads,
+    still has 215 controls, and has quietly lost its guidance or its related
+    controls. Nothing in the result looks wrong.
+
+    **Compared as counts against the catalog being overwritten**, so the bound
+    is derived rather than pinned: the shipped revision's 306 guidance entries
+    are what a re-parse of the same workbook reproduces, and what a re-pin
+    that drifted a caption would fall below. **Refuses rather than warns**,
+    because the parse's own warning is one line in a command's output and the
+    loss it describes is invisible in the file.
+
+    **A count that rises or holds is allowed**, and so is a first write with
+    nothing to compare against — a guard that could not be satisfied by a
+    faithful re-parse would be switched off.
+    """
+    import json
+
+    if not out.exists():
+        return
+    try:
+        existing = json.loads(out.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(existing, list):
+        return
+
+    had, keeps = _optional_field_counts(existing), _optional_field_counts(replacement)
+    lost = {field: (had[field], keeps[field]) for field in had if keeps[field] < had[field]}
+    if not lost:
+        return
+
+    shown = ", ".join(f"{field} {before} -> {after}" for field, (before, after) in lost.items())
+    raise click.ClickException(
+        f"{out} carries more optional content than this write would leave ({shown}), "
+        "so nothing has been written.\n"
+        "An optional column whose caption no longer matches does not fail the "
+        "parse — every row reads it as empty. Check the header of the source "
+        "sheet against the captions in `COLUMN_CAPTIONS`; a changed `&`/`and`, "
+        "or a pluralization such as 'Related Control(s)', is enough.\n"
+        "If CMS really did remove the content, move the existing catalog aside "
+        "and re-run, so the loss is a decision rather than a side effect."
+    )
 
 
 def _refuse_crosswalk_loss(out: Path, replacement: list[dict]) -> None:
@@ -480,6 +626,73 @@ def etl_part2(date: str | None, out: Path):
     )
 
 
+@cli.command("etl-onc")
+@click.option(
+    "--date",
+    default=None,
+    help="eCFR effective date (YYYY-MM-DD) to fetch, for reproducibility. "
+    "Default: eCFR's current published date for Title 45.",
+)
+@click.option(
+    "--out",
+    default=Path("data/frameworks/cfr-170-315-onc-certification/controls.json"),
+    type=click.Path(path_type=Path),
+    help="Where to write the parsed data.",
+)
+def etl_onc(date: str | None, out: Path):
+    """Fetch the ONC certification criteria (45 CFR 170.315) from eCFR's
+    public API and parse them into this project's data schema. A US federal
+    regulation, so safe to bundle.
+
+    ONE CRITERION IS ONE CONTROL, cited as 170.315(g)(10). Its category is
+    the family, and its sub-paragraphs are its statement.
+
+    THE PARSE IS REFUSED unless the live criteria EQUAL an independently
+    agreed set (#179): this catalog shipped once with fabricated criteria
+    (#152, reverted as #163). Reserved and expired criteria are left out and
+    reported by id on every run.
+    """
+    import dataclasses
+    import datetime as dt
+    import json
+
+    from policyforge.ingest.onc_loader import (
+        FRAMEWORK_VERSION,
+        OncParseError,
+        current_ecfr_date,
+        ecfr_source_url,
+        fetch_part_xml,
+        parse_onc_criteria,
+    )
+    from policyforge.ingest.provenance import record_source_provenance
+
+    # Resolved here rather than inside the fetch, so the date recorded is
+    # provably the date fetched. No saved-XML option, deliberately: the XML
+    # parser's safety rests on eCFR being the only source (see onc_loader).
+    date = date or current_ecfr_date()
+    xml_text = fetch_part_xml(date=date)
+
+    try:
+        controls, excluded = parse_onc_criteria(xml_text, as_of=dt.date.fromisoformat(date))
+    except OncParseError as exc:
+        raise click.ClickException(str(exc)) from exc
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
+    stamp = record_source_provenance(
+        out.parent / "framework.yaml",
+        source_ref=date,
+        source_url=ecfr_source_url(date),
+        content=out.read_bytes(),
+    )
+    if stamp is not None:
+        click.echo(f"Recorded provenance: {date} sha256:{stamp[:16]}… -> {out.parent}")
+    click.echo(f"Parsed {len(controls)} certification criteria ({FRAMEWORK_VERSION}) -> {out}")
+    for kind in ("reserved", "expired"):
+        ids = excluded[kind]
+        if ids:
+            click.echo(f"Excluded {len(ids)} {kind}: " + ", ".join(ids))
+
+
 @cli.command("etl-ai-rmf")
 @click.option(
     "--out",
@@ -518,6 +731,8 @@ def etl_ai_rmf(out: Path, html: Path | None):
 
     from policyforge.ingest.ai_rmf import (
         SOURCE_URL,
+        AiRmfParseError,
+        expected_shape,
         fetch_core_html,
         parse_ai_rmf,
     )
@@ -529,7 +744,18 @@ def etl_ai_rmf(out: Path, html: Path | None):
     else:
         page = fetch_core_html()
 
-    controls = parse_ai_rmf(page)
+    # The pin comes from the catalog being regenerated; a scratch --out falls
+    # back to the bundled catalog's (#189). Neither -> a loud refusal, since a
+    # parse with no expected shape would accept any.
+    pinned = out.parent / "framework.yaml"
+    if not pinned.exists():
+        bundled = [d / "nist-ai-rmf" / "framework.yaml" for d in _bundled_catalog_dirs()]
+        pinned = next((p for p in bundled if p.exists()), pinned)
+    # A refusal is the guard working, so it reads as a sentence, not a traceback.
+    try:
+        controls = parse_ai_rmf(page, expected_shape=expected_shape(pinned))
+    except AiRmfParseError as exc:
+        raise click.ClickException(str(exc)) from exc
     out.parent.mkdir(parents=True, exist_ok=True)
     write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
 
@@ -549,6 +775,90 @@ def etl_ai_rmf(out: Path, html: Path | None):
     subcategories = sum(len(c.enhancements) for c in controls)
     click.echo(
         f"Parsed {len(controls)} AI RMF categories carrying {subcategories} subcategories -> {out}"
+    )
+
+
+@cli.command("etl-ai-rmf-playbook")
+@click.option(
+    "--out",
+    default=Path("data/frameworks/nist-ai-rmf-playbook/controls.json"),
+    type=click.Path(path_type=Path),
+    help="Where to write the parsed data.",
+)
+@click.option(
+    "--json",
+    "json_path",
+    default=None,
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    help="Parse a saved copy of playbook.json instead of fetching. It must be the "
+    "pinned export, byte for byte.",
+)
+@click.option(
+    "--core",
+    default=Path("data/frameworks/nist-ai-rmf/controls.json"),
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    help="The AI RMF Core catalog. Every Playbook entry must serve one of its subcategories.",
+)
+def etl_ai_rmf_playbook(out: Path, json_path: Path | None, core: Path):
+    """Fetch the NIST AI RMF Playbook -- NIST's suggested actions per Core
+    subcategory -- and parse it into this project's data schema. A US
+    government work, so safe to bundle.
+
+    THE PLAYBOOK IS VOLUNTARY: NIST calls its suggestions "voluntary" and
+    "neither a checklist nor set of steps to be followed in its entirety".
+    A document citing an action may say NIST suggests it, never that NIST
+    requires it. The catalog's README carries the long form.
+
+    Pinned to one export by its SHA-256, because NIST publishes no revision
+    number: a different export is refused, and on the scheduled drift job
+    that refusal is the job working. The per-subcategory action counts are
+    pinned to an independent count, and a short or long parse is refused
+    whole.
+    """
+    import dataclasses
+    import json
+
+    from policyforge.ingest.ai_rmf_playbook import (
+        FRAMEWORK_VERSION,
+        SOURCE_URL,
+        AiRmfPlaybookError,
+        fetch_playbook,
+        parse_playbook,
+    )
+    from policyforge.ingest.provenance import record_source_provenance
+
+    if json_path is not None:
+        raw = json_path.read_bytes()
+        click.echo(f"Parsing saved export {json_path} instead of fetching.")
+    else:
+        raw, last_modified = fetch_playbook()
+        click.echo(f"Fetched {SOURCE_URL} (Last-Modified: {last_modified or 'not sent'}).")
+
+    core_rows = json.loads(core.read_text(encoding="utf-8"))
+    subcategories = {e["enhancement_id"] for row in core_rows for e in row["enhancements"]}
+    try:
+        controls = parse_playbook(raw, subcategories)
+    except AiRmfPlaybookError as exc:
+        # A refused export is the pin WORKING -- on the drift job, the
+        # expected outcome when NIST re-publishes -- so it is a clean error
+        # line naming the reason, not a traceback. Nothing is written.
+        raise click.ClickException(str(exc)) from exc
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
+
+    # Digest over the PARSED output, as every other loader here; the export's
+    # own hash is the pin in `ai_rmf_playbook.SOURCE_SHA256`.
+    stamp = record_source_provenance(
+        out.parent / "framework.yaml",
+        source_ref=FRAMEWORK_VERSION,
+        source_url=SOURCE_URL,
+        content=out.read_bytes(),
+    )
+    if stamp is not None:
+        click.echo(f"Recorded provenance: sha256:{stamp[:16]}… -> {out.parent}")
+    actions = sum(len(c.enhancements) for c in controls)
+    click.echo(
+        f"Parsed {len(controls)} AI RMF subcategories carrying {actions} suggested actions -> {out}"
     )
 
 
@@ -634,6 +944,95 @@ def _lands_in_bundled_catalogs(out: Path) -> bool:
         except OSError:
             continue
     return False
+
+
+def _add_framework_id(manifest: Path, key: str) -> str:
+    """Add `framework_id: key` to the user's own `manifest`, or say why not.
+
+    **The file is the user's, so it is never left worse** (1d on #347). One
+    that does not parse, or does not hold a mapping, is not touched. After
+    the line is appended, the file is parsed again and must hold exactly
+    what it held plus `framework_id`; otherwise -- a `...` document-end
+    marker puts the line in a second document, for one -- its original
+    bytes are put back. Every outcome is said, never "Declared" for a file
+    that did not take the declaration.
+    """
+    import yaml
+
+    original = manifest.read_bytes()
+    add = f"Add `framework_id: {key}` to it yourself."
+    try:
+        before = yaml.safe_load(original.decode("utf-8"))
+    except (yaml.YAMLError, UnicodeDecodeError) as exc:
+        return f"{manifest} could not be read ({type(exc).__name__}), so it was left alone. {add}"
+    if before is None:
+        before = {}
+    if not isinstance(before, dict):
+        return f"{manifest} does not hold a mapping, so it was left alone. {add}"
+    if "framework_id" in before:
+        existing = str(before["framework_id"] or "").strip()
+        if not existing:
+            return f"{manifest} declares an empty framework_id, so it was left alone. {add}"
+        if existing != key:
+            return (
+                f"{manifest} already declares framework_id {existing}; the import would "
+                f"have declared {key}. Keeping yours."
+            )
+        return f"{manifest} already declares framework_id {key}."
+
+    text = original.decode("utf-8")
+    write_text_lf(manifest, text.rstrip("\r\n") + f"\nframework_id: {key}\n")
+    try:
+        after = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        after = None
+    if after != {**before, "framework_id": key}:
+        manifest.write_bytes(original)
+        return (
+            f"{manifest} did not take an appended framework_id (it would have changed what "
+            f"the file says), so it was put back as it was. {add}"
+        )
+    return f"Declared framework_id {key} in {manifest}."
+
+
+def _declare_catalog(out: Path, *, framework: str, source: str) -> str:
+    """Declare the catalog just written at `out` by its framework key (#295).
+
+    A catalog a user brings has no `framework.yaml`, so its name was keyed by
+    prose -- an alias if one matched, else its first word. The importer knows
+    what it imported, so it writes the declaration the bundled catalogs carry:
+    `framework_id:` equal to the key the name already had, so nothing keyed
+    before the import moves. The manifest says `licence: licensed`, because
+    everything these importers read is.
+
+    **A manifest already there is the user's.** Without a `framework_id` it
+    gains one line (comments and keys kept); with one, it is left alone and
+    a different value is named -- the declaration wins, and a person chose
+    it. Returns what was done, for the command to print.
+    """
+    from policyforge.mapping.crosswalk import prose_framework_key, reset_declared_keys
+
+    key = prose_framework_key(framework)
+    manifest = out.parent / "framework.yaml"
+    if not manifest.exists():
+        write_text_lf(
+            manifest,
+            f"name: {framework}\nframework_id: {key}\nlicence: licensed\nsource: {source}\n",
+        )
+        done = f"Declared {manifest}: framework_id {key}."
+    else:
+        done = _add_framework_id(manifest, key)
+    # Both caches, so a long-running process keys the new declaration and
+    # knows the new catalog's name in a tag (1d on #347).
+    from policyforge.content.tags import reset_known_framework_names
+
+    reset_declared_keys()
+    reset_known_framework_names()
+    # Where a declaration is made is where its prose collision is shown (80 on #347).
+    from policyforge.frameworks.registry import key_collisions
+
+    facts = key_collisions(directory=out.parent)
+    return "\n".join([done, *(f"Note: {fact}" for fact in facts)])
 
 
 def _guard_licensed_write(out: Path, *, force: bool, product: str, licence: str, noun: str):
@@ -742,16 +1141,19 @@ def etl_hitrust(export_path: Path, version: str, out: Path | None, force: bool):
     from policyforge.ingest.hitrust import summarize
     from policyforge.ingest.hitrust_export import ExportFormatError
 
+    losses: list[str] = []
     try:
-        controls = load_hitrust_export(export_path, version=version)
+        controls = load_hitrust_export(export_path, version=version, losses=losses)
     except ExportFormatError as exc:
         raise click.ClickException(
             f"{exc}\n\nIf this export's layout is one this project has not seen, "
             "run:\n  policyforge generate-parser --framework hitrust --sample "
-            f"{export_path}"
+            f"{shlex.quote(str(export_path))}"
         ) from exc
 
-    click.echo(summarize(controls).format_report())
+    summary = summarize(controls)
+    summary.warnings.extend(losses)
+    click.echo(summary.format_report())
 
     if out is None:
         click.echo(
@@ -767,6 +1169,9 @@ def etl_hitrust(export_path: Path, version: str, out: Path | None, force: bool):
     out.parent.mkdir(parents=True, exist_ok=True)
     write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
     click.echo(f"\nWrote {len(controls)} HITRUST control references -> {out}")
+    from policyforge.ingest.hitrust import FRAMEWORK
+
+    click.echo(_declare_catalog(out, framework=FRAMEWORK, source="your MyCSF export"))
 
 
 @cli.command("etl-govramp")
@@ -850,7 +1255,7 @@ def etl_govramp(export_path: Path, impact_level: str | None, version: str, out: 
         raise click.ClickException(
             f"{exc}\n\nIf this workbook's layout is one this project has not seen, "
             "run:\n  policyforge generate-parser --framework govramp --sample "
-            f"{export_path}"
+            f"{shlex.quote(str(export_path))}"
         ) from exc
 
     click.echo(summarize(controls, rows=rows).format_report())
@@ -870,6 +1275,9 @@ def etl_govramp(export_path: Path, impact_level: str | None, version: str, out: 
     write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
     enhancements = sum(len(c.enhancements) for c in controls)
     click.echo(f"\nWrote {len(controls)} GovRAMP controls ({enhancements} enhancements) -> {out}")
+    from policyforge.ingest.govramp import FRAMEWORK
+
+    click.echo(_declare_catalog(out, framework=FRAMEWORK, source="your GovRAMP controls matrix"))
 
 
 @cli.command("etl-hipaa-crosswalk")
@@ -1127,11 +1535,16 @@ def etl_arc_ampe(export_path: Path | None, version: str, nist_path: Path, out: P
         workbook, version=version or ARC_AMPE_VERSION, nist_ids=nist_ids
     )
 
-    out.parent.mkdir(parents=True, exist_ok=True)
-    write_text_lf(out, json.dumps([dataclasses.asdict(c) for c in controls], indent=2))
-    click.echo(f"Wrote {len(controls)} controls -> {out}")
+    replacement = [dataclasses.asdict(c) for c in controls]
+    # The report prints before the guard runs, so a refusal arrives with the
+    # parse's own warning above it — the warning is what names the column.
     for line in summary.format_report():
         click.echo(f"  {line}")
+    _refuse_optional_field_loss(out, replacement)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_text_lf(out, json.dumps(replacement, indent=2))
+    click.echo(f"Wrote {len(controls)} controls -> {out}")
 
     stamp = record_source_provenance(
         out.parent / "framework.yaml",

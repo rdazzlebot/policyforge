@@ -48,16 +48,9 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from policyforge.mapping.crosswalk import NIST_ANCHOR, normalize_framework
+from policyforge.topics.coverage import parent_of
 
 _HEADING_RE = re.compile(r"^#{1,6}\s+(?P<title>.+?)\s*$")
-#: `AC-2(3)` -> `AC-2`. The same shape `coverage._parent_of` matches.
-_ENHANCEMENT_RE = re.compile(r"^([A-Za-z]{2}-\d+)\(\d+\)$")
-
-
-def _parent_of(requirement_id: str) -> str | None:
-    match = _ENHANCEMENT_RE.match(requirement_id)
-    return match.group(1) if match else None
-
 
 PUBLISHED = "published crosswalk"
 REVIEWED = "overlay, reviewed"
@@ -229,7 +222,13 @@ def split_citation(part: str, frameworks: list[str], ids=None) -> tuple[str, str
     truncation this function invented.
     """
     lowered = part.casefold()
-    for name in frameworks:
+    # Longest first HERE, not only in `parse_citations`: this docstring says
+    # the split is longest-first, and a caller passing names in any other
+    # order got the SHORTER one the day a catalog name became a prefix of
+    # another -- "NIST AI RMF" of "NIST AI RMF Playbook", whose actions then
+    # split as the Core with id "Playbook ..." (#177). Ordering here makes
+    # the contract the function's, not every caller's.
+    for name in sorted(frameworks, key=len, reverse=True):
         if lowered.startswith(name.casefold()) and part[len(name) : len(name) + 1].isspace():
             framework, rest = name, part[len(name) :].strip()
             break
@@ -265,9 +264,13 @@ def parse_citations(body: str, frameworks=(), ids=None) -> list[tuple[str, str, 
     carried there. Silently: the requirements were simply absent from the
     report, which is the failure this command exists to catch.
     """
-    from policyforge.content.tags import SOURCE_TAG_RE
+    from policyforge.content.tags import SOURCE_TAG_RE, known_framework_names, tag_parts
 
-    known = sorted({str(f) for f in frameworks}, key=len, reverse=True)
+    # The catalogs loaded, plus every catalog on disk: the ONE list of names
+    # the Playbook gate also reads (#340), so a part naming a framework that
+    # is not loaded is still that framework's, and is reported unknown rather
+    # than inherited by the part before it.
+    known = sorted({str(f) for f in frameworks} | known_framework_names(), key=len, reverse=True)
     found: list[tuple[str, str, str, str]] = []
     section = ""
     for line in body.splitlines():
@@ -276,8 +279,12 @@ def parse_citations(body: str, frameworks=(), ids=None) -> list[tuple[str, str, 
             # Without the tags, which are traceability rather than title.
             section = SOURCE_TAG_RE.sub("", heading.group("title")).strip()
         for tag in SOURCE_TAG_RE.findall(line):
-            for part in tag.strip("[]").split("|"):
-                framework, requirement_id, qualifier = split_citation(part.strip(), known, ids)
+            # One splitter for every reader of a tag's parts, shared with the
+            # Playbook gate (#333): a shorthand part inherits the preceding
+            # part's framework, and `split_citation` then resolves it -- or
+            # returns it whole, so it is reported unresolved like any other.
+            for part in tag_parts(tag, known, lambda word: bool(resolve_framework(word, ids))):
+                framework, requirement_id, qualifier = split_citation(part.citation, known, ids)
                 if framework and requirement_id:
                     found.append((framework, requirement_id, qualifier, section))
     return found
@@ -373,6 +380,26 @@ def document_evidence(
     return evidence
 
 
+def _answers_for_an_anchor(framework: str) -> bool:
+    """Whether a citation of `framework` can answer for a topic's anchor (#335).
+
+    A TOPIC-anchor question, so `anchors_a_topic` answers it. This used to
+    test `NIST_ANCHOR`, the crosswalk's key, so no AI RMF citation ever
+    counted and every AI anchor read as cited nowhere: 19 of 19 on the
+    shipped registry's generated Standards. **The Playbook stays out**: its
+    ids are the Core's (`Govern 1.1`), so crediting it would let a document
+    citing only NIST's suggestions answer for a Core anchor.
+
+    Its own function because this file is also a crosswalk-anchor site, and
+    `test_anchor_concepts` guards the two sides function by function here:
+    this is the only code in the file allowed to name the topic anchor, and
+    the import stays inside it so nothing at module level does.
+    """
+    from policyforge.mapping.crosswalk import anchors_a_topic
+
+    return anchors_a_topic(framework)
+
+
 def build_report(
     documents,
     *,
@@ -420,15 +447,16 @@ def build_report(
     for evidence, slug in zip(evidences, keys, strict=True):
         reached = cited_by_topic.setdefault(slug, set())
         for citation in evidence.cited:
-            if citation.framework != NIST_ANCHOR:
+            if not _answers_for_an_anchor(citation.framework):
                 continue
             reached.add(citation.requirement_id)
-            # Citing AC-2(3) is mentioning AC-2: the enhancement is part of
-            # the control it enhances. `coverage` reads the relation the
-            # other way round (anchoring AC-2 claims AC-2(3)) and `drift`
-            # the same way this does, so a topic that cites IR-3(1) and
-            # IR-3(3) is not reported as never mentioning IR-3.
-            parent = _parent_of(citation.requirement_id)
+            # Citing AC-2(3) is mentioning AC-2, and citing Govern 1.1 is
+            # mentioning Govern 1: the child is part of its parent. `coverage`
+            # reads the relation the other way round (anchoring AC-2 claims
+            # AC-2(3)) through the same `parent_of` (#318), so a topic that
+            # cites IR-3(1) and IR-3(3) is not reported as never mentioning
+            # IR-3.
+            parent = parent_of(citation.requirement_id)
             if parent:
                 reached.add(parent)
     searched = Counter(keys)

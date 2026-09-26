@@ -11,6 +11,30 @@ drawn from §§ 164.306, 164.308, 164.310, 164.312, 164.314, 164.316,
 164.318 — the definitions section, § 164.304, is intentionally excluded
 since defined terms aren't requirements.
 
+**What is left out of each statement, and where it lives instead.** Four
+sections open with the same framing sentence before their first standard:
+§§ 164.308(a), 164.310, 164.312 and 164.316 each begin *"A covered entity
+or business associate must, in accordance with § 164.306:"*. The loader
+drops that sentence, deliberately, so each control's statement reads as the
+regulation's own requirement (*"Implement …"*) rather than repeating it on each of the
+20 standards those sections hold. So:
+
+- **who the obligation runs to**, a covered entity or business associate, is
+  **not** visible on those controls;
+- **that it applies "in accordance with § 164.306"** is carried in each of
+  those 20 controls' `related_controls`, as `164.306`, the section exactly
+  as the lead-in cites it: the general rules, including flexibility of
+  approach (§ 164.306(b)) and the Required and Addressable distinction
+  (§ 164.306(d)).
+
+**§ 164.306 itself ships as five controls**, `164.306(a)` to `(e)`, and each
+specification keeps its own Required or Addressable tag, so the rules are in
+the catalog and `164.306` names them. The loader reads the relationship from
+the lead-in's own text, and refuses a parse in which a lead-in citing a
+section frames no control. § 164.302 (Applicability) and
+§ 164.304 (Definitions) are not shipped as controls, because neither states a
+requirement to implement.
+
 Source: eCFR's public versioner API,
 <https://www.ecfr.gov/api/versioner/v1/full/%7Bdate%7D/title-45.xml?part=164>
 — not a hand-copied transcription, so this can always be regenerated and

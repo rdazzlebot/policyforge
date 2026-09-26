@@ -268,7 +268,10 @@ SEARCHED_NONE_FOUND: dict[str, str] = {
         # NIST OLIR and CPRT in full, where a formal mapping would be
         # registered, through the undocumented JSON routes their own pages
         # call: OLIR's 102 informative references (every status; no paging)
-        # and CPRT's 216 framework versions, each listing's sha256 on #279.
+        # and CPRT's 197 frameworks, 211 framework versions (5 frameworks
+        # list none), each listing's sha256 on #279. The counts were
+        # re-measured on the same snapshot hashes by policyforge-1d (both) and
+        # policyforge-ba (CPRT); #279's first report said 216 versions.
         # A self-tested pattern (42 CFR / Part 2 / substance / SAMHSA / SUD)
         # found 0 hits in either. Its stated limits, kept here because
         # dropping them would overstate the search: catalog METADATA only,

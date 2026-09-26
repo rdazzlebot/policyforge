@@ -634,3 +634,13 @@ def test_the_real_234_shape_reads_as_green(monkeypatch):
         ],
     )
     assert stale_prs.head_checks(HEAD, "o/r") == (0, 0)
+
+
+def test_an_approval_from_a_declared_stake_alone_is_not_ready():
+    """#425: on #421 a stake-holder's approval could stand in for a counted
+    reader's. `counted=no` keeps it out of readiness; a counted one is needed."""
+    staked = _say(HEAD, "approved", "policyforge-9b")
+    staked["body"] += " counted=no"
+    counted = _say(HEAD, "approved", "policyforge-1d")
+    assert not stale_prs.approved_at_head({"headRefOid": HEAD, "comments": [staked]})
+    assert stale_prs.approved_at_head({"headRefOid": HEAD, "comments": [staked, counted]})

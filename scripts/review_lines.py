@@ -18,6 +18,23 @@ mechanism exists here — branch protection does not distinguish these sessions
 from the user. A reader reports; a person decides. If you find yourself adding
 `--is-approved`, that is the line.
 
+A DECLARED STAKE (#425). A reader with a stake in a PR (a finder, a ruler,
+the author of the issue) is not a counted reader, and says so by ending
+the line with a token:
+
+    Reviewed-SHA: <40-hex> verdict=approved reviewer=<session> counted=no
+
+Such a line is read, reported as UNCOUNTED, and never makes `counts` true,
+so `stale_prs` does not call a PR ready on it. **It still objects, and its
+reviewer can still retire their own objection**: a stake changes whose
+approval is counted, not whose finding stands. **This tool cannot DETECT a
+stake**; it honours one a reader declares. An undeclared stake is still a
+review judgement, and the charge's rule is still the source. Before #425
+this pattern ended at `reviewer=`, so a line carrying the token did not
+parse and the verdict VANISHED, objection included (measured). Any other
+trailing token is kept, reported, and does not count: an unknown word on
+a verdict line is reported rather than dropped, as an unknown verdict is.
+
 THE SIX LOCATION STATES. **`MALFORMED` is not among them** -- it is a
 property of the line's SHAPE, asked on its own axis, and listing it here
 was how the first version of this docstring came to say FIVE while
@@ -155,7 +172,10 @@ REPO = "rdazzleman/policyforge"
 _VERDICT = re.compile(
     r"^\s*Reviewed-SHA:\s+(?P<sha>\S+)\s+"
     r"verdict=(?P<verdict>\S+)\s+"
-    r"reviewer=(?P<reviewer>\S+)\s*$"
+    r"reviewer=(?P<reviewer>\S+)"
+    # Trailing `key=value` tokens: `counted=no` (#425), and anything else,
+    # which is kept and reported rather than dropping the whole line.
+    r"(?P<tokens>(?:\s+\S+)*)\s*$"
 )
 
 #: Trailing characters that are formatting rather than value. Stripped
@@ -208,6 +228,8 @@ class Shape:
     verdict_known: bool
     sha_noise: str = ""
     reviewer_noise: str = ""
+    #: Trailing tokens this reader does not know (#425).
+    unknown_tokens: tuple[str, ...] = ()
 
     @property
     def label(self) -> str:
@@ -225,6 +247,8 @@ class Shape:
             found.append(f"SHA has trailing {self.sha_noise!r}")
         if self.reviewer_noise:
             found.append(f"reviewer has trailing {self.reviewer_noise!r}")
+        if self.unknown_tokens:
+            found.append(f"UNKNOWN TOKEN {' '.join(self.unknown_tokens)!r}")
         return found
 
 
@@ -337,14 +361,23 @@ class Line:
     reviewer: str
     shape: Shape
     location: Location
+    #: False when the reader declared a stake with `counted=no` (#425).
+    counted: bool = True
 
     @property
     def counts(self) -> bool:
-        """Only a well-formed line at head is a verdict on this code."""
-        return self.shape.well_formed and self.location.at_head
+        """A well-formed line at head, from a counted reader, with no token
+        this reader does not know. Only such a line is a counted verdict on
+        this code."""
+        return (
+            self.shape.well_formed
+            and self.location.at_head
+            and self.counted
+            and not self.shape.unknown_tokens
+        )
 
 
-def shape_of(sha: str, verdict: str, reviewer: str = "") -> Shape:
+def shape_of(sha: str, verdict: str, reviewer: str = "", tokens: tuple[str, ...] = ()) -> Shape:
     hexed, sha_noise = clean(sha)
     verdict_value, _ = clean(verdict)
     _, reviewer_noise = clean(reviewer)
@@ -353,6 +386,7 @@ def shape_of(sha: str, verdict: str, reviewer: str = "") -> Shape:
         verdict_known=verdict_value in VERDICTS,
         sha_noise=sha_noise,
         reviewer_noise=reviewer_noise,
+        unknown_tokens=tuple(t for t in tokens if t not in KNOWN_TOKENS),
     )
 
 
@@ -384,6 +418,10 @@ def location_of(sha: str, head: str) -> Location:
     )
 
 
+#: The trailing tokens a verdict line may carry (#425).
+KNOWN_TOKENS = frozenset({"counted=no", "counted=yes"})
+
+
 def verdict_lines(comments: list[dict]) -> list[Line]:
     """Every comment whose LAST NON-EMPTY line is a verdict."""
     found = []
@@ -393,8 +431,21 @@ def verdict_lines(comments: list[dict]) -> list[Line]:
             continue
         match = _VERDICT.search(lines[-1].strip())
         if match:
-            found.append(match.groupdict())
+            found.append(_fields(match))
     return found
+
+
+def _fields(match: re.Match) -> dict:
+    """sha, verdict, reviewer, the trailing tokens, and whether the reader
+    declared a stake. `counted` is False only for an exact `counted=no`."""
+    tokens = tuple(match.group("tokens").split())
+    return {
+        "sha": match.group("sha"),
+        "verdict": match.group("verdict"),
+        "reviewer": match.group("reviewer"),
+        "tokens": tokens,
+        "counted": "counted=no" not in tokens,
+    }
 
 
 #: Where an approval must point to retire an objection: a commit of THIS PR.
@@ -432,7 +483,9 @@ def objection_states(lines: list[Line]) -> list[tuple[Line, str, Line | None]]:
             and later.shape.well_formed
             and later.location.label in RETIRING_LOCATIONS
         ]
-        at_head = [later for later in retiring if later.counts]
+        # `location.at_head`, not `counts`: a declared stake (#425) changes
+        # whose approval is counted, not who may withdraw their own objection.
+        at_head = [later for later in retiring if later.location.at_head]
         if at_head:
             states.append((line, "RETIRED AT HEAD", at_head[-1]))
         elif retiring:
@@ -483,8 +536,9 @@ def report(number: int, repo: str) -> int:
             sha=r["sha"],
             verdict=r["verdict"],
             reviewer=r["reviewer"],
-            shape=shape_of(r["sha"], r["verdict"], r["reviewer"]),
+            shape=shape_of(r["sha"], r["verdict"], r["reviewer"], r["tokens"]),
             location=location_of(r["sha"], head),
+            counted=r["counted"],
         )
         for r in raw
     ]
@@ -500,7 +554,26 @@ def report(number: int, repo: str) -> int:
         # Both facts, always. A line can be MALFORMED *and* ELSEWHERE, and
         # the version that chained these credited a review that was not there.
         marks = [line.location.label, *line.shape.faults]
+        if not line.counted:
+            marks.append("UNCOUNTED (declared stake)")
         print(f"  {line.sha[:12]:14} {line.verdict:18} {line.reviewer:16} {' + '.join(marks)}")
+
+    # Who read the head, split by the one thing a line can say about its
+    # reader's standing (#425). Names, not a total: a count here would be
+    # read as consent, and this reports.
+    counted = sorted(
+        {line.reviewer for line in lines if line.verdict == "approved" and line.counts}
+    )
+    declared = sorted(
+        {
+            line.reviewer
+            for line in lines
+            if line.verdict == "approved" and not line.counted and line.location.at_head
+        }
+    )
+    print(f"\n  approvals at head from counted readers: {', '.join(counted) or 'none'}")
+    if declared:
+        print(f"  approvals at head from readers who declared a stake: {', '.join(declared)}")
 
     # Objections by state (#237). Only the objector's own later approval
     # retires one; nothing about the SHA does.

@@ -192,9 +192,10 @@ def approved_at_head(pull: dict) -> bool:
                 verdict=verdict["verdict"],
                 reviewer=verdict["reviewer"],
                 shape=review_lines.shape_of(
-                    verdict["sha"], verdict["verdict"], verdict["reviewer"]
+                    verdict["sha"], verdict["verdict"], verdict["reviewer"], verdict["tokens"]
                 ),
                 location=review_lines.Location(resolves=True, at_head=at, ancestor_of_head=not at),
+                counted=verdict["counted"],
             )
         )
     approved = any(line.verdict == "approved" and line.counts for line in lines)

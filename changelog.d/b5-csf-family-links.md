@@ -12,4 +12,6 @@ and IR. These links were stored but not read by any report.
   outcome, and a change to the CSF outcome reaches documents citing any
   control in the family.
 - `policyforge coverage` names the three links beside CSF and does not count
-  them as coverage.
+  them as coverage. With `--json`, every framework now has a `family_links`
+  field: `{}` where there are none, and for CSF, each outcome with the
+  families it is linked to.

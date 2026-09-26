@@ -112,10 +112,11 @@ def test_the_only_reused_versions_are_117s_and_they_are_named():
 
 def test_every_gap_in_a_prompts_versions_is_explained():
     """The ledger is walked along main and the train, so a version declared
-    only on a pull request's own commits (generate.standard v5, on #359) or
-    before the registry existed (edit.plan v1, zardoz.answer v1-5) is not in
-    it. Each such gap is named with its reason (9b on #422), and a version
-    skipped from now on fails here until someone says why."""
+    only on a pull request's own commits (generate.standard v5, on #359) is
+    not in it, and nor are numbers the registry started above (edit.plan v1,
+    zardoz.answer v1-5: never declared in code). Each gap is named with its
+    reason (9b on #422), and a version skipped from now on fails here until
+    someone says why."""
     record = _ledger()
     gaps = {
         f"{name} {missing}"

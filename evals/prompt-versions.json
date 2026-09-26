@@ -6,12 +6,12 @@
   },
   "unrecorded_versions": {
     "generate.standard 5": "Declared only on PR 359's own commits (refs/pull/359/head), with two texts: 23ad39e (f65b2d3aea9f) and ea2f886 (1eccb6748fb4). #359 squash-merged at v6, so the walk never saw v5 (9b on #422).",
-    "edit.plan 1": "Declared before the registry existed: its first commit, 2dcdfcf, registered edit.plan at v2.",
-    "zardoz.answer 1": "Declared before the registry existed: its first commit, 2dcdfcf, registered zardoz.answer at v6.",
-    "zardoz.answer 2": "Declared before the registry existed: its first commit, 2dcdfcf, registered zardoz.answer at v6.",
-    "zardoz.answer 3": "Declared before the registry existed: its first commit, 2dcdfcf, registered zardoz.answer at v6.",
-    "zardoz.answer 4": "Declared before the registry existed: its first commit, 2dcdfcf, registered zardoz.answer at v6.",
-    "zardoz.answer 5": "Declared before the registry existed: its first commit, 2dcdfcf, registered zardoz.answer at v6."
+    "edit.plan 1": "Never declared in code: the registry's first commit (2dcdfcf) registered edit.plan at v2. One earlier text exists (532fe53, a2ffb890c92a). Measured by 9b on #422.",
+    "zardoz.answer 1": "Never declared: 2dcdfcf registered zardoz.answer at v6. The code before it declares no version and holds three earlier texts of the prompt (a1880b4, 4d051f9, 242e342), so these numbers correspond to no text. Measured by 9b on #422.",
+    "zardoz.answer 2": "Never declared: 2dcdfcf registered zardoz.answer at v6. The code before it declares no version and holds three earlier texts of the prompt (a1880b4, 4d051f9, 242e342), so these numbers correspond to no text. Measured by 9b on #422.",
+    "zardoz.answer 3": "Never declared: 2dcdfcf registered zardoz.answer at v6. The code before it declares no version and holds three earlier texts of the prompt (a1880b4, 4d051f9, 242e342), so these numbers correspond to no text. Measured by 9b on #422.",
+    "zardoz.answer 4": "Never declared: 2dcdfcf registered zardoz.answer at v6. The code before it declares no version and holds three earlier texts of the prompt (a1880b4, 4d051f9, 242e342), so these numbers correspond to no text. Measured by 9b on #422.",
+    "zardoz.answer 5": "Never declared: 2dcdfcf registered zardoz.answer at v6. The code before it declares no version and holds three earlier texts of the prompt (a1880b4, 4d051f9, 242e342), so these numbers correspond to no text. Measured by 9b on #422."
   },
   "prompts": {
     "crosswalk.propose": {

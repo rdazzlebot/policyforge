@@ -91,13 +91,16 @@ _WHERE = r"(?:above|below)"
 #: pointed the wrong way or was right by luck.
 #:
 #: **A pointer, not every "above" or "below".** Measured against the 3,691
-#: lines of `CHANGELOG.md` at 1.6.1: the bare words matched 19 times, and 12
-#: were prose that must keep passing ("would fall below the catalog", "mcp
-#: is held below 2", "the requirement above it", "the note above the rows").
-#: This matches the pointer shapes those 19 contain: "see below", a noun
-#: naming an entry beside a position ("the entry above", "the harness change
-#: below", "the ledger fix above"), and a quoted entry title followed by
-#: one. "You see below" describes rather than directs, and passes.
+#: lines of `CHANGELOG.md` at 1.6.1: the bare words matched 19 times. Nine
+#: were pointers to other entries, and every shape among them is matched
+#: here: "see below", a noun naming an entry beside a position ("the entry
+#: above", "the harness change below", "the ledger fix above"), a quoted
+#: entry title followed by one, "the above" standing alone, and "everything
+#: else below". Ten were prose that must keep passing ("would fall below the
+#: catalog", "mcp is held below 2", "the requirement above it", "the note
+#: above the rows"); `tests/test_changelog_fragments.py` holds all ten, so a
+#: later widening that reintroduces one fails. "You see below" describes
+#: rather than directs, and passes.
 _POSITIONAL = re.compile(
     "|".join(
         [
@@ -106,6 +109,9 @@ _POSITIONAL = re.compile(
             rf"\b{_WHERE}\s+(?:entry|entries|fragment|fragments)\b",
             r"\b(?:previous|next|preceding|following)\s+(?:entry|entries|fragment|fragments)\b",
             rf"\"[^\"]{{3,}}\"\s+{_WHERE}\b",
+            # "the above" as a noun: followed by punctuation or the end.
+            rf"\bthe\s+{_WHERE}(?=\s*(?:[,.;:)]|$))",
+            rf"\b(?:everything|all|the\s+rest)(?:\s+else)?\s+{_WHERE}\b",
         ]
     ),
     re.IGNORECASE,

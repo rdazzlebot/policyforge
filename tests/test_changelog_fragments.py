@@ -283,6 +283,8 @@ def test_check_derives_its_own_population(tmp_path: Path) -> None:
         "That is how the entry above went unmeasured.",
         "The same run, on top of the ledger fix above.",
         "As the previous entry says, it is refused.",
+        "It installs with brew, and everything else below had accumulated on main.",
+        "Documentation accuracy fixes found while writing the above, each overclaimed.",
         # A pointer wrapped across a line is still one pointer.
         "That is how the entry\nabove went unmeasured.",
     ],
@@ -298,14 +300,22 @@ def test_a_pointer_to_another_entry_by_position_is_a_problem(tmp_path: Path, sen
 @pytest.mark.parametrize(
     "sentence",
     [
-        # Prose from the 1.6.1 CHANGELOG that says "above" or "below" and
-        # points at no entry. The bare words matched these; they must pass.
-        "A write is refused whenever a count would fall below the catalog being replaced.",
-        "**mcp is held below 2** (at 1.30.0).",
-        "A Procedure step carries out the Standard requirement above it.",
-        "The note above the rows no longer counts the kinds of zero.",
-        "Rewrite them to the forms above.",
-        "It is the same 814 and the same 200 you see below.",
+        # ALL TEN sentences in the 1.6.1 CHANGELOG where "above" or "below"
+        # points at no other entry. The issue's first pattern refused every
+        # one (80's request on #387: pinned, so a widening cannot bring
+        # them back). Derived by running that pattern over CHANGELOG.md.
+        "A Procedure step carries out the Standard requirement above it, and that requirement "
+        "holds the citation.",
+        "The note above the rows no longer counts the kinds of zero; each row names its own.",
+        "It covers both that shape and the one above, where an unquoted value adds arguments.",
+        "The write is refused whenever any of the three counts would fall below the catalog "
+        "being replaced.",
+        "It reconciles, and is the same 814 and the same 200 you see below.",
+        "Rewrite them to the forms above, and rewrite every tag in a document at once.",
+        "All are equally invisible to the tag reader, and the pattern above catches any bracket.",
+        "Seven entries do exactly that, including `2.16` and `2.19` in the Part 2 catalog above.",
+        "Two paragraphs above, the same page states that it cannot attest to any third party.",
+        "**mcp is held below 2** (at 1.30.0), in the extra and in Dependabot's ignores.",
         # What the message tells a writer to do instead.
         "The README says so (see the NIST SP 800-171 entry in this release).",
         # Quoted, not said.
